@@ -1,0 +1,100 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-02-12 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "linea",
+  "t28",
+  "t30",
+  "t32",
+  "t34",
+  "t36",
+  "t40",
+  "t42",
+  "t44",
+  "total"
+ ],
+ "fields": [
+  {
+   "fieldname": "linea",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Linea",
+   "default": "Cantidad",
+   "read_only": 1
+  },
+  {
+   "fieldname": "t28",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "28"
+  },
+  {
+   "fieldname": "t30",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "30"
+  },
+  {
+   "fieldname": "t32",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "32"
+  },
+  {
+   "fieldname": "t34",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "34"
+  },
+  {
+   "fieldname": "t36",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "36"
+  },
+  {
+   "fieldname": "t40",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "40"
+  },
+  {
+   "fieldname": "t42",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "42"
+  },
+  {
+   "fieldname": "t44",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "44"
+  },
+  {
+   "fieldname": "total",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Total",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-02-12 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Costeo Yelke",
+ "name": "Orden Manufactura Talla Caballero",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

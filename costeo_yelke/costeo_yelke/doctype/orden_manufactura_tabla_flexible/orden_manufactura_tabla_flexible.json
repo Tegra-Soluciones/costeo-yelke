@@ -1,0 +1,68 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-02-12 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "tabla",
+  "unidad",
+  "fila",
+  "columna",
+  "valor",
+  "notas"
+ ],
+ "fields": [
+  {
+   "fieldname": "tabla",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Tabla",
+   "reqd": 1
+  },
+  {
+   "fieldname": "unidad",
+   "fieldtype": "Data",
+   "label": "Unidad"
+  },
+  {
+   "fieldname": "fila",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Fila"
+  },
+  {
+   "fieldname": "columna",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Columna"
+  },
+  {
+   "fieldname": "valor",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Valor"
+  },
+  {
+   "fieldname": "notas",
+   "fieldtype": "Small Text",
+   "label": "Notas"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-02-12 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Costeo Yelke",
+ "name": "Orden Manufactura Tabla Flexible",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

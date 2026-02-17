@@ -4,3 +4,10 @@
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
+costeo_yelke.patches.v0_0_2.add_warehouse_supplier_link
+costeo_yelke.patches.v0_0_3.add_material_request_supplier_fields
+costeo_yelke.patches.v0_0_4.add_purchase_order_manufacturing_order_fields
+costeo_yelke.patches.v0_0_5.add_purchase_order_flexible_tables_html_builder
+costeo_yelke.patches.v0_0_6.update_purchase_order_manufacturing_order_layout
+costeo_yelke.patches.v0_0_7.reorder_purchase_order_om_fields
+costeo_yelke.patches.v0_0_8.fix_purchase_order_om_insert_after_chain

@@ -1,0 +1,68 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-02-05 12:13:31.883895",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+  "field_order": [
+  "producto_terminado",
+  "etapa",
+  "servicio",
+  "proveedor",
+  "precio_servicio",
+  "subensamblaje"
+ ],
+ "fields": [
+  {
+   "fieldname": "etapa",
+   "fieldtype": "Data",
+   "label": "Etapa"
+  },
+  {
+   "fieldname": "servicio",
+   "fieldtype": "Link",
+   "label": "Servicio",
+   "options": "Item"
+  },
+  {
+   "fieldname": "proveedor",
+   "fieldtype": "Link",
+   "label": "Proveedor",
+   "options": "Supplier"
+  },
+  {
+   "fieldname": "precio_servicio",
+   "fieldtype": "Currency",
+   "label": "Precio",
+   "precision": "2"
+  },
+  {
+   "fieldname": "subensamblaje",
+   "fieldtype": "Link",
+   "label": "Subensamblaje",
+   "options": "Item"
+  },
+  {
+   "fieldname": "producto_terminado",
+   "fieldtype": "Link",
+   "label": "Producto Terminado",
+   "options": "Item"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-02-06 11:20:30.510210",
+ "modified_by": "Administrator",
+ "module": "Costeo Yelke",
+ "name": "Etapas Costeo",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -28,6 +28,23 @@ Pre-commit is configured to use the following tools for checking and formatting 
 - prettier
 - pyupgrade
 
+### Costeo Frontend
+
+The client logic for the `Costeo` doctype is modularized in:
+
+- `costeo_yelke/costeo_yelke/doctype/costeo/modules/`
+
+Generate the final doctype script with:
+
+```bash
+./costeo_yelke/costeo_yelke/doctype/costeo/build_costeo_js.sh
+```
+
+Additional architecture notes:
+
+- `costeo_yelke/costeo_yelke/doctype/costeo/README.md`
+- `docs/costeo_yelke_app_architecture.md`
+
 ### License
 
 mit
