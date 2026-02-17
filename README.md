@@ -1,50 +1,93 @@
-### Costeo Yelke
+# Costeo Yelke
 
-Motor de costeo y BOMs
+Aplicacion custom para ERPNext orientada al costeo de productos y automatizacion del flujo comercial y de manufactura.
 
-### Installation
+## Alcance
 
-You can install this app using the [bench](https://github.com/frappe/bench) CLI:
+La app gira alrededor del doctype `Costeo` y sus tablas hijas:
+
+- `Costeo Producto`
+- `Costeo Producto Detalle`
+- `Etapas Costeo`
+
+Con estas estructuras se calcula costo unitario, precio de venta y margen, y se conserva el detalle tecnico por producto terminado.
+
+## Automatizaciones incluidas
+
+Desde `Costeo` se automatiza la creacion de documentos de ERPNext:
+
+- `BOM`
+- `Subcontracting BOM`
+- `Quotation`
+- `Sales Order`
+- `Production Plan`
+- Flujos posteriores de manufactura y compras asociados al plan
+
+Tambien incluye vista tipo tree y modal de detalle para capturar costos de envio, etapas y componentes por producto.
+
+## Requisitos
+
+- Frappe 15
+- ERPNext 15
+
+## Instalacion
 
 ```bash
-cd $PATH_TO_YOUR_BENCH
-bench get-app $URL_OF_THIS_REPO --branch develop
-bench install-app costeo_yelke
+cd $PATH_TO_BENCH
+bench get-app https://github.com/Tegra-Soluciones/costeo-yelke.git --branch main
+bench --site <tu_sitio> install-app costeo_yelke
+bench --site <tu_sitio> migrate
+bench build --app costeo_yelke
+bench --site <tu_sitio> clear-cache
+bench restart
 ```
 
-### Contributing
+## Actualizacion
 
-This app uses `pre-commit` for code formatting and linting. Please [install pre-commit](https://pre-commit.com/#installation) and enable it for this repository:
+```bash
+cd $PATH_TO_BENCH/apps/costeo_yelke
+git checkout main
+git pull
+cd $PATH_TO_BENCH
+bench --site <tu_sitio> migrate
+bench build --app costeo_yelke
+bench --site <tu_sitio> clear-cache
+bench restart
+```
+
+## Desarrollo
+
+Esta app usa `pre-commit` para validaciones de formato y lint:
 
 ```bash
 cd apps/costeo_yelke
 pre-commit install
 ```
 
-Pre-commit is configured to use the following tools for checking and formatting your code:
+Herramientas configuradas:
 
-- ruff
-- eslint
-- prettier
-- pyupgrade
+- `ruff`
+- `eslint`
+- `prettier`
+- `pyupgrade`
 
-### Costeo Frontend
+## Frontend de Costeo
 
-The client logic for the `Costeo` doctype is modularized in:
+La logica cliente de `Costeo` esta modularizada en:
 
 - `costeo_yelke/costeo_yelke/doctype/costeo/modules/`
 
-Generate the final doctype script with:
+Para regenerar el `costeo.js` final:
 
 ```bash
 ./costeo_yelke/costeo_yelke/doctype/costeo/build_costeo_js.sh
 ```
 
-Additional architecture notes:
+Documentacion tecnica adicional:
 
 - `costeo_yelke/costeo_yelke/doctype/costeo/README.md`
 - `docs/costeo_yelke_app_architecture.md`
 
-### License
+## Licencia
 
-mit
+MIT
