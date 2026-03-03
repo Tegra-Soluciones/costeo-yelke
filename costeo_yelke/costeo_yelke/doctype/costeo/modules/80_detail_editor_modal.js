@@ -79,11 +79,11 @@ function get_dialog_fields(etapas, materiales, shipping_cost) {
                 { fieldname: DB.T2.ITEM, label: "Producto", fieldtype: "Link", options: "Item", in_list_view: 1, reqd: 1, columns: 2 },
                 { fieldname: DB.T2.INT_QTY, label: "Consumo", fieldtype: "Float", in_list_view: 1, columns: 1, reqd: 1 },
                 { fieldname: DB.T2.INT_UOM, label: "UOM", fieldtype: "Data", in_list_view: 1, columns: 1, read_only: 1 },
-                { fieldname: DB.T2.SUPPLIER, label: "Proveedor", fieldtype: "Link", options: "Supplier", in_list_view: 1, columns: 2, reqd: 1 },
+                { fieldname: DB.T2.SUPPLIER, label: "Proveedor", fieldtype: "Link", options: "Supplier", in_list_view: 1, columns: 1, reqd: 1 },
                 { fieldname: DB.T2.SUP_UOM, label: "UOM Prov", fieldtype: "Data", in_list_view: 1, columns: 1, read_only: 1 },
                 { fieldname: DB.T2.SUP_QTY, label: "Cant. Compra", fieldtype: "Float", in_list_view: 1, columns: 1, read_only: 1 },
                 { fieldname: DB.T2.UNIT_PRICE, label: "Precio U.", fieldtype: "Currency", in_list_view: 1, columns: 1, read_only: 1 },
-                { fieldname: DB.T2.TOTAL, label: "Total", fieldtype: "Currency", in_list_view: 1, columns: 1, read_only: 1 },
+                { fieldname: DB.T2.TOTAL, label: "Total P.U x Consumo", fieldtype: "Currency", in_list_view: 1, columns: 1, read_only: 1 },
                 { fieldname: DB.T2.CONV_FACTOR, fieldtype: "Float", hidden: 1 },
                 { fieldname: DB.T2.CONCEPT_TYPE, fieldtype: "Data", hidden: 1 }
             ]
@@ -459,10 +459,10 @@ function calculate_modal_row(grid, row) {
     let int_qty = flt(row[DB.T2.INT_QTY]);
     let factor = flt(row[DB.T2.CONV_FACTOR]) || 1;
     let price = flt(row[DB.T2.UNIT_PRICE]);
+    let sup_qty_raw = int_qty / factor;
 
-    row[DB.T2.SUP_QTY] = int_qty / factor;
+    row[DB.T2.SUP_QTY] = Math.ceil(sup_qty_raw);
     row[DB.T2.TOTAL] = row[DB.T2.SUP_QTY] * price;
     
     grid.refresh_row(row.name);
 }
-

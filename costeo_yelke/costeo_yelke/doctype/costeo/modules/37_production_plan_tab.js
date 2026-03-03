@@ -405,6 +405,26 @@ function apply_raw_material_suppliers_to_mr_items(frm) {
     frm.refresh_field("mr_items");
 }
 
+function round_up_mr_items_plan_request_qty(frm) {
+    let changed = false;
+
+    (frm.doc.mr_items || []).forEach(row => {
+        const current_qty = flt(row.quantity);
+        if (current_qty <= 0) return;
+
+        const rounded_qty = Math.ceil(current_qty);
+        if (rounded_qty === current_qty) return;
+
+        row.quantity = rounded_qty;
+        changed = true;
+    });
+
+    if (!changed) return;
+
+    frm.refresh_field("mr_items");
+    frm.dirty();
+}
+
 function fetch_item_data_for_plan(item_code) {
     return new Promise(resolve => {
         if (!item_code) {
@@ -859,6 +879,7 @@ function get_items_for_material_requests(frm, warehouses) {
                 frm.refresh_field("mr_items");
             }
 
+            round_up_mr_items_plan_request_qty(frm);
             apply_raw_material_suppliers_to_mr_items(frm);
         }
     });

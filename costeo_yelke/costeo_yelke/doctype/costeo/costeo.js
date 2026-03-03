@@ -1071,6 +1071,26 @@ function apply_raw_material_suppliers_to_mr_items(frm) {
     frm.refresh_field("mr_items");
 }
 
+function round_up_mr_items_plan_request_qty(frm) {
+    let changed = false;
+
+    (frm.doc.mr_items || []).forEach(row => {
+        const current_qty = flt(row.quantity);
+        if (current_qty <= 0) return;
+
+        const rounded_qty = Math.ceil(current_qty);
+        if (rounded_qty === current_qty) return;
+
+        row.quantity = rounded_qty;
+        changed = true;
+    });
+
+    if (!changed) return;
+
+    frm.refresh_field("mr_items");
+    frm.dirty();
+}
+
 function fetch_item_data_for_plan(item_code) {
     return new Promise(resolve => {
         if (!item_code) {
@@ -1525,6 +1545,7 @@ function get_items_for_material_requests(frm, warehouses) {
                 frm.refresh_field("mr_items");
             }
 
+            round_up_mr_items_plan_request_qty(frm);
             apply_raw_material_suppliers_to_mr_items(frm);
         }
     });
@@ -2715,7 +2736,7 @@ function render_product_card(prod, finished, detalles, etapas, costo_materiales,
                                class="form-control tree-field-input sales-price-input" 
                                data-item="${finished}"
                                data-row-name="${prod.name}"
-                               value="${sales_price}"
+                               value="${sales_price.toFixed(2)}"
                                step="0.01"
                                min="0">
                     </div>
@@ -2897,7 +2918,6 @@ function render_detail_row(detalle, items_cache) {
     `;
 }
 
-
 // -----------------------------------------------------------------------------
 // Module: 80_detail_editor_modal.js
 // -----------------------------------------------------------------------------
@@ -2982,11 +3002,11 @@ function get_dialog_fields(etapas, materiales, shipping_cost) {
                 { fieldname: DB.T2.ITEM, label: "Producto", fieldtype: "Link", options: "Item", in_list_view: 1, reqd: 1, columns: 2 },
                 { fieldname: DB.T2.INT_QTY, label: "Consumo", fieldtype: "Float", in_list_view: 1, columns: 1, reqd: 1 },
                 { fieldname: DB.T2.INT_UOM, label: "UOM", fieldtype: "Data", in_list_view: 1, columns: 1, read_only: 1 },
-                { fieldname: DB.T2.SUPPLIER, label: "Proveedor", fieldtype: "Link", options: "Supplier", in_list_view: 1, columns: 2, reqd: 1 },
+                { fieldname: DB.T2.SUPPLIER, label: "Proveedor", fieldtype: "Link", options: "Supplier", in_list_view: 1, columns: 1, reqd: 1 },
                 { fieldname: DB.T2.SUP_UOM, label: "UOM Prov", fieldtype: "Data", in_list_view: 1, columns: 1, read_only: 1 },
                 { fieldname: DB.T2.SUP_QTY, label: "Cant. Compra", fieldtype: "Float", in_list_view: 1, columns: 1, read_only: 1 },
                 { fieldname: DB.T2.UNIT_PRICE, label: "Precio U.", fieldtype: "Currency", in_list_view: 1, columns: 1, read_only: 1 },
-                { fieldname: DB.T2.TOTAL, label: "Total", fieldtype: "Currency", in_list_view: 1, columns: 1, read_only: 1 },
+                { fieldname: DB.T2.TOTAL, label: "Total P.U x Consumo", fieldtype: "Currency", in_list_view: 1, columns: 1, read_only: 1 },
                 { fieldname: DB.T2.CONV_FACTOR, fieldtype: "Float", hidden: 1 },
                 { fieldname: DB.T2.CONCEPT_TYPE, fieldtype: "Data", hidden: 1 }
             ]
@@ -3362,13 +3382,13 @@ function calculate_modal_row(grid, row) {
     let int_qty = flt(row[DB.T2.INT_QTY]);
     let factor = flt(row[DB.T2.CONV_FACTOR]) || 1;
     let price = flt(row[DB.T2.UNIT_PRICE]);
+    let sup_qty_raw = int_qty / factor;
 
-    row[DB.T2.SUP_QTY] = int_qty / factor;
+    row[DB.T2.SUP_QTY] = Math.ceil(sup_qty_raw);
     row[DB.T2.TOTAL] = row[DB.T2.SUP_QTY] * price;
     
     grid.refresh_row(row.name);
 }
-
 
 // -----------------------------------------------------------------------------
 // Module: 90_calculations.js
@@ -3489,7 +3509,7 @@ function recalc_sales_price(frm, cdt, cdn) {
     if (row[DB.T1.TOTAL_COST] > 0) {
         let margin = flt(row[DB.T1.MARGIN_PCT]) / 100;
         if (margin >= 0 && margin < 1) {
-            row[DB.T1.SALES_PRICE] = row[DB.T1.TOTAL_COST] / (1 - margin);
+            row[DB.T1.SALES_PRICE] = flt(row[DB.T1.TOTAL_COST] / (1 - margin), 2);
             row[DB.T1.TOTAL_SALES] = row[DB.T1.SALES_PRICE] * flt(row[DB.T1.QTY]);
             frm.refresh_field(DB.T1.FIELD_NAME);
         }
@@ -3516,7 +3536,6 @@ function update_select_options(frm) {
         if (df) df.options = options;
     }
 }
-
 
 // -----------------------------------------------------------------------------
 // Module: 99_utils_and_styles.js

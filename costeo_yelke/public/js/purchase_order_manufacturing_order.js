@@ -49,6 +49,10 @@ const OM_SECTION_FIELDS = [
     "om_archivos"
 ];
 
+function om_has_field(frm, fieldname) {
+    return Boolean(frm && frm.fields_dict && frm.fields_dict[fieldname]);
+}
+
 function is_subcontract_po(frm) {
     return parseInt(frm.doc.is_subcontracted || 0, 10) === 1;
 }
@@ -56,15 +60,20 @@ function is_subcontract_po(frm) {
 function toggle_om_sections(frm) {
     const visible = is_subcontract_po(frm);
     OM_SECTION_FIELDS.forEach(fieldname => {
-        frm.toggle_display(fieldname, visible);
+        if (om_has_field(frm, fieldname)) {
+            frm.toggle_display(fieldname, visible);
+        }
     });
 
     // Backend table remains hidden. HTML builder is the editable UI.
-    frm.toggle_display(OM_BACKEND_TABLE_FIELD, false);
+    if (om_has_field(frm, OM_BACKEND_TABLE_FIELD)) {
+        frm.toggle_display(OM_BACKEND_TABLE_FIELD, false);
+    }
 }
 
 function sync_om_required_date(frm) {
     if (!is_subcontract_po(frm)) return;
+    if (!om_has_field(frm, "om_fecha_requerida")) return;
 
     const required_date = frm.doc.schedule_date || frm.doc.transaction_date || frappe.datetime.get_today();
     if (!required_date) return;
@@ -79,6 +88,8 @@ function sum_row_values(row, fields) {
 }
 
 function compute_caballero_totals(frm) {
+    if (!om_has_field(frm, "om_tallas_caballero") || !om_has_field(frm, "om_prendas_caballero_total")) return;
+
     let grand_total = 0;
 
     (frm.doc.om_tallas_caballero || []).forEach(row => {
@@ -93,6 +104,8 @@ function compute_caballero_totals(frm) {
 }
 
 function compute_dama_totals(frm) {
+    if (!om_has_field(frm, "om_tallas_dama") || !om_has_field(frm, "om_prendas_dama_total")) return;
+
     let grand_total = 0;
 
     (frm.doc.om_tallas_dama || []).forEach(row => {
@@ -107,6 +120,8 @@ function compute_dama_totals(frm) {
 }
 
 function renumber_process_rows(frm) {
+    if (!om_has_field(frm, "om_procesos")) return;
+
     (frm.doc.om_procesos || []).forEach((row, index) => {
         row.proceso = `Proceso ${index + 1}`;
     });
@@ -127,6 +142,7 @@ function lock_fixed_size_grid(frm, fieldname) {
 
 function ensure_single_size_row(frm, fieldname) {
     if (!is_subcontract_po(frm)) return;
+    if (!om_has_field(frm, fieldname)) return;
 
     lock_fixed_size_grid(frm, fieldname);
 
@@ -349,6 +365,8 @@ function init_om_tables_state(frm) {
 }
 
 function sync_om_tables_state_to_backend(frm, refresh_backend_field = false) {
+    if (!om_has_field(frm, OM_BACKEND_TABLE_FIELD)) return;
+
     const state = frm.__om_tables_state || [];
     frm.clear_table(OM_BACKEND_TABLE_FIELD);
 

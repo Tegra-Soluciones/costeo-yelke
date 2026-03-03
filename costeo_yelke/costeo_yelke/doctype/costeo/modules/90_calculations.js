@@ -114,7 +114,7 @@ function recalc_sales_price(frm, cdt, cdn) {
     if (row[DB.T1.TOTAL_COST] > 0) {
         let margin = flt(row[DB.T1.MARGIN_PCT]) / 100;
         if (margin >= 0 && margin < 1) {
-            row[DB.T1.SALES_PRICE] = row[DB.T1.TOTAL_COST] / (1 - margin);
+            row[DB.T1.SALES_PRICE] = flt(row[DB.T1.TOTAL_COST] / (1 - margin), 2);
             row[DB.T1.TOTAL_SALES] = row[DB.T1.SALES_PRICE] * flt(row[DB.T1.QTY]);
             frm.refresh_field(DB.T1.FIELD_NAME);
         }
@@ -141,4 +141,3 @@ function update_select_options(frm) {
         if (df) df.options = options;
     }
 }
-

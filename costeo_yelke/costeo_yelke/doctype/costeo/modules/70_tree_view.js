@@ -174,7 +174,7 @@ function render_product_card(prod, finished, detalles, etapas, costo_materiales,
                                class="form-control tree-field-input sales-price-input" 
                                data-item="${finished}"
                                data-row-name="${prod.name}"
-                               value="${sales_price}"
+                               value="${sales_price.toFixed(2)}"
                                step="0.01"
                                min="0">
                     </div>
@@ -355,4 +355,3 @@ function render_detail_row(detalle, items_cache) {
         </li>
     `;
 }
-
