@@ -254,6 +254,8 @@ function om_default_table(existing_tables) {
     return {
         name: table_name,
         unit: "",
+        notes: "",
+        attachment: "",
         columns: [first_column],
         rows: [{
             id: first_row,
@@ -273,6 +275,8 @@ function build_om_tables_state_from_backend(frm) {
             grouped[table_name] = {
                 name: table_name,
                 unit: (row.unidad || "").toString(),
+                notes: "",
+                attachment: "",
                 columns: [],
                 rows: [],
                 row_map: {},
@@ -290,6 +294,12 @@ function build_om_tables_state_from_backend(frm) {
             bucket.layout = om_parse_json(row.valor);
             if (bucket.layout.unidad && !bucket.unit) {
                 bucket.unit = bucket.layout.unidad;
+            }
+            if (row.notas) {
+                bucket.notes = (row.notas || "").toString();
+            }
+            if (row.archivo) {
+                bucket.attachment = (row.archivo || "").toString();
             }
             return;
         }
@@ -352,6 +362,8 @@ function build_om_tables_state_from_backend(frm) {
         state.push({
             name: bucket.name || `Tabla ${index + 1}`,
             unit: bucket.unit || "",
+            notes: bucket.notes || "",
+            attachment: bucket.attachment || "",
             columns,
             rows
         });
@@ -373,6 +385,8 @@ function sync_om_tables_state_to_backend(frm, refresh_backend_field = false) {
     state.forEach((table, table_index) => {
         const table_name = ((table.name || `Tabla ${table_index + 1}`).toString().trim()) || `Tabla ${table_index + 1}`;
         const unit = (table.unit || "").toString();
+        const notes = (table.notes || "").toString();
+        const attachment = (table.attachment || "").toString();
         let columns = om_unique_non_empty(table.columns);
         if (!columns.length) {
             columns = [`${OM_COLUMN_ID_PREFIX}1`];
@@ -403,6 +417,8 @@ function sync_om_tables_state_to_backend(frm, refresh_backend_field = false) {
             filas: rows.map(row => row.id),
             unidad: unit
         });
+        meta_row.notas = notes;
+        meta_row.archivo = attachment;
 
         rows.forEach(row => {
             columns.forEach(column => {
@@ -467,12 +483,37 @@ function ensure_om_builder_css() {
             .om-grid .om-cell-input { min-width: 110px; }
             .om-col-head { display: flex; gap: 6px; align-items: center; justify-content: space-between; }
             .om-col-label { font-size: 12px; color: #4b5563; }
+            .om-table-footer { border-top: 1px solid #e5e7eb; background: #fcfcfc; padding: 10px 12px; }
+            .om-table-footer-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+            .om-table-footer .form-group { margin-bottom: 0; }
+            .om-table-footer .control-label { font-size: 12px; color: #4b5563; margin-bottom: 4px; display: block; }
+            .om-table-notes { min-height: 70px; resize: vertical; }
+            .om-attachment-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+            .om-attachment-link { font-size: 12px; }
             .om-empty-hint { color: #6b7280; font-size: 12px; }
             .om-delete-btn { white-space: nowrap; }
+            @media (max-width: 991px) {
+                .om-table-footer-row { grid-template-columns: 1fr; }
+            }
         </style>
     `;
 
     $("head").append(css);
+}
+
+function om_get_attachment_label(value) {
+    const path = (value || "").toString().trim();
+    if (!path) return "";
+
+    const clean = path.split("?")[0];
+    const parts = clean.split("/");
+    const raw = parts[parts.length - 1] || path;
+
+    try {
+        return decodeURIComponent(raw);
+    } catch (e) {
+        return raw;
+    }
 }
 
 function render_om_tables_builder(frm) {
@@ -503,6 +544,10 @@ function render_om_tables_builder(frm) {
     state.forEach((table, table_index) => {
         const table_name = om_escape_html(table.name || `Tabla ${table_index + 1}`);
         const table_unit = om_escape_html(table.unit || "");
+        const table_notes = om_escape_html(table.notes || "");
+        const attachment_value = (table.attachment || "").toString();
+        const attachment_href = om_escape_html(attachment_value);
+        const attachment_label = om_escape_html(om_get_attachment_label(attachment_value));
         const columns = table.columns || [];
         const rows = table.rows || [];
 
@@ -550,6 +595,27 @@ function render_om_tables_builder(frm) {
         });
         html += `</tbody>`;
         html += `</table>`;
+        html += `</div>`;
+
+        html += `<div class="om-table-footer">`;
+        html += `<div class="om-table-footer-row">`;
+        html += `<div class="form-group">`;
+        html += `<label class="control-label">Notas</label>`;
+        html += `<textarea class="form-control om-table-notes" data-table-index="${table_index}" placeholder="Notas de esta tabla...">${table_notes}</textarea>`;
+        html += `</div>`;
+        html += `<div class="form-group">`;
+        html += `<label class="control-label">Archivo adjunto</label>`;
+        html += `<div class="om-attachment-actions">`;
+        html += `<button class="btn btn-xs btn-default om-attach-file" data-table-index="${table_index}">Adjuntar</button>`;
+        if (attachment_value) {
+            html += `<a class="om-attachment-link" href="${attachment_href}" target="_blank">${attachment_label}</a>`;
+            html += `<button class="btn btn-xs btn-default om-remove-attachment" data-table-index="${table_index}">Quitar</button>`;
+        } else {
+            html += `<span class="small text-muted">Sin archivo</span>`;
+        }
+        html += `</div>`;
+        html += `</div>`;
+        html += `</div>`;
         html += `</div>`;
 
         html += `</div>`;
@@ -611,6 +677,55 @@ function bind_om_builder_events(frm) {
 
         table.unit = ($(this).val() || "").toString();
         queue_om_backend_sync(frm);
+    });
+
+    $wrapper.on("input.om_builder", ".om-table-notes", function () {
+        const table_index = om_to_int($(this).data("tableIndex"), -1);
+        const state = frm.__om_tables_state || [];
+        const table = state[table_index];
+        if (!table) return;
+
+        table.notes = ($(this).val() || "").toString();
+        queue_om_backend_sync(frm);
+    });
+
+    $wrapper.on("click.om_builder", ".om-attach-file", function (e) {
+        e.preventDefault();
+
+        if (frm.is_new()) {
+            frappe.msgprint(__("Guarda la Orden de Compra antes de adjuntar archivos en tablas flexibles."));
+            return;
+        }
+
+        const table_index = om_to_int($(this).data("tableIndex"), -1);
+        const state = frm.__om_tables_state || [];
+        const table = state[table_index];
+        if (!table) return;
+
+        new frappe.ui.FileUploader({
+            doctype: frm.doctype,
+            docname: frm.doc.name,
+            folder: "Home/Attachments",
+            allow_multiple: false,
+            on_success: file_doc => {
+                table.attachment = (file_doc && (file_doc.file_url || file_doc.file_name || file_doc.name)) || "";
+                sync_om_tables_state_to_backend(frm, false);
+                render_om_tables_builder(frm);
+            }
+        });
+    });
+
+    $wrapper.on("click.om_builder", ".om-remove-attachment", function (e) {
+        e.preventDefault();
+
+        const table_index = om_to_int($(this).data("tableIndex"), -1);
+        const state = frm.__om_tables_state || [];
+        const table = state[table_index];
+        if (!table) return;
+
+        table.attachment = "";
+        sync_om_tables_state_to_backend(frm, false);
+        render_om_tables_builder(frm);
     });
 
     $wrapper.on("click.om_builder", ".om-add-column", function (e) {

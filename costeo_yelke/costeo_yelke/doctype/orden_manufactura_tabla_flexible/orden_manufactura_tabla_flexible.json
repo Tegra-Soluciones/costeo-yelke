@@ -11,7 +11,8 @@
   "fila",
   "columna",
   "valor",
-  "notas"
+  "notas",
+  "archivo"
  ],
  "fields": [
   {
@@ -48,6 +49,11 @@
    "fieldname": "notas",
    "fieldtype": "Small Text",
    "label": "Notas"
+  },
+  {
+   "fieldname": "archivo",
+   "fieldtype": "Attach",
+   "label": "Archivo"
   }
  ],
  "grid_page_length": 50,
