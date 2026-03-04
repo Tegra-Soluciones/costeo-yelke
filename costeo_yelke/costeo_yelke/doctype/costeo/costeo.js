@@ -2925,6 +2925,8 @@ function render_detail_row(detalle, items_cache) {
 // EDITOR MODAL
 // =============================================================================
 
+const MODAL_ITEM_SUPPLIERS_CACHE = {};
+
 function open_detail_editor(frm, finished_item) {
     let materiales = (frm.doc[DB.T2.FIELD_NAME] || [])
         .filter(r => r[DB.T2.FINISHED_ITEM] === finished_item)
@@ -3268,9 +3270,75 @@ function setup_modal_row_events(grid, grid_row) {
     
     let row = grid_row.doc;
     
+    apply_modal_supplier_filter(grid, grid_row, row);
     setup_item_select_event(grid, grid_row, row);
     setup_supplier_select_event(grid, grid_row, row);
     setup_qty_change_event(grid, grid_row, row);
+}
+
+function get_modal_item_suppliers(item_code, callback) {
+    if (!item_code) {
+        callback([]);
+        return;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(MODAL_ITEM_SUPPLIERS_CACHE, item_code)) {
+        callback(MODAL_ITEM_SUPPLIERS_CACHE[item_code]);
+        return;
+    }
+
+    frappe.call({
+        method: "frappe.client.get",
+        args: {
+            doctype: "Item",
+            name: item_code
+        },
+        callback: function(r) {
+            const suppliers = ((r.message && r.message.supplier_items) || [])
+                .map(d => d.supplier)
+                .filter(Boolean);
+
+            MODAL_ITEM_SUPPLIERS_CACHE[item_code] = suppliers;
+            callback(suppliers);
+        },
+        error: function() {
+            MODAL_ITEM_SUPPLIERS_CACHE[item_code] = [];
+            callback([]);
+        }
+    });
+}
+
+function apply_modal_supplier_filter(grid, grid_row, row) {
+    const field = grid_row.get_field(DB.T2.SUPPLIER);
+    if (!field || !field.df) return;
+
+    const item_code = row[DB.T2.ITEM];
+    if (!item_code) {
+        field.df.get_query = () => ({});
+        return;
+    }
+
+    row.__supplier_filter_item = item_code;
+    get_modal_item_suppliers(item_code, suppliers => {
+        if (row.__supplier_filter_item !== item_code) return;
+
+        const supplier_list = suppliers || [];
+        field.df.get_query = () => {
+            if (!supplier_list.length) {
+                return { filters: { name: ["in", ["__no_supplier_match__"]] } };
+            }
+            return { filters: { name: ["in", supplier_list] } };
+        };
+
+        if (row[DB.T2.SUPPLIER] && !supplier_list.includes(row[DB.T2.SUPPLIER])) {
+            row[DB.T2.SUPPLIER] = "";
+            row[DB.T2.UNIT_PRICE] = 0;
+            row[DB.T2.SUP_UOM] = "";
+            row[DB.T2.SUP_QTY] = 0;
+            row[DB.T2.TOTAL] = 0;
+            grid.refresh_row(row.name);
+        }
+    });
 }
 
 function setup_item_select_event(grid, grid_row, row) {
@@ -3280,6 +3348,7 @@ function setup_item_select_event(grid, grid_row, row) {
         field.$input.on('awesomplete-selectcomplete.modal_auto', function() {
             setTimeout(() => {
                 if (row[DB.T2.ITEM]) {
+                    apply_modal_supplier_filter(grid, grid_row, row);
                     frappe.db.get_value('Item', row[DB.T2.ITEM], 'stock_uom', (r) => {
                         if (r && r.stock_uom) {
                             row[DB.T2.INT_UOM] = r.stock_uom;
@@ -3292,6 +3361,22 @@ function setup_item_select_event(grid, grid_row, row) {
                     });
                 }
             }, 250);
+        });
+
+        field.$input.off('change.modal_item_filter');
+        field.$input.on('change.modal_item_filter', function() {
+            setTimeout(() => {
+                apply_modal_supplier_filter(grid, grid_row, row);
+
+                if (!row[DB.T2.ITEM]) {
+                    row[DB.T2.SUPPLIER] = "";
+                    row[DB.T2.UNIT_PRICE] = 0;
+                    row[DB.T2.SUP_UOM] = "";
+                    row[DB.T2.SUP_QTY] = 0;
+                    row[DB.T2.TOTAL] = 0;
+                    grid.refresh_row(row.name);
+                }
+            }, 150);
         });
     }
 }
