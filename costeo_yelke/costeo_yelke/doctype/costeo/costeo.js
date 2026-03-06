@@ -2926,6 +2926,7 @@ function render_detail_row(detalle, items_cache) {
 // =============================================================================
 
 const MODAL_ITEM_SUPPLIERS_CACHE = {};
+const MODAL_ITEM_SUPPLIERS_PENDING = {};
 
 function open_detail_editor(frm, finished_item) {
     let materiales = (frm.doc[DB.T2.FIELD_NAME] || [])
@@ -2938,11 +2939,31 @@ function open_detail_editor(frm, finished_item) {
     // Obtener el producto para el shipping_cost
     let producto = (frm.doc[DB.T1.FIELD_NAME] || []).find(p => p[DB.T1.ITEM] === finished_item);
     let shipping_cost = producto ? flt(producto[DB.T1.SHIP_COST]) : 0;
-    
-    let dialog = create_editor_dialog(finished_item, etapas, materiales, shipping_cost, frm);
-    dialog.show();
-    
-    setup_dialog_events(dialog);
+
+    preload_modal_initial_supplier_cache(materiales, () => {
+        let dialog = create_editor_dialog(finished_item, etapas, materiales, shipping_cost, frm);
+        dialog.show();
+        setup_dialog_events(dialog);
+    });
+}
+
+function preload_modal_initial_supplier_cache(materiales, callback) {
+    const items = Array.from(
+        new Set((materiales || []).map(r => r && r[DB.T2.ITEM]).filter(Boolean))
+    ).filter(item_code => !Object.prototype.hasOwnProperty.call(MODAL_ITEM_SUPPLIERS_CACHE, item_code));
+
+    if (!items.length) {
+        if (callback) callback();
+        return;
+    }
+
+    let pending = items.length;
+    items.forEach(item_code => {
+        preload_modal_item_suppliers(null, item_code, () => {
+            pending -= 1;
+            if (pending <= 0 && callback) callback();
+        });
+    });
 }
 
 function create_editor_dialog(finished_item, etapas, materiales, shipping_cost, frm) {
@@ -3248,9 +3269,12 @@ function setup_etapa_row_events(grid, grid_row) {
 
 function setup_materiales_grid_events(dialog) {
     let grid = dialog.fields_dict.detalle_temp.grid;
+    setup_modal_item_query(grid);
+    setup_modal_supplier_query(grid);
     
     setTimeout(() => {
         grid.grid_rows.forEach(grid_row => setup_modal_row_events(grid, grid_row));
+        preload_modal_grid_supplier_filters(grid);
     }, 300);
     
     let original_add_row = grid.add_new_row;
@@ -3258,7 +3282,9 @@ function setup_materiales_grid_events(dialog) {
         let result = original_add_row.call(this, idx, callback, show);
         setTimeout(() => {
             if (grid.grid_rows && grid.grid_rows.length > 0) {
-                setup_modal_row_events(grid, grid.grid_rows[grid.grid_rows.length - 1]);
+                let new_row = grid.grid_rows[grid.grid_rows.length - 1];
+                setup_modal_row_events(grid, new_row);
+                preload_modal_row_supplier_filter(grid, new_row.doc);
             }
         }, 200);
         return result;
@@ -3270,22 +3296,90 @@ function setup_modal_row_events(grid, grid_row) {
     
     let row = grid_row.doc;
     
-    apply_modal_supplier_filter(grid, grid_row, row);
+    bind_modal_item_query_to_row(grid, grid_row);
+    bind_modal_supplier_query_to_row(grid, grid_row);
     setup_item_select_event(grid, grid_row, row);
     setup_supplier_select_event(grid, grid_row, row);
     setup_qty_change_event(grid, grid_row, row);
 }
 
-function get_modal_item_suppliers(item_code, callback) {
+function get_modal_grid_rows_docs(grid) {
+    if (grid && Array.isArray(grid.grid_rows) && grid.grid_rows.length) {
+        return grid.grid_rows.map(r => r.doc).filter(Boolean);
+    }
+    if (grid && Array.isArray(grid.data)) {
+        return grid.data;
+    }
+    return [];
+}
+
+function get_modal_supplier_empty_query() {
+    return { filters: { name: ["in", ["__no_supplier_match__"]] } };
+}
+
+function resolve_modal_query_row(doc, cdt, cdn) {
+    if (cdt && cdn && locals[cdt] && locals[cdt][cdn]) {
+        return locals[cdt][cdn];
+    }
+    if (doc && typeof doc === "object") {
+        return doc;
+    }
+    return null;
+}
+
+function refresh_modal_row(grid, row) {
+    if (row && row.name) {
+        grid.refresh_row(row.name);
+        return;
+    }
+    grid.refresh();
+}
+
+function clear_modal_row_supplier_values(row) {
+    row[DB.T2.SUPPLIER] = "";
+    row[DB.T2.UNIT_PRICE] = 0;
+    row[DB.T2.SUP_UOM] = "";
+    row[DB.T2.SUP_QTY] = 0;
+    row[DB.T2.TOTAL] = 0;
+}
+
+function apply_modal_item_suppliers_to_rows(grid, item_code, suppliers) {
+    if (!item_code) return;
+
+    const supplier_list = Array.from(new Set((suppliers || []).filter(Boolean)));
+    const rows = get_modal_grid_rows_docs(grid);
+
+    rows.forEach(row => {
+        if (!row || row[DB.T2.ITEM] !== item_code) return;
+
+        row.__modal_allowed_suppliers = supplier_list;
+        if (row[DB.T2.SUPPLIER] && !supplier_list.includes(row[DB.T2.SUPPLIER])) {
+            clear_modal_row_supplier_values(row);
+        }
+
+        refresh_modal_row(grid, row);
+    });
+}
+
+function preload_modal_item_suppliers(grid, item_code, callback) {
     if (!item_code) {
-        callback([]);
+        if (callback) callback([]);
         return;
     }
 
     if (Object.prototype.hasOwnProperty.call(MODAL_ITEM_SUPPLIERS_CACHE, item_code)) {
-        callback(MODAL_ITEM_SUPPLIERS_CACHE[item_code]);
+        if (callback) callback(MODAL_ITEM_SUPPLIERS_CACHE[item_code]);
         return;
     }
+
+    if (MODAL_ITEM_SUPPLIERS_PENDING[item_code]) {
+        if (callback) {
+            MODAL_ITEM_SUPPLIERS_PENDING[item_code].push(callback);
+        }
+        return;
+    }
+
+    MODAL_ITEM_SUPPLIERS_PENDING[item_code] = callback ? [callback] : [];
 
     frappe.call({
         method: "frappe.client.get",
@@ -3296,49 +3390,153 @@ function get_modal_item_suppliers(item_code, callback) {
         callback: function(r) {
             const suppliers = ((r.message && r.message.supplier_items) || [])
                 .map(d => d.supplier)
-                .filter(Boolean);
+                .filter(Boolean)
+                .filter((supplier, index, arr) => arr.indexOf(supplier) === index);
 
             MODAL_ITEM_SUPPLIERS_CACHE[item_code] = suppliers;
-            callback(suppliers);
+            apply_modal_item_suppliers_to_rows(grid, item_code, suppliers);
+
+            const waiters = MODAL_ITEM_SUPPLIERS_PENDING[item_code] || [];
+            delete MODAL_ITEM_SUPPLIERS_PENDING[item_code];
+            waiters.forEach(fn => {
+                if (typeof fn === "function") fn(suppliers);
+            });
         },
         error: function() {
             MODAL_ITEM_SUPPLIERS_CACHE[item_code] = [];
-            callback([]);
+            apply_modal_item_suppliers_to_rows(grid, item_code, []);
+
+            const waiters = MODAL_ITEM_SUPPLIERS_PENDING[item_code] || [];
+            delete MODAL_ITEM_SUPPLIERS_PENDING[item_code];
+            waiters.forEach(fn => {
+                if (typeof fn === "function") fn([]);
+            });
         }
     });
 }
 
-function apply_modal_supplier_filter(grid, grid_row, row) {
-    const field = grid_row.get_field(DB.T2.SUPPLIER);
-    if (!field || !field.df) return;
+function preload_modal_row_supplier_filter(grid, row) {
+    if (!row) return;
 
     const item_code = row[DB.T2.ITEM];
     if (!item_code) {
-        field.df.get_query = () => ({});
+        row.__modal_allowed_suppliers = [];
+        if (row[DB.T2.SUPPLIER]) {
+            clear_modal_row_supplier_values(row);
+            refresh_modal_row(grid, row);
+        }
         return;
     }
 
-    row.__supplier_filter_item = item_code;
-    get_modal_item_suppliers(item_code, suppliers => {
-        if (row.__supplier_filter_item !== item_code) return;
-
-        const supplier_list = suppliers || [];
-        field.df.get_query = () => {
-            if (!supplier_list.length) {
-                return { filters: { name: ["in", ["__no_supplier_match__"]] } };
-            }
-            return { filters: { name: ["in", supplier_list] } };
-        };
-
-        if (row[DB.T2.SUPPLIER] && !supplier_list.includes(row[DB.T2.SUPPLIER])) {
-            row[DB.T2.SUPPLIER] = "";
-            row[DB.T2.UNIT_PRICE] = 0;
-            row[DB.T2.SUP_UOM] = "";
-            row[DB.T2.SUP_QTY] = 0;
-            row[DB.T2.TOTAL] = 0;
-            grid.refresh_row(row.name);
-        }
+    preload_modal_item_suppliers(grid, item_code, () => {
+        refresh_modal_row(grid, row);
     });
+}
+
+function preload_modal_grid_supplier_filters(grid) {
+    const rows = get_modal_grid_rows_docs(grid);
+    const unique_items = Array.from(new Set(rows.map(r => r && r[DB.T2.ITEM]).filter(Boolean)));
+    unique_items.forEach(item_code => preload_modal_item_suppliers(grid, item_code, () => {}));
+}
+
+function get_modal_item_query_function(grid) {
+    if (grid.__modal_item_query_fn) {
+        return grid.__modal_item_query_fn;
+    }
+
+    grid.__modal_item_query_fn = function(doc, cdt, cdn) {
+        const row = resolve_modal_query_row(doc, cdt, cdn);
+        if (!row) return {};
+
+        const group_filter = typeof get_item_group_filter === "function"
+            ? get_item_group_filter(row[DB.T2.CONCEPT_TYPE])
+            : "";
+
+        if (Array.isArray(group_filter) && group_filter.length) {
+            return { filters: { item_group: ["in", group_filter] } };
+        }
+        if (group_filter) {
+            return { filters: { item_group: group_filter } };
+        }
+        return {};
+    };
+
+    return grid.__modal_item_query_fn;
+}
+
+function get_modal_supplier_query_function(grid) {
+    if (grid.__modal_supplier_query_fn) {
+        return grid.__modal_supplier_query_fn;
+    }
+
+    grid.__modal_supplier_query_fn = function(doc, cdt, cdn) {
+        const row = resolve_modal_query_row(doc, cdt, cdn);
+        if (!row || !row[DB.T2.ITEM]) {
+            return get_modal_supplier_empty_query();
+        }
+
+        const item_code = row[DB.T2.ITEM];
+        if (!Object.prototype.hasOwnProperty.call(MODAL_ITEM_SUPPLIERS_CACHE, item_code)) {
+            preload_modal_item_suppliers(grid, item_code, () => {
+                refresh_modal_row(grid, row);
+            });
+            return get_modal_supplier_empty_query();
+        }
+
+        const suppliers = MODAL_ITEM_SUPPLIERS_CACHE[item_code] || [];
+        row.__modal_allowed_suppliers = suppliers;
+        if (!suppliers.length) {
+            return get_modal_supplier_empty_query();
+        }
+
+        return { filters: { name: ["in", suppliers] } };
+    };
+
+    return grid.__modal_supplier_query_fn;
+}
+
+function setup_modal_item_query(grid) {
+    if (!grid || typeof grid.get_field !== "function") return;
+    const item_df = grid.get_field(DB.T2.ITEM);
+    if (!item_df) return;
+
+    const query_fn = get_modal_item_query_function(grid);
+    item_df.get_query = query_fn;
+    if (item_df.df) {
+        item_df.df.get_query = query_fn;
+    }
+}
+
+function setup_modal_supplier_query(grid) {
+    if (!grid || typeof grid.get_field !== "function") return;
+    const supplier_df = grid.get_field(DB.T2.SUPPLIER);
+    if (!supplier_df) return;
+
+    const query_fn = get_modal_supplier_query_function(grid);
+    supplier_df.get_query = query_fn;
+    if (supplier_df.df) {
+        supplier_df.df.get_query = query_fn;
+    }
+}
+
+function bind_modal_supplier_query_to_row(grid, grid_row) {
+    const field = grid_row.get_field(DB.T2.SUPPLIER);
+    if (!field) return;
+    const query_fn = get_modal_supplier_query_function(grid);
+    field.get_query = query_fn;
+    if (field.df) {
+        field.df.get_query = query_fn;
+    }
+}
+
+function bind_modal_item_query_to_row(grid, grid_row) {
+    const field = grid_row.get_field(DB.T2.ITEM);
+    if (!field) return;
+    const query_fn = get_modal_item_query_function(grid);
+    field.get_query = query_fn;
+    if (field.df) {
+        field.df.get_query = query_fn;
+    }
 }
 
 function setup_item_select_event(grid, grid_row, row) {
@@ -3348,7 +3546,7 @@ function setup_item_select_event(grid, grid_row, row) {
         field.$input.on('awesomplete-selectcomplete.modal_auto', function() {
             setTimeout(() => {
                 if (row[DB.T2.ITEM]) {
-                    apply_modal_supplier_filter(grid, grid_row, row);
+                    preload_modal_row_supplier_filter(grid, row);
                     frappe.db.get_value('Item', row[DB.T2.ITEM], 'stock_uom', (r) => {
                         if (r && r.stock_uom) {
                             row[DB.T2.INT_UOM] = r.stock_uom;
@@ -3366,14 +3564,10 @@ function setup_item_select_event(grid, grid_row, row) {
         field.$input.off('change.modal_item_filter');
         field.$input.on('change.modal_item_filter', function() {
             setTimeout(() => {
-                apply_modal_supplier_filter(grid, grid_row, row);
+                preload_modal_row_supplier_filter(grid, row);
 
                 if (!row[DB.T2.ITEM]) {
-                    row[DB.T2.SUPPLIER] = "";
-                    row[DB.T2.UNIT_PRICE] = 0;
-                    row[DB.T2.SUP_UOM] = "";
-                    row[DB.T2.SUP_QTY] = 0;
-                    row[DB.T2.TOTAL] = 0;
+                    clear_modal_row_supplier_values(row);
                     grid.refresh_row(row.name);
                 }
             }, 150);
@@ -3467,9 +3661,7 @@ function calculate_modal_row(grid, row) {
     let int_qty = flt(row[DB.T2.INT_QTY]);
     let factor = flt(row[DB.T2.CONV_FACTOR]) || 1;
     let price = flt(row[DB.T2.UNIT_PRICE]);
-    let sup_qty_raw = int_qty / factor;
-
-    row[DB.T2.SUP_QTY] = Math.ceil(sup_qty_raw);
+    row[DB.T2.SUP_QTY] = int_qty / factor;
     row[DB.T2.TOTAL] = row[DB.T2.SUP_QTY] * price;
     
     grid.refresh_row(row.name);
