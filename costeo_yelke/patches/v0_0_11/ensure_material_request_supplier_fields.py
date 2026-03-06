@@ -4,5 +4,5 @@ from costeo_yelke.setup.material_request_supplier_fields import (
 
 
 def execute():
-    """Expose supplier on Production Plan raw materials and Material Request items."""
     ensure_material_request_supplier_fields()
+

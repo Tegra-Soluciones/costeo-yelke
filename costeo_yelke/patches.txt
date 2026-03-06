@@ -13,3 +13,4 @@ costeo_yelke.patches.v0_0_7.reorder_purchase_order_om_fields
 costeo_yelke.patches.v0_0_8.fix_purchase_order_om_insert_after_chain
 costeo_yelke.patches.v0_0_9.add_sales_order_costeo_link
 costeo_yelke.patches.v0_0_10.ensure_purchase_order_om_setup
+costeo_yelke.patches.v0_0_11.ensure_material_request_supplier_fields

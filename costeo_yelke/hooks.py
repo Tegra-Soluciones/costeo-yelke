@@ -85,7 +85,11 @@ doctype_js = {
 # ------------
 
 # before_install = "costeo_yelke.install.before_install"
-# after_install = "costeo_yelke.install.after_install"
+after_install = "costeo_yelke.setup.material_request_supplier_fields.after_install"
+
+after_migrate = [
+	"costeo_yelke.setup.material_request_supplier_fields.ensure_material_request_supplier_fields"
+]
 
 # Uninstallation
 # ------------

@@ -65,7 +65,7 @@ function create_editor_dialog(finished_item, etapas, materiales, shipping_cost, 
 
 function get_dialog_fields(etapas, materiales, shipping_cost) {
     return [
-        { fieldname: "section_shipping", fieldtype: "Section Break", label: "💰 Costos de Envío" },
+        { fieldname: "section_shipping", fieldtype: "Section Break", label: "Costos de Envio" },
         {
             fieldname: "shipping_cost_temp",
             fieldtype: "Currency",
@@ -73,7 +73,7 @@ function get_dialog_fields(etapas, materiales, shipping_cost) {
             description: "Ingresa el costo de envío por unidad de producto",
             default: shipping_cost
         },
-        { fieldname: "section_etapas", fieldtype: "Section Break", label: "🔧 Etapas de Producción" },
+        { fieldname: "section_etapas", fieldtype: "Section Break", label: "Etapas de Produccion" },
         {
             fieldname: "etapas_temp",
             fieldtype: "Table",
@@ -89,7 +89,7 @@ function get_dialog_fields(etapas, materiales, shipping_cost) {
                 { fieldname: DB.T3.SUBENSAMBLAJE, label: "Sub-ensamblaje", fieldtype: "Link", options: "Item", in_list_view: 1, columns: 2 }
             ]
         },
-        { fieldname: "section_materiales", fieldtype: "Section Break", label: "📦 Materiales y Servicios" },
+        { fieldname: "section_materiales", fieldtype: "Section Break", label: "Materia Prima" },
         {
             fieldname: "detalle_temp",
             fieldtype: "Table",
@@ -111,7 +111,7 @@ function get_dialog_fields(etapas, materiales, shipping_cost) {
                 { fieldname: DB.T2.CONCEPT_TYPE, fieldtype: "Data", hidden: 1 }
             ]
         },
-        { fieldname: "section_instrucciones", fieldtype: "Section Break", label: "📋 Instrucciones" },
+        { fieldname: "section_instrucciones", fieldtype: "Section Break", label: "Instrucciones" },
         {
             fieldname: "instrucciones_html",
             fieldtype: "HTML",
@@ -414,9 +414,12 @@ function refresh_modal_row(grid, row) {
 
 function clear_modal_row_supplier_values(row) {
     row[DB.T2.SUPPLIER] = "";
+    clear_modal_supplier_price_values(row);
+}
+
+function clear_modal_supplier_price_values(row) {
     row[DB.T2.UNIT_PRICE] = 0;
     row[DB.T2.SUP_UOM] = "";
-    row[DB.T2.SUP_QTY] = 0;
     row[DB.T2.TOTAL] = 0;
 }
 
@@ -521,21 +524,9 @@ function get_modal_item_query_function(grid) {
         return grid.__modal_item_query_fn;
     }
 
-    grid.__modal_item_query_fn = function(doc, cdt, cdn) {
-        const row = resolve_modal_query_row(doc, cdt, cdn);
-        if (!row) return {};
-
-        const group_filter = typeof get_item_group_filter === "function"
-            ? get_item_group_filter(row[DB.T2.CONCEPT_TYPE])
-            : "";
-
-        if (Array.isArray(group_filter) && group_filter.length) {
-            return { filters: { item_group: ["in", group_filter] } };
-        }
-        if (group_filter) {
-            return { filters: { item_group: group_filter } };
-        }
-        return {};
+    const raw_material_groups = Array.from(new Set([DB.GROUPS.RAW, "Materia prima", "Materia Prima"]));
+    grid.__modal_item_query_fn = function() {
+        return { filters: { item_group: ["in", raw_material_groups] } };
     };
 
     return grid.__modal_item_query_fn;
@@ -662,6 +653,37 @@ function setup_supplier_select_event(grid, grid_row, row) {
                     fetch_modal_item_price(grid, row);
                 }
             }, 250);
+        });
+
+        field.$input.off('change.modal_auto');
+        field.$input.on('change.modal_auto', function() {
+            setTimeout(() => {
+                const input_value = ((field.$input && field.$input.val()) || "").trim();
+                if (!input_value) {
+                    row[DB.T2.SUPPLIER] = "";
+                    clear_modal_supplier_price_values(row);
+                    refresh_modal_row(grid, row);
+                    return;
+                }
+
+                if (row[DB.T2.ITEM] && row[DB.T2.SUPPLIER]) {
+                    fetch_modal_item_price(grid, row);
+                    return;
+                }
+                clear_modal_supplier_price_values(row);
+                refresh_modal_row(grid, row);
+            }, 120);
+        });
+    }
+
+    if (field && field.$input_area) {
+        field.$input_area.off('click.modal_clear_supplier', '.btn-clear');
+        field.$input_area.on('click.modal_clear_supplier', '.btn-clear', function() {
+            setTimeout(() => {
+                row[DB.T2.SUPPLIER] = "";
+                clear_modal_supplier_price_values(row);
+                refresh_modal_row(grid, row);
+            }, 80);
         });
     }
 }

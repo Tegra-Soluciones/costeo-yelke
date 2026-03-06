@@ -13,6 +13,11 @@ function setup_automation_buttons(frm) {
             () => unlock_and_prefill_production_plan_tab(frm),
             __('Automatización')
         );
+        frm.add_custom_button(
+            __('Reiniciar BOMs y Subcontracting'),
+            () => reset_boms_and_subcontracting(frm),
+            __('Mantenimiento')
+        );
     }
 }
 
