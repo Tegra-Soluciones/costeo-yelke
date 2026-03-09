@@ -78,11 +78,25 @@ def _make_supplier_purchase_order(material_request_name, supplier, row_names):
     if not po_doc.get("items"):
         return None
 
+    _set_purchase_order_custom_abbr(po_doc)
     _apply_supplier_item_prices(po_doc)
 
     po_doc.flags.ignore_permissions = 1
     po_doc.insert()
     return po_doc
+
+
+def _set_purchase_order_custom_abbr(po_doc):
+    if not po_doc or not po_doc.get("company"):
+        return
+
+    if not frappe.get_meta("Purchase Order").has_field("custom_abbr"):
+        return
+
+    if po_doc.get("custom_abbr"):
+        return
+
+    po_doc.custom_abbr = (po_doc.get("company") or "")[:3].upper()
 
 
 def _get_buying_price_list(po_doc):

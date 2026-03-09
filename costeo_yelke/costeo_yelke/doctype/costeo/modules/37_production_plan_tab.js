@@ -200,9 +200,9 @@ function setup_production_plan_automation_buttons(frm) {
     if (!is_pp_tab_unlocked(frm)) return;
     if (frm.is_new() || frm.doc.__unsaved) return;
 
-    frm.add_custom_button(__("Crear Work Orders"), () => frm.trigger("pp_make_work_orders"), __("Crear"));
-    frm.add_custom_button(__("Crear Subcontracting PO"), () => frm.trigger("pp_make_subcontracting_po"), __("Crear"));
     frm.add_custom_button(__("Crear Solicitud Materia Prima"), () => frm.trigger("pp_make_material_request"), __("Crear"));
+    frm.add_custom_button(__("Crear Subcontracting PO"), () => frm.trigger("pp_make_subcontracting_po"), __("Crear"));
+    frm.add_custom_button(__("Crear Work Order"), () => frm.trigger("pp_make_work_orders"), __("Crear"));
     style_create_actions_button(frm);
 }
 

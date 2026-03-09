@@ -4,9 +4,9 @@
 
 function setup_automation_buttons(frm) {
     if (frm.doc.docstatus === 0) {
+        frm.add_custom_button(__('Crear Cotización'), () => create_quotation_from_costeo(frm), __('Automatización'));
         frm.add_custom_button(__('Crear BOMs'), () => create_boms_from_costeo(frm), __('Automatización'));
         frm.add_custom_button(__('Crear Subcontracting BOMs'), () => create_subcontracting_boms(frm), __('Automatización'));
-        frm.add_custom_button(__('Crear Cotización'), () => create_quotation_from_costeo(frm), __('Automatización'));
         frm.add_custom_button(__('Crear Orden de Venta'), () => create_sales_order_from_costeo(frm), __('Automatización'));
         frm.add_custom_button(
             __('Desbloquear y Prellenar Plan de Producción'),

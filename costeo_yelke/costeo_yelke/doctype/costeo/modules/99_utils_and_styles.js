@@ -64,6 +64,15 @@ function inject_css() {
                 border-color: #111111 !important;
                 color: #ffffff !important;
             }
+
+            .costeo-black-create-btn .icon,
+            .costeo-black-create-btn .es-icon,
+            .costeo-black-create-btn svg,
+            .costeo-black-create-btn svg use {
+                color: #ffffff !important;
+                fill: #ffffff !important;
+                stroke: #ffffff !important;
+            }
             
             .tree-product { 
                 border: 1px solid #e4e7eb;

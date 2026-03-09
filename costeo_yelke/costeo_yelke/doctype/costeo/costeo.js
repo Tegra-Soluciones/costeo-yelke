@@ -241,9 +241,9 @@ function cleanup_related_rows_for_item(frm, finished_item) {
 
 function setup_automation_buttons(frm) {
     if (frm.doc.docstatus === 0) {
+        frm.add_custom_button(__('Crear Cotización'), () => create_quotation_from_costeo(frm), __('Automatización'));
         frm.add_custom_button(__('Crear BOMs'), () => create_boms_from_costeo(frm), __('Automatización'));
         frm.add_custom_button(__('Crear Subcontracting BOMs'), () => create_subcontracting_boms(frm), __('Automatización'));
-        frm.add_custom_button(__('Crear Cotización'), () => create_quotation_from_costeo(frm), __('Automatización'));
         frm.add_custom_button(__('Crear Orden de Venta'), () => create_sales_order_from_costeo(frm), __('Automatización'));
         frm.add_custom_button(
             __('Desbloquear y Prellenar Plan de Producción'),
@@ -871,9 +871,9 @@ function setup_production_plan_automation_buttons(frm) {
     if (!is_pp_tab_unlocked(frm)) return;
     if (frm.is_new() || frm.doc.__unsaved) return;
 
-    frm.add_custom_button(__("Crear Work Orders"), () => frm.trigger("pp_make_work_orders"), __("Crear"));
-    frm.add_custom_button(__("Crear Subcontracting PO"), () => frm.trigger("pp_make_subcontracting_po"), __("Crear"));
     frm.add_custom_button(__("Crear Solicitud Materia Prima"), () => frm.trigger("pp_make_material_request"), __("Crear"));
+    frm.add_custom_button(__("Crear Subcontracting PO"), () => frm.trigger("pp_make_subcontracting_po"), __("Crear"));
+    frm.add_custom_button(__("Crear Work Order"), () => frm.trigger("pp_make_work_orders"), __("Crear"));
     style_create_actions_button(frm);
 }
 
@@ -4216,6 +4216,15 @@ function inject_css() {
                 border-color: #111111 !important;
                 color: #ffffff !important;
             }
+
+            .costeo-black-create-btn .icon,
+            .costeo-black-create-btn .es-icon,
+            .costeo-black-create-btn svg,
+            .costeo-black-create-btn svg use {
+                color: #ffffff !important;
+                fill: #ffffff !important;
+                stroke: #ffffff !important;
+            }
             
             .tree-product { 
                 border: 1px solid #e4e7eb;
@@ -4656,4 +4665,3 @@ function inject_css() {
     `;
     $('head').append(css);
 }
-
