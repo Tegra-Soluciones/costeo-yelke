@@ -78,9 +78,77 @@ def _make_supplier_purchase_order(material_request_name, supplier, row_names):
     if not po_doc.get("items"):
         return None
 
+    _apply_supplier_item_prices(po_doc)
+
     po_doc.flags.ignore_permissions = 1
     po_doc.insert()
     return po_doc
+
+
+def _get_buying_price_list(po_doc):
+    return po_doc.get("buying_price_list") or frappe.db.get_single_value("Buying Settings", "buying_price_list")
+
+
+def _get_supplier_item_rate(po_doc, po_item, price_list):
+    from erpnext.stock.get_item_details import get_item_price
+
+    uom = po_item.get("uom")
+    stock_uom = po_item.get("stock_uom") or uom
+    conversion_factor = flt(po_item.get("conversion_factor")) or 1
+
+    item_price_args = {
+        "price_list": price_list,
+        "supplier": po_doc.get("supplier"),
+        "uom": uom,
+        "transaction_date": po_doc.get("transaction_date"),
+    }
+    item_price_data = get_item_price(item_price_args, po_item.get("item_code"))
+
+    if not item_price_data and stock_uom and stock_uom != uom:
+        item_price_args["uom"] = stock_uom
+        item_price_data = get_item_price(item_price_args, po_item.get("item_code"))
+
+    if not item_price_data:
+        return None
+
+    price_list_rate = flt(item_price_data[0][1])
+    item_price_uom = item_price_data[0][2]
+
+    if item_price_uom == uom:
+        return price_list_rate
+
+    if po_doc.get("price_list_uom_dependant"):
+        return price_list_rate
+
+    return price_list_rate * conversion_factor
+
+
+def _apply_supplier_item_prices(po_doc):
+    if not po_doc.get("supplier") or not po_doc.get("items"):
+        return
+
+    price_list = _get_buying_price_list(po_doc)
+    if not price_list:
+        return
+
+    po_doc.buying_price_list = price_list
+    has_price_update = False
+
+    for po_item in po_doc.get("items"):
+        if not po_item.get("item_code"):
+            continue
+
+        price_rate = _get_supplier_item_rate(po_doc, po_item, price_list)
+        if price_rate is None:
+            continue
+
+        po_item.price_list_rate = price_rate
+        po_item.rate = price_rate
+        po_item.amount = flt(po_item.get("qty")) * flt(price_rate)
+        has_price_update = True
+
+    if has_price_update:
+        po_doc.calculate_taxes_and_totals()
 
 
 @frappe.whitelist()
