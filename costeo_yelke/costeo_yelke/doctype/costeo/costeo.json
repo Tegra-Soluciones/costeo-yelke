@@ -14,6 +14,9 @@
     "centro_de_costos",
     "almacen_materias_primas",
     "almacen_trabajo_en_proceso",
+    "costeo_status",
+    "es_plantilla",
+    "familia_prenda",
     "section_break_bvbh",
     "costeo_producto",
     "costeo_producto_detalle",
@@ -99,15 +102,15 @@
       "fieldtype": "Link",
       "in_list_view": 1,
       "label": "Cliente",
-      "options": "Customer",
-      "reqd": 1
+      "mandatory_depends_on": "eval:!doc.es_plantilla",
+      "options": "Customer"
     },
     {
       "fieldname": "fecha",
       "fieldtype": "Date",
       "in_list_view": 1,
       "label": "Fecha",
-      "reqd": 1
+      "mandatory_depends_on": "eval:!doc.es_plantilla"
     },
     {
       "fieldname": "column_break_jtie",
@@ -118,8 +121,8 @@
       "fieldtype": "Link",
       "in_list_view": 1,
       "label": "Compañia",
-      "options": "Company",
-      "reqd": 1
+      "mandatory_depends_on": "eval:!doc.es_plantilla",
+      "options": "Company"
     },
     {
       "fieldname": "proyecto",
@@ -132,22 +135,43 @@
       "fieldtype": "Link",
       "in_list_view": 1,
       "label": "Centro de Costos",
-      "options": "Cost Center",
-      "reqd": 1
+      "mandatory_depends_on": "eval:!doc.es_plantilla",
+      "options": "Cost Center"
     },
     {
       "fieldname": "almacen_materias_primas",
       "fieldtype": "Link",
       "label": "Almacén Materias Primas",
-      "options": "Warehouse",
-      "reqd": 1
+      "mandatory_depends_on": "eval:!doc.es_plantilla",
+      "options": "Warehouse"
     },
     {
       "fieldname": "almacen_trabajo_en_proceso",
       "fieldtype": "Link",
       "label": "Almacén Trabajo en Proceso",
-      "options": "Warehouse",
-      "reqd": 1
+      "mandatory_depends_on": "eval:!doc.es_plantilla",
+      "options": "Warehouse"
+    },
+    {
+      "default": "Borrador",
+      "fieldname": "costeo_status",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Estatus",
+      "options": "Borrador\nCotizado\nOrden de Venta\nEn Producción\nCompletado\nCancelado"
+    },
+    {
+      "default": "0",
+      "fieldname": "es_plantilla",
+      "fieldtype": "Check",
+      "in_standard_filter": 1,
+      "label": "Es Plantilla"
+    },
+    {
+      "fieldname": "familia_prenda",
+      "fieldtype": "Data",
+      "in_standard_filter": 1,
+      "label": "Familia de Prenda"
     },
     {
       "fieldname": "section_break_bvbh",
@@ -599,6 +623,7 @@
   ],
   "grid_page_length": 50,
   "index_web_pages_for_search": 1,
+  "is_submittable": 1,
   "links": [],
   "modified": "2026-02-11 15:25:00.000000",
   "modified_by": "Administrator",

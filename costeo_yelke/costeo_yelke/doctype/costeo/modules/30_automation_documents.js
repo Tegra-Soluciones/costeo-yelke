@@ -2,18 +2,158 @@
 // BOTONES DE AUTOMATIZACIÓN
 // =============================================================================
 
+const TEMPLATE_API = {
+    LIST: 'costeo_yelke.api.costeo_template_api.get_costeo_templates',
+    CREATE_FROM: 'costeo_yelke.api.costeo_template_api.create_costeo_from_template',
+    SAVE_AS: 'costeo_yelke.api.costeo_template_api.save_as_template',
+    REFRESH_PRICES: 'costeo_yelke.api.costeo_template_api.refresh_costeo_prices'
+};
+
 function setup_automation_buttons(frm) {
-    if (frm.doc.docstatus === 0) {
-        frm.add_custom_button(__('Crear BOMs'), () => create_boms_from_costeo(frm), __('Automatización'));
-        frm.add_custom_button(__('Crear Subcontracting BOMs'), () => create_subcontracting_boms(frm), __('Automatización'));
-        frm.add_custom_button(__('Crear Cotización'), () => create_quotation_from_costeo(frm), __('Automatización'));
-        frm.add_custom_button(__('Crear Orden de Venta'), () => create_sales_order_from_costeo(frm), __('Automatización'));
-        frm.add_custom_button(
-            __('Desbloquear y Prellenar Plan de Producción'),
-            () => unlock_and_prefill_production_plan_tab(frm),
-            __('Automatización')
-        );
+    if (frm.doc.docstatus !== 0) return;
+
+    // ── Plantillas ──────────────────────────────────────────────────────────
+    if (frm.doc.es_plantilla) {
+        frm.add_custom_button(__('Crear Costeo desde esta Plantilla'),
+            () => create_costeo_from_this_template(frm), __('Plantillas'));
+    } else {
+        frm.add_custom_button(__('Nuevo desde Plantilla'),
+            () => new_costeo_from_template_dialog(frm), __('Plantillas'));
+        if (!frm.is_new()) {
+            frm.add_custom_button(__('Guardar como Plantilla'),
+                () => save_costeo_as_template(frm), __('Plantillas'));
+            frm.add_custom_button(__('Refrescar Precios'),
+                () => refresh_costeo_prices_action(frm), __('Plantillas'));
+        }
     }
+
+    // ── Automatización (solo costeos reales, no plantillas) ──────────────────
+    if (frm.doc.es_plantilla) return;
+
+    frm.add_custom_button(__('Crear BOMs'), () => create_boms_from_costeo(frm), __('Automatización'));
+    frm.add_custom_button(__('Crear Subcontracting BOMs'), () => create_subcontracting_boms(frm), __('Automatización'));
+    frm.add_custom_button(__('Crear Cotización'), () => create_quotation_from_costeo(frm), __('Automatización'));
+    frm.add_custom_button(__('Crear Orden de Venta'), () => create_sales_order_from_costeo(frm), __('Automatización'));
+    frm.add_custom_button(
+        __('Desbloquear y Prellenar Plan de Producción'),
+        () => unlock_and_prefill_production_plan_tab(frm),
+        __('Automatización')
+    );
+}
+
+// ── Acciones de Plantillas ───────────────────────────────────────────────────
+function save_costeo_as_template(frm) {
+    if (frm.is_new()) {
+        show_error('Guarda el Costeo antes de convertirlo en plantilla');
+        return;
+    }
+    frappe.prompt(
+        [{
+            fieldname: 'familia_prenda',
+            fieldtype: 'Data',
+            label: __('Familia de Prenda'),
+            default: frm.doc.familia_prenda || '',
+            reqd: 1,
+            description: __('Ej: Camisola Industrial, Pantalón de Trabajo, Overol')
+        }],
+        (values) => {
+            frappe.call({
+                method: TEMPLATE_API.SAVE_AS,
+                args: { costeo: frm.doc.name, familia_prenda: values.familia_prenda },
+                freeze: true,
+                freeze_message: __('Creando plantilla…'),
+                callback: (r) => {
+                    if (r.message && r.message.name) {
+                        frappe.show_alert({ message: __('Plantilla creada: {0}', [r.message.name]), indicator: 'green' });
+                        frappe.set_route('Form', 'Costeo', r.message.name);
+                    }
+                }
+            });
+        },
+        __('Guardar como Plantilla'),
+        __('Crear Plantilla')
+    );
+}
+
+function refresh_costeo_prices_action(frm) {
+    frappe.confirm(
+        __('¿Actualizar los precios de materias primas y servicios contra las listas de compra vigentes? Se recalcularán los costos.'),
+        () => {
+            frappe.call({
+                method: TEMPLATE_API.REFRESH_PRICES,
+                args: { costeo: frm.doc.name, only_missing: 0 },
+                freeze: true,
+                freeze_message: __('Refrescando precios…'),
+                callback: (r) => {
+                    if (r.message) {
+                        frappe.show_alert({
+                            message: __('{0} precio(s) actualizado(s)', [r.message.updated]),
+                            indicator: 'green'
+                        });
+                        frm.reload_doc();
+                    }
+                }
+            });
+        }
+    );
+}
+
+function create_costeo_from_this_template(frm) {
+    frappe.prompt(
+        [
+            { fieldname: 'cliente', fieldtype: 'Link', options: 'Customer', label: __('Cliente'), reqd: 1 },
+            { fieldname: 'compania', fieldtype: 'Link', options: 'Company', label: __('Compañía'),
+              default: frm.doc.compañia || frappe.defaults.get_user_default('company') }
+        ],
+        (values) => run_create_from_template(frm.doc.name, values.cliente, values.compania),
+        __('Crear Costeo desde Plantilla'),
+        __('Crear')
+    );
+}
+
+function new_costeo_from_template_dialog(frm) {
+    frappe.call({
+        method: TEMPLATE_API.LIST,
+        freeze: true,
+        callback: (r) => {
+            const templates = r.message || [];
+            if (!templates.length) {
+                show_error('No hay plantillas todavía. Crea una desde un Costeo con "Guardar como Plantilla".');
+                return;
+            }
+            const options = templates.map(t =>
+                `${t.name} — ${t.familia_prenda || 'Sin familia'} (${t.productos} prod.)`);
+            const by_label = {};
+            templates.forEach((t, i) => { by_label[options[i]] = t.name; });
+
+            frappe.prompt(
+                [
+                    { fieldname: 'plantilla', fieldtype: 'Select', label: __('Plantilla'), options: options.join('\n'), reqd: 1 },
+                    { fieldname: 'cliente', fieldtype: 'Link', options: 'Customer', label: __('Cliente'), reqd: 1 },
+                    { fieldname: 'compania', fieldtype: 'Link', options: 'Company', label: __('Compañía'),
+                      default: frm.doc.compañia || frappe.defaults.get_user_default('company') }
+                ],
+                (values) => run_create_from_template(by_label[values.plantilla], values.cliente, values.compania),
+                __('Nuevo Costeo desde Plantilla'),
+                __('Crear')
+            );
+        }
+    });
+}
+
+function run_create_from_template(template, cliente, compania) {
+    frappe.call({
+        method: TEMPLATE_API.CREATE_FROM,
+        args: { template, cliente, compania },
+        freeze: true,
+        freeze_message: __('Creando costeo con precios frescos…'),
+        callback: (r) => {
+            if (r.message && r.message.name) {
+                frappe.show_alert({ message: __('Costeo creado: {0}', [r.message.name]), indicator: 'green' });
+                frappe.set_route('Form', 'Costeo', r.message.name);
+            }
+        }
+    });
 }
 
 function create_quotation_from_costeo(frm) {
@@ -329,24 +469,29 @@ function build_subassembly_supplier_map(frm) {
 }
 
 function resolve_required_warehouses(company) {
-    const targets = {
-        raw_materials_label: 'Materia primas',
-        wip_label: 'Trabajos en Proceso'
-    };
-
     return Promise.all([
-        resolve_warehouse_by_label(company, targets.raw_materials_label),
-        resolve_warehouse_by_label(company, targets.wip_label)
+        resolve_warehouse_by_labels(company, ['Materia Prima', 'Materia primas']),
+        resolve_warehouse_by_labels(company, ['Trabajos en Proceso', 'Trabajo en Proceso'])
     ]).then(([raw_wh, wip_wh]) => {
         if (!raw_wh || !wip_wh) {
             let missing = [];
-            if (!raw_wh) missing.push(`Materia primas (almacén de materias primas)`);
+            if (!raw_wh) missing.push(`Materia Prima (almacén de materias primas)`);
             if (!wip_wh) missing.push(`Trabajos en Proceso (almacén de WIP)`);
             show_error(`No se encontraron los almacenes requeridos: ${missing.join(', ')}. Revisa el nombre exacto en Warehouse o dime los nombres correctos.`);
             return null;
         }
         return { raw_materials: raw_wh, wip: wip_wh };
     });
+}
+
+function resolve_warehouse_by_labels(company, labels) {
+    let sequence = Promise.resolve(null);
+
+    (labels || []).forEach(label => {
+        sequence = sequence.then(found => found || resolve_warehouse_by_label(company, label));
+    });
+
+    return sequence;
 }
 
 function resolve_warehouse_by_label(company, label) {

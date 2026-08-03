@@ -1,0 +1,27 @@
+{% extends "templates/base.html" %}
+
+{% block title %}Costeo Yelke{% endblock %}
+
+{% block head_include %}
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<style>
+  body > .navbar,
+  body > .container.page-container,
+  footer.web-footer { display: none !important; }
+  body { overflow: hidden; margin: 0; padding: 0; }
+</style>
+{% endblock %}
+
+{% block style %}
+<link rel="stylesheet" href="/assets/costeo_yelke/costeo-app/assets/index.css" />
+{% endblock %}
+
+{% block content %}
+<div id="app" style="height:100vh;overflow:hidden;"></div>
+{% endblock %}
+
+{% block footer %}{% endblock %}
+
+{% block script %}
+<script type="module" src="/assets/costeo_yelke/costeo-app/assets/index.js"></script>
+{% endblock %}

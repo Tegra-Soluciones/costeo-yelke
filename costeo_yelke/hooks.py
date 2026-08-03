@@ -10,16 +10,25 @@ app_license = "mit"
 
 # required_apps = []
 
-# Each item in the list will be shown as an app in the apps page
-# add_to_apps_screen = [
-# 	{
-# 		"name": "costeo_yelke",
-# 		"logo": "/assets/costeo_yelke/logo.png",
-# 		"title": "Costeo Yelke",
-# 		"route": "/costeo_yelke",
-# 		"has_permission": "costeo_yelke.api.permission.has_app_permission"
-# 	}
-# ]
+fixtures = [
+	{
+		"doctype": "Item Group",
+		"filters": [["name", "in", ["Productos Terminados"]]],
+	}
+]
+
+website_route_rules = [
+	{"from_route": "/costeo-yelke/<path:name>", "to_route": "costeo-yelke"},
+]
+
+add_to_apps_screen = [
+	{
+		"name": "costeo_yelke",
+		"logo": "/assets/costeo_yelke/images/logo.svg",
+		"title": "Costeo Yelke",
+		"route": "/costeo-yelke",
+	}
+]
 
 # Includes in <head>
 # ------------------
@@ -85,7 +94,7 @@ doctype_js = {
 # ------------
 
 # before_install = "costeo_yelke.install.before_install"
-# after_install = "costeo_yelke.install.after_install"
+after_install = "costeo_yelke.install.after_install"
 
 # Uninstallation
 # ------------
@@ -201,13 +210,17 @@ override_whitelisted_methods = {
 
 # Request Events
 # ----------------
-# before_request = ["costeo_yelke.utils.before_request"]
+# Guard de uso interno: rechaza (403) cualquier llamada a costeo_yelke.* que no
+# provenga de un usuario interno (System User). Clientes/Website Users quedan fuera.
+before_request = ["costeo_yelke.security.guard_internal"]
 # after_request = ["costeo_yelke.utils.after_request"]
 
 # Job Events
 # ----------
 # before_job = ["costeo_yelke.utils.before_job"]
 # after_job = ["costeo_yelke.utils.after_job"]
+
+after_migrate = ["costeo_yelke.install.after_migrate"]
 
 # User Data Protection
 # --------------------

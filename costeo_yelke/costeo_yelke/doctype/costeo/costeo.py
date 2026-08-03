@@ -69,6 +69,15 @@ def _build_costeo_customer_token(customer):
 
 class Costeo(Document):
     def autoname(self):
+        if cint(self.get("es_plantilla")):
+            familia = "".join(
+                ch for ch in unicodedata.normalize("NFD", (self.get("familia_prenda") or "").upper())
+                if unicodedata.category(ch) != "Mn"
+            )
+            token = re.sub(r"[^A-Za-z0-9]+", "-", familia).strip("-") or "GENERAL"
+            self.name = make_autoname(f"PLANTILLA-{token[:16]}-.####", doc=self)
+            return
+
         customer_token = _build_costeo_customer_token(self.cliente)
         self.name = make_autoname(f"CST-{customer_token}-.YYYY.-.#####", doc=self)
 
@@ -77,6 +86,9 @@ class Costeo(Document):
         self.cleanup_orphan_children()
 
     def validate_at_least_one_product_to_produce(self):
+        # Las plantillas no llevan cantidad (es específica de cada pedido).
+        if self.get("es_plantilla"):
+            return
         has_products = any(
             row.finished_item and flt(row.qty) > 0 for row in (self.get("costeo_producto") or [])
         )

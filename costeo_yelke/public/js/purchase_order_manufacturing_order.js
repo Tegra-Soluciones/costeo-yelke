@@ -49,6 +49,13 @@ const OM_SECTION_FIELDS = [
     "om_archivos"
 ];
 
+// Si los campos personalizados de la OM no están presentes en el meta del cliente
+// (p. ej. meta cacheado antes de materializar los custom fields), NO ejecutamos la
+// lógica de OM: así jamás rompemos el formulario estándar de la OC ni sus botones.
+function om_fields_ready(frm) {
+    return !!(frm.fields_dict && frm.fields_dict.om_tab_orden_manufactura && frm.fields_dict.om_fecha_requerida);
+}
+
 function is_subcontract_po(frm) {
     return parseInt(frm.doc.is_subcontracted || 0, 10) === 1;
 }
@@ -711,6 +718,7 @@ function bind_om_builder_events(frm) {
 
 frappe.ui.form.on("Purchase Order", {
     refresh(frm) {
+        if (!om_fields_ready(frm)) return;
         toggle_om_sections(frm);
         sync_om_required_date(frm);
         enforce_fixed_size_tables(frm);
@@ -722,6 +730,7 @@ frappe.ui.form.on("Purchase Order", {
     },
 
     is_subcontracted(frm) {
+        if (!om_fields_ready(frm)) return;
         toggle_om_sections(frm);
         sync_om_required_date(frm);
         enforce_fixed_size_tables(frm);
@@ -768,6 +777,7 @@ frappe.ui.form.on("Purchase Order", {
     },
 
     validate(frm) {
+        if (!om_fields_ready(frm)) return;
         sync_om_required_date(frm);
         enforce_fixed_size_tables(frm);
         compute_caballero_totals(frm);

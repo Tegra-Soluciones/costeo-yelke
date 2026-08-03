@@ -1,0 +1,132 @@
+const BASE = "";
+
+async function request(method, url, body) {
+  const opts = {
+    method,
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Frappe-CSRF-Token": getCsrfToken(),
+    },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(BASE + url, opts);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.exc_type || err?.message || res.statusText);
+  }
+  return res.json();
+}
+
+function getCsrfToken() {
+  return (
+    window.frappe?.csrf_token ||
+    document.cookie.split("; ").find((r) => r.startsWith("csrf_token="))?.split("=")[1] ||
+    "no-token"
+  );
+}
+
+export const db = {
+  getList(doctype, { fields = ["name"], filters = [], orderBy = "modified desc", limit = 50 } = {}) {
+    const params = new URLSearchParams({
+      fields: JSON.stringify(fields),
+      filters: JSON.stringify(filters),
+      order_by: orderBy,
+      limit_page_length: limit,
+    });
+    return request("GET", `/api/resource/${encodeURIComponent(doctype)}?${params}`).then(
+      (r) => r.data,
+    );
+  },
+
+  get(doctype, name) {
+    return request("GET", `/api/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`).then(
+      (r) => r.data,
+    );
+  },
+
+  create(doctype, doc) {
+    return request("POST", `/api/resource/${encodeURIComponent(doctype)}`, doc).then((r) => r.data);
+  },
+
+  update(doctype, name, doc) {
+    return request(
+      "PUT",
+      `/api/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`,
+      doc,
+    ).then((r) => r.data);
+  },
+
+  delete(doctype, name) {
+    return request("DELETE", `/api/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`);
+  },
+};
+
+export function call(method, args = {}) {
+  return request("POST", `/api/method/${method}`, args).then((r) => r.message);
+}
+
+export async function uploadFile(file, { doctype, docname, folder = "Home", isPrivate = 1 } = {}) {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  form.append("is_private", isPrivate ? 1 : 0);
+  form.append("folder", folder);
+  if (doctype) form.append("doctype", doctype);
+  if (docname) form.append("docname", docname);
+  const res = await fetch(BASE + "/api/method/upload_file", {
+    method: "POST",
+    credentials: "include",
+    headers: { "X-Frappe-CSRF-Token": getCsrfToken() },
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.exc_type || err?.message || res.statusText);
+  }
+  return (await res.json()).message;
+}
+
+const _printFmtCache = {};
+export async function defaultPrintFormat(doctype) {
+  if (_printFmtCache[doctype]) return _printFmtCache[doctype];
+  try {
+    const r = await call("costeo_yelke.api.costeo_api.get_default_print_format", { doctype });
+    _printFmtCache[doctype] = r?.format || "Standard";
+  } catch {
+    return "Standard";
+  }
+  return _printFmtCache[doctype];
+}
+
+export function openDesk(doctype, name) {
+  window.open(`/app/${slugify(doctype)}/${encodeURIComponent(name)}`, "_blank");
+}
+
+/**
+ * Uses Frappe's native search_link endpoint which:
+ *  - searches by name AND the doctype's title field (item_name, customer_name, etc.)
+ *  - respects permissions and link filters
+ *  - returns [{value, description}] where value = doc name, description = title label
+ */
+export async function searchLink(doctype, query, filters = []) {
+  try {
+    const res = await call("frappe.desk.search.search_link", {
+      txt:                    query ?? "",
+      doctype,
+      filters:                filters.length ? JSON.stringify(filters) : "[]",
+      page_length:            15,
+      ignore_user_permissions: 0,
+      reference_doctype:      "",
+    });
+    return (Array.isArray(res) ? res : []).map((r) => ({
+      value:       r.value,
+      description: r.description || "",
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function slugify(str) {
+  return str.toLowerCase().replace(/\s+/g, "-");
+}

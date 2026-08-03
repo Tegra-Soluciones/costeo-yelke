@@ -1,0 +1,10 @@
+[
+  {
+    "doctype": "Item Group",
+    "name": "Productos Terminados",
+    "item_group_name": "Productos Terminados",
+    "parent_item_group": "Todos los grupos de artículos",
+    "is_group": 0,
+    "show_in_website": 0
+  }
+]
