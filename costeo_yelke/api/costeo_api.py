@@ -631,6 +631,29 @@ def delete_costeo(name: str) -> dict:
 
 
 @frappe.whitelist()
+def eliminar_orden_y_costeo(orden_venta_id: str) -> dict:
+    """Elimina una Orden de Venta ya cancelada junto con su Costeo relacionado.
+
+    Usado por el botón "Eliminar por Costeo" del Client Script en Sales Order,
+    que solo se muestra cuando la orden ya está cancelada — se revalida aquí
+    porque nunca hay que confiar en el estado que reporta el cliente.
+    """
+    so = frappe.get_doc("Sales Order", orden_venta_id)
+    if so.docstatus != 2:
+        frappe.throw(_("Solo se puede eliminar una Orden de Venta que ya esté cancelada."))
+
+    costeo_name = so.get("costeo")
+
+    frappe.delete_doc("Sales Order", orden_venta_id, force=True, ignore_permissions=False)
+
+    if costeo_name and frappe.db.exists("Costeo", costeo_name):
+        frappe.delete_doc("Costeo", costeo_name, force=True, ignore_permissions=False)
+
+    frappe.db.commit()
+    return {"ok": True, "deleted_sales_order": orden_venta_id, "deleted_costeo": costeo_name}
+
+
+@frappe.whitelist()
 def duplicate_costeo(name: str) -> dict:
     """Crea una copia del Costeo con estatus Borrador."""
     original = frappe.get_doc("Costeo", name)
