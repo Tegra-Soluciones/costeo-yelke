@@ -6,8 +6,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <style>
   body > .navbar,
+  body > nav.navbar,
+  section[data-section-template="Standard Navbar"],
+  section[data-section-template="Primary Navbar"],
   body > .container.page-container,
-  footer.web-footer { display: none !important; }
+  body > .page-container,
+  footer.web-footer,
+  footer.standard-footer { display: none !important; }
   body { overflow: hidden; margin: 0; padding: 0; }
 </style>
 {% endblock %}
