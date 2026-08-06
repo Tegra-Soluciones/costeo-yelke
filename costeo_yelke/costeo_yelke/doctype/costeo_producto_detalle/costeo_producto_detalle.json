@@ -10,6 +10,7 @@
   "concept_type",
   "item",
   "internal_uom",
+  "rendimiento",
   "internal_qty",
   "supplier",
   "supplier_uom",
@@ -46,10 +47,16 @@
    "options": "UOM"
   },
   {
+   "fieldname": "rendimiento",
+   "fieldtype": "Float",
+   "label": "Rendimiento (pzas. por UDM)",
+   "precision": "4"
+  },
+  {
    "fieldname": "internal_qty",
    "fieldtype": "Float",
-   "label": "Consumo",
-   "precision": "2"
+   "label": "Consumo por pieza (UDM)",
+   "precision": "4"
   },
   {
    "fieldname": "supplier",

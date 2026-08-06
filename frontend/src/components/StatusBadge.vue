@@ -20,6 +20,7 @@ const map = {
   "Cotizado":       { bg: "#eff6ff", text: "#1d4ed8", dot: "#3b82f6" },
   "Orden de Venta": { bg: "#faf5ff", text: "#6d28d9", dot: "#8b5cf6" },
   "En Producción":  { bg: "#fff4ef", text: "#c53a06", dot: "#ff6b15" },
+  "Entregado":      { bg: "#ecfeff", text: "#0e7490", dot: "#06b6d4" },
   "Completado":     { bg: "#f0fdf4", text: "#15803d", dot: "#22c55e" },
   "Cancelado":      { bg: "#fef2f2", text: "#b91c1c", dot: "#ef4444" },
 };

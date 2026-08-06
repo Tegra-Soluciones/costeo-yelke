@@ -20,6 +20,35 @@ def get_costeo_list(limit: int = 50) -> list:
 
 
 @frappe.whitelist()
+def get_company_defaults(company: str) -> dict:
+    """Centro de costos y almacenes (materia prima / trabajo en proceso) que le
+    corresponden a una compañía, para preseleccionarlos solos en el Costeo sin
+    pedirle al usuario que los repita en cada registro. El centro de costos usa
+    el 'Default Cost Center' ya configurado en la Compañía; los almacenes se
+    detectan por su nombre (los que ERPNext crea por defecto al dar de alta una
+    compañía: 'Materia Prima'/'Stores' y 'Trabajo en Proceso'/'Work In Progress')."""
+    if not company:
+        return {"centro_de_costos": "", "almacen_materias_primas": "", "almacen_trabajo_en_proceso": ""}
+
+    def find_warehouse(candidates):
+        for name in candidates:
+            wh = frappe.db.get_value(
+                "Warehouse",
+                {"company": company, "warehouse_name": name, "is_group": 0, "disabled": 0},
+                "name",
+            )
+            if wh:
+                return wh
+        return ""
+
+    return {
+        "centro_de_costos": frappe.db.get_value("Company", company, "cost_center") or "",
+        "almacen_materias_primas": find_warehouse(["Materia Prima", "Stores"]),
+        "almacen_trabajo_en_proceso": find_warehouse(["Trabajo en Proceso", "Work In Progress"]),
+    }
+
+
+@frappe.whitelist()
 def set_costeo_status(costeo: str, status: str) -> dict:
     """Actualiza el estatus del pipeline."""
     allowed = {"Borrador", "Cotizado", "Orden de Venta", "En Producción", "Entregado", "Completado", "Cancelado"}

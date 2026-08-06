@@ -54,6 +54,7 @@
       :suggested-price="articuloModal.group?.unit_price || 0"
       :suggested-supplier-uom="articuloModal.group?.supplier_uom || ''"
       :suggested-conversion-factor="articuloModal.group?.conversion_factor || 0"
+      :suggested-stock-uom="articuloModal.group?.internal_uom || ''"
       :company="pendientesContext.company"
       :default-warehouse="articuloModal.group?.row_type === 'subensamblaje_etapa' ? pendientesContext.almacen_trabajo_en_proceso : pendientesContext.almacen_materias_primas"
       :saving="articuloModal.saving"
@@ -129,10 +130,6 @@
               <input v-model="form.familia_prenda" list="familias-list" type="text" class="field-input" placeholder="Ej: Camisola industrial" />
               <datalist id="familias-list"><option v-for="f in familias" :key="f" :value="f" /></datalist>
             </div>
-            <div><label class="field-label">Centro de costos <span class="text-red-400">*</span></label><LinkInput v-model="form.centro_de_costos" doctype="Cost Center" placeholder="Centro de costos…" :error="!!errors.centro_de_costos" /></div>
-            <div><label class="field-label">Proyecto</label><LinkInput v-model="form.proyecto" doctype="Project" placeholder="Proyecto (opcional)" /></div>
-            <div><label class="field-label">Almacén materias primas <span class="text-red-400">*</span></label><LinkInput v-model="form.almacen_materias_primas" doctype="Warehouse" placeholder="Almacén MP…" :error="!!errors.almacen_materias_primas" /></div>
-            <div><label class="field-label">Almacén trabajo en proceso <span class="text-red-400">*</span></label><LinkInput v-model="form.almacen_trabajo_en_proceso" doctype="Warehouse" placeholder="Almacén WIP…" :error="!!errors.almacen_trabajo_en_proceso" /></div>
           </div>
         </section>
 
@@ -180,7 +177,7 @@
                   </div>
                   <div class="flex-1 grid grid-cols-4 gap-3">
                     <div class="col-span-2"><label class="field-label">Producto terminado <span class="text-red-400">*</span></label><LinkInput v-model="prod.finished_item" doctype="Item" :filters="ITEM_FILTERS.terminado" placeholder="Producto terminado…" @update:model-value="onProductoItemChange(prod)" /></div>
-                    <div><label class="field-label">Cantidad <span class="text-red-400">*</span></label><input v-model.number="prod.qty" type="number" min="1" class="field-input" @input="recalcProducto(prod)" /></div>
+                    <div><label class="field-label">Cantidad <span class="text-red-400">*</span></label><input v-model.number="prod.qty" type="number" min="1" class="field-input" @input="onProdQtyChange(prod)" /></div>
                     <div><label class="field-label">Overhead %</label><div class="relative"><input v-model.number="prod.overhead_pct" type="number" min="0" max="100" class="field-input pr-7" @input="recalcProducto(prod)" /><span class="suffix">%</span></div></div>
                     <div><label class="field-label">Flete / envío</label><div class="relative"><span class="prefix">$</span><input v-model.number="prod.shipping_cost" type="number" min="0" class="field-input pl-6" @input="recalcProducto(prod)" /></div></div>
                     <div><label class="field-label">Margen %</label><div class="relative"><input v-model.number="prod.margin_pct" type="number" min="0" max="99" class="field-input pr-7" @input="recalcProducto(prod)" /><span class="suffix">%</span></div></div>
@@ -196,8 +193,9 @@
                   </div>
 
                   <div v-if="activeTab(prod._tid) === 'materiales'" class="pb-8">
+                    <p class="text-[11.5px] text-ink-light mb-2">Identifica primero qué tipo de materia prima es, para saber qué unidad de medida (UDM) tiene sentido: <strong>Tela</strong> → normalmente Kilogramo o Metro · <strong>Avíos</strong> (botones, cierres…) → Maso, Gruesa o Pieza.</p>
                     <table class="w-full text-sm mb-3">
-                      <thead><tr class="border-b border-surface-border text-left text-xs font-semibold text-ink-light"><th class="py-2 w-1/4">Artículo</th><th class="py-2 w-1/5">Proveedor</th><th class="py-2 w-16">Etapa</th><th class="py-2 w-24 text-right">Cant.</th><th class="py-2 w-28 text-right">Precio unit.</th><th class="py-2 w-28 text-right">Total</th><th class="w-7"></th></tr></thead>
+                      <thead><tr class="border-b border-surface-border text-left text-xs font-semibold text-ink-light"><th class="py-2 w-1/6">Artículo</th><th class="py-2 w-1/6">Proveedor</th><th class="py-2 w-14">Etapa</th><th class="py-2 w-24">UDM</th><th class="py-2 w-44">Rendimiento / Consumo</th><th class="py-2 w-24 text-right">Precio / UDM</th><th class="py-2 w-24 text-right">Total</th><th class="w-7"></th></tr></thead>
                       <tbody>
                         <tr v-for="d in materialesDe(prod.finished_item)" :key="d._tid" class="border-b border-surface-border/60">
                           <td class="py-1.5 pr-2"><input v-model="d.item" class="field-input" placeholder="Materia prima…" @change="onDetalleItemChange(d, prod)" /></td>
@@ -208,7 +206,20 @@
                             </select>
                           </td>
                           <td class="py-1.5 pr-2"><input v-model="d.etapa" class="field-input" placeholder="1" /></td>
-                          <td class="py-1.5 pr-2"><input v-model.number="d.supplier_qty" type="number" min="0" step="0.01" class="field-input text-right" @input="recalcDetalle(d, prod)" /></td>
+                          <td class="py-1.5 pr-2"><LinkInput v-model="d.internal_uom" doctype="UOM" placeholder="UDM…" @update:model-value="recalcDetalle(d, prod)" /></td>
+                          <td class="py-1.5 pr-2">
+                            <div class="flex items-center gap-1 mb-1">
+                              <button type="button" class="text-[10px] px-1.5 py-0.5 rounded-full" :class="d._qtyMode !== 'consumo' ? 'bg-brand-100 text-brand-700 font-semibold' : 'text-ink-light hover:bg-surface-raised'" @click="d._qtyMode = 'rendimiento'">Rinde</button>
+                              <button type="button" class="text-[10px] px-1.5 py-0.5 rounded-full" :class="d._qtyMode === 'consumo' ? 'bg-brand-100 text-brand-700 font-semibold' : 'text-ink-light hover:bg-surface-raised'" @click="d._qtyMode = 'consumo'">Consume</button>
+                            </div>
+                            <input v-if="d._qtyMode !== 'consumo'" v-model.number="d.rendimiento" type="number" min="0" step="0.0001" class="field-input text-right" placeholder="pzas por UDM" @input="onRendimientoInput(d, prod)" />
+                            <input v-else v-model.number="d.internal_qty" type="number" min="0" step="0.0001" class="field-input text-right" placeholder="UDM por pza" @input="onConsumoInput(d, prod)" />
+                            <p class="text-[10.5px] text-ink-light mt-1 truncate">
+                              <template v-if="d._qtyMode !== 'consumo'">≈ {{ fmtQty(d.internal_qty) }} {{ d.internal_uom || 'UDM' }}/pza</template>
+                              <template v-else>≈ {{ fmtQty(d.rendimiento) }} pzas/{{ d.internal_uom || 'UDM' }}</template>
+                              · total: {{ fmtQty(d.supplier_qty) }} {{ d.internal_uom || 'UDM' }}
+                            </p>
+                          </td>
                           <td class="py-1.5 pr-2"><div class="relative"><span class="prefix text-xs">$</span><input v-model.number="d.unit_price" type="number" min="0" step="0.01" class="field-input text-right pl-5" @input="recalcDetalle(d, prod)" /></div></td>
                           <td class="py-1.5 pr-2 text-right font-medium text-ink">{{ fmtC(d.total) }}</td>
                           <td class="py-1.5"><button class="del-btn" @click="removeDetalle(d, prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button></td>
@@ -1469,7 +1480,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import PageHeader from "@/components/PageHeader.vue";
 import CosteoStepper from "@/components/CosteoStepper.vue";
@@ -1583,6 +1594,19 @@ async function ensurePrintFmt(doctype) {
 }
 
 const form = reactive({ cliente: "", fecha: today(), compania: "", proyecto: "", familia_prenda: "", centro_de_costos: "", almacen_materias_primas: "", almacen_trabajo_en_proceso: "" });
+// Centro de costos y almacenes ya no se capturan a mano -- se derivan solos de
+// la compañía (mismo criterio en costeo_api.get_company_defaults), para no
+// pedirle al usuario que repita en cada costeo algo que siempre es igual.
+async function applyCompanyDefaults(company) {
+  if (!company) return;
+  try {
+    const r = await call("costeo_yelke.api.costeo_api.get_company_defaults", { company });
+    form.centro_de_costos = r?.centro_de_costos || "";
+    form.almacen_materias_primas = r?.almacen_materias_primas || "";
+    form.almacen_trabajo_en_proceso = r?.almacen_trabajo_en_proceso || "";
+  } catch { /* ignore */ }
+}
+watch(() => form.compania, (val) => applyCompanyDefaults(val));
 const errors = reactive({});
 const productos = ref([]);
 const detalles = ref([]);
@@ -1724,9 +1748,29 @@ function addProducto() { const p = { _tid: uid(), _image: "", finished_item: "",
 function removeProducto(idx) { const prod = productos.value[idx]; if (!prod) return; detalles.value = detalles.value.filter(d => d.finished_item !== prod.finished_item); etapas.value = etapas.value.filter(e => e.producto_terminado !== prod.finished_item); productos.value.splice(idx, 1); if (expandedTid.value === prod._tid) expandedTid.value = null; }
 function toggleProduct(tid) { expandedTid.value = expandedTid.value === tid ? null : tid; }
 async function onProductoItemChange(prod) { recalcProducto(prod); prod._image = await fetchItemImage(prod.finished_item); }
-function addDetalle(prod, type) { detalles.value.push({ _tid: uid(), finished_item: prod.finished_item, concept_type: type, item: "", supplier: "", supplier_qty: 0, unit_price: 0, total: 0, etapa: "", internal_qty: 0, _supplierOptions: [] }); }
+function addDetalle(prod, type) { detalles.value.push({ _tid: uid(), finished_item: prod.finished_item, concept_type: type, item: "", supplier: "", internal_uom: "", rendimiento: 0, internal_qty: 0, supplier_qty: 0, unit_price: 0, total: 0, etapa: "", _supplierOptions: [], _qtyMode: "rendimiento" }); }
 function removeDetalle(d, prod) { const i = detalles.value.findIndex(x => x._tid === d._tid); if (i !== -1) detalles.value.splice(i, 1); recalcProducto(prod); }
-function recalcDetalle(d, prod) { d.total = (d.supplier_qty || d.internal_qty || 0) * (d.unit_price || 0); recalcProducto(prod); }
+function round2(n) { return Math.round((n || 0) * 100) / 100; }
+function round4(n) { return Math.round((n || 0) * 10000) / 10000; }
+function fmtQty(n) { return round4(n).toString(); }
+// El consumo por prenda (internal_qty) es la fuente de verdad -- rendimiento es solo
+// otra forma de expresar el mismo número (piezas por UDM en vez de UDM por pieza),
+// para que Sandra pueda capturar el que le resulte natural según la materia prima
+// (ej. "1 kilo rinde 4 chamarras" vs. "cada chamarra usa 1.5 metros").
+function onRendimientoInput(d, prod) { d.internal_qty = d.rendimiento > 0 ? round4(1 / d.rendimiento) : 0; recalcDetalle(d, prod); }
+function onConsumoInput(d, prod) { d.rendimiento = d.internal_qty > 0 ? round4(1 / d.internal_qty) : 0; recalcDetalle(d, prod); }
+function recalcDetalle(d, prod) {
+  d.supplier_qty = round2((d.internal_qty || 0) * (prod?.qty || 0));
+  d.total = (d.supplier_qty || 0) * (d.unit_price || 0);
+  recalcProducto(prod);
+}
+function onProdQtyChange(prod) {
+  for (const d of materialesDe(prod.finished_item)) {
+    d.supplier_qty = round2((d.internal_qty || 0) * (prod.qty || 0));
+    d.total = (d.supplier_qty || 0) * (d.unit_price || 0);
+  }
+  recalcProducto(prod);
+}
 function addEtapa(prod) { etapas.value.push({ _tid: uid(), producto_terminado: prod.finished_item, etapa: "", servicio: "", proveedor: "", precio_servicio: 0, subensamblaje: "" }); }
 function removeEtapa(e, prod) { const i = etapas.value.findIndex(x => x._tid === e._tid); if (i !== -1) etapas.value.splice(i, 1); if (prod) recalcProducto(prod); }
 async function onEtapaServicioChange(e, prod) {
@@ -1837,7 +1881,7 @@ async function fillFromDoc(data) {
   form.proyecto = data.proyecto || ""; form.familia_prenda = data.familia_prenda || "";
   form.centro_de_costos = data.centro_de_costos || ""; form.almacen_materias_primas = data.almacen_materias_primas || ""; form.almacen_trabajo_en_proceso = data.almacen_trabajo_en_proceso || "";
   productos.value = (data.costeo_producto || []).map(r => ({ _tid: uid(), _image: "", ...r }));
-  detalles.value = (data.costeo_producto_detalle || []).map(r => ({ _tid: uid(), _supplierOptions: [], ...r }));
+  detalles.value = (data.costeo_producto_detalle || []).map(r => ({ _tid: uid(), _supplierOptions: [], _qtyMode: "rendimiento", ...r }));
   etapas.value = (data.tabla_etapas_costeo || []).map(r => ({ _tid: uid(), ...r }));
   for (const p of productos.value) { if (p.finished_item) p._image = await fetchItemImage(p.finished_item); }
   hydrateSupplierOptions();

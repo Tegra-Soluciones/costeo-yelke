@@ -20,6 +20,7 @@
       <div class="mb-3">
         <label class="field-label">UOM <span class="text-red-400">*</span></label>
         <LinkInput v-model="form.stock_uom" doctype="UOM" placeholder="Unidad de medida…" :error="!!errors.stock_uom" />
+        <p v-if="suggestedStockUom" class="text-[11px] text-ink-light mt-1">Tomado de la UDM ya capturada en el costeo — ajústala si no es correcta.</p>
       </div>
 
       <div class="mb-3">
@@ -96,6 +97,7 @@ const props = defineProps({
   suggestedPrice: { type: Number, default: 0 },
   suggestedSupplierUom: { type: String, default: "" },
   suggestedConversionFactor: { type: Number, default: 0 },
+  suggestedStockUom: { type: String, default: "" },
   company: { type: String, default: "" },
   defaultWarehouse: { type: String, default: "" },
   saving: { type: Boolean, default: false },
@@ -146,7 +148,7 @@ watch(() => props.open, (isOpen) => {
   if (!isOpen) return;
   form.item_code = suggestCode(props.texto);
   form.item_name = props.texto;
-  form.stock_uom = "";
+  form.stock_uom = props.suggestedStockUom || "";
   form.supplier = props.suggestedSupplier || "";
   form.precio = props.suggestedPrice || 0;
   form.description = "";

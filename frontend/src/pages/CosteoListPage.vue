@@ -170,7 +170,7 @@ const toast = reactive({ show: false, msg: "", type: "success" });
 
 const confirmDelete = reactive({ open: false, name: "", loading: false });
 
-const statuses = ["Borrador", "Cotizado", "Orden de Venta", "En Producción", "Completado", "Cancelado"];
+const statuses = ["Borrador", "Cotizado", "Orden de Venta", "En Producción", "Entregado", "Completado", "Cancelado"];
 
 // ── Computed ──────────────────────────────────────────────────────────────────
 const filteredItems = computed(() =>
