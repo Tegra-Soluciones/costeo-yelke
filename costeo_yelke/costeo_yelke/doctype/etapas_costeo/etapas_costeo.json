@@ -21,9 +21,8 @@
   },
   {
    "fieldname": "servicio",
-   "fieldtype": "Link",
-   "label": "Servicio",
-   "options": "Item"
+   "fieldtype": "Data",
+   "label": "Servicio"
   },
   {
    "fieldname": "proveedor",
@@ -39,15 +38,13 @@
   },
   {
    "fieldname": "subensamblaje",
-   "fieldtype": "Link",
-   "label": "Subensamblaje",
-   "options": "Item"
+   "fieldtype": "Data",
+   "label": "Subensamblaje"
   },
   {
    "fieldname": "producto_terminado",
-   "fieldtype": "Link",
-   "label": "Producto Terminado",
-   "options": "Item"
+   "fieldtype": "Data",
+   "label": "Producto Terminado"
   }
  ],
  "grid_page_length": 50,

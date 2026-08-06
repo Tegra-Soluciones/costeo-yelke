@@ -146,6 +146,7 @@ def get_quotation(name):
         "transaction_date": str(doc.transaction_date) if doc.transaction_date else "",
         "valid_till": str(doc.valid_till) if doc.valid_till else "",
         "order_type": doc.order_type or "Sales",
+        "custom_tipo_formato": doc.get("custom_tipo_formato") or "Normal",
         "currency": doc.currency,
         "selling_price_list": doc.selling_price_list,
         "conversion_rate": float(doc.conversion_rate or 1),
@@ -191,7 +192,7 @@ def save_quotation(data):
     # Scalar fields
     for field in [
         "quotation_to", "party_name", "company", "transaction_date",
-        "valid_till", "order_type", "currency", "selling_price_list",
+        "valid_till", "order_type", "custom_tipo_formato", "currency", "selling_price_list",
         "conversion_rate", "taxes_and_charges", "tc_name", "terms",
         "additional_discount_percentage", "discount_amount", "apply_discount_on",
         "customer_address", "shipping_address_name", "contact_person",

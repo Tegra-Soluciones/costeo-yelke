@@ -4,6 +4,8 @@ import frappe
 from frappe import _
 from frappe.utils import flt, nowdate
 
+from costeo_yelke.api import item_api
+
 
 @frappe.whitelist()
 def get_costeo_list(limit: int = 50) -> list:
@@ -20,7 +22,7 @@ def get_costeo_list(limit: int = 50) -> list:
 @frappe.whitelist()
 def set_costeo_status(costeo: str, status: str) -> dict:
     """Actualiza el estatus del pipeline."""
-    allowed = {"Borrador", "Cotizado", "Orden de Venta", "En Producción", "Completado", "Cancelado"}
+    allowed = {"Borrador", "Cotizado", "Orden de Venta", "En Producción", "Entregado", "Completado", "Cancelado"}
     if status not in allowed:
         frappe.throw(_(f"Estatus inválido: {status}"))
     frappe.db.set_value("Costeo", costeo, "costeo_status", status)
@@ -28,7 +30,7 @@ def set_costeo_status(costeo: str, status: str) -> dict:
 
 
 @frappe.whitelist()
-def crear_cotizacion(costeo: str, valid_till=None, payment_terms_template=None, tc_name=None) -> dict:
+def crear_cotizacion(costeo: str, valid_till=None, payment_terms_template=None, tc_name=None, custom_tipo_formato=None) -> dict:
     """Crea una Quotation en BORRADOR desde el Costeo con los datos manuales."""
     doc = frappe.get_doc("Costeo", costeo)
 
@@ -44,6 +46,8 @@ def crear_cotizacion(costeo: str, valid_till=None, payment_terms_template=None, 
         quot.payment_terms_template = payment_terms_template
     if tc_name:
         quot.tc_name = tc_name
+    if frappe.db.has_column("Quotation", "custom_tipo_formato"):
+        quot.custom_tipo_formato = custom_tipo_formato or "Normal"
 
     if frappe.db.has_column("Quotation", "costeo"):
         quot.costeo = costeo
@@ -68,7 +72,100 @@ def crear_cotizacion(costeo: str, valid_till=None, payment_terms_template=None, 
 
 
 @frappe.whitelist()
-def actualizar_cotizacion(name: str, valid_till=None, payment_terms_template=None, tc_name=None) -> dict:
+def materializar_producto_terminado(
+    costeo: str,
+    old_finished_item: str,
+    item_code: str,
+    item_name: str,
+    stock_uom: str,
+    precio_venta=None,
+    item_group: str = None,
+    pricing_rules=None,
+    mx_product_service_key: str = None,
+    uom_conversions=None,
+    description: str = None,
+) -> dict:
+    """Materializa el Producto Terminado de un renglón de Costeo: crea el Item (si
+    item_code todavía no existe) reutilizando item_api.create_item, con su precio
+    de venta y reglas de precio opcionales, y reescribe el texto libre por el
+    item_code final en las 3 tablas hijas que lo correlacionan por igualdad de
+    texto (costeo_producto, costeo_producto_detalle, tabla_etapas_costeo) — deben
+    quedar sincronizadas o Costeo.cleanup_orphan_children() borraría en el
+    siguiente guardado las filas de materiales/etapas de ese producto."""
+    if isinstance(pricing_rules, str):
+        pricing_rules = json.loads(pricing_rules) if pricing_rules else None
+    if isinstance(uom_conversions, str):
+        uom_conversions = json.loads(uom_conversions) if uom_conversions else None
+
+    company = frappe.db.get_value("Costeo", costeo, "compañia")
+    price_list = frappe.db.get_default("selling_price_list") or "Venta estándar"
+
+    if not frappe.db.exists("Item", item_code):
+        payload = {
+            "item_code": item_code,
+            "item_name": item_name,
+            "item_group": item_group or "Productos Terminados",
+            "stock_uom": stock_uom,
+            "is_stock_item": 1,
+            "is_sales_item": 1,
+            "is_purchase_item": 0,
+            "include_item_in_manufacturing": 1,
+            "is_sub_contracted_item": 1,
+            "item_defaults": [{"company": company, "default_price_list": price_list}],
+        }
+        if description:
+            payload["description"] = description
+        if mx_product_service_key:
+            payload["mx_product_service_key"] = mx_product_service_key
+        if uom_conversions:
+            payload["uom_conversions"] = uom_conversions
+        if precio_venta:
+            payload["item_prices"] = [{"price_list": price_list, "price_list_rate": precio_venta}]
+            payload["standard_rate"] = precio_venta
+        if pricing_rules:
+            payload["pricing_rules"] = [
+                {**r, "selling": 1, "company": company, "for_price_list": price_list}
+                for r in pricing_rules
+            ]
+        item_api.create_item(json.dumps(payload), ignore_mandatory=True)
+    elif precio_venta:
+        existing = frappe.db.get_value("Item Price", {"item_code": item_code, "price_list": price_list}, "name")
+        if existing:
+            frappe.db.set_value("Item Price", existing, "price_list_rate", precio_venta)
+        else:
+            price_doc = frappe.new_doc("Item Price")
+            price_doc.item_code = item_code
+            price_doc.item_name = item_name
+            price_doc.price_list = price_list
+            price_doc.uom = stock_uom
+            price_doc.price_list_rate = precio_venta
+            price_doc.currency = frappe.db.get_value("Price List", price_list, "currency") or "MXN"
+            price_doc.flags.ignore_permissions = True
+            price_doc.insert()
+
+    if old_finished_item and old_finished_item != item_code:
+        frappe.db.set_value(
+            "Costeo Producto", {"parent": costeo, "finished_item": old_finished_item}, "finished_item", item_code
+        )
+        frappe.db.set_value(
+            "Costeo Producto Detalle",
+            {"parent": costeo, "finished_item": old_finished_item},
+            "finished_item",
+            item_code,
+        )
+        frappe.db.set_value(
+            "Etapas Costeo",
+            {"parent": costeo, "producto_terminado": old_finished_item},
+            "producto_terminado",
+            item_code,
+        )
+
+    frappe.db.commit()
+    return {"item_code": item_code}
+
+
+@frappe.whitelist()
+def actualizar_cotizacion(name: str, valid_till=None, payment_terms_template=None, tc_name=None, custom_tipo_formato=None) -> dict:
     """Actualiza los datos manuales de una cotización en borrador."""
     doc = frappe.get_doc("Quotation", name)
     if doc.docstatus != 0:
@@ -76,9 +173,186 @@ def actualizar_cotizacion(name: str, valid_till=None, payment_terms_template=Non
     doc.valid_till = valid_till or None
     doc.payment_terms_template = payment_terms_template or None
     doc.tc_name = tc_name or None
+    if frappe.db.has_column("Quotation", "custom_tipo_formato"):
+        doc.custom_tipo_formato = custom_tipo_formato or "Normal"
     doc.flags.ignore_permissions = True
     doc.save()
     return {"name": doc.name}
+
+
+@frappe.whitelist()
+def get_articulos_pendientes(costeo: str) -> dict:
+    """Checklist previo a preparar_produccion: agrupa por texto libre único los
+    materiales/servicios/subensamblajes de etapas que todavía no resuelven a un
+    Item real. Cada grupo se resuelve una sola vez (materializar_articulo) y
+    aplica a todos los renglones que comparten ese mismo texto. Incluye pistas
+    (precio, UOM del proveedor, factor de conversión) ya capturadas en el
+    costeo, para pre-llenar el modal de creación sin pedirle al usuario que
+    las vuelva a escribir."""
+    doc = frappe.get_doc("Costeo", costeo)
+
+    candidatos = set()
+    for d in doc.costeo_producto_detalle:
+        if d.concept_type == "Materia Prima" and d.item:
+            candidatos.add(d.item)
+    for e in doc.tabla_etapas_costeo:
+        if e.servicio:
+            candidatos.add(e.servicio)
+        if e.subensamblaje:
+            candidatos.add(e.subensamblaje)
+
+    existentes = set()
+    if candidatos:
+        existentes = set(frappe.get_all("Item", filters={"name": ["in", list(candidatos)]}, pluck="name"))
+
+    grupos = {}
+
+    def add(row_type, texto, item_group_sugerido, supplier, producto_terminado,
+            unit_price=None, supplier_uom=None, internal_uom=None, conversion_factor=None):
+        if not texto or texto in existentes:
+            return
+        g = grupos.setdefault((row_type, texto), {
+            "row_type": row_type, "texto": texto, "item_group_sugerido": item_group_sugerido,
+            "supplier": None, "productos": [], "unit_price": None,
+            "supplier_uom": None, "internal_uom": None, "conversion_factor": None,
+        })
+        if supplier and not g["supplier"]:
+            g["supplier"] = supplier
+        if producto_terminado and producto_terminado not in g["productos"]:
+            g["productos"].append(producto_terminado)
+        if unit_price and not g["unit_price"]:
+            g["unit_price"] = flt(unit_price)
+        if supplier_uom and not g["supplier_uom"]:
+            g["supplier_uom"] = supplier_uom
+        if internal_uom and not g["internal_uom"]:
+            g["internal_uom"] = internal_uom
+        if conversion_factor and not g["conversion_factor"]:
+            g["conversion_factor"] = flt(conversion_factor)
+
+    for d in doc.costeo_producto_detalle:
+        if d.concept_type == "Materia Prima":
+            add("material", d.item, "Materia prima", d.supplier, d.finished_item,
+                unit_price=d.unit_price, supplier_uom=d.supplier_uom,
+                internal_uom=d.internal_uom, conversion_factor=d.conversion_factor)
+
+    # Las etapas se procesan por producto y ORDENADAS igual que crear_boms_spa /
+    # crear_subcontracting_bom (misma _stage_sort_key_int) -- en la ÚLTIMA etapa
+    # de cada producto, esas dos funciones usan finished_item como resultado, NO
+    # el texto que haya en "subensamblaje" de esa fila (ese campo se ignora ahí).
+    # Si no replicamos el mismo criterio de "última etapa" aquí, el checklist le
+    # pide al usuario materializar como "Sub-Ensamblaje" un texto que en realidad
+    # es simplemente el producto terminado -- exactamente el caso de una sola
+    # etapa (un solo proveedor hace todo) donde no existe un intermedio real.
+    advertencias = []
+    for producto in doc.costeo_producto:
+        fi = producto.finished_item
+        if not fi:
+            continue
+        etapas_prod = sorted(
+            [e for e in doc.tabla_etapas_costeo if e.producto_terminado == fi],
+            key=_stage_sort_key_int,
+        )
+        n = len(etapas_prod)
+        for i, e in enumerate(etapas_prod):
+            es_ultima = (i == n - 1)
+            add("servicio_etapa", e.servicio, "Servicios", e.proveedor, e.producto_terminado, unit_price=e.precio_servicio)
+            if not es_ultima:
+                add("subensamblaje_etapa", e.subensamblaje, "Sub-Ensamblajes", None, e.producto_terminado)
+            elif e.subensamblaje and e.subensamblaje != fi:
+                advertencias.append(
+                    f'En la última etapa de "{fi}", el sub-ensamblaje capturado ("{e.subensamblaje}") '
+                    f"se ignora — el resultado de la última etapa siempre es el producto terminado."
+                )
+
+    return {
+        "grupos": list(grupos.values()),
+        "advertencias": advertencias,
+        "company": doc.compañia,
+        "almacen_materias_primas": doc.almacen_materias_primas or "",
+        "almacen_trabajo_en_proceso": doc.almacen_trabajo_en_proceso or "",
+    }
+
+
+@frappe.whitelist()
+def materializar_articulo(costeo: str, row_type: str, texto: str, item_code: str, prefill=None, supplier: str = None, precio: float = None) -> dict:
+    """Resuelve un grupo de renglones de material/servicio/subensamblaje en texto
+    libre: si item_code ya existe, solo vincula (reescribe el texto libre por el
+    item_code en todos los renglones que comparten ese mismo texto); si es nuevo,
+    lo crea reutilizando item_api.create_item con el 'prefill' armado en el
+    frontend (mismo patrón de ProductoNuevoPage.vue), inyectando el proveedor ya
+    conocido del renglón en supplier_items antes de crear. Si el prefill no trae
+    item_defaults/item_prices, se completan automáticamente con la compañía,
+    almacén y precio de compra ya conocidos del costeo -- para no obligar al
+    usuario a repetir configuración que ya existe en el renglón."""
+    if isinstance(prefill, str):
+        prefill = json.loads(prefill) if prefill else {}
+    prefill = dict(prefill or {})
+
+    field_map = {
+        "material": ("Costeo Producto Detalle", "item", {"concept_type": "Materia Prima"}),
+        "servicio_etapa": ("Etapas Costeo", "servicio", {}),
+        "subensamblaje_etapa": ("Etapas Costeo", "subensamblaje", {}),
+    }
+    if row_type not in field_map:
+        frappe.throw(_("Tipo de renglón desconocido: {0}").format(row_type))
+    child_doctype, fieldname, extra_filters = field_map[row_type]
+
+    if not frappe.db.exists("Item", item_code):
+        prefill["item_code"] = item_code
+        if supplier and not prefill.get("supplier_items"):
+            prefill["supplier_items"] = [{"supplier": supplier}]
+
+        if not prefill.get("item_defaults"):
+            doc = frappe.get_doc("Costeo", costeo)
+            warehouse = ""
+            if row_type == "material":
+                warehouse = doc.almacen_materias_primas or ""
+            elif row_type == "subensamblaje_etapa":
+                warehouse = doc.almacen_trabajo_en_proceso or ""
+            price_list = "Compra estandar" if row_type in ("material", "servicio_etapa") else ""
+            prefill["item_defaults"] = [{
+                "company": doc.compañia,
+                "default_warehouse": warehouse,
+                "default_price_list": price_list,
+            }]
+
+        if precio and not prefill.get("item_prices"):
+            price_row = {"price_list": "Compra estandar", "price_list_rate": precio}
+            if supplier:
+                price_row["supplier"] = supplier
+            prefill["item_prices"] = [price_row]
+        if precio and not prefill.get("standard_rate"):
+            prefill["standard_rate"] = precio
+
+        # Si el artículo se compra en una unidad distinta a la interna (rollos, cajas, etc.),
+        # casi nunca la cantidad exacta necesaria cae en un múltiplo entero de esa unidad --
+        # se compra de más. Sin tolerancia, ERPNext bloquea la OC/recibo con OverAllowanceError
+        # en cuanto se redondea hacia arriba. Se deja un margen razonable por defecto.
+        if prefill.get("uom_conversions") and prefill.get("over_delivery_receipt_allowance") is None:
+            prefill["over_delivery_receipt_allowance"] = 20
+            prefill["over_billing_allowance"] = 20
+
+        item_api.create_item(json.dumps(prefill), ignore_mandatory=True)
+
+    filters = {"parent": costeo, fieldname: texto}
+    filters.update(extra_filters)
+    frappe.db.set_value(child_doctype, filters, fieldname, item_code)
+
+    frappe.db.commit()
+    return {"item_code": item_code}
+
+
+@frappe.whitelist()
+def set_tipo_formato_cotizacion(name: str, custom_tipo_formato: str) -> dict:
+    """Cambia solo la vista de impresión (Normal/Volumen) de una cotización en
+    borrador, sin tocar el resto de sus campos -- para refrescar la vista previa
+    al instante sin exigir guardar primero el resto de los cambios pendientes."""
+    if frappe.db.get_value("Quotation", name, "docstatus") != 0:
+        frappe.throw(_("La cotización ya está validada; no se puede editar."))
+    if frappe.db.has_column("Quotation", "custom_tipo_formato"):
+        frappe.db.set_value("Quotation", name, "custom_tipo_formato", custom_tipo_formato or "Normal")
+        frappe.db.commit()
+    return {"name": name}
 
 
 @frappe.whitelist()
@@ -342,7 +616,8 @@ def crear_remision(costeo: str, posting_date=None) -> dict:
 
 @frappe.whitelist()
 def get_remision(name: str) -> dict:
-    """Detalle de la remisión para la vista editable (almacén y cantidad por línea)."""
+    """Detalle de la remisión para la vista editable (almacén y cantidad por línea,
+    dirección de envío/facturación)."""
     doc = frappe.get_doc("Delivery Note", name)
     return {
         "name": doc.name,
@@ -352,6 +627,10 @@ def get_remision(name: str) -> dict:
         "customer_name": doc.customer_name,
         "posting_date": str(doc.posting_date) if doc.posting_date else "",
         "grand_total": doc.grand_total,
+        "customer_address": doc.customer_address or "",
+        "shipping_address_name": doc.shipping_address_name or "",
+        "shipping_address": doc.shipping_address or "",
+        "address_options": _party_links("Address", doc.customer, link_doctype="Customer"),
         "items": [
             {
                 "name": r.name, "item_code": r.item_code, "item_name": r.item_name,
@@ -368,14 +647,20 @@ def get_remision(name: str) -> dict:
 
 
 @frappe.whitelist()
-def actualizar_remision(name: str, posting_date=None, items=None) -> dict:
-    """Actualiza fecha, almacén y cantidad de las líneas de una remisión en borrador."""
+def actualizar_remision(name: str, posting_date=None, items=None, shipping_address_name=None, customer_address=None) -> dict:
+    """Actualiza fecha, almacén y cantidad de las líneas, y direcciones de envío/facturación
+    de una remisión en borrador -- el cliente a veces recibe en una dirección distinta a la
+    de facturación."""
     doc = frappe.get_doc("Delivery Note", name)
     if doc.docstatus != 0:
         frappe.throw(_("La remisión ya está validada; no se puede editar."))
     if posting_date:
         doc.set_posting_time = 1
         doc.posting_date = posting_date
+    if shipping_address_name is not None:
+        doc.shipping_address_name = shipping_address_name or None
+    if customer_address is not None:
+        doc.customer_address = customer_address or None
     if items is not None:
         rows = json.loads(items) if isinstance(items, str) else items
         by_name = {r.get("name"): r for r in rows}
@@ -390,6 +675,19 @@ def actualizar_remision(name: str, posting_date=None, items=None) -> dict:
     doc.flags.ignore_permissions = True
     doc.save()
     return {"name": doc.name}
+
+
+@frappe.whitelist()
+def validar_remision(name: str) -> dict:
+    """Valida (submit) la remisión: libera el producto terminado del inventario, genera
+    el costo de venta real, y marca el costeo como 'Entregado' -- desbloquea Facturar."""
+    doc = frappe.get_doc("Delivery Note", name)
+    doc.flags.ignore_permissions = True
+    doc.submit()
+    costeo = doc.get("costeo")
+    if costeo and frappe.db.exists("Costeo", costeo):
+        frappe.db.set_value("Costeo", costeo, "costeo_status", "Entregado")
+    return {"name": doc.name, "docstatus": doc.docstatus}
 
 
 # =============================================================================
@@ -532,7 +830,7 @@ def dashboard_metrics() -> dict:
         return flt(rows[0].t) if rows and rows[0].t else 0.0
 
     # ── Costeos por estado (pipeline) ────────────────────────────────────────
-    estados = ["Borrador", "Cotizado", "Orden de Venta", "En Producción", "Completado"]
+    estados = ["Borrador", "Cotizado", "Orden de Venta", "En Producción", "Entregado", "Completado"]
     por_estado = {e: 0 for e in estados}
     for r in frappe.get_all("Costeo", fields=["costeo_status", "count(name) as n"], group_by="costeo_status"):
         st = r.get("costeo_status") or "Borrador"
@@ -1193,7 +1491,7 @@ def get_costeo_related(costeo: str) -> dict:
             "Quotation",
             filters={"costeo": costeo},
             fields=["name", "status", "docstatus", "grand_total", "currency", "contact_email",
-                    "valid_till", "payment_terms_template", "tc_name"],
+                    "valid_till", "payment_terms_template", "tc_name", "custom_tipo_formato"],
             order_by="creation desc",
             limit=1,
         )
@@ -1832,13 +2130,13 @@ def get_subcontratos(plan: str) -> dict:
 # FLUJO DE SUBCONTRATACIÓN (nuevo): OC → Subcontracting Order → Transferencia → Recibo
 # =============================================================================
 
-def _party_links(doctype, supplier):
-    """Direcciones/contactos ligados a un proveedor (Dynamic Link)."""
-    if not supplier:
+def _party_links(doctype, party, link_doctype="Supplier"):
+    """Direcciones/contactos ligados a un proveedor o cliente (Dynamic Link)."""
+    if not party:
         return []
     names = frappe.get_all(
         "Dynamic Link",
-        filters={"link_doctype": "Supplier", "link_name": supplier, "parenttype": doctype},
+        filters={"link_doctype": link_doctype, "link_name": party, "parenttype": doctype},
         pluck="parent",
     )
     label_field = "address_title" if doctype == "Address" else "name"

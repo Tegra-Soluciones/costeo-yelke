@@ -438,7 +438,12 @@ def get_item(item_code):
         "default_bom": doc.default_bom,
         "country_of_origin": doc.country_of_origin,
         "customs_tariff_number": doc.customs_tariff_number,
-        "mx_product_service_key": getattr(doc, "mx_product_service_key", None),
+        # product_key es el campo real y obligatorio (usado por mexico_einvoice para el CFDI).
+        # mx_product_service_key es una columna legada (ya no tiene DocField/Custom Field
+        # asociado, pero sigue viva en la tabla) que otra app de facturación en producción
+        # todavia lee -- si product_key esta vacio (item viejo, cargado antes del cambio de
+        # campo), se usa como respaldo para no perder el dato en el formulario.
+        "mx_product_service_key": doc.get("product_key") or frappe.db.get_value("Item", doc.name, "mx_product_service_key"),
         "creation": str(doc.creation),
         "modified": str(doc.modified),
         "item_defaults": item_defaults,
@@ -467,7 +472,6 @@ def update_item(item_code, data):
         "has_batch_no", "batch_number_series",
         "has_serial_no", "serial_no_series",
         "country_of_origin", "customs_tariff_number",
-        "mx_product_service_key",
         "default_bom",
     ]
 
@@ -475,20 +479,38 @@ def update_item(item_code, data):
         if field in data:
             setattr(doc, field, data[field])
 
+    # "mx_product_service_key" (nombre del campo en la SPA) se guarda en el Item real
+    # como "product_key" (obligatorio, usado por mexico_einvoice para el CFDI) -- ver
+    # nota completa en create_item(). Se replica también en la columna legada
+    # "mx_product_service_key" (sin DocField propio, se escribe vía SQL directo) porque
+    # otra app de facturación en producción todavía lee de ahí.
+    sat_key = data.get("mx_product_service_key")
+    if "mx_product_service_key" in data:
+        doc.product_key = sat_key
+
     doc.flags.ignore_permissions = True
     doc.flags.ignore_links       = True
     doc.flags.ignore_mandatory   = True
     doc.save()
+    if "mx_product_service_key" in data:
+        frappe.db.set_value("Item", doc.name, "mx_product_service_key", sat_key, update_modified=False)
     frappe.db.commit()
     return {"updated": True, "item_code": item_code}
 
 
 @frappe.whitelist()
-def create_item(data):
-    """Create a new Item with all fields including prices, suppliers, and Mexico Compliance."""
+def create_item(data, ignore_mandatory=False):
+    """Create a new Item with all fields including prices, suppliers, and Mexico Compliance.
+
+    ignore_mandatory: usado por materializaciones parciales (p. ej. el Producto
+    Terminado de un Costeo al pasar a cotización), que a propósito solo llenan un
+    subconjunto mínimo de campos y dejan el resto (como la clave SAT) para
+    completarse después, antes de producción/facturación."""
     import json
     if isinstance(data, str):
         data = json.loads(data)
+    if isinstance(ignore_mandatory, str):
+        ignore_mandatory = ignore_mandatory.lower() in ("1", "true", "yes")
 
     doc = frappe.new_doc("Item")
 
@@ -504,13 +526,23 @@ def create_item(data):
         "weight_per_unit", "weight_uom",
         "country_of_origin", "customs_tariff_number",
         "enable_deferred_revenue", "enable_deferred_expense",
-        "mx_product_service_key",
+        "over_delivery_receipt_allowance", "over_billing_allowance",
     ]
 
     for field in scalar_fields:
         val = data.get(field)
         if val is not None and val != "":
             setattr(doc, field, val)
+
+    # La SPA llama a este campo "mx_product_service_key" (nombre visible en el
+    # formulario), pero el campo real en Item (custom field de mexico_einvoice,
+    # obligatorio, usado para el CFDI) es "product_key" -- se mapea aparte para no
+    # perder el valor. También se replica más abajo en la columna legada
+    # "mx_product_service_key" (ya no tiene DocField propio, pero otra app de
+    # facturación en producción todavía lee de ahí).
+    sat_key = data.get("mx_product_service_key")
+    if sat_key:
+        doc.product_key = sat_key
 
     # Item Defaults (child table)
     is_service = data.get("item_group") == "Servicios"
@@ -554,7 +586,12 @@ def create_item(data):
             doc.append("taxes", {"item_tax_template": row["item_tax_template"]})
 
     doc.flags.ignore_permissions = True
+    if ignore_mandatory:
+        doc.flags.ignore_mandatory = True
     doc.insert()
+
+    if sat_key:
+        frappe.db.set_value("Item", doc.name, "mx_product_service_key", sat_key, update_modified=False)
 
     # Item Price records (created separately after item is saved)
     price_errors = []

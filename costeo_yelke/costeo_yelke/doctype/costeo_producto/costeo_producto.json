@@ -80,10 +80,9 @@
   },
   {
    "fieldname": "finished_item",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Producto Terminado",
-   "options": "Item",
    "reqd": 1
   }
  ],

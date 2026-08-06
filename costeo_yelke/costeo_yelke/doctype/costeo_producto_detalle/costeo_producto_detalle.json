@@ -36,9 +36,8 @@
   },
   {
    "fieldname": "item",
-   "fieldtype": "Link",
-   "label": "Item",
-   "options": "Item"
+   "fieldtype": "Data",
+   "label": "Item"
   },
   {
    "fieldname": "internal_uom",
@@ -95,9 +94,8 @@
   },
   {
    "fieldname": "servicio",
-   "fieldtype": "Link",
-   "label": "Servicio",
-   "options": "Item"
+   "fieldtype": "Data",
+   "label": "Servicio"
   },
   {
    "fieldname": "proveedor_servicio",
@@ -107,9 +105,8 @@
   },
   {
    "fieldname": "subensamblaje",
-   "fieldtype": "Link",
-   "label": "Sub-ensamblaje",
-   "options": "Item"
+   "fieldtype": "Data",
+   "label": "Sub-ensamblaje"
   }
  ],
  "grid_page_length": 50,

@@ -34,6 +34,33 @@
       </div>
     </div>
 
+    <!-- Modal: materializar producto terminado (al pasar a cotización) -->
+    <MaterializeProductModal
+      :open="materializeModal.open"
+      :finished-item-text="materializeModal.text"
+      :suggested-price="materializeModal.suggestedPrice"
+      :company="form.compania"
+      :saving="materializeModal.saving"
+      @cancel="cancelMaterialize"
+      @confirm="confirmMaterialize"
+    />
+
+    <!-- Modal: materializar artículo (material/servicio/subensamblaje) desde el checklist -->
+    <MaterializeArticuloModal
+      :open="articuloModal.open"
+      :row-type="articuloModal.group?.row_type || 'material'"
+      :texto="articuloModal.group?.texto || ''"
+      :suggested-supplier="articuloModal.group?.supplier || ''"
+      :suggested-price="articuloModal.group?.unit_price || 0"
+      :suggested-supplier-uom="articuloModal.group?.supplier_uom || ''"
+      :suggested-conversion-factor="articuloModal.group?.conversion_factor || 0"
+      :company="pendientesContext.company"
+      :default-warehouse="articuloModal.group?.row_type === 'subensamblaje_etapa' ? pendientesContext.almacen_trabajo_en_proceso : pendientesContext.almacen_materias_primas"
+      :saving="articuloModal.saving"
+      @cancel="cancelArticuloModal"
+      @confirm="confirmArticuloModal"
+    />
+
     <!-- Header -->
     <PageHeader :title="isNew ? 'Nuevo Costeo' : (docName || '…')" :subtitle="headerSubtitle" back>
       <div v-if="!isNew" class="relative" ref="actionsRef">
@@ -173,11 +200,11 @@
                       <thead><tr class="border-b border-surface-border text-left text-xs font-semibold text-ink-light"><th class="py-2 w-1/4">Artículo</th><th class="py-2 w-1/5">Proveedor</th><th class="py-2 w-16">Etapa</th><th class="py-2 w-24 text-right">Cant.</th><th class="py-2 w-28 text-right">Precio unit.</th><th class="py-2 w-28 text-right">Total</th><th class="w-7"></th></tr></thead>
                       <tbody>
                         <tr v-for="d in materialesDe(prod.finished_item)" :key="d._tid" class="border-b border-surface-border/60">
-                          <td class="py-1.5 pr-2"><LinkInput v-model="d.item" doctype="Item" :filters="ITEM_FILTERS.mp" placeholder="Materia prima…" @update:model-value="onDetalleItemChange(d, prod)" /></td>
+                          <td class="py-1.5 pr-2"><input v-model="d.item" class="field-input" placeholder="Materia prima…" @change="onDetalleItemChange(d, prod)" /></td>
                           <td class="py-1.5 pr-2">
                             <select v-model="d.supplier" @change="onSupplierChange(d, prod)" :disabled="!d.item" class="field-input">
-                              <option value="">{{ !d.item ? 'Elige artículo' : ((d._supplierOptions || []).length ? '— Proveedor —' : 'Sin proveedor con precio') }}</option>
-                              <option v-for="o in d._supplierOptions || []" :key="o.supplier" :value="o.supplier">{{ o.supplier_name || o.supplier }}</option>
+                              <option value="">{{ !d.item ? 'Elige artículo' : '— Proveedor —' }}</option>
+                              <option v-for="o in allSuppliers" :key="o.name" :value="o.name">{{ o.supplier_name || o.name }}</option>
                             </select>
                           </td>
                           <td class="py-1.5 pr-2"><input v-model="d.etapa" class="field-input" placeholder="1" /></td>
@@ -197,10 +224,13 @@
                       <tbody>
                         <tr v-for="e in etapasDe(prod.finished_item)" :key="e._tid" class="border-b border-surface-border/60">
                           <td class="py-1.5 pr-2"><input v-model="e.etapa" class="field-input" placeholder="1" /></td>
-                          <td class="py-1.5 pr-2"><LinkInput v-model="e.servicio" doctype="Item" :filters="ITEM_FILTERS.servicio" placeholder="Servicio…" @update:model-value="onEtapaServicioChange(e, prod)" /></td>
+                          <td class="py-1.5 pr-2"><input v-model="e.servicio" class="field-input" placeholder="Servicio…" @change="onEtapaServicioChange(e, prod)" /></td>
                           <td class="py-1.5 pr-2"><LinkInput v-model="e.proveedor" doctype="Supplier" placeholder="Taller…" /></td>
                           <td class="py-1.5 pr-2"><div class="relative"><span class="prefix text-xs">$</span><input v-model.number="e.precio_servicio" type="number" min="0" step="0.01" class="field-input text-right pl-5" @input="recalcProducto(prod)" /></div></td>
-                          <td class="py-1.5 pr-2"><LinkInput v-model="e.subensamblaje" doctype="Item" :filters="ITEM_FILTERS.sub" placeholder="Sub-ensamblaje…" /></td>
+                          <td class="py-1.5 pr-2">
+                            <input v-if="!esUltimaEtapa(e, prod.finished_item)" v-model="e.subensamblaje" class="field-input" placeholder="Sub-ensamblaje…" />
+                            <div v-else class="field-input bg-surface-raised/60 text-ink-light italic truncate" title="La última etapa siempre produce el producto terminado — este campo no aplica aquí">= Producto terminado</div>
+                          </td>
                           <td class="py-1.5"><button class="del-btn" @click="removeEtapa(e, prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button></td>
                         </tr>
                       </tbody>
@@ -254,9 +284,15 @@
           </select>
 
           <label class="field-label">Términos y condiciones</label>
-          <select v-model="cotForm.tc_name" class="field-input mb-4" :disabled="quotValidated">
+          <select v-model="cotForm.tc_name" class="field-input mb-3" :disabled="quotValidated">
             <option value="">— Sin términos —</option>
             <option v-for="t in cotDefaults.terms" :key="t.name" :value="t.name">{{ t.name }}</option>
+          </select>
+
+          <label class="field-label">Vista de impresión</label>
+          <select v-model="cotForm.custom_tipo_formato" class="field-input mb-4" :disabled="quotValidated" @change="onTipoFormatoChange">
+            <option value="Normal">Normal</option>
+            <option value="Volumen">Por volumen</option>
           </select>
 
           <div class="border-t border-surface-border pt-3 mb-4 space-y-1">
@@ -377,6 +413,34 @@
           <svg v-if="advancing" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
           Preparar producción
         </button>
+      </div>
+
+      <div v-if="!hasPlan && pendientesAdvertencias.length" class="bg-amber-50/40 rounded-xl border border-amber-200 p-3 mb-4">
+        <p v-for="(a, i) in pendientesAdvertencias" :key="i" class="text-[12px] text-amber-700 flex items-start gap-2">
+          <svg class="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+          <span>{{ a }}</span>
+        </p>
+      </div>
+
+      <div v-if="!hasPlan && pendientesArticulos.length" class="bg-amber-50/40 rounded-xl border border-amber-200 p-4 mb-4">
+        <div class="flex items-center justify-between mb-1">
+          <p class="text-sm font-semibold text-ink">Artículos pendientes de materializar</p>
+          <span class="text-[11px] font-medium text-amber-700 bg-amber-100 rounded-full px-2 py-0.5">{{ pendientesArticulos.length }} pendiente{{ pendientesArticulos.length === 1 ? '' : 's' }}</span>
+        </div>
+        <p class="text-[12px] text-ink-muted mb-3">Se capturaron como texto libre en el costeo. Resuélvelos (vincula uno existente o crea uno nuevo) antes de preparar producción.</p>
+        <div class="space-y-2">
+          <div v-for="g in pendientesArticulos" :key="g.row_type + '::' + g.texto" class="flex items-center gap-3 bg-white rounded-lg border border-surface-border p-3">
+            <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0" :class="tipoBadgeClass(g.row_type)">{{ tipoLabel(g.row_type) }}</span>
+            <div class="flex-1 min-w-0">
+              <p class="text-[13px] font-medium text-ink truncate">{{ g.texto }}</p>
+              <p class="text-[11px] text-ink-light truncate">Usado en: {{ g.productos.join(', ') }}<span v-if="g.supplier"> · Proveedor: {{ g.supplier }}</span></p>
+            </div>
+            <div class="w-52 flex-shrink-0">
+              <LinkInput :model-value="''" doctype="Item" placeholder="Vincular existente…" @update:model-value="(v) => v && resolverArticuloExistente(g, v)" />
+            </div>
+            <button class="doc-action justify-center flex-shrink-0" @click="openArticuloModal(g)">+ Crear</button>
+          </div>
+        </div>
       </div>
 
       <div v-if="prepSteps.length" class="bg-white rounded-xl border border-surface-border p-4 mb-4">
@@ -1106,53 +1170,89 @@
       </div>
     </div>
 
-    <!-- ══════════ STEP 4 · FACTURAR ══════════ -->
-    <div v-else class="p-5 pb-20">
+    <!-- ══════════ STEP 4 · ENVIAR (Remisión) ══════════ -->
+    <div v-else-if="activeStep === 4" class="p-5 pb-20">
+      <div class="flex gap-5 items-start max-w-6xl mx-auto">
 
-      <!-- Gate: la remisión es obligatoria antes de poder facturar -->
-      <div v-if="!dnValidated" class="max-w-2xl mx-auto">
-        <div class="bg-white rounded-xl border border-surface-border p-8 text-center">
-          <div class="w-12 h-12 rounded-xl bg-brand-50 flex items-center justify-center mx-auto mb-3">
-            <svg class="w-6 h-6 text-brand-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0l-2 5H6l-2-5m16 0H4m5 5v.01M15 18v.01"/></svg>
+        <!-- Izquierda: datos de la remisión -->
+        <div class="w-80 flex-shrink-0 bg-white rounded-xl border border-surface-border p-5">
+          <div class="flex items-center justify-between mb-1">
+            <p class="text-sm font-semibold text-ink">Remisión (entrega)</p>
+            <span v-if="related.delivery_note" class="text-[11px] font-semibold px-2 py-0.5 rounded-full" :class="dnValidated ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'">{{ dnValidated ? 'Validada' : 'Borrador' }}</span>
           </div>
-          <p class="text-sm font-medium text-ink">Registra la remisión antes de facturar</p>
-          <p class="text-[13px] text-ink-muted mt-1 mb-4 max-w-md mx-auto">La entrega física al cliente se registra primero: libera el producto terminado del inventario y genera el costo de venta real. No se puede facturar sin esto.</p>
+          <p class="text-[12px] text-ink-muted mb-4">Registra la entrega física al cliente — libera el producto terminado del inventario y genera el costo de venta real. Se requiere antes de facturar.</p>
 
           <div v-if="!related.delivery_note">
-            <button :disabled="advancing || related.sales_order?.docstatus !== 1" class="px-4 py-2 text-sm font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="generarRemision">Crear remisión</button>
-            <p v-if="related.sales_order?.docstatus !== 1" class="text-[11px] text-ink-light mt-2">Primero valida la orden de venta.</p>
+            <button :disabled="advancing || related.sales_order?.docstatus !== 1" class="w-full h-9 text-sm font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-40 flex items-center justify-center gap-2" @click="generarRemision">
+              <svg v-if="advancing" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+              Crear remisión
+            </button>
+            <p v-if="related.sales_order?.docstatus !== 1" class="text-[11px] text-ink-light mt-2 text-center">Primero valida la orden de venta.</p>
           </div>
 
-          <div v-else-if="dnDoc" class="text-left bg-surface-raised/40 rounded-lg p-4 mt-2">
-            <div class="flex items-center justify-between mb-3">
-              <span class="text-sm font-semibold text-ink">{{ dnDoc.name }}</span>
-              <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">Borrador</span>
-            </div>
+          <div v-else-if="dnDoc">
+            <label class="field-label">Dirección de envío <span class="text-ink-light font-normal">(si es distinta a la de facturación)</span></label>
+            <select v-model="dnForm.shipping_address_name" class="field-input mb-3" :disabled="dnValidated">
+              <option value="">— Misma que facturación —</option>
+              <option v-for="a in (dnDoc.address_options || [])" :key="a.value" :value="a.value">{{ a.label }}</option>
+            </select>
+
+            <label class="field-label">Dirección de facturación</label>
+            <select v-model="dnForm.customer_address" class="field-input mb-3" :disabled="dnValidated">
+              <option value="">— Sin especificar —</option>
+              <option v-for="a in (dnDoc.address_options || [])" :key="a.value" :value="a.value">{{ a.label }}</option>
+            </select>
+
             <label class="field-label">Fecha de entrega</label>
-            <input v-model="dnForm.posting_date" type="date" class="field-input mb-3" />
+            <input v-model="dnForm.posting_date" type="date" class="field-input mb-3" :disabled="dnValidated" />
+
             <table class="w-full text-sm mb-3">
               <thead><tr class="text-left text-xs font-semibold text-ink-light border-b border-surface-border"><th class="py-2">Producto</th><th class="py-2 w-20 text-right">Cant.</th><th class="py-2">Almacén</th><th class="py-2 w-20 text-right">Disponible</th></tr></thead>
               <tbody>
                 <tr v-for="it in dnDoc.items" :key="it.name" class="border-b border-surface-border/60">
                   <td class="py-1.5 pr-2">{{ it.item_name || it.item_code }}</td>
-                  <td class="py-1.5 pr-2"><input v-model.number="it.qty" type="number" min="0" class="field-input text-right" /></td>
-                  <td class="py-1.5 pr-2"><select v-model="it.warehouse" class="field-input"><option value="">— Selecciona —</option><option v-for="w in (dnDoc.warehouses || [])" :key="w.name" :value="w.name">{{ w.warehouse_name || w.name }}</option></select></td>
+                  <td class="py-1.5 pr-2"><input v-model.number="it.qty" type="number" min="0" class="field-input text-right" :disabled="dnValidated" /></td>
+                  <td class="py-1.5 pr-2"><select v-model="it.warehouse" class="field-input" :disabled="dnValidated"><option value="">— Selecciona —</option><option v-for="w in (dnDoc.warehouses || [])" :key="w.name" :value="w.name">{{ w.warehouse_name || w.name }}</option></select></td>
                   <td class="py-1.5 pr-2 text-right" :class="(it.available ?? 0) < it.qty ? 'text-red-600 font-semibold' : 'text-ink-muted'">{{ it.available ?? '—' }}</td>
                 </tr>
               </tbody>
             </table>
             <p v-if="dnDoc.items.some(it => (it.available ?? 0) < it.qty)" class="text-[12px] text-red-600 mb-3 flex items-start gap-1.5"><svg class="w-4 h-4 flex-shrink-0 mt-px" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.71-3l-6.93-12a2 2 0 00-3.42 0l-6.93 12a2 2 0 001.71 3z"/></svg>No hay stock suficiente en el almacén elegido para esa cantidad.</p>
-            <div class="flex items-center gap-2 flex-wrap">
-              <button class="doc-action" @click="openPdf('Delivery Note', dnDoc.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>Vista previa</button>
-              <div class="flex-1"></div>
-              <button :disabled="advancing" class="doc-action" @click="guardarRemision">Guardar</button>
-              <button :disabled="advancing" class="h-8 px-4 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex items-center gap-1.5" @click="validarRemision"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Validar remisión</button>
+
+            <div class="space-y-2">
+              <template v-if="!dnValidated">
+                <button :disabled="advancing" class="w-full h-9 text-sm font-medium text-ink border border-surface-border rounded-lg hover:bg-surface-raised disabled:opacity-50" @click="guardarRemision">Guardar cambios</button>
+                <button :disabled="advancing" class="w-full h-9 text-sm font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex items-center justify-center gap-1.5" @click="validarRemision">
+                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                  Validar remisión
+                </button>
+              </template>
+              <div class="grid grid-cols-2 gap-2 pt-1">
+                <button class="doc-action justify-center" @click="openSend('Delivery Note', dnDoc.name, related.sales_order?.contact_email)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
+                <button class="doc-action justify-center" @click="downloadPdf('Delivery Note', dnDoc.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>Descargar</button>
+                <button class="doc-action justify-center" @click="printDocView('Delivery Note', dnDoc.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>Imprimir</button>
+                <button class="doc-action justify-center" @click="openAssign('Delivery Note', dnDoc.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Asignar</button>
+              </div>
+              <a class="doc-action justify-center w-full" :href="`/app/delivery-note/${dnDoc.name}`" target="_blank"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>Abrir en ERPNext</a>
             </div>
           </div>
         </div>
-      </div>
 
-      <template v-else>
+        <!-- Derecha: vista previa del PDF -->
+        <div class="flex-1 min-w-0 bg-white rounded-xl border border-surface-border overflow-hidden">
+          <div v-if="!related.delivery_note" class="flex flex-col items-center justify-center gap-2 text-ink-light" style="height: 78vh;">
+            <svg class="w-10 h-10 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.2"><path stroke-linecap="round" stroke-linejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0l-2 5H6l-2-5m16 0H4m5 5v.01M15 18v.01"/></svg>
+            <p class="text-[13px]">La vista previa aparecerá al crear la remisión</p>
+          </div>
+          <div v-else style="height: 78vh; overflow: auto;">
+            <iframe :key="previewKey" :src="printUrl('Delivery Note', related.delivery_note.name)" style="width: 143%; height: 143%; transform: scale(0.7); transform-origin: top left; border: 0;" title="Vista previa de la remisión"></iframe>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════ STEP 5 · FACTURAR ══════════ -->
+    <div v-else-if="activeStep === 5" class="p-5 pb-20">
       <!-- Tabs: Venta (cliente) | Compras (proveedores) -->
       <div class="max-w-6xl mx-auto mb-4">
         <div class="flex items-center gap-1.5 bg-green-50 text-green-700 text-[12px] font-medium px-3 py-2 rounded-lg mb-3 w-max"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Remisión {{ related.delivery_note.name }} validada · mercancía entregada</div>
@@ -1306,7 +1406,6 @@
           </div>
         </div>
       </div>
-      </template>
     </div>
 
     <!-- Send modal -->
@@ -1376,6 +1475,8 @@ import PageHeader from "@/components/PageHeader.vue";
 import CosteoStepper from "@/components/CosteoStepper.vue";
 import LinkInput from "@/components/LinkInput.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
+import MaterializeProductModal from "@/components/MaterializeProductModal.vue";
+import MaterializeArticuloModal from "@/components/MaterializeArticuloModal.vue";
 import { db, call, openDesk as deskOpen, uploadFile, defaultPrintFormat } from "@/utils/frappe.js";
 
 const ITEM_FILTERS = {
@@ -1385,7 +1486,7 @@ const ITEM_FILTERS = {
   sub:       [["item_group", "in", ["Sub-Ensamblajes", "Productos Terminados"]]],
 };
 const TABS = [{ key: "materiales", label: "Materias primas" }, { key: "etapas", label: "Etapas de manufactura" }];
-const ORDER = ["Borrador", "Cotizado", "Orden de Venta", "En Producción", "Completado"];
+const ORDER = ["Borrador", "Cotizado", "Orden de Venta", "En Producción", "Entregado", "Completado"];
 
 const route = useRoute();
 const router = useRouter();
@@ -1400,6 +1501,11 @@ const confirmDelete = reactive({ open: false, loading: false });
 const confirmCancel = reactive({ open: false, loading: false });
 const familias = ref([]);
 const tplModal = reactive({ open: false, nombre: "", familia: "", saving: false });
+const materializeModal = reactive({ open: false, saving: false, text: "", suggestedPrice: 0 });
+const pendientesArticulos = ref([]);
+const pendientesContext = reactive({ company: "", almacen_materias_primas: "", almacen_trabajo_en_proceso: "" });
+const pendientesAdvertencias = ref([]);
+const articuloModal = reactive({ open: false, saving: false, group: null });
 
 const docName = ref(null);
 const docStatus = ref("Borrador");
@@ -1407,11 +1513,11 @@ const docState = ref(0); // docstatus del Costeo: 0 borrador, 1 validado
 const activeStep = ref(0);
 const previewKey = ref(0); // fuerza recarga del iframe de preview
 const related = reactive({ quotation: null, sales_order: null, delivery_note: null, sales_invoice: null });
-const cotForm = reactive({ valid_till: "", payment_terms_template: "", tc_name: "" });
+const cotForm = reactive({ valid_till: "", payment_terms_template: "", tc_name: "", custom_tipo_formato: "Normal" });
 const soForm = reactive({ delivery_date: "", payment_terms_template: "", tc_name: "" });
 const siForm = reactive({ posting_date: "", due_date: "", payment_terms_template: "", tc_name: "" });
 const dnDoc = ref(null);
-const dnForm = reactive({ posting_date: "" });
+const dnForm = reactive({ posting_date: "", shipping_address_name: "", customer_address: "" });
 const prodComplete = reactive({ complete: false, total: 0, recibidas: 0 });
 const factTab = ref("venta");
 const compras = reactive({ materiales: [], maquila: [] });
@@ -1481,6 +1587,7 @@ const errors = reactive({});
 const productos = ref([]);
 const detalles = ref([]);
 const etapas = ref([]);
+const allSuppliers = ref([]);
 const expandedTid = ref(null);
 const tabState = ref({});
 const toast = reactive({ show: false, msg: "", type: "success" });
@@ -1496,7 +1603,8 @@ const cta = computed(() => ({
   "Borrador":       { label: "Pasar a cotización",        action: "cotizar" },
   "Cotizado":       { label: "Generar orden de venta",    action: "vender" },
   "Orden de Venta": { label: "Preparar producción",       action: "producir" },
-  "En Producción":  { label: "Ir a facturar",             action: "facturar" },
+  "En Producción":  { label: "Registrar entrega",         action: "enviar" },
+  "Entregado":      { label: "Ir a facturar",             action: "facturar" },
   "Completado":     null,
 }[docStatus.value] || null));
 
@@ -1593,6 +1701,23 @@ function setTab(tid, tab) { tabState.value[tid] = tab; }
 function tabCount(prod, tab) { if (!prod.finished_item) return 0; if (tab === "materiales") return materialesDe(prod.finished_item).length; if (tab === "etapas") return etapasDe(prod.finished_item).length; return 0; }
 function materialesDe(fi) { return detalles.value.filter(d => d.finished_item === fi && d.concept_type === "Materia Prima"); }
 function etapasDe(fi) { return etapas.value.filter(e => e.producto_terminado === fi); }
+// Misma ordenación que _stage_sort_key_int en el backend (numérica si se puede, si no alfabética).
+// La ÚLTIMA etapa en ese orden es la que produce el producto terminado — crear_boms_spa/
+// crear_subcontracting_bom ignoran lo que haya en "subensamblaje" de esa fila y usan
+// finished_item en su lugar, así que ese campo no debe capturarse ahí (evita el caso de una
+// sola etapa donde no hay intermedio real y se confundía como si fuera un sub-ensamblaje).
+function stageSortKey(e) {
+  const n = parseInt(e.etapa, 10);
+  return Number.isNaN(n) ? [1, String(e.etapa || "")] : [0, n];
+}
+function esUltimaEtapa(e, fi) {
+  const ordenadas = etapasDe(fi).slice().sort((a, b) => {
+    const ka = stageSortKey(a), kb = stageSortKey(b);
+    if (ka[0] !== kb[0]) return ka[0] - kb[0];
+    return ka[1] < kb[1] ? -1 : ka[1] > kb[1] ? 1 : 0;
+  });
+  return ordenadas.length > 0 && ordenadas[ordenadas.length - 1]._tid === e._tid;
+}
 
 // ── Product / detail / stage ──
 function addProducto() { const p = { _tid: uid(), _image: "", finished_item: "", qty: 1, shipping_cost: 0, overhead_pct: 0, margin_pct: 0, material_cost: 0, services_cost: 0, overhead_amt: 0, total_unit_cost: 0, unit_sales_price: 0, total_sales_price: 0 }; productos.value.push(p); expandedTid.value = p._tid; }
@@ -1660,6 +1785,15 @@ function onSupplierChange(d, prod) {
   const opt = (d._supplierOptions || []).find(o => o.supplier === d.supplier);
   if (opt) d.unit_price = opt.rate;
   recalcDetalle(d, prod);
+}
+async function loadAllSuppliers() {
+  if (allSuppliers.value.length) return;
+  try {
+    allSuppliers.value = await call("frappe.client.get_list", {
+      doctype: "Supplier", fields: ["name", "supplier_name"],
+      filters: [["disabled", "=", 0]], limit_page_length: 500, order_by: "supplier_name asc",
+    }) || [];
+  } catch { /* ignore */ }
 }
 async function hydrateSupplierOptions() {
   for (const d of detalles.value) {
@@ -1740,6 +1874,7 @@ async function loadRelated() {
       cotForm.valid_till = r.quotation.valid_till || "";
       cotForm.payment_terms_template = r.quotation.payment_terms_template || "";
       cotForm.tc_name = r.quotation.tc_name || "";
+      cotForm.custom_tipo_formato = r.quotation.custom_tipo_formato || "Normal";
     }
     if (r.sales_order) {
       soForm.delivery_date = r.sales_order.delivery_date || "";
@@ -1757,8 +1892,11 @@ async function loadProdComplete() {
 }
 // ── Nota de remisión (entrega) ──
 async function loadRemisionDetalle(name) {
-  try { dnDoc.value = await call("costeo_yelke.api.costeo_api.get_remision", { name }); }
-  catch { dnDoc.value = null; }
+  try {
+    dnDoc.value = await call("costeo_yelke.api.costeo_api.get_remision", { name });
+    dnForm.shipping_address_name = dnDoc.value.shipping_address_name || "";
+    dnForm.customer_address = dnDoc.value.customer_address || "";
+  } catch { dnDoc.value = null; }
 }
 async function generarRemision() {
   if (isNew.value) { showToast("Guarda el costeo primero", "error"); return; }
@@ -1778,6 +1916,8 @@ async function guardarRemision() {
     await call("costeo_yelke.api.costeo_api.actualizar_remision", {
       name: dnDoc.value.name, posting_date: dnForm.posting_date || null,
       items: JSON.stringify(dnDoc.value.items),
+      shipping_address_name: dnForm.shipping_address_name || null,
+      customer_address: dnForm.customer_address || null,
     });
     await loadRemisionDetalle(dnDoc.value.name);
     showToast("Remisión guardada");
@@ -1791,8 +1931,11 @@ async function validarRemision() {
     await call("costeo_yelke.api.costeo_api.actualizar_remision", {
       name: dnDoc.value.name, posting_date: dnForm.posting_date || null,
       items: JSON.stringify(dnDoc.value.items),
+      shipping_address_name: dnForm.shipping_address_name || null,
+      customer_address: dnForm.customer_address || null,
     });
-    await call("costeo_yelke.api.costeo_api.validar_documento", { doctype: "Delivery Note", name: dnDoc.value.name });
+    await call("costeo_yelke.api.costeo_api.validar_remision", { name: dnDoc.value.name });
+    if (ORDER.indexOf(docStatus.value) < ORDER.indexOf("Entregado")) docStatus.value = "Entregado";
     await loadRelated();
     showToast("Remisión validada · mercancía entregada al cliente");
   } catch (e) { showToast(e.message || "No se pudo validar la remisión", "error"); }
@@ -2409,6 +2552,8 @@ async function prepararProduccion() {
   if (isNew.value) { showToast("Guarda el costeo primero", "error"); return; }
   advancing.value = true;
   try {
+    const ok = await materializeArticulosIfNeeded();
+    if (!ok) return;
     const r = await call("costeo_yelke.api.costeo_api.preparar_produccion", { costeo: docName.value });
     prepSteps.value = r.steps || [];
     if (ORDER.indexOf(docStatus.value) < 3) docStatus.value = "En Producción";
@@ -2493,17 +2638,27 @@ async function advance() {
   if (!canAdvance.value) { showToast("Completa los pendientes antes de avanzar", "error"); return; }
   advancing.value = true;
   try {
-    if (c.action === "cotizar") { await call("costeo_yelke.api.costeo_api.crear_cotizacion", { costeo: docName.value }); docStatus.value = "Cotizado"; showToast("Cotización creada"); }
+    if (c.action === "cotizar") {
+      const ok = await materializeFinishedProductsIfNeeded();
+      if (!ok) return;
+      await call("costeo_yelke.api.costeo_api.crear_cotizacion", { costeo: docName.value }); docStatus.value = "Cotizado"; showToast("Cotización creada");
+    }
     else if (c.action === "vender") { await call("costeo_yelke.api.costeo_api.crear_orden_venta", { costeo: docName.value }); docStatus.value = "Orden de Venta"; showToast("Orden de venta creada"); }
     else if (c.action === "producir") {
+      const ok = await materializeArticulosIfNeeded();
+      if (!ok) return;
       const r = await call("costeo_yelke.api.costeo_api.preparar_produccion", { costeo: docName.value });
       prepSteps.value = r.steps || [];
       docStatus.value = "En Producción";
       await loadPlan();
       showToast("Producción preparada");
     }
-    else if (c.action === "facturar") {
+    else if (c.action === "enviar") {
       activeStep.value = 4;
+      return;
+    }
+    else if (c.action === "facturar") {
+      activeStep.value = 5;
       return;
     }
     await loadRelated();
@@ -2565,11 +2720,14 @@ async function guardarBorradorCotizacion() {
   if (isNew.value) { showToast("Guarda el costeo primero", "error"); return; }
   advancing.value = true;
   try {
+    const ok = await materializeFinishedProductsIfNeeded();
+    if (!ok) return;
     await call("costeo_yelke.api.costeo_api.crear_cotizacion", {
       costeo: docName.value,
       valid_till: cotForm.valid_till || null,
       payment_terms_template: cotForm.payment_terms_template || null,
       tc_name: cotForm.tc_name || null,
+      custom_tipo_formato: cotForm.custom_tipo_formato || "Normal",
     });
     if (ORDER.indexOf(docStatus.value) < 1) docStatus.value = "Cotizado";
     await loadRelated();
@@ -2577,6 +2735,17 @@ async function guardarBorradorCotizacion() {
     showToast("Cotización guardada como borrador");
   } catch (e) { showToast(e.message || "No se pudo guardar la cotización", "error"); }
   finally { advancing.value = false; }
+}
+async function onTipoFormatoChange() {
+  if (!related.quotation || quotValidated.value) return;
+  try {
+    await call("costeo_yelke.api.costeo_api.set_tipo_formato_cotizacion", {
+      name: related.quotation.name,
+      custom_tipo_formato: cotForm.custom_tipo_formato,
+    });
+    related.quotation.custom_tipo_formato = cotForm.custom_tipo_formato;
+    previewKey.value++;
+  } catch (e) { showToast(e.message || "No se pudo actualizar la vista de impresión", "error"); }
 }
 async function guardarCambiosCotizacion() {
   if (!related.quotation) return;
@@ -2587,6 +2756,7 @@ async function guardarCambiosCotizacion() {
       valid_till: cotForm.valid_till || null,
       payment_terms_template: cotForm.payment_terms_template || null,
       tc_name: cotForm.tc_name || null,
+      custom_tipo_formato: cotForm.custom_tipo_formato || "Normal",
     });
     await loadRelated();
     previewKey.value++;
@@ -2620,6 +2790,132 @@ async function doAssign() {
 }
 async function loadCotDefaults() {
   try { const r = await call("costeo_yelke.api.costeo_api.get_cotizacion_defaults", { company: form.compania }); cotDefaults.payment_terms_templates = r.payment_terms_templates || []; cotDefaults.terms = r.terms || []; cotDefaults.users = r.users || []; } catch { /* ignore */ }
+}
+
+// ── Materializar Producto Terminado (al pasar a cotización) ──
+let materializeQueue = [];
+let materializeCurrentProd = null;
+let materializeDone = null;
+
+async function itemExists(itemCode) {
+  if (!itemCode) return false;
+  const rows = await call("frappe.client.get_list", { doctype: "Item", filters: { name: itemCode }, fields: ["name"], limit_page_length: 1 });
+  return !!(rows && rows.length);
+}
+
+// Recorre los productos del costeo; por cada finished_item que todavía no exista
+// como Item real, pide al usuario materializarlo (modal) antes de seguir. Devuelve
+// una promesa que resuelve `true` si todos quedaron listos, `false` si se canceló.
+async function materializeFinishedProductsIfNeeded() {
+  materializeQueue = productos.value.filter(p => p.finished_item && (p.qty || 0) > 0);
+  return new Promise((resolve) => {
+    materializeDone = resolve;
+    processNextMaterialize();
+  });
+}
+
+async function processNextMaterialize() {
+  if (!materializeQueue.length) { materializeDone && materializeDone(true); return; }
+  const prod = materializeQueue[0];
+  if (await itemExists(prod.finished_item)) { materializeQueue.shift(); return processNextMaterialize(); }
+  materializeCurrentProd = prod;
+  materializeModal.text = prod.finished_item;
+  materializeModal.suggestedPrice = prod.unit_sales_price || 0;
+  materializeModal.saving = false;
+  materializeModal.open = true;
+}
+
+function cancelMaterialize() {
+  materializeModal.open = false;
+  materializeQueue = [];
+  if (materializeDone) materializeDone(false);
+}
+
+async function confirmMaterialize(payload) {
+  const prod = materializeCurrentProd;
+  materializeModal.saving = true;
+  try {
+    const oldText = prod.finished_item;
+    const r = await call("costeo_yelke.api.costeo_api.materializar_producto_terminado", {
+      costeo: docName.value,
+      old_finished_item: oldText,
+      item_code: payload.item_code,
+      item_name: payload.item_name,
+      stock_uom: payload.stock_uom,
+      precio_venta: payload.precio_venta,
+      pricing_rules: JSON.stringify(payload.pricing_rules || []),
+      mx_product_service_key: payload.mx_product_service_key || null,
+      description: payload.description || null,
+    });
+    prod.finished_item = r.item_code;
+    detalles.value.forEach(d => { if (d.finished_item === oldText) d.finished_item = r.item_code; });
+    etapas.value.forEach(e => { if (e.producto_terminado === oldText) e.producto_terminado = r.item_code; });
+    materializeModal.open = false;
+    materializeQueue.shift();
+    await processNextMaterialize();
+  } catch (e) { showToast(e.message || "No se pudo crear el producto", "error"); }
+  finally { materializeModal.saving = false; }
+}
+
+// ── Checklist de materialización (Fase 3, antes de preparar producción) ──
+function tipoLabel(rowType) {
+  return { material: "Materia Prima", servicio_etapa: "Servicio", subensamblaje_etapa: "Sub-ensamblaje" }[rowType] || rowType;
+}
+function tipoBadgeClass(rowType) {
+  return {
+    material: "bg-amber-50 text-amber-700",
+    servicio_etapa: "bg-blue-50 text-blue-700",
+    subensamblaje_etapa: "bg-green-50 text-green-700",
+  }[rowType] || "bg-surface-raised text-ink-muted";
+}
+async function loadPendientesArticulos() {
+  if (!docName.value) { pendientesArticulos.value = []; return; }
+  try {
+    const r = await call("costeo_yelke.api.costeo_api.get_articulos_pendientes", { costeo: docName.value });
+    pendientesArticulos.value = r?.grupos || [];
+    pendientesAdvertencias.value = r?.advertencias || [];
+    pendientesContext.company = r?.company || "";
+    pendientesContext.almacen_materias_primas = r?.almacen_materias_primas || "";
+    pendientesContext.almacen_trabajo_en_proceso = r?.almacen_trabajo_en_proceso || "";
+  } catch { /* ignore */ }
+}
+async function resolverArticuloExistente(g, itemCode) {
+  try {
+    await call("costeo_yelke.api.costeo_api.materializar_articulo", {
+      costeo: docName.value, row_type: g.row_type, texto: g.texto, item_code: itemCode,
+    });
+    await loadPendientesArticulos();
+    showToast(`"${g.texto}" vinculado a ${itemCode}`);
+  } catch (e) { showToast(e.message || "No se pudo vincular el artículo", "error"); }
+}
+function openArticuloModal(g) { articuloModal.group = g; articuloModal.open = true; }
+function cancelArticuloModal() { articuloModal.open = false; articuloModal.group = null; }
+async function confirmArticuloModal(payload) {
+  const g = articuloModal.group;
+  articuloModal.saving = true;
+  try {
+    await call("costeo_yelke.api.costeo_api.materializar_articulo", {
+      costeo: docName.value, row_type: g.row_type, texto: g.texto,
+      item_code: payload.item_code, prefill: JSON.stringify(payload.prefill),
+      supplier: payload.supplier, precio: payload.precio,
+    });
+    articuloModal.open = false; articuloModal.group = null;
+    await loadPendientesArticulos();
+    showToast(`"${g.texto}" creado y vinculado`);
+  } catch (e) { showToast(e.message || "No se pudo crear el artículo", "error"); }
+  finally { articuloModal.saving = false; }
+}
+// Se llama antes de disparar preparar_produccion. Si quedan artículos sin
+// materializar, navega al checklist (paso 3) y bloquea el avance — evita que
+// crear_boms_spa/crear_subcontracting_bom truenen a medio camino con texto libre.
+async function materializeArticulosIfNeeded() {
+  await loadPendientesArticulos();
+  if (pendientesArticulos.value.length) {
+    activeStep.value = 3;
+    showToast("Resuelve los artículos pendientes antes de preparar producción", "error");
+    return false;
+  }
+  return true;
 }
 
 // ── Kebab ──
@@ -2662,13 +2958,14 @@ async function doCancel() {
 function openDelete() { actionsOpen.value = false; confirmDelete.open = true; }
 async function doDelete() { confirmDelete.loading = true; try { await call("costeo_yelke.api.costeo_api.delete_costeo", { name: docName.value }); confirmDelete.open = false; router.replace({ name: "CosteoList" }); } catch (e) { showToast(e.message || "Error al eliminar", "error"); } finally { confirmDelete.loading = false; } }
 async function duplicateDoc() { actionsOpen.value = false; try { const res = await call("costeo_yelke.api.costeo_api.duplicate_costeo", { name: docName.value }); showToast("Costeo duplicado"); router.push({ name: "CosteoDetail", params: { name: res.name } }); } catch (e) { showToast(e.message || "Error al duplicar", "error"); } }
-function printDoc() { actionsOpen.value = false; printDocView("Costeo", docName.value); }
+function printDoc() { actionsOpen.value = false; openPdf("Costeo", docName.value); }
 function openInDesk() { actionsOpen.value = false; if (docName.value) deskOpen("Costeo", docName.value); }
 
 // ── Lifecycle ──
 onMounted(async () => {
   document.addEventListener("click", onDocClick, true);
   loadFamilias();
+  loadAllSuppliers();
   if (isNew.value) { loading.value = false; return; }
   try {
     const data = await db.get("Costeo", route.params.name);
@@ -2677,6 +2974,7 @@ onMounted(async () => {
     await loadRelated();
     await loadCotDefaults();
     await loadPlan();
+    await loadPendientesArticulos();
   } catch { showToast("No se pudo cargar el costeo", "error"); }
   finally { loading.value = false; }
 });

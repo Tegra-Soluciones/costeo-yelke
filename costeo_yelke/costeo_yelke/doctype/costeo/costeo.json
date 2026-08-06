@@ -158,7 +158,7 @@
       "fieldtype": "Select",
       "in_list_view": 1,
       "label": "Estatus",
-      "options": "Borrador\nCotizado\nOrden de Venta\nEn Producción\nCompletado\nCancelado"
+      "options": "Borrador\nCotizado\nOrden de Venta\nEn Producción\nEntregado\nCompletado\nCancelado"
     },
     {
       "default": "0",

@@ -145,6 +145,14 @@
               </div>
 
               <div>
+                <label class="field-label">Vista de impresión</label>
+                <select v-model="form.custom_tipo_formato" :disabled="!canEdit" class="field-input">
+                  <option value="Normal">Normal</option>
+                  <option value="Volumen">Por volumen</option>
+                </select>
+              </div>
+
+              <div>
                 <label class="field-label">Fecha <span class="text-red-400">*</span></label>
                 <input v-model="form.transaction_date" type="date" :disabled="!canEdit" class="field-input" />
               </div>
@@ -765,6 +773,7 @@ const quot = reactive({
 const form = reactive({
   name: "", quotation_to: "Customer", party_name: "", company: "",
   transaction_date: "", valid_till: "", order_type: "Sales",
+  custom_tipo_formato: "Normal",
   currency: "MXN", selling_price_list: "", conversion_rate: 1,
   taxes_and_charges: "", additional_discount_percentage: 0,
   discount_amount: 0, apply_discount_on: "Grand Total",
@@ -789,7 +798,7 @@ const isDirty = computed(() => {
   const orig = formOriginal.value;
   if (!orig || !Object.keys(orig).length) return isNew.value;
   const keys = ["quotation_to","party_name","company","transaction_date","valid_till",
-    "order_type","currency","selling_price_list","taxes_and_charges",
+    "order_type","custom_tipo_formato","currency","selling_price_list","taxes_and_charges",
     "additional_discount_percentage","tc_name","terms","contact_email","contact_mobile"];
   if (!keys.every(k => (form[k] ?? "") === (orig[k] ?? ""))) return true;
   if (form.items.length !== (orig.items || []).length) return true;
@@ -899,7 +908,7 @@ function syncFromQuotation(data) {
   });
   const scalars = [
     "quotation_to","party_name","company","transaction_date","valid_till",
-    "order_type","currency","selling_price_list","conversion_rate",
+    "order_type","custom_tipo_formato","currency","selling_price_list","conversion_rate",
     "taxes_and_charges","additional_discount_percentage","discount_amount",
     "apply_discount_on","tc_name","terms","customer_address",
     "shipping_address_name","contact_person","contact_email","contact_mobile",
@@ -933,6 +942,7 @@ async function save() {
       quotation_to: form.quotation_to, party_name: form.party_name,
       company: form.company, transaction_date: form.transaction_date,
       valid_till: form.valid_till, order_type: form.order_type,
+      custom_tipo_formato: form.custom_tipo_formato || "Normal",
       currency: form.currency, selling_price_list: form.selling_price_list,
       conversion_rate: form.conversion_rate || 1,
       taxes_and_charges: form.taxes_and_charges,
