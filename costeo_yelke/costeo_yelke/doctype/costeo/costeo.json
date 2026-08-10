@@ -21,6 +21,7 @@
     "costeo_producto",
     "costeo_producto_detalle",
     "tabla_etapas_costeo",
+    "tabla_tallas_costeo",
     "tree_view",
     "tab_dashboard",
     "tab_plan_produccion",
@@ -82,6 +83,7 @@
     "status",
     "warehouses",
     "amended_from",
+    "motivo_revision",
     "pp_actions_section",
     "pp_make_work_orders",
     "pp_column_break_work_orders",
@@ -200,6 +202,13 @@
       "hidden": 1,
       "label": "Etapas Costeo",
       "options": "Etapas Costeo"
+    },
+    {
+      "fieldname": "tabla_tallas_costeo",
+      "fieldtype": "Table",
+      "hidden": 1,
+      "label": "Desglose por Talla",
+      "options": "Costeo Producto Talla"
     },
     {
       "fieldname": "tab_dashboard",
@@ -451,9 +460,15 @@
       "fieldtype": "Link",
       "label": "Amended From",
       "no_copy": 1,
-      "options": "Production Plan",
+      "options": "Costeo",
       "print_hide": 1,
       "read_only": 1
+    },
+    {
+      "fieldname": "motivo_revision",
+      "fieldtype": "Small Text",
+      "label": "Motivo de la revisión",
+      "no_copy": 1
     },
     {
       "fieldname": "for_warehouse",

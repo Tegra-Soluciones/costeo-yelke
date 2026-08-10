@@ -38,6 +38,22 @@
             <svg v-if="acting === 'so'" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
             Crear Orden de Venta
           </button>
+
+          <button
+            v-if="quot.status !== 'Lost' && form.quotation_to === 'Customer'"
+            class="px-3 py-1.5 border border-gray-200 text-gray-600 text-sm font-medium rounded-md hover:bg-gray-50 flex items-center gap-1.5 transition-colors"
+            @click="openAcordadoModal"
+          >
+            Guardar precio acordado
+          </button>
+
+          <button
+            v-if="quot.status !== 'Lost'"
+            class="px-3 py-1.5 border border-red-200 text-red-500 text-sm font-medium rounded-md hover:bg-red-50 flex items-center gap-1.5 transition-colors"
+            @click="openRechazarModal"
+          >
+            Marcar rechazada
+          </button>
         </template>
 
         <div class="w-px h-5 bg-gray-200" />
@@ -71,10 +87,34 @@
           <StatusBadge :docstatus="quot.docstatus" :status="quot.status" />
           <span class="text-xs text-gray-300">·</span>
           <span class="text-xs font-mono text-gray-400">{{ quot.name }}</span>
+          <template v-if="form.costeo">
+            <span class="text-xs text-gray-300">·</span>
+            <router-link :to="{ name: 'CosteoDetail', params: { name: form.costeo } }" class="text-xs text-brand-600 hover:underline font-mono">
+              Desde {{ form.costeo }}
+            </router-link>
+            <span class="text-xs text-gray-300">·</span>
+            <button class="text-xs text-gray-500 hover:text-gray-700 hover:underline" @click="showHistorialModal = true">Ver historial</button>
+          </template>
           <div class="flex-1" />
           <span v-if="quot.valid_till" class="text-xs" :class="isExpired(quot.valid_till) ? 'text-red-500 font-medium' : 'text-gray-400'">
             Válida hasta: {{ fmtDate(quot.valid_till) }}
           </span>
+        </div>
+
+        <!-- Rechazada: motivo + dos caminos para seguir -->
+        <div v-if="quot.status === 'Lost'" class="bg-red-50 border border-red-100 rounded-xl px-4 py-3">
+          <p class="text-xs font-semibold text-red-700 mb-0.5">Cotización rechazada</p>
+          <p v-if="quot.order_lost_reason" class="text-xs text-red-600 mb-2.5">{{ quot.order_lost_reason }}</p>
+          <div v-if="form.costeo" class="space-y-1.5">
+            <button class="w-full text-left text-xs font-medium text-red-700 bg-white border border-red-200 rounded-lg px-3 py-2 hover:bg-red-100/50" @click="cotizarDeNuevo">
+              Cotizar de nuevo
+              <span class="block text-[11px] font-normal text-red-500">Solo cambió el precio o las condiciones — el costeo se queda igual.</span>
+            </button>
+            <button :disabled="acting === 'revision'" class="w-full text-left text-xs font-medium text-red-700 bg-white border border-red-200 rounded-lg px-3 py-2 hover:bg-red-100/50 disabled:opacity-50" @click="openRevisionModal">
+              Crear revisión del costeo
+              <span class="block text-[11px] font-normal text-red-500">Hay que ajustar materiales, cantidades u otra parte del costeo.</span>
+            </button>
+          </div>
         </div>
 
         <!-- Dirty save bar -->
@@ -195,6 +235,10 @@
                 <input v-model="form.contact_mobile" type="tel" :disabled="!canEdit" class="field-input" placeholder="+52 55 1234 5678" />
               </div>
 
+            </div>
+
+            <div v-if="!isNew" class="pt-4 border-t border-gray-100">
+              <AttachmentsPanel doctype="Quotation" :docname="quot.name" />
             </div>
           </div>
 
@@ -687,6 +731,97 @@
       </Transition>
     </Teleport>
 
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showAcordadoModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" @click.self="showAcordadoModal = false">
+          <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h3 class="text-base font-semibold text-gray-800">Guardar precio acordado</h3>
+              <button class="w-7 h-7 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-400" @click="showAcordadoModal = false">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
+            </div>
+            <div class="px-6 py-5 space-y-4">
+              <p class="text-xs text-gray-500">
+                Guarda el precio de {{ form.items.length }} artículo(s) de esta cotización como precio acordado
+                para {{ customerDisplayName }}. Mientras esté vigente, un pedido nuevo del mismo cliente y artículo
+                usa este precio automáticamente, sin volver a cotizar.
+              </p>
+              <div>
+                <label class="field-label">Vigente hasta</label>
+                <input v-model="acordadoValidUpto" type="date" class="field-input" />
+              </div>
+            </div>
+            <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
+              <button class="px-4 py-2 text-sm text-gray-500 hover:text-gray-700" @click="showAcordadoModal = false">Cancelar</button>
+              <button
+                :disabled="acting === 'acordado'"
+                class="px-4 py-2 bg-brand-500 text-white text-sm font-semibold rounded-lg hover:bg-brand-600 disabled:opacity-50"
+                @click="guardarPrecioAcordado"
+              >{{ acting === 'acordado' ? 'Guardando…' : 'Guardar' }}</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <HistorialModal :open="showHistorialModal" :costeo="form.costeo" :current-quotation="quot.name" @close="showHistorialModal = false" />
+
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showRevisionModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" @click.self="showRevisionModal = false">
+          <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h3 class="text-base font-semibold text-gray-800">Crear revisión</h3>
+              <button class="w-7 h-7 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-400" @click="showRevisionModal = false">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
+            </div>
+            <div class="px-6 py-5 space-y-3">
+              <p class="text-xs text-gray-500">Se creará una nueva revisión del costeo {{ form.costeo }} para poder ajustarla. El costeo original queda guardado como historial.</p>
+              <label class="field-label">Motivo de la revisión (opcional)</label>
+              <textarea v-model="revisionMotivo" rows="3" class="field-input" placeholder="Ej: cliente pidió ajustar el precio…"></textarea>
+            </div>
+            <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
+              <button class="px-4 py-2 text-sm text-gray-500 hover:text-gray-700" @click="showRevisionModal = false">Cancelar</button>
+              <button
+                :disabled="acting === 'revision'"
+                class="px-4 py-2 bg-brand-500 text-white text-sm font-semibold rounded-lg hover:bg-brand-600 disabled:opacity-50"
+                @click="confirmarRevision"
+              >{{ acting === 'revision' ? 'Creando…' : 'Crear revisión' }}</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showRechazarModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" @click.self="showRechazarModal = false">
+          <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h3 class="text-base font-semibold text-gray-800">Marcar como rechazada</h3>
+              <button class="w-7 h-7 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-400" @click="showRechazarModal = false">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
+            </div>
+            <div class="px-6 py-5 space-y-3">
+              <label class="field-label">Motivo (opcional, queda guardado en el historial)</label>
+              <textarea v-model="rechazarMotivo" rows="3" class="field-input" placeholder="Ej: precio alto, tiempo de entrega…"></textarea>
+            </div>
+            <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
+              <button class="px-4 py-2 text-sm text-gray-500 hover:text-gray-700" @click="showRechazarModal = false">Cancelar</button>
+              <button
+                :disabled="acting === 'rechazar'"
+                class="px-4 py-2 bg-red-500 text-white text-sm font-semibold rounded-lg hover:bg-red-600 disabled:opacity-50"
+                @click="confirmarRechazada"
+              >{{ acting === 'rechazar' ? 'Guardando…' : 'Marcar rechazada' }}</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
     <!-- Toast -->
     <Transition name="fade">
       <div
@@ -705,6 +840,8 @@
 import { ref, reactive, computed, onMounted, watch, defineComponent, h } from "vue";
 import { RouterLink, useRouter, useRoute } from "vue-router";
 import PageHeader from "@/components/PageHeader.vue";
+import HistorialModal from "@/components/HistorialModal.vue";
+import AttachmentsPanel from "@/components/AttachmentsPanel.vue";
 import { call, defaultPrintFormat }   from "@/utils/frappe.js";
 
 const props  = defineProps({ name: { type: String, default: "" } });
@@ -748,6 +885,13 @@ const toast        = reactive({ show: false, msg: "", type: "success" });
 const showEmailModal = ref(false);
 const showWAModal    = ref(false);
 const showSendModal  = ref(false);
+const showAcordadoModal = ref(false);
+const acordadoValidUpto = ref("");
+const showRechazarModal = ref(false);
+const rechazarMotivo = ref("");
+const showRevisionModal = ref(false);
+const revisionMotivo = ref("");
+const showHistorialModal = ref(false);
 
 // Print formats
 const printFormats = ref([{ name: "Standard" }]);
@@ -767,11 +911,11 @@ const prefillCosteo = route.query.costeo || "";
 
 const quot = reactive({
   name: "", docstatus: 0, status: "", creation: "", modified: "",
-  total_taxes_and_charges: 0, customer_name: "",
+  total_taxes_and_charges: 0, customer_name: "", order_lost_reason: "",
 });
 
 const form = reactive({
-  name: "", quotation_to: "Customer", party_name: "", company: "",
+  name: "", costeo: "", quotation_to: "Customer", party_name: "", company: "",
   transaction_date: "", valid_till: "", order_type: "Sales",
   custom_tipo_formato: "Normal",
   currency: "MXN", selling_price_list: "", conversion_rate: 1,
@@ -905,7 +1049,9 @@ function syncFromQuotation(data) {
     creation: data.creation, modified: data.modified,
     total_taxes_and_charges: data.total_taxes_and_charges || 0,
     customer_name: data.customer_name || "",
+    order_lost_reason: data.order_lost_reason || "",
   });
+  form.costeo = data.costeo || form.costeo || "";
   const scalars = [
     "quotation_to","party_name","company","transaction_date","valid_till",
     "order_type","custom_tipo_formato","currency","selling_price_list","conversion_rate",
@@ -939,6 +1085,7 @@ async function save() {
   try {
     const payload = {
       name: isNew.value ? "" : form.name,
+      costeo: form.costeo || "",
       quotation_to: form.quotation_to, party_name: form.party_name,
       company: form.company, transaction_date: form.transaction_date,
       valid_till: form.valid_till, order_type: form.order_type,
@@ -1003,6 +1150,71 @@ async function cancel() {
     showToast("Cotización cancelada");
   } catch (e) {
     showToast(e.message || "Error al cancelar", "error");
+  } finally {
+    acting.value = "";
+  }
+}
+
+function openAcordadoModal() {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() + 1);
+  acordadoValidUpto.value = d.toISOString().slice(0, 10);
+  showAcordadoModal.value = true;
+}
+
+async function guardarPrecioAcordado() {
+  const items = form.items.filter(r => r.item_code);
+  if (!items.length) { showToast("La cotización no tiene artículos", "error"); return; }
+  acting.value = "acordado";
+  try {
+    for (const r of items) {
+      await call("costeo_yelke.api.item_api.crear_precio_acordado", {
+        item_code: r.item_code,
+        customer: form.party_name,
+        price_list_rate: r.rate,
+        valid_from: form.transaction_date || today(),
+        valid_upto: acordadoValidUpto.value || null,
+      });
+    }
+    showAcordadoModal.value = false;
+    showToast(`Precio acordado guardado para ${items.length} artículo(s)`);
+  } catch (e) {
+    showToast(e.message || "Error al guardar el precio acordado", "error");
+  } finally {
+    acting.value = "";
+  }
+}
+
+function openRechazarModal() { rechazarMotivo.value = ""; showRechazarModal.value = true; }
+async function confirmarRechazada() {
+  acting.value = "rechazar";
+  try {
+    const res = await call("costeo_yelke.api.quotation_api.marcar_rechazada", { name: quot.name, motivo: rechazarMotivo.value || null });
+    Object.assign(quot, { status: res.status, order_lost_reason: res.order_lost_reason });
+    showRechazarModal.value = false;
+    showToast("Cotización marcada como rechazada");
+  } catch (e) {
+    showToast(e.message || "Error al marcar como rechazada", "error");
+  } finally {
+    acting.value = "";
+  }
+}
+
+function cotizarDeNuevo() {
+  if (!form.costeo) return;
+  router.push(`/cotizaciones/nueva?costeo=${encodeURIComponent(form.costeo)}`);
+}
+
+function openRevisionModal() { if (!form.costeo) return; revisionMotivo.value = ""; showRevisionModal.value = true; }
+async function confirmarRevision() {
+  acting.value = "revision";
+  try {
+    const res = await call("costeo_yelke.api.costeo_api.crear_revision_costeo", { costeo: form.costeo, motivo: revisionMotivo.value || "" });
+    showRevisionModal.value = false;
+    showToast(`Revisión creada: ${res.name}`);
+    setTimeout(() => router.push({ name: "CosteoDetail", params: { name: res.name } }), 1000);
+  } catch (e) {
+    showToast(e.message || "Error al crear la revisión", "error");
   } finally {
     acting.value = "";
   }
@@ -1141,6 +1353,7 @@ onMounted(async () => {
     } else if (prefillCosteo) {
       const pre = await call("costeo_yelke.api.quotation_api.prefill_from_costeo", { costeo: prefillCosteo });
       if (pre) {
+        form.costeo             = pre.costeo || prefillCosteo;
         form.quotation_to      = pre.quotation_to     || "Customer";
         form.party_name        = pre.party_name        || "";
         form.company           = pre.company           || form.company;

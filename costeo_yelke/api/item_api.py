@@ -332,6 +332,48 @@ def save_item_prices(item_code, prices):
 
 
 @frappe.whitelist()
+def crear_precio_acordado(item_code, customer, price_list_rate, valid_from, valid_upto=None, price_list=None):
+    """Guarda (o extiende) un Item Price para Cliente+Artículo con vigencia -- así un
+    pedido recurrente dentro de esa ventana ya no necesita pasar por un Costeo/Cotización
+    nuevo: ERPNext toma el precio directamente por la vigencia, sin depender de una
+    aprobación por pedido. Si ya existe un precio vigente para ese mismo periodo, lo
+    actualiza en vez de duplicarlo."""
+    price_list = price_list or frappe.db.get_single_value("Selling Settings", "selling_price_list") or "Standard Selling"
+    stock_uom  = frappe.db.get_value("Item", item_code, "stock_uom") or ""
+    item_name  = frappe.db.get_value("Item", item_code, "item_name") or ""
+
+    existing = frappe.db.get_value(
+        "Item Price",
+        {"item_code": item_code, "customer": customer, "price_list": price_list, "valid_from": valid_from},
+        "name",
+    )
+
+    doc = frappe.get_doc("Item Price", existing) if existing else frappe.new_doc("Item Price")
+    doc.item_code       = item_code
+    doc.item_name       = item_name
+    doc.price_list      = price_list
+    doc.price_list_rate = float(price_list_rate)
+    doc.uom             = stock_uom
+    doc.customer        = customer
+    doc.valid_from       = valid_from
+    doc.valid_upto       = valid_upto or None
+    doc.flags.ignore_permissions = True
+    doc.flags.ignore_links       = True
+    doc.flags.ignore_mandatory   = True
+
+    if doc.is_new():
+        doc.insert()
+    else:
+        doc.save()
+
+    # ERPNext's before_save hook clears `customer` for price lists not marked buying=1 --
+    # force it back, same workaround used in save_item_prices above.
+    frappe.db.set_value("Item Price", doc.name, "customer", customer, update_modified=False)
+    frappe.db.commit()
+    return {"name": doc.name, "price_list": price_list}
+
+
+@frappe.whitelist()
 def save_item_uoms(item_code, uoms):
     """Replace the UOM conversion table (Item.uoms child) for an item."""
     import json
@@ -517,7 +559,7 @@ def create_item(data, ignore_mandatory=False):
     # Core fields
     scalar_fields = [
         "item_code", "item_name", "item_group", "stock_uom", "disabled",
-        "is_stock_item", "is_fixed_asset", "description", "brand",
+        "is_stock_item", "is_fixed_asset", "description", "brand", "image",
         "is_purchase_item", "purchase_uom", "min_order_qty", "lead_time_days",
         "is_customer_provided_item", "customer",
         "is_sales_item", "sales_uom", "standard_rate", "max_discount",

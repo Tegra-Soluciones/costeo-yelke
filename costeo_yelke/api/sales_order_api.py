@@ -260,6 +260,12 @@ def make_sales_order_from_quotation(quotation_name):
     so.flags.ignore_mandatory   = True
     so.flags.ignore_links       = True
 
+    # get_mapped_doc no copia campos custom -- lo propagamos a mano para no perder el
+    # hilo costeo -> cotización -> orden de venta.
+    quotation_costeo = frappe.db.get_value("Quotation", quotation_name, "costeo")
+    if quotation_costeo:
+        so.costeo = quotation_costeo
+
     # Sales Order requires delivery_date — set to 7 days from today if not provided
     default_delivery = add_days(nowdate(), 7)
     if not so.delivery_date:

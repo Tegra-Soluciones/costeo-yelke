@@ -59,7 +59,10 @@ def set_costeo_status(costeo: str, status: str) -> dict:
 
 
 @frappe.whitelist()
-def crear_cotizacion(costeo: str, valid_till=None, payment_terms_template=None, tc_name=None, custom_tipo_formato=None) -> dict:
+def crear_cotizacion(
+    costeo: str, valid_till=None, payment_terms_template=None, tc_name=None, custom_tipo_formato=None,
+    currency=None, selling_price_list=None, taxes_and_charges=None, contact_email=None, contact_mobile=None,
+) -> dict:
     """Crea una Quotation en BORRADOR desde el Costeo con los datos manuales."""
     doc = frappe.get_doc("Costeo", costeo)
 
@@ -75,15 +78,21 @@ def crear_cotizacion(costeo: str, valid_till=None, payment_terms_template=None, 
         quot.payment_terms_template = payment_terms_template
     if tc_name:
         quot.tc_name = tc_name
+    if currency:
+        quot.currency = currency
+    if selling_price_list:
+        quot.selling_price_list = selling_price_list
+    if contact_email:
+        quot.contact_email = contact_email
+    if contact_mobile:
+        quot.contact_mobile = contact_mobile
     if frappe.db.has_column("Quotation", "custom_tipo_formato"):
         quot.custom_tipo_formato = custom_tipo_formato or "Normal"
 
     if frappe.db.has_column("Quotation", "costeo"):
         quot.costeo = costeo
 
-    tax_template = _get_sales_tax_template(doc.compañia)
-    if tax_template:
-        quot.taxes_and_charges = tax_template
+    quot.taxes_and_charges = taxes_and_charges or _get_sales_tax_template(doc.compañia)
 
     for p in doc.costeo_producto:
         quot.append("items", {
@@ -113,6 +122,7 @@ def materializar_producto_terminado(
     mx_product_service_key: str = None,
     uom_conversions=None,
     description: str = None,
+    image: str = None,
 ) -> dict:
     """Materializa el Producto Terminado de un renglón de Costeo: crea el Item (si
     item_code todavía no existe) reutilizando item_api.create_item, con su precio
@@ -144,6 +154,8 @@ def materializar_producto_terminado(
         }
         if description:
             payload["description"] = description
+        if image:
+            payload["image"] = image
         if mx_product_service_key:
             payload["mx_product_service_key"] = mx_product_service_key
         if uom_conversions:
@@ -188,13 +200,22 @@ def materializar_producto_terminado(
             "producto_terminado",
             item_code,
         )
+        frappe.db.set_value(
+            "Costeo Producto Talla",
+            {"parent": costeo, "finished_item": old_finished_item},
+            "finished_item",
+            item_code,
+        )
 
     frappe.db.commit()
     return {"item_code": item_code}
 
 
 @frappe.whitelist()
-def actualizar_cotizacion(name: str, valid_till=None, payment_terms_template=None, tc_name=None, custom_tipo_formato=None) -> dict:
+def actualizar_cotizacion(
+    name: str, valid_till=None, payment_terms_template=None, tc_name=None, custom_tipo_formato=None,
+    currency=None, selling_price_list=None, taxes_and_charges=None, contact_email=None, contact_mobile=None,
+) -> dict:
     """Actualiza los datos manuales de una cotización en borrador."""
     doc = frappe.get_doc("Quotation", name)
     if doc.docstatus != 0:
@@ -202,6 +223,11 @@ def actualizar_cotizacion(name: str, valid_till=None, payment_terms_template=Non
     doc.valid_till = valid_till or None
     doc.payment_terms_template = payment_terms_template or None
     doc.tc_name = tc_name or None
+    doc.currency = currency or doc.currency
+    doc.selling_price_list = selling_price_list or doc.selling_price_list
+    doc.taxes_and_charges = taxes_and_charges or None
+    doc.contact_email = contact_email or None
+    doc.contact_mobile = contact_mobile or None
     if frappe.db.has_column("Quotation", "custom_tipo_formato"):
         doc.custom_tipo_formato = custom_tipo_formato or "Normal"
     doc.flags.ignore_permissions = True
@@ -411,6 +437,48 @@ def cancelar_documento(doctype: str, name: str) -> dict:
 
 
 @frappe.whitelist()
+def crear_revision_costeo(costeo: str, motivo: str = None) -> dict:
+    """Crea una nueva revisión (borrador) de un Costeo ya validado o cancelado, enlazada
+    a través de amended_from -- el original queda intacto como historial, igual que el
+    amend nativo de Frappe. Necesario porque un Costeo validado (docstatus=1) queda
+    bloqueado para edición directa; esta es la vía para ajustarlo tras un rechazo."""
+    doc = frappe.get_doc("Costeo", costeo)
+    if doc.docstatus == 1:
+        doc.flags.ignore_permissions = True
+        # Quotation/Sales Order que ya se generaron desde este costeo deben SEGUIR
+        # apuntando a él aunque quede cancelado -- así el historial de trazabilidad
+        # (quién generó qué) no se pierde. Sin esto, Frappe bloquea el cancel con
+        # LinkExistsError en cuanto existe una cotización u orden de venta enlazada.
+        doc.ignore_linked_doctypes = ["Quotation", "Sales Order"]
+        doc.cancel()
+    elif doc.docstatus != 2:
+        frappe.throw(_("Solo se puede crear una revisión de un costeo validado o cancelado."))
+
+    nuevo = frappe.copy_doc(doc)
+    nuevo.amended_from = doc.name
+    nuevo.docstatus = 0
+    nuevo.costeo_status = "Borrador"
+    nuevo.motivo_revision = motivo or None
+    nuevo.flags.ignore_permissions = True
+    nuevo.insert()
+    frappe.db.commit()
+    return {"name": nuevo.name}
+
+
+@frappe.whitelist()
+def get_revisiones_costeo(costeo: str) -> dict:
+    """Devuelve la cadena de revisiones de un Costeo: la anterior (si esto es una
+    revisión) y la siguiente (si ya se creó una revisión posterior de este)."""
+    doc = frappe.db.get_value("Costeo", costeo, ["amended_from", "motivo_revision"], as_dict=True)
+    siguiente = frappe.db.get_value("Costeo", {"amended_from": costeo}, "name")
+    return {
+        "anterior": doc.amended_from if doc else None,
+        "motivo_revision": doc.motivo_revision if doc else None,
+        "siguiente": siguiente,
+    }
+
+
+@frappe.whitelist()
 def asignar_documento(doctype: str, name: str, assign_to: str, description: str = None) -> dict:
     """Asigna un documento a uno o más usuarios (ToDo), como en ERPNext."""
     from frappe.desk.form.assign_to import add
@@ -430,7 +498,7 @@ def asignar_documento(doctype: str, name: str, assign_to: str, description: str 
 
 @frappe.whitelist()
 def get_cotizacion_defaults(company: str = None) -> dict:
-    """Opciones para los campos manuales de la cotización."""
+    """Opciones para los campos manuales de la cotización/orden de venta."""
     payment_terms = frappe.get_all("Payment Terms Template", fields=["name"], order_by="name asc")
     terms = frappe.get_all("Terms and Conditions", fields=["name"], order_by="name asc")
     users = frappe.get_all(
@@ -440,11 +508,28 @@ def get_cotizacion_defaults(company: str = None) -> dict:
         order_by="full_name asc",
         limit=50,
     )
-    return {"payment_terms_templates": payment_terms, "terms": terms, "users": users}
+    price_lists = frappe.get_all(
+        "Price List", fields=["name", "currency"], filters={"selling": 1, "enabled": 1}, order_by="name asc"
+    )
+    currencies = frappe.get_all("Currency", fields=["name"], filters={"enabled": 1}, order_by="name asc", limit=50)
+    tax_filters = {}
+    if company:
+        tax_filters["company"] = company
+    tax_templates = frappe.get_all(
+        "Sales Taxes and Charges Template", fields=["name"], filters=tax_filters, order_by="name asc"
+    )
+    return {
+        "payment_terms_templates": payment_terms, "terms": terms, "users": users,
+        "price_lists": price_lists, "currencies": currencies, "tax_templates": tax_templates,
+    }
 
 
 @frappe.whitelist()
-def crear_orden_venta(costeo: str, delivery_date=None, payment_terms_template=None, tc_name=None) -> dict:
+def crear_orden_venta(
+    costeo: str, delivery_date=None, payment_terms_template=None, tc_name=None,
+    po_no=None, currency=None, selling_price_list=None, taxes_and_charges=None,
+    contact_email=None, contact_mobile=None,
+) -> dict:
     """Crea una Sales Order en BORRADOR desde el Costeo con los datos manuales."""
     doc = frappe.get_doc("Costeo", costeo)
 
@@ -458,13 +543,21 @@ def crear_orden_venta(costeo: str, delivery_date=None, payment_terms_template=No
         so.payment_terms_template = payment_terms_template
     if tc_name:
         so.tc_name = tc_name
+    if po_no:
+        so.po_no = po_no
+    if currency:
+        so.currency = currency
+    if selling_price_list:
+        so.selling_price_list = selling_price_list
+    if contact_email:
+        so.contact_email = contact_email
+    if contact_mobile:
+        so.contact_mobile = contact_mobile
 
     if frappe.db.has_column("Sales Order", "costeo"):
         so.costeo = costeo
 
-    tax_template = _get_sales_tax_template(doc.compañia)
-    if tax_template:
-        so.taxes_and_charges = tax_template
+    so.taxes_and_charges = taxes_and_charges or _get_sales_tax_template(doc.compañia)
 
     for p in doc.costeo_producto:
         so.append("items", {
@@ -483,7 +576,11 @@ def crear_orden_venta(costeo: str, delivery_date=None, payment_terms_template=No
 
 
 @frappe.whitelist()
-def actualizar_orden_venta(name: str, delivery_date=None, payment_terms_template=None, tc_name=None) -> dict:
+def actualizar_orden_venta(
+    name: str, delivery_date=None, payment_terms_template=None, tc_name=None,
+    po_no=None, currency=None, selling_price_list=None, taxes_and_charges=None,
+    contact_email=None, contact_mobile=None,
+) -> dict:
     """Actualiza los datos manuales de una orden de venta en borrador."""
     doc = frappe.get_doc("Sales Order", name)
     if doc.docstatus != 0:
@@ -494,6 +591,12 @@ def actualizar_orden_venta(name: str, delivery_date=None, payment_terms_template
             it.delivery_date = delivery_date
     doc.payment_terms_template = payment_terms_template or None
     doc.tc_name = tc_name or None
+    doc.po_no = po_no or None
+    doc.currency = currency or doc.currency
+    doc.selling_price_list = selling_price_list or doc.selling_price_list
+    doc.taxes_and_charges = taxes_and_charges or None
+    doc.contact_email = contact_email or None
+    doc.contact_mobile = contact_mobile or None
     doc.flags.ignore_permissions = True
     doc.save()
     return {"name": doc.name}
@@ -659,6 +762,8 @@ def get_remision(name: str) -> dict:
         "customer_address": doc.customer_address or "",
         "shipping_address_name": doc.shipping_address_name or "",
         "shipping_address": doc.shipping_address or "",
+        "contact_email": doc.get("contact_email") or "",
+        "contact_mobile": doc.get("contact_mobile") or "",
         "address_options": _party_links("Address", doc.customer, link_doctype="Customer"),
         "items": [
             {
@@ -1520,7 +1625,9 @@ def get_costeo_related(costeo: str) -> dict:
             "Quotation",
             filters={"costeo": costeo},
             fields=["name", "status", "docstatus", "grand_total", "currency", "contact_email",
-                    "valid_till", "payment_terms_template", "tc_name", "custom_tipo_formato"],
+                    "contact_mobile", "selling_price_list", "taxes_and_charges",
+                    "valid_till", "payment_terms_template", "tc_name", "custom_tipo_formato",
+                    "order_lost_reason"],
             order_by="creation desc",
             limit=1,
         )
@@ -1532,7 +1639,8 @@ def get_costeo_related(costeo: str) -> dict:
             "Sales Order",
             filters={"costeo": costeo},
             fields=["name", "status", "docstatus", "grand_total", "currency",
-                    "delivery_date", "payment_terms_template", "tc_name", "contact_email"],
+                    "delivery_date", "payment_terms_template", "tc_name", "contact_email",
+                    "contact_mobile", "selling_price_list", "taxes_and_charges", "po_no"],
             order_by="creation desc",
             limit=1,
         )
@@ -1564,7 +1672,7 @@ def get_costeo_related(costeo: str) -> dict:
             out["sales_invoice"] = frappe.db.get_value(
                 "Sales Invoice", si_parent,
                 ["name", "status", "docstatus", "grand_total", "currency", "posting_date",
-                 "due_date", "payment_terms_template", "tc_name", "contact_email"],
+                 "due_date", "payment_terms_template", "tc_name", "contact_email", "contact_mobile"],
                 as_dict=True,
             )
 
@@ -1582,6 +1690,62 @@ def get_costeo_related(costeo: str) -> dict:
     out["costeo_status"] = new_status
 
     return out
+
+
+def _get_cadena_costeo(costeo: str) -> list:
+    """Camina el campo amended_from en ambos sentidos -- Costeo funciona como una lista
+    enlazada (cada revisión apunta a la anterior), así que no hace falta un doctype
+    padre para reconstruir el historial completo, de la primera versión a la última."""
+    chain_before = []
+    current = costeo
+    seen = {costeo}
+    while True:
+        amended_from = frappe.db.get_value("Costeo", current, "amended_from")
+        if not amended_from or amended_from in seen:
+            break
+        seen.add(amended_from)
+        chain_before.insert(0, amended_from)
+        current = amended_from
+
+    chain_after = []
+    current = costeo
+    while True:
+        nxt = frappe.db.get_value("Costeo", {"amended_from": current}, "name")
+        if not nxt or nxt in seen:
+            break
+        seen.add(nxt)
+        chain_after.append(nxt)
+        current = nxt
+
+    all_names = chain_before + [costeo] + chain_after
+    rows = frappe.get_all(
+        "Costeo",
+        filters={"name": ["in", all_names]},
+        fields=["name", "docstatus", "motivo_revision", "amended_from", "creation", "costeo_status", "cliente"],
+    )
+    rows_by_name = {r.name: r for r in rows}
+    return [rows_by_name[n] for n in all_names if n in rows_by_name]
+
+
+@frappe.whitelist()
+def get_historial_costeo(costeo: str) -> dict:
+    """Historial completo para trazabilidad: todas las revisiones del costeo (de la
+    primera a la última) y todas las cotizaciones generadas por cualquiera de esas
+    revisiones -- así se ve de un vistazo cómo se llegó al estado actual, aunque haya
+    habido rechazos y ajustes en el camino."""
+    cadena = _get_cadena_costeo(costeo)
+    names = [c["name"] for c in cadena] or [costeo]
+
+    cotizaciones = []
+    if frappe.db.has_column("Quotation", "costeo"):
+        cotizaciones = frappe.get_all(
+            "Quotation",
+            filters={"costeo": ["in", names]},
+            fields=["name", "status", "docstatus", "order_lost_reason", "creation", "grand_total", "costeo"],
+            order_by="creation asc",
+        )
+
+    return {"cadena": cadena, "cotizaciones": cotizaciones}
 
 
 @frappe.whitelist()
@@ -2615,6 +2779,8 @@ def get_documento_compra(doctype: str, name: str) -> dict:
         "tc_name": doc.get("tc_name") or "",
         "currency": doc.get("currency"),
         "grand_total": doc.get("grand_total"),
+        "contact_email": doc.get("contact_email") or "",
+        "contact_mobile": doc.get("contact_mobile") or "",
         "items": items,
     }
 

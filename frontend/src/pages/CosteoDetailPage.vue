@@ -9,8 +9,8 @@
     />
     <ConfirmDialog
       v-model="confirmCancel.open"
-      title="Cancelar Costeo"
-      :message="`¿Cancelar la validación de ${docName}? Después podrás eliminarlo.`"
+      :title="headerDoc && headerDoc.isCosteo ? 'Cancelar Costeo' : `Cancelar ${headerDoc?.doctype || ''}`"
+      :message="`¿Cancelar la validación de ${headerDoc?.name || docName}?${headerDoc && headerDoc.isCosteo ? ' Después podrás eliminarlo.' : ''}`"
       confirm-label="Cancelar validación" :loading="confirmCancel.loading"
       @confirm="doCancel" @cancel="confirmCancel.open = false"
     />
@@ -39,6 +39,8 @@
       :open="materializeModal.open"
       :finished-item-text="materializeModal.text"
       :suggested-price="materializeModal.suggestedPrice"
+      :suggested-description="materializeModal.suggestedDescription"
+      :suggested-image="materializeModal.suggestedImage"
       :company="form.compania"
       :saving="materializeModal.saving"
       @cancel="cancelMaterialize"
@@ -64,31 +66,36 @@
 
     <!-- Header -->
     <PageHeader :title="isNew ? 'Nuevo Costeo' : (docName || '…')" :subtitle="headerSubtitle" back>
-      <div v-if="!isNew" class="relative" ref="actionsRef">
-        <button class="h-8 w-8 flex items-center justify-center text-ink-muted border border-surface-border rounded-lg hover:bg-surface-raised transition-colors" :class="actionsOpen ? 'bg-surface-raised' : ''" @click.stop="actionsOpen = !actionsOpen" aria-label="Acciones">
+      <div v-if="headerDoc" class="relative" ref="actionsRef">
+        <button class="h-8 w-8 flex items-center justify-center text-ink-muted border border-surface-border rounded-lg hover:bg-surface-raised transition-colors" :class="actionsOpen ? 'bg-surface-raised' : ''" @click.stop="actionsOpen = !actionsOpen" :aria-label="`Acciones de ${headerDoc.doctype}`">
           <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
         </button>
         <Transition name="panel">
-          <div v-if="actionsOpen" class="absolute right-0 top-full mt-1.5 w-48 bg-white border border-surface-border rounded-xl shadow-xl overflow-hidden z-50">
+          <div v-if="actionsOpen" class="absolute right-0 top-full mt-1.5 w-52 bg-white border border-surface-border rounded-xl shadow-xl overflow-hidden z-50">
+            <p class="px-3 pt-2 pb-1 text-[10.5px] font-semibold uppercase tracking-wide text-ink-xlight">{{ headerDoc.doctype === 'Costeo' ? 'Costeo' : headerDoc.doctype }} · {{ headerDoc.name }}</p>
             <div class="py-1">
-              <button class="action-item" @click="duplicateDoc">Duplicar</button>
-              <button class="action-item" @click="openTplModal">Guardar como plantilla</button>
+              <template v-if="headerDoc.isCosteo">
+                <button class="action-item" @click="duplicateDoc">Duplicar</button>
+                <button class="action-item" @click="openTplModal">Guardar como plantilla</button>
+                <button class="action-item" @click="actionsOpen = false; showHistorialModal = true">Ver historial</button>
+              </template>
               <button class="action-item" @click="printDoc">Imprimir / PDF</button>
               <button class="action-item" @click="openInDesk">Abrir en Desk</button>
             </div>
             <div class="border-t border-surface-border py-1">
-              <button v-if="docState === 1" class="action-item text-amber-600 hover:bg-amber-50 hover:text-amber-700" @click="openCancel">Cancelar validación</button>
-              <button class="action-item text-red-500 hover:bg-red-50 hover:text-red-600" @click="openDelete">Eliminar</button>
+              <button v-if="headerDoc.docstatus === 1" class="action-item text-amber-600 hover:bg-amber-50 hover:text-amber-700" @click="openCancel">Cancelar validación</button>
+              <button v-if="headerDoc.isCosteo && (headerDoc.docstatus === 1 || headerDoc.docstatus === 2)" class="action-item text-brand-600 hover:bg-brand-50 hover:text-brand-700" @click="openRevisionModal">Crear revisión</button>
+              <button v-if="headerDoc.isCosteo" class="action-item text-red-500 hover:bg-red-50 hover:text-red-600" @click="openDelete">Eliminar</button>
             </div>
           </div>
         </Transition>
       </div>
 
-      <span v-if="docState === 1" class="h-8 px-3 flex items-center gap-1.5 text-[13px] font-medium text-green-700 bg-green-50 rounded-lg">
+      <span v-if="headerDoc && headerDoc.docstatus === 1" class="h-8 px-3 flex items-center gap-1.5 text-[13px] font-medium text-green-700 bg-green-50 rounded-lg">
         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
         Validado
       </span>
-      <span v-else-if="docState === 2" class="h-8 px-3 flex items-center gap-1.5 text-[13px] font-medium text-red-600 bg-red-50 rounded-lg">
+      <span v-else-if="headerDoc && headerDoc.docstatus === 2" class="h-8 px-3 flex items-center gap-1.5 text-[13px] font-medium text-red-600 bg-red-50 rounded-lg">
         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
         Cancelado
       </span>
@@ -112,12 +119,27 @@
 
     <CosteoStepper v-if="!isNew && docName" :model-value="docStatus" :active-step="activeStep" @select="goStep" />
 
+    <div v-if="docState === 2" class="mx-5 mt-4 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-2.5">
+        <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <p class="text-[13px] text-ink-muted">
+          <template v-if="siguienteCosteo">Este costeo fue <span class="font-medium text-ink">reemplazado por una revisión</span> y ya no se puede editar.</template>
+          <template v-else>Este costeo está <span class="font-medium text-ink">cancelado</span> y ya no se puede editar.</template>
+        </p>
+      </div>
+      <router-link v-if="siguienteCosteo" :to="{ name: 'CosteoDetail', params: { name: siguienteCosteo } }" class="flex-shrink-0 text-[12.5px] font-semibold text-brand-600 hover:text-brand-700 hover:underline whitespace-nowrap">
+        Ir a la revisión →
+      </router-link>
+    </div>
+
     <div v-if="loading" class="flex-1 flex items-center justify-center text-ink-light">
       <svg class="w-7 h-7 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
     </div>
 
     <!-- ══════════ STEP 0 · COSTEAR ══════════ -->
-    <div v-else-if="activeStep === 0" class="p-5 pb-40 flex gap-5 items-start">
+    <div v-else-if="activeStep === 0" class="p-5 pb-40">
+      <fieldset :disabled="!canEditCosteo" class="border-0 p-0 m-0 min-w-0" :class="!canEditCosteo ? 'opacity-70' : ''">
+      <div class="flex gap-5 items-start max-w-[1400px] mx-auto">
       <div class="flex-1 min-w-0 space-y-4">
         <section class="bg-white rounded-xl border border-surface-border">
           <div class="px-5 py-3 border-b border-surface-border"><h3 class="section-title">Información general</h3></div>
@@ -149,7 +171,7 @@
             <div v-for="(prod, idx) in productos" :key="prod._tid">
               <div class="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-surface-raised/50 transition-colors group" @click="toggleProduct(prod._tid)">
                 <svg class="w-4 h-4 text-ink-light flex-shrink-0 transition-transform" :class="expandedTid === prod._tid ? 'rotate-90' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-                <img v-if="prod._image" :src="prod._image" class="w-9 h-9 rounded-lg object-cover border border-surface-border flex-shrink-0" alt="" />
+                <img v-if="prod.image" :src="prod.image" class="w-9 h-9 rounded-lg object-cover border border-surface-border flex-shrink-0" alt="" />
                 <div v-else class="w-9 h-9 rounded-lg bg-surface-raised border border-surface-border flex items-center justify-center flex-shrink-0">
                   <svg class="w-4 h-4 text-ink-xlight" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
                 </div>
@@ -169,30 +191,59 @@
 
               <div v-if="expandedTid === prod._tid" class="bg-surface-raised/40 border-t border-surface-border px-5 pt-4 pb-14 space-y-4">
                 <div class="flex gap-4">
-                  <div class="w-20 h-20 flex-shrink-0 rounded-lg border border-surface-border overflow-hidden bg-white">
-                    <img v-if="prod._image" :src="prod._image" class="w-full h-full object-cover" alt="" />
+                  <div class="w-20 h-20 flex-shrink-0 rounded-lg border border-surface-border overflow-hidden bg-white relative group/img" :class="canEditCosteo ? 'cursor-pointer' : 'cursor-default'" @click="pickImage(prod)" title="Subir imagen del producto">
+                    <img v-if="prod.image" :src="prod.image" class="w-full h-full object-cover" alt="" />
                     <div v-else class="w-full h-full flex items-center justify-center text-ink-xlight">
                       <svg class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.4"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
                     </div>
+                    <div class="absolute inset-0 bg-black/50 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
+                      <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    </div>
                   </div>
-                  <div class="flex-1 grid grid-cols-4 gap-3">
+                  <div class="flex-1 grid grid-cols-3 gap-3">
                     <div class="col-span-2"><label class="field-label">Producto terminado <span class="text-red-400">*</span></label><LinkInput v-model="prod.finished_item" doctype="Item" :filters="ITEM_FILTERS.terminado" placeholder="Producto terminado…" @update:model-value="onProductoItemChange(prod)" /></div>
                     <div><label class="field-label">Cantidad <span class="text-red-400">*</span></label><input v-model.number="prod.qty" type="number" min="1" class="field-input" @input="onProdQtyChange(prod)" /></div>
-                    <div><label class="field-label">Overhead %</label><div class="relative"><input v-model.number="prod.overhead_pct" type="number" min="0" max="100" class="field-input pr-7" @input="recalcProducto(prod)" /><span class="suffix">%</span></div></div>
-                    <div><label class="field-label">Flete / envío</label><div class="relative"><span class="prefix">$</span><input v-model.number="prod.shipping_cost" type="number" min="0" class="field-input pl-6" @input="recalcProducto(prod)" /></div></div>
-                    <div><label class="field-label">Margen %</label><div class="relative"><input v-model.number="prod.margin_pct" type="number" min="0" max="99" class="field-input pr-7" @input="recalcProducto(prod)" /><span class="suffix">%</span></div></div>
-                    <div class="col-span-1"><label class="field-label">Precio unit.</label><div class="relative"><span class="prefix text-brand-600">$</span><input v-model.number="prod.unit_sales_price" type="number" min="0" step="0.01" class="field-input pl-6 text-brand-600 font-semibold" @input="onPriceChange(prod)" /></div></div>
+                    <div class="col-span-3"><label class="field-label">Descripción <span class="text-ink-light font-normal">(opcional)</span></label><textarea v-model="prod.description" rows="2" class="field-input resize-none" placeholder="Descripción del producto…"></textarea></div>
                   </div>
                 </div>
 
-                <div>
-                  <div class="flex border-b border-surface-border mb-3">
-                    <button v-for="tab in TABS" :key="tab.key" class="px-4 py-2 text-xs font-medium border-b-2 transition-colors -mb-px" :class="activeTab(prod._tid) === tab.key ? 'border-brand-500 text-brand-600' : 'border-transparent text-ink-muted hover:text-ink'" @click="setTab(prod._tid, tab.key)">
-                      {{ tab.label }}<span v-if="tabCount(prod, tab.key) > 0" class="ml-1.5 px-1.5 py-0.5 rounded-full text-xs" :class="activeTab(prod._tid) === tab.key ? 'bg-brand-100 text-brand-700' : 'bg-surface-raised text-ink-muted'">{{ tabCount(prod, tab.key) }}</span>
-                    </button>
+                <div class="bg-white rounded-lg border border-surface-border p-3">
+                  <p class="text-[11px] font-semibold text-ink-muted uppercase tracking-wide mb-2.5">Costos adicionales y precio</p>
+                  <div class="grid grid-cols-3 gap-3">
+                    <div><label class="field-label">Overhead %</label><div class="relative"><input v-model.number="prod.overhead_pct" type="number" min="0" max="100" class="field-input pr-7" @input="recalcProducto(prod)" /><span class="suffix">%</span></div></div>
+                    <div><label class="field-label">Flete / envío</label><div class="relative"><span class="prefix">$</span><input v-model.number="prod.shipping_cost" type="number" min="0" class="field-input pl-6" @input="recalcProducto(prod)" /></div></div>
+                    <div><label class="field-label">Etiquetado</label><div class="relative"><span class="prefix">$</span><input v-model.number="prod.labeling_cost" type="number" min="0" class="field-input pl-6" @input="recalcProducto(prod)" /></div></div>
+                    <div><label class="field-label">Empaquetado</label><div class="relative"><span class="prefix">$</span><input v-model.number="prod.packaging_cost" type="number" min="0" class="field-input pl-6" @input="recalcProducto(prod)" /></div></div>
+                    <div><label class="field-label">Margen %</label><div class="relative"><input v-model.number="prod.margin_pct" type="number" min="0" max="99" class="field-input pr-7" @input="recalcProducto(prod)" /><span class="suffix">%</span></div></div>
+                    <div><label class="field-label">Precio unit.</label><div class="relative"><span class="prefix text-brand-600">$</span><input v-model.number="prod.unit_sales_price" type="number" min="0" step="0.01" class="field-input pl-6 text-brand-600 font-semibold" @input="onPriceChange(prod)" /></div></div>
                   </div>
+                </div>
 
-                  <div v-if="activeTab(prod._tid) === 'materiales'" class="pb-8">
+                <div class="bg-orange-50 border border-orange-100 rounded-lg p-3">
+                  <p class="text-[10.5px] font-semibold text-orange-700/80 uppercase tracking-wide mb-1.5">Por pieza</p>
+                  <div class="grid grid-cols-5 gap-2">
+                    <div class="metric"><p class="metric-label">Costo directo</p><p class="metric-val">{{ fmtC(directCost(prod)) }}</p></div>
+                    <div class="metric"><p class="metric-label">Overhead</p><p class="metric-val">{{ fmtC(prod.overhead_amt) }}</p></div>
+                    <div class="metric"><p class="metric-label">Costo total</p><p class="metric-val">{{ fmtC(prod.total_unit_cost) }}</p></div>
+                    <div class="metric"><p class="metric-label">Utilidad esperada</p><p class="metric-val text-green-600">{{ fmtC(expectedProfit(prod)) }}</p></div>
+                    <div class="metric"><p class="metric-label">Margen</p><p class="metric-val text-green-600">{{ prod.margin_pct || 0 }}%</p></div>
+                  </div>
+                  <p class="text-[10.5px] font-semibold text-orange-700/80 uppercase tracking-wide mt-3 mb-1.5 pt-2 border-t border-orange-100">Total por las {{ prod.qty || 0 }} piezas</p>
+                  <div class="grid grid-cols-5 gap-2">
+                    <div class="metric"><p class="metric-label">Costo directo total</p><p class="metric-val">{{ fmtC(directCost(prod) * (prod.qty || 0)) }}</p></div>
+                    <div class="metric"><p class="metric-label">Overhead total</p><p class="metric-val">{{ fmtC((prod.overhead_amt || 0) * (prod.qty || 0)) }}</p></div>
+                    <div class="metric"><p class="metric-label">Costo total (todas)</p><p class="metric-val">{{ fmtC((prod.total_unit_cost || 0) * (prod.qty || 0)) }}</p></div>
+                    <div class="metric"><p class="metric-label">Utilidad esperada total</p><p class="metric-val text-green-600">{{ fmtC(expectedProfit(prod) * (prod.qty || 0)) }}</p></div>
+                    <div class="metric"><p class="metric-label">Precio venta total</p><p class="metric-val">{{ fmtC(prod.total_sales_price) }}</p></div>
+                  </div>
+                </div>
+
+                <div class="bg-white rounded-lg border border-surface-border p-4">
+                  <div class="flex items-center gap-2 mb-3">
+                      <svg class="w-4 h-4 text-ink-light flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                      <h4 class="text-[13px] font-semibold text-ink">Materias primas</h4>
+                      <span v-if="materialesDe(prod.finished_item).length" class="px-1.5 py-0.5 rounded-full text-xs bg-surface-raised text-ink-muted">{{ materialesDe(prod.finished_item).length }}</span>
+                    </div>
                     <p class="text-[11.5px] text-ink-light mb-2">Identifica primero qué tipo de materia prima es, para saber qué unidad de medida (UDM) tiene sentido: <strong>Tela</strong> → normalmente Kilogramo o Metro · <strong>Avíos</strong> (botones, cierres…) → Maso, Gruesa o Pieza.</p>
                     <table class="w-full text-sm mb-3">
                       <thead><tr class="border-b border-surface-border text-left text-xs font-semibold text-ink-light"><th class="py-2 w-1/6">Artículo</th><th class="py-2 w-1/6">Proveedor</th><th class="py-2 w-14">Etapa</th><th class="py-2 w-24">UDM</th><th class="py-2 w-44">Rendimiento / Consumo</th><th class="py-2 w-24 text-right">Precio / UDM</th><th class="py-2 w-24 text-right">Total</th><th class="w-7"></th></tr></thead>
@@ -226,15 +277,20 @@
                         </tr>
                       </tbody>
                     </table>
-                    <button class="add-link" @click="addDetalle(prod, 'Materia Prima')"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Agregar material</button>
-                  </div>
+                  <button class="add-link" @click="addDetalle(prod, 'Materia Prima')"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Agregar material</button>
+                </div>
 
-                  <div v-else-if="activeTab(prod._tid) === 'etapas'" class="pb-8">
+                <div class="bg-white rounded-lg border border-surface-border p-4">
+                  <div class="flex items-center gap-2 mb-3">
+                      <svg class="w-4 h-4 text-ink-light flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                      <h4 class="text-[13px] font-semibold text-ink">Etapas de manufactura</h4>
+                      <span v-if="etapasDe(prod.finished_item).length" class="px-1.5 py-0.5 rounded-full text-xs bg-surface-raised text-ink-muted">{{ etapasDe(prod.finished_item).length }}</span>
+                    </div>
                     <table class="w-full text-sm mb-3">
                       <thead><tr class="border-b border-surface-border text-left text-xs font-semibold text-ink-light"><th class="py-2 w-16">Etapa</th><th class="py-2">Servicio</th><th class="py-2">Proveedor</th><th class="py-2 w-28 text-right">Precio</th><th class="py-2">Sub-ensamblaje</th><th class="w-7"></th></tr></thead>
                       <tbody>
                         <tr v-for="e in etapasDe(prod.finished_item)" :key="e._tid" class="border-b border-surface-border/60">
-                          <td class="py-1.5 pr-2"><input v-model="e.etapa" class="field-input" placeholder="1" /></td>
+                          <td class="py-1.5 pr-2"><div class="field-input bg-surface-raised/60 text-ink-light text-center font-medium">{{ e.etapa }}</div></td>
                           <td class="py-1.5 pr-2"><input v-model="e.servicio" class="field-input" placeholder="Servicio…" @change="onEtapaServicioChange(e, prod)" /></td>
                           <td class="py-1.5 pr-2"><LinkInput v-model="e.proveedor" doctype="Supplier" placeholder="Taller…" /></td>
                           <td class="py-1.5 pr-2"><div class="relative"><span class="prefix text-xs">$</span><input v-model.number="e.precio_servicio" type="number" min="0" step="0.01" class="field-input text-right pl-5" @input="recalcProducto(prod)" /></div></td>
@@ -246,8 +302,58 @@
                         </tr>
                       </tbody>
                     </table>
-                    <button class="add-link" @click="addEtapa(prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Agregar etapa</button>
+                  <button class="add-link" @click="addEtapa(prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Agregar etapa</button>
+                </div>
+
+                <div class="bg-white rounded-lg border border-surface-border p-4">
+                  <div class="flex items-center gap-2 mb-3">
+                    <svg class="w-4 h-4 text-ink-light flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 16h4m10 0h4"/></svg>
+                    <h4 class="text-[13px] font-semibold text-ink">Desglose por talla</h4>
+                    <span v-if="tallasDe(prod.finished_item).length" class="px-1.5 py-0.5 rounded-full text-xs bg-surface-raised text-ink-muted">{{ tallasDe(prod.finished_item).length }}</span>
+                    <span v-if="tallasDe(prod.finished_item).length" class="ml-auto text-[11.5px]" :class="tallasAsignadas(prod) === (prod.qty || 0) ? 'text-green-600' : 'text-amber-600'">Asignadas: {{ tallasAsignadas(prod) }} / {{ prod.qty || 0 }}</span>
                   </div>
+                  <p class="text-[11.5px] text-ink-light mb-2">Opcional — solo si este pedido se reparte entre varias tallas. Puedes mezclar tallas de Dama y Caballero en el mismo producto. El sobrecosto (fijo o %) se suma al costo directo de esa talla antes del overhead.</p>
+                  <table v-if="tallasDe(prod.finished_item).length" class="w-full text-sm mb-3">
+                    <thead><tr class="border-b border-surface-border text-left text-xs font-semibold text-ink-light"><th class="py-2 w-2/5">Género / Tipo de prenda / Talla</th><th class="py-2 w-20 text-right">Cantidad</th><th class="py-2 w-28">Sobrecosto</th><th class="py-2 w-24 text-right">Valor</th><th class="py-2 w-24 text-right">Costo unit.</th><th class="py-2 w-24 text-right">Costo total</th><th class="w-7"></th></tr></thead>
+                    <tbody>
+                      <tr v-for="t in tallasDe(prod.finished_item)" :key="t._tid" class="border-b border-surface-border/60">
+                        <td class="py-1.5 pr-2">
+                          <div class="flex items-center gap-1">
+                            <select v-model="t.genero" class="field-input" style="flex: 0 0 92px;" @change="onTallaGeneroChange(t)">
+                              <option value="">Género…</option>
+                              <option value="Dama">Dama</option>
+                              <option value="Caballero">Caballero</option>
+                            </select>
+                            <select v-model="t.grupo_talla" class="field-input min-w-0" style="flex: 1 1 auto;" :disabled="!t.genero" @change="onTallaGrupoChange(t)">
+                              <option value="">{{ t.genero ? 'Tipo de prenda…' : '— elige género —' }}</option>
+                              <option v-for="g in gruposDeGenero(t.genero)" :key="g.name" :value="g.name">{{ g.talla }}</option>
+                            </select>
+                            <select v-model="t.talla" class="field-input" style="flex: 0 0 84px;" :disabled="!t.grupo_talla" @change="recalcTalla(t, prod)">
+                              <option value="">{{ t.grupo_talla ? 'Talla…' : '—' }}</option>
+                              <option v-for="s in tallasDeGrupo(t.grupo_talla)" :key="s.name" :value="s.name">{{ s.talla }}</option>
+                            </select>
+                          </div>
+                        </td>
+                        <td class="py-1.5 pr-2"><input v-model.number="t.qty" type="number" min="0" :max="tallaMaxQty(t, prod)" class="field-input text-right" @input="onTallaQtyInput(t, prod)" /></td>
+                        <td class="py-1.5 pr-2">
+                          <select v-model="t.sobrecosto_tipo" class="field-input" @change="recalcTalla(t, prod)">
+                            <option value="Ninguno">Ninguno</option>
+                            <option value="Fijo">Fijo ($)</option>
+                            <option value="Porcentaje">Porcentaje (%)</option>
+                          </select>
+                        </td>
+                        <td class="py-1.5 pr-2">
+                          <input v-if="t.sobrecosto_tipo !== 'Ninguno'" v-model.number="t.sobrecosto_valor" type="number" min="0" step="0.01" class="field-input text-right" @input="recalcTalla(t, prod)" />
+                          <div v-else class="field-input bg-surface-raised/60 text-ink-xlight text-right">—</div>
+                        </td>
+                        <td class="py-1.5 pr-2 text-right font-medium text-ink">{{ fmtC(t.costo_unitario) }}</td>
+                        <td class="py-1.5 pr-2 text-right font-medium text-ink">{{ fmtC(t.costo_total) }}</td>
+                        <td class="py-1.5"><button class="del-btn" @click="removeTalla(t, prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <p v-if="tallasDe(prod.finished_item).length" class="text-[12px] text-ink-muted mb-3">Total con sobrecostos por talla: <span class="font-semibold text-ink">{{ fmtC(tallasCostoTotal(prod)) }}</span></p>
+                  <button class="add-link" @click="addTalla(prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Agregar talla</button>
                 </div>
               </div>
             </div>
@@ -255,14 +361,8 @@
         </section>
       </div>
 
-      <div class="w-64 flex-shrink-0 space-y-3 sticky top-5 self-start max-h-[calc(100vh-80px)] overflow-y-auto">
-        <div class="grid grid-cols-2 gap-2">
-          <div class="metric"><p class="metric-label">Costo total</p><p class="metric-val">{{ fmtC(totalCosto) }}</p></div>
-          <div class="metric"><p class="metric-label">Precio venta</p><p class="metric-val">{{ fmtC(totalVenta) }}</p></div>
-          <div class="metric"><p class="metric-label">Margen</p><p class="metric-val text-green-600">{{ margenPct }}%</p></div>
-          <div class="metric"><p class="metric-label">Productos</p><p class="metric-val">{{ productos.length }}</p></div>
-        </div>
-        <div v-if="!isNew && cta" class="bg-white rounded-xl border border-surface-border p-4">
+      <div v-if="!isNew && cta" class="w-64 flex-shrink-0 space-y-3 sticky top-5 self-start max-h-[calc(100vh-80px)] overflow-y-auto">
+        <div class="bg-white rounded-xl border border-surface-border p-4">
           <p class="section-title mb-2">Listo para {{ cta.label.toLowerCase() }}</p>
           <div v-for="item in checklist" :key="item.label" class="flex items-center gap-2 text-[13px] py-1">
             <svg v-if="item.ok" class="w-4 h-4 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -271,6 +371,8 @@
           </div>
         </div>
       </div>
+      </div>
+      </fieldset>
     </div>
 
     <!-- ══════════ STEP 1 · COTIZAR ══════════ -->
@@ -281,9 +383,24 @@
         <div class="w-80 flex-shrink-0 bg-white rounded-xl border border-surface-border p-5">
           <div class="flex items-center justify-between mb-1">
             <p class="text-sm font-semibold text-ink">Datos de la cotización</p>
-            <span v-if="related.quotation" class="text-[11px] font-semibold px-2 py-0.5 rounded-full" :class="quotValidated ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'">{{ quotValidated ? 'Validada' : 'Borrador' }}</span>
+            <span v-if="related.quotation" class="text-[11px] font-semibold px-2 py-0.5 rounded-full" :class="related.quotation.status === 'Lost' ? 'bg-red-50 text-red-600' : (quotValidated ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700')">{{ related.quotation.status === 'Lost' ? 'Rechazada' : (quotValidated ? 'Validada' : 'Borrador') }}</span>
           </div>
           <p class="text-[12px] text-ink-muted mb-4">Completa lo que no viene del costeo. Productos y totales son automáticos.</p>
+
+          <div v-if="related.quotation && related.quotation.status === 'Lost'" class="bg-red-50 border border-red-100 rounded-lg px-3 py-2.5 mb-4">
+            <p class="text-[11.5px] font-semibold text-red-700 mb-0.5">Cotización rechazada</p>
+            <p v-if="related.quotation.order_lost_reason" class="text-[11.5px] text-red-600 mb-2.5">{{ related.quotation.order_lost_reason }}</p>
+            <div class="space-y-1.5">
+              <button :disabled="advancing" class="w-full text-left text-[11.5px] font-medium text-red-700 bg-white border border-red-200 rounded-lg px-2.5 py-1.5 hover:bg-red-100/50 disabled:opacity-50" @click="cotizarDeNuevo">
+                Cotizar de nuevo
+                <span class="block text-[10.5px] font-normal text-red-500">Solo cambió el precio o las condiciones — el costeo se queda igual.</span>
+              </button>
+              <button :disabled="advancing" class="w-full text-left text-[11.5px] font-medium text-red-700 bg-white border border-red-200 rounded-lg px-2.5 py-1.5 hover:bg-red-100/50 disabled:opacity-50" @click="openRevisionModal">
+                Crear revisión del costeo
+                <span class="block text-[10.5px] font-normal text-red-500">Hay que ajustar materiales, cantidades u otra parte del costeo.</span>
+              </button>
+            </div>
+          </div>
 
           <label class="field-label">Vigencia (válida hasta)</label>
           <input v-model="cotForm.valid_till" type="date" class="field-input mb-3" :disabled="quotValidated" />
@@ -301,10 +418,33 @@
           </select>
 
           <label class="field-label">Vista de impresión</label>
-          <select v-model="cotForm.custom_tipo_formato" class="field-input mb-4" :disabled="quotValidated" @change="onTipoFormatoChange">
+          <select v-model="cotForm.custom_tipo_formato" class="field-input mb-3" :disabled="quotValidated" @change="onTipoFormatoChange">
             <option value="Normal">Normal</option>
             <option value="Volumen">Por volumen</option>
           </select>
+
+          <label class="field-label">Moneda</label>
+          <select v-model="cotForm.currency" class="field-input mb-3" :disabled="quotValidated">
+            <option v-for="c in cotDefaults.currencies" :key="c.name" :value="c.name">{{ c.name }}</option>
+          </select>
+
+          <label class="field-label">Lista de Precios</label>
+          <select v-model="cotForm.selling_price_list" class="field-input mb-3" :disabled="quotValidated">
+            <option value="">— Sin lista —</option>
+            <option v-for="pl in cotDefaults.price_lists" :key="pl.name" :value="pl.name">{{ pl.name }}</option>
+          </select>
+
+          <label class="field-label">Impuestos y Cargos</label>
+          <select v-model="cotForm.taxes_and_charges" class="field-input mb-3" :disabled="quotValidated">
+            <option value="">— Sin plantilla —</option>
+            <option v-for="t in cotDefaults.tax_templates" :key="t.name" :value="t.name">{{ t.name }}</option>
+          </select>
+
+          <label class="field-label">Email de contacto</label>
+          <input v-model="cotForm.contact_email" type="email" class="field-input mb-3" :disabled="quotValidated" placeholder="correo@cliente.com" />
+
+          <label class="field-label">WhatsApp / Móvil</label>
+          <input v-model="cotForm.contact_mobile" type="tel" class="field-input mb-4" :disabled="quotValidated" placeholder="+52 55 1234 5678" />
 
           <div class="border-t border-surface-border pt-3 mb-4 space-y-1">
             <div class="flex justify-between text-[13px]"><span class="text-ink-muted">Productos</span><span>{{ productos.length }}</span></div>
@@ -324,12 +464,21 @@
               </button>
             </template>
             <div class="grid grid-cols-2 gap-2 pt-1">
-              <button class="doc-action justify-center" @click="openSend('Quotation', related.quotation.name, related.quotation.contact_email)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
+              <button class="doc-action justify-center" @click="openSend('Quotation', related.quotation.name, related.quotation.contact_email, related.quotation.contact_mobile)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
               <button class="doc-action justify-center" @click="downloadPdf('Quotation', related.quotation.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>Descargar</button>
               <button class="doc-action justify-center" @click="printDocView('Quotation', related.quotation.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>Imprimir</button>
               <button class="doc-action justify-center" @click="openAssign('Quotation', related.quotation.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Asignar</button>
             </div>
             <a class="doc-action justify-center w-full" :href="`/app/quotation/${related.quotation.name}`" target="_blank"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>Abrir en ERPNext</a>
+
+            <div v-if="quotValidated && related.quotation.status !== 'Lost'" class="pt-2 mt-1 border-t border-surface-border space-y-2">
+              <button class="w-full h-8 text-[12.5px] font-medium text-ink-muted border border-surface-border rounded-lg hover:bg-surface-raised" @click="openAcordadoModal">Guardar precio acordado</button>
+              <button class="w-full h-8 text-[12.5px] font-medium text-red-500 border border-red-200 rounded-lg hover:bg-red-50" @click="openRechazarModal">Marcar rechazada</button>
+            </div>
+
+            <div class="pt-3 mt-2 border-t border-surface-border">
+              <AttachmentsPanel doctype="Quotation" :docname="related.quotation.name" />
+            </div>
           </div>
         </div>
 
@@ -368,10 +517,36 @@
           </select>
 
           <label class="field-label">Términos y condiciones</label>
-          <select v-model="soForm.tc_name" class="field-input mb-4" :disabled="soValidated">
+          <select v-model="soForm.tc_name" class="field-input mb-3" :disabled="soValidated">
             <option value="">— Sin términos —</option>
             <option v-for="t in cotDefaults.terms" :key="t.name" :value="t.name">{{ t.name }}</option>
           </select>
+
+          <label class="field-label">OC del Cliente</label>
+          <input v-model="soForm.po_no" type="text" class="field-input mb-3" :disabled="soValidated" placeholder="Número de orden de compra" />
+
+          <label class="field-label">Moneda</label>
+          <select v-model="soForm.currency" class="field-input mb-3" :disabled="soValidated">
+            <option v-for="c in cotDefaults.currencies" :key="c.name" :value="c.name">{{ c.name }}</option>
+          </select>
+
+          <label class="field-label">Lista de Precios</label>
+          <select v-model="soForm.selling_price_list" class="field-input mb-3" :disabled="soValidated">
+            <option value="">— Sin lista —</option>
+            <option v-for="pl in cotDefaults.price_lists" :key="pl.name" :value="pl.name">{{ pl.name }}</option>
+          </select>
+
+          <label class="field-label">Impuestos y Cargos</label>
+          <select v-model="soForm.taxes_and_charges" class="field-input mb-3" :disabled="soValidated">
+            <option value="">— Sin plantilla —</option>
+            <option v-for="t in cotDefaults.tax_templates" :key="t.name" :value="t.name">{{ t.name }}</option>
+          </select>
+
+          <label class="field-label">Email de contacto</label>
+          <input v-model="soForm.contact_email" type="email" class="field-input mb-3" :disabled="soValidated" placeholder="correo@cliente.com" />
+
+          <label class="field-label">WhatsApp / Móvil</label>
+          <input v-model="soForm.contact_mobile" type="tel" class="field-input mb-4" :disabled="soValidated" placeholder="+52 55 1234 5678" />
 
           <div class="border-t border-surface-border pt-3 mb-4 space-y-1">
             <div class="flex justify-between text-[13px]"><span class="text-ink-muted">Productos</span><span>{{ productos.length }}</span></div>
@@ -394,12 +569,16 @@
               </button>
             </template>
             <div class="grid grid-cols-2 gap-2 pt-1">
-              <button class="doc-action justify-center" @click="openSend('Sales Order', related.sales_order.name, related.sales_order.contact_email)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
+              <button class="doc-action justify-center" @click="openSend('Sales Order', related.sales_order.name, related.sales_order.contact_email, related.sales_order.contact_mobile)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
               <button class="doc-action justify-center" @click="downloadPdf('Sales Order', related.sales_order.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>Descargar</button>
               <button class="doc-action justify-center" @click="printDocView('Sales Order', related.sales_order.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>Imprimir</button>
               <button class="doc-action justify-center" @click="openAssign('Sales Order', related.sales_order.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Asignar</button>
             </div>
             <a class="doc-action justify-center w-full" :href="`/app/sales-order/${related.sales_order.name}`" target="_blank"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>Abrir en ERPNext</a>
+
+            <div class="pt-3 mt-2 border-t border-surface-border">
+              <AttachmentsPanel doctype="Sales Order" :docname="related.sales_order.name" />
+            </div>
           </div>
         </div>
 
@@ -704,7 +883,7 @@
                     </table>
                     <div class="flex items-center gap-2 mt-3 flex-wrap">
                       <button v-if="!docCompraValidated && docCompra.doctype === 'Purchase Order'" :disabled="advancing" class="doc-action" @click="jalarPreciosOC"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>Jalar precios</button>
-                      <button :disabled="advancing" class="doc-action" @click="openSend(docCompra.doctype, docCompra.name, '')"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
+                      <button :disabled="advancing" class="doc-action" @click="openSend(docCompra.doctype, docCompra.name, docCompra.contact_email, docCompra.contact_mobile)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
                       <div class="flex-1"></div>
                       <template v-if="!docCompraValidated">
                         <button :disabled="advancing" class="doc-action" @click="guardarDocCompra">Guardar</button>
@@ -977,7 +1156,7 @@
               <!-- Barra de acciones (abajo) -->
               <div class="flex items-center gap-2 flex-wrap bg-white rounded-xl border border-surface-border p-3">
                 <button class="doc-action" @click="openPdf('Purchase Order', subPo.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>Vista previa</button>
-                <button :disabled="advancing" class="doc-action" @click="openSend('Purchase Order', subPo.name, '')"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
+                <button :disabled="advancing" class="doc-action" @click="openSend('Purchase Order', subPo.name, subPo.contact_email, subPo.contact_mobile)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
                 <div class="flex-1"></div>
                 <template v-if="!subValidated">
                   <button :disabled="advancing" class="doc-action" @click="guardarSub">Guardar</button>
@@ -1239,7 +1418,7 @@
                 </button>
               </template>
               <div class="grid grid-cols-2 gap-2 pt-1">
-                <button class="doc-action justify-center" @click="openSend('Delivery Note', dnDoc.name, related.sales_order?.contact_email)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
+                <button class="doc-action justify-center" @click="openSend('Delivery Note', dnDoc.name, dnDoc.contact_email || related.sales_order?.contact_email, dnDoc.contact_mobile || related.sales_order?.contact_mobile)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
                 <button class="doc-action justify-center" @click="downloadPdf('Delivery Note', dnDoc.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>Descargar</button>
                 <button class="doc-action justify-center" @click="printDocView('Delivery Note', dnDoc.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>Imprimir</button>
                 <button class="doc-action justify-center" @click="openAssign('Delivery Note', dnDoc.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Asignar</button>
@@ -1323,7 +1502,7 @@
               </button>
             </template>
             <div class="grid grid-cols-2 gap-2 pt-1">
-              <button class="doc-action justify-center" @click="openSend('Sales Invoice', related.sales_invoice.name, related.sales_invoice.contact_email)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
+              <button class="doc-action justify-center" @click="openSend('Sales Invoice', related.sales_invoice.name, related.sales_invoice.contact_email, related.sales_invoice.contact_mobile)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
               <button class="doc-action justify-center" @click="downloadPdf('Sales Invoice', related.sales_invoice.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>Descargar</button>
               <button class="doc-action justify-center" @click="printDocView('Sales Invoice', related.sales_invoice.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>Imprimir</button>
               <button class="doc-action justify-center" @click="openAssign('Sales Invoice', related.sales_invoice.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Asignar</button>
@@ -1419,6 +1598,96 @@
       </div>
     </div>
 
+    <!-- Precio acordado modal -->
+    <div v-if="showAcordadoModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" @click.self="showAcordadoModal = false">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
+        <p class="text-sm font-semibold text-ink mb-2">Guardar precio acordado</p>
+        <p class="text-[12px] text-ink-muted mb-4">
+          Guarda el precio de {{ productos.filter(p => p.finished_item).length }} artículo(s) de este costeo como precio
+          acordado para {{ form.cliente }}. Mientras esté vigente, un pedido nuevo del mismo cliente y artículo usa este
+          precio automáticamente, sin volver a cotizar.
+        </p>
+        <label class="field-label">Vigente hasta</label>
+        <input v-model="acordadoValidUpto" type="date" class="field-input mb-4" />
+        <div class="flex justify-end gap-2">
+          <button class="px-3 py-1.5 text-[13px] text-ink-muted hover:bg-surface-raised rounded-lg" @click="showAcordadoModal = false">Cancelar</button>
+          <button :disabled="advancing" class="px-4 py-1.5 text-[13px] font-medium text-white bg-brand-500 hover:bg-brand-600 disabled:opacity-50 rounded-lg" @click="guardarPrecioAcordado">
+            {{ advancing ? "Guardando…" : "Guardar" }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <HistorialModal :open="showHistorialModal" :costeo="docName" @close="showHistorialModal = false" />
+
+    <!-- Crear revisión modal -->
+    <div v-if="showRevisionModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" @click.self="showRevisionModal = false">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
+        <p class="text-sm font-semibold text-ink mb-2">Crear revisión</p>
+        <p class="text-[12.5px] text-ink-muted mb-4">Se creará una nueva revisión de {{ docName }} para poder editarla. Este costeo queda guardado como historial.</p>
+        <label class="field-label">Motivo de la revisión (opcional)</label>
+        <textarea v-model="revisionMotivo" rows="3" class="field-input mb-4" placeholder="Ej: cliente pidió ajustar el precio…"></textarea>
+        <div class="flex justify-end gap-2">
+          <button class="px-3 py-1.5 text-[13px] text-ink-muted hover:bg-surface-raised rounded-lg" @click="showRevisionModal = false">Cancelar</button>
+          <button :disabled="revisionCreating" class="px-4 py-1.5 text-[13px] font-medium text-white bg-brand-500 hover:bg-brand-600 disabled:opacity-50 rounded-lg" @click="confirmarRevision">
+            {{ revisionCreating ? "Creando…" : "Crear revisión" }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Rechazar cotización modal -->
+    <div v-if="showRechazarModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" @click.self="showRechazarModal = false">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
+        <p class="text-sm font-semibold text-ink mb-2">Marcar como rechazada</p>
+        <label class="field-label">Motivo (opcional, queda guardado en el historial)</label>
+        <textarea v-model="rechazarMotivo" rows="3" class="field-input mb-4" placeholder="Ej: precio alto, tiempo de entrega…"></textarea>
+        <div class="flex justify-end gap-2">
+          <button class="px-3 py-1.5 text-[13px] text-ink-muted hover:bg-surface-raised rounded-lg" @click="showRechazarModal = false">Cancelar</button>
+          <button :disabled="advancing" class="px-4 py-1.5 text-[13px] font-medium text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 rounded-lg" @click="confirmarCotizacionRechazada">
+            {{ advancing ? "Guardando…" : "Marcar rechazada" }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Elegir cómo enviar -->
+    <div v-if="sendChooser.open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" @click.self="sendChooser.open = false">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-xs p-5">
+        <p class="text-sm font-semibold text-ink mb-3">Enviar {{ sendChooser.name }}</p>
+        <div class="space-y-2">
+          <button class="w-full flex items-center gap-3 px-3 py-2.5 border border-surface-border rounded-xl hover:border-brand-300 hover:bg-brand-50/50 transition-colors text-left" @click="chooseEmail">
+            <div class="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+              <svg class="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+            </div>
+            <span class="text-[13px] font-medium text-ink">Correo</span>
+          </button>
+          <button class="w-full flex items-center gap-3 px-3 py-2.5 border border-surface-border rounded-xl hover:border-green-300 hover:bg-green-50/50 transition-colors text-left" @click="chooseWhatsApp">
+            <div class="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center flex-shrink-0">
+              <svg class="w-4 h-4 text-green-600" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+            </div>
+            <span class="text-[13px] font-medium text-ink">WhatsApp</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- WhatsApp modal -->
+    <div v-if="waModal.open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" @click.self="waModal.open = false">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-5">
+        <p class="text-sm font-semibold text-ink mb-3">Enviar {{ waModal.name }} por WhatsApp</p>
+        <label class="field-label">Número de WhatsApp</label>
+        <input v-model="waModal.phone" type="tel" class="field-input mb-3" placeholder="+52 55 1234 5678" />
+        <label class="field-label">Mensaje</label>
+        <textarea v-model="waModal.message" rows="3" class="field-input mb-3"></textarea>
+        <p class="text-[11.5px] text-ink-light mb-4">Se descargará el PDF y se abrirá WhatsApp Web — adjúntalo ahí con el botón 📎.</p>
+        <div class="flex justify-end gap-2">
+          <button class="px-3 py-1.5 text-[13px] text-ink-muted hover:bg-surface-raised rounded-lg" @click="waModal.open = false">Cancelar</button>
+          <button :disabled="!waModal.phone" class="px-4 py-1.5 text-[13px] font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded-lg" @click="sendWhatsAppGeneric">Enviar</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Send modal -->
     <div v-if="sendModal.open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" @click.self="sendModal.open = false">
       <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-5">
@@ -1487,6 +1756,8 @@ import CosteoStepper from "@/components/CosteoStepper.vue";
 import LinkInput from "@/components/LinkInput.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import MaterializeProductModal from "@/components/MaterializeProductModal.vue";
+import HistorialModal from "@/components/HistorialModal.vue";
+import AttachmentsPanel from "@/components/AttachmentsPanel.vue";
 import MaterializeArticuloModal from "@/components/MaterializeArticuloModal.vue";
 import { db, call, openDesk as deskOpen, uploadFile, defaultPrintFormat } from "@/utils/frappe.js";
 
@@ -1496,7 +1767,6 @@ const ITEM_FILTERS = {
   servicio:  [["item_group", "=", "Servicios"]],
   sub:       [["item_group", "in", ["Sub-Ensamblajes", "Productos Terminados"]]],
 };
-const TABS = [{ key: "materiales", label: "Materias primas" }, { key: "etapas", label: "Etapas de manufactura" }];
 const ORDER = ["Borrador", "Cotizado", "Orden de Venta", "En Producción", "Entregado", "Completado"];
 
 const route = useRoute();
@@ -1512,7 +1782,7 @@ const confirmDelete = reactive({ open: false, loading: false });
 const confirmCancel = reactive({ open: false, loading: false });
 const familias = ref([]);
 const tplModal = reactive({ open: false, nombre: "", familia: "", saving: false });
-const materializeModal = reactive({ open: false, saving: false, text: "", suggestedPrice: 0 });
+const materializeModal = reactive({ open: false, saving: false, text: "", suggestedPrice: 0, suggestedDescription: "", suggestedImage: "" });
 const pendientesArticulos = ref([]);
 const pendientesContext = reactive({ company: "", almacen_materias_primas: "", almacen_trabajo_en_proceso: "" });
 const pendientesAdvertencias = ref([]);
@@ -1524,8 +1794,14 @@ const docState = ref(0); // docstatus del Costeo: 0 borrador, 1 validado
 const activeStep = ref(0);
 const previewKey = ref(0); // fuerza recarga del iframe de preview
 const related = reactive({ quotation: null, sales_order: null, delivery_note: null, sales_invoice: null });
-const cotForm = reactive({ valid_till: "", payment_terms_template: "", tc_name: "", custom_tipo_formato: "Normal" });
-const soForm = reactive({ delivery_date: "", payment_terms_template: "", tc_name: "" });
+const cotForm = reactive({
+  valid_till: "", payment_terms_template: "", tc_name: "", custom_tipo_formato: "Normal",
+  currency: "MXN", selling_price_list: "", taxes_and_charges: "", contact_email: "", contact_mobile: "",
+});
+const soForm = reactive({
+  delivery_date: "", payment_terms_template: "", tc_name: "", po_no: "",
+  currency: "MXN", selling_price_list: "", taxes_and_charges: "", contact_email: "", contact_mobile: "",
+});
 const siForm = reactive({ posting_date: "", due_date: "", payment_terms_template: "", tc_name: "" });
 const dnDoc = ref(null);
 const dnForm = reactive({ posting_date: "", shipping_address_name: "", customer_address: "" });
@@ -1535,7 +1811,7 @@ const compras = reactive({ materiales: [], maquila: [] });
 const pinvSel = ref(null);
 const pinvDoc = ref(null);
 const pinvForm = reactive({ posting_date: "", due_date: "", bill_no: "", bill_date: "", payment_terms_template: "", tc_name: "" });
-const cotDefaults = reactive({ payment_terms_templates: [], terms: [], users: [] });
+const cotDefaults = reactive({ payment_terms_templates: [], terms: [], users: [], price_lists: [], currencies: [], tax_templates: [] });
 const assignModal = reactive({ open: false, doctype: "", name: "", selected: [], sending: false });
 const planDetail = ref(null);
 const planWh = ref("");
@@ -1611,17 +1887,58 @@ const errors = reactive({});
 const productos = ref([]);
 const detalles = ref([]);
 const etapas = ref([]);
+const tallas = ref([]);
 const allSuppliers = ref([]);
+const allTallas = ref([]);
 const expandedTid = ref(null);
-const tabState = ref({});
 const toast = reactive({ show: false, msg: "", type: "success" });
 const sendModal = reactive({ open: false, doctype: "", name: "", recipients: "", subject: "", message: "", sending: false });
+const sendChooser = reactive({ open: false, doctype: "", name: "", email: "", phone: "" });
+const waModal = reactive({ open: false, doctype: "", name: "", phone: "", message: "" });
+const showAcordadoModal = ref(false);
+const acordadoValidUpto = ref("");
+const showRechazarModal = ref(false);
+const rechazarMotivo = ref("");
+const showRevisionModal = ref(false);
+const revisionMotivo = ref("");
+const revisionCreating = ref(false);
+const showHistorialModal = ref(false);
+const siguienteCosteo = ref(null);
+async function loadRevisionInfo() {
+  siguienteCosteo.value = null;
+  if (!docName.value) return;
+  try {
+    const r = await call("costeo_yelke.api.costeo_api.get_revisiones_costeo", { costeo: docName.value });
+    siguienteCosteo.value = r?.siguiente || null;
+  } catch { /* no bloquear la carga por esto */ }
+}
 
 // ── Computed ──
 const headerSubtitle = computed(() => isNew.value ? "Completa los datos del costeo" : [form.cliente, form.familia_prenda].filter(Boolean).join(" · "));
 const totalVenta = computed(() => productos.value.reduce((s, p) => s + (p.total_sales_price || 0), 0));
-const totalCosto = computed(() => productos.value.reduce((s, p) => s + (p.total_unit_cost || 0) * (p.qty || 0), 0));
-const margenPct = computed(() => { const v = totalVenta.value; return v > 0 ? Math.round(((v - totalCosto.value) / v) * 100) : 0; });
+
+// El menú de acciones (⋮) y la insignia de estado del header deben corresponder al
+// documento que se está viendo según el paso activo del stepper, no siempre al Costeo
+// -- si no, "Cancelar validación" o "Imprimir" desde el paso "Cotizar" actuaría sobre
+// el Costeo en vez de sobre la cotización, que es justo lo que se ve en pantalla.
+// "Producir" no tiene un único documento (son varios: OM, orden de subcontratación,
+// transferencia, recibo), así que ahí no se muestra menú de documento.
+const headerDoc = computed(() => {
+  if (isNew.value) return null;
+  const step = activeStep.value;
+  if (step === 0) return { doctype: "Costeo", name: docName.value, docstatus: docState.value, isCosteo: true };
+  if (step === 1 && related.quotation) return { doctype: "Quotation", name: related.quotation.name, docstatus: related.quotation.docstatus, isCosteo: false };
+  if (step === 2 && related.sales_order) return { doctype: "Sales Order", name: related.sales_order.name, docstatus: related.sales_order.docstatus, isCosteo: false };
+  if (step === 4 && related.delivery_note) return { doctype: "Delivery Note", name: related.delivery_note.name, docstatus: related.delivery_note.docstatus, isCosteo: false };
+  if (step === 5 && related.sales_invoice) return { doctype: "Sales Invoice", name: related.sales_invoice.name, docstatus: related.sales_invoice.docstatus, isCosteo: false };
+  return null;
+});
+
+// Un costeo validado o cancelado ya no debe poder editarse desde aquí -- si necesita
+// ajustes, el camino es crear una revisión (que sí queda editable). Sin este candado,
+// el usuario podía seguir tocando campos de un costeo "cerrado" sin ningún botón para
+// guardar esos cambios, lo cual es confuso (parece editable pero no pasa nada).
+const canEditCosteo = computed(() => isNew.value || docState.value === 0);
 
 const cta = computed(() => ({
   "Borrador":       { label: "Pasar a cotización",        action: "cotizar" },
@@ -1702,12 +2019,38 @@ function printDocView(doctype, name) { window.open(printUrl(doctype, name).repla
 function downloadPdf(doctype, name) { window.open(printUrl(doctype, name).replace("trigger_print=0", "trigger_print=1"), "_blank"); }
 
 // ── Send ──
-function openSend(doctype, name, email) {
-  sendModal.doctype = doctype; sendModal.name = name;
-  sendModal.recipients = email || "";
-  sendModal.subject = `${doctype === "Quotation" ? "Cotización" : doctype} ${name}`;
+function openSend(doctype, name, email, phone) {
+  sendChooser.doctype = doctype; sendChooser.name = name;
+  sendChooser.email = email || ""; sendChooser.phone = phone || "";
+  sendChooser.open = true;
+}
+function chooseEmail() {
+  sendChooser.open = false;
+  sendModal.doctype = sendChooser.doctype; sendModal.name = sendChooser.name;
+  sendModal.recipients = sendChooser.email;
+  sendModal.subject = `${sendChooser.doctype === "Quotation" ? "Cotización" : sendChooser.doctype} ${sendChooser.name}`;
   sendModal.message = "Estimado cliente, adjunto encontrará el documento. Quedamos atentos.";
   sendModal.open = true;
+}
+function chooseWhatsApp() {
+  sendChooser.open = false;
+  waModal.doctype = sendChooser.doctype; waModal.name = sendChooser.name;
+  waModal.phone = sendChooser.phone;
+  waModal.message = `Hola, le comparto el documento *${sendChooser.name}*. Adjunto el PDF con el detalle. Quedamos atentos.`;
+  waModal.open = true;
+}
+function sendWhatsAppGeneric() {
+  const phone = (waModal.phone || "").replace(/[^0-9]/g, "");
+  if (!phone) { showToast("Ingresa un número de WhatsApp", "error"); return; }
+  const printFormat = printFmtMap[waModal.doctype] || "Standard";
+  const pdfUrl = `/api/method/frappe.utils.print_format.download_pdf?doctype=${encodeURIComponent(waModal.doctype)}&name=${encodeURIComponent(waModal.name)}&format=${encodeURIComponent(printFormat)}&no_letterhead=0`;
+  const a = document.createElement("a");
+  a.href = pdfUrl; a.download = `${waModal.name}.pdf`; a.click();
+  setTimeout(() => {
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(waModal.message)}`, "_blank");
+  }, 500);
+  waModal.open = false;
+  showToast("PDF descargado — adjúntalo en WhatsApp");
 }
 async function doSend() {
   sendModal.sending = true;
@@ -1719,10 +2062,7 @@ async function doSend() {
   finally { sendModal.sending = false; }
 }
 
-// ── Tabs / filters ──
-function activeTab(tid) { return tabState.value[tid] || "materiales"; }
-function setTab(tid, tab) { tabState.value[tid] = tab; }
-function tabCount(prod, tab) { if (!prod.finished_item) return 0; if (tab === "materiales") return materialesDe(prod.finished_item).length; if (tab === "etapas") return etapasDe(prod.finished_item).length; return 0; }
+// ── Filters ──
 function materialesDe(fi) { return detalles.value.filter(d => d.finished_item === fi && d.concept_type === "Materia Prima"); }
 function etapasDe(fi) { return etapas.value.filter(e => e.producto_terminado === fi); }
 // Misma ordenación que _stage_sort_key_int en el backend (numérica si se puede, si no alfabética).
@@ -1744,10 +2084,29 @@ function esUltimaEtapa(e, fi) {
 }
 
 // ── Product / detail / stage ──
-function addProducto() { const p = { _tid: uid(), _image: "", finished_item: "", qty: 1, shipping_cost: 0, overhead_pct: 0, margin_pct: 0, material_cost: 0, services_cost: 0, overhead_amt: 0, total_unit_cost: 0, unit_sales_price: 0, total_sales_price: 0 }; productos.value.push(p); expandedTid.value = p._tid; }
-function removeProducto(idx) { const prod = productos.value[idx]; if (!prod) return; detalles.value = detalles.value.filter(d => d.finished_item !== prod.finished_item); etapas.value = etapas.value.filter(e => e.producto_terminado !== prod.finished_item); productos.value.splice(idx, 1); if (expandedTid.value === prod._tid) expandedTid.value = null; }
+function addProducto() { const p = { _tid: uid(), image: "", description: "", finished_item: "", qty: 1, shipping_cost: 0, labeling_cost: 0, packaging_cost: 0, overhead_pct: 0, margin_pct: 0, material_cost: 0, services_cost: 0, overhead_amt: 0, total_unit_cost: 0, unit_sales_price: 0, total_sales_price: 0 }; productos.value.push(p); expandedTid.value = p._tid; }
+function directCost(prod) { return (prod.material_cost || 0) + (prod.services_cost || 0) + (prod.shipping_cost || 0) + (prod.labeling_cost || 0) + (prod.packaging_cost || 0); }
+function expectedProfit(prod) { return (prod.unit_sales_price || 0) - (prod.total_unit_cost || 0); }
+function removeProducto(idx) { const prod = productos.value[idx]; if (!prod) return; detalles.value = detalles.value.filter(d => d.finished_item !== prod.finished_item); etapas.value = etapas.value.filter(e => e.producto_terminado !== prod.finished_item); tallas.value = tallas.value.filter(t => t.finished_item !== prod.finished_item); productos.value.splice(idx, 1); if (expandedTid.value === prod._tid) expandedTid.value = null; }
 function toggleProduct(tid) { expandedTid.value = expandedTid.value === tid ? null : tid; }
-async function onProductoItemChange(prod) { recalcProducto(prod); prod._image = await fetchItemImage(prod.finished_item); }
+async function onProductoItemChange(prod) { recalcProducto(prod); const fetched = await fetchItemImage(prod.finished_item); if (fetched) prod.image = fetched; }
+// La imagen se sube desde aquí (aunque el producto todavía sea texto libre) para que
+// ya esté lista cuando se materialice el Item real al pasar a cotización.
+function pickImage(prod) {
+  if (!canEditCosteo.value) return;
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/*";
+  input.onchange = async (ev) => {
+    const f = ev.target.files?.[0];
+    if (!f) return;
+    try {
+      const res = await uploadFile(f, docName.value ? { doctype: "Costeo", docname: docName.value } : {});
+      if (res?.file_url) prod.image = res.file_url;
+    } catch (e) { showToast(e.message || "No se pudo subir la imagen", "error"); }
+  };
+  input.click();
+}
 function addDetalle(prod, type) { detalles.value.push({ _tid: uid(), finished_item: prod.finished_item, concept_type: type, item: "", supplier: "", internal_uom: "", rendimiento: 0, internal_qty: 0, supplier_qty: 0, unit_price: 0, total: 0, etapa: "", _supplierOptions: [], _qtyMode: "rendimiento" }); }
 function removeDetalle(d, prod) { const i = detalles.value.findIndex(x => x._tid === d._tid); if (i !== -1) detalles.value.splice(i, 1); recalcProducto(prod); }
 function round2(n) { return Math.round((n || 0) * 100) / 100; }
@@ -1760,19 +2119,84 @@ function fmtQty(n) { return round4(n).toString(); }
 function onRendimientoInput(d, prod) { d.internal_qty = d.rendimiento > 0 ? round4(1 / d.rendimiento) : 0; recalcDetalle(d, prod); }
 function onConsumoInput(d, prod) { d.rendimiento = d.internal_qty > 0 ? round4(1 / d.internal_qty) : 0; recalcDetalle(d, prod); }
 function recalcDetalle(d, prod) {
+  // El costo de la materia prima siempre es por UNA sola pieza del producto terminado
+  // (no se multiplica por la cantidad del pedido) -- supplier_qty sigue siendo la
+  // cantidad total a comprar, pero es solo informativo, no entra en el costo.
   d.supplier_qty = round2((d.internal_qty || 0) * (prod?.qty || 0));
-  d.total = (d.supplier_qty || 0) * (d.unit_price || 0);
+  d.total = round2((d.internal_qty || 0) * (d.unit_price || 0));
   recalcProducto(prod);
 }
 function onProdQtyChange(prod) {
   for (const d of materialesDe(prod.finished_item)) {
     d.supplier_qty = round2((d.internal_qty || 0) * (prod.qty || 0));
-    d.total = (d.supplier_qty || 0) * (d.unit_price || 0);
   }
   recalcProducto(prod);
 }
-function addEtapa(prod) { etapas.value.push({ _tid: uid(), producto_terminado: prod.finished_item, etapa: "", servicio: "", proveedor: "", precio_servicio: 0, subensamblaje: "" }); }
-function removeEtapa(e, prod) { const i = etapas.value.findIndex(x => x._tid === e._tid); if (i !== -1) etapas.value.splice(i, 1); if (prod) recalcProducto(prod); }
+function addEtapa(prod) {
+  const next = etapasDe(prod.finished_item).length + 1;
+  etapas.value.push({ _tid: uid(), producto_terminado: prod.finished_item, etapa: String(next), servicio: "", proveedor: "", precio_servicio: 0, subensamblaje: "" });
+}
+function removeEtapa(e, prod) {
+  const i = etapas.value.findIndex(x => x._tid === e._tid);
+  if (i !== -1) etapas.value.splice(i, 1);
+  if (prod) {
+    // Renumerar para que la secuencia 1..N nunca tenga huecos -- el número de etapa
+    // ya no es editable a mano, así que debe mantenerse consistente solo.
+    etapasDe(prod.finished_item).forEach((et, idx) => { et.etapa = String(idx + 1); });
+    recalcProducto(prod);
+  }
+}
+function tallasDe(fi) { return tallas.value.filter(t => t.finished_item === fi); }
+function tallaLabel(nameRef) {
+  const t = allTallas.value.find(x => x.name === nameRef);
+  return t ? t.talla : (nameRef || "");
+}
+// Arma un bloque de texto con las tallas atípicas del producto (si las tiene) para
+// anexarlo a la descripción al materializar -- así el maquilero/almacén ve de un
+// vistazo qué piezas llevan tela/talla especial, sin perder la descripción que ya
+// se había escrito a mano.
+function buildTallaDescriptionSuffix(prod) {
+  const rows = tallasDe(prod.finished_item).filter(t => t.genero && t.talla && (t.qty || 0) > 0);
+  if (!rows.length) return "";
+  const lines = rows.map(t => `- Talla ${tallaLabel(t.talla)}: ${t.qty} pza(s)`);
+  return `\n\nTallas especiales:\n${lines.join("\n")}`;
+}
+function addTalla(prod) { loadAllTallas(); tallas.value.push({ _tid: uid(), finished_item: prod.finished_item, genero: "", grupo_talla: "", talla: "", qty: 0, sobrecosto_tipo: "Ninguno", sobrecosto_valor: 0, costo_unitario: 0, precio_venta: 0, costo_total: 0 }); }
+function removeTalla(t, prod) { const i = tallas.value.findIndex(x => x._tid === t._tid); if (i !== -1) tallas.value.splice(i, 1); recalcProducto(prod); }
+// No se puede repartir entre tallas más piezas de las que se van a producir en total.
+function tallaMaxQty(t, prod) {
+  const otherQty = tallasDe(prod.finished_item).filter(x => x._tid !== t._tid).reduce((s, x) => s + (x.qty || 0), 0);
+  return Math.max(0, (prod.qty || 0) - otherQty);
+}
+function onTallaQtyInput(t, prod) {
+  const max = tallaMaxQty(t, prod);
+  if ((t.qty || 0) > max) t.qty = max;
+  recalcProducto(prod);
+}
+// Costo/precio de UNA talla: el costo base (materiales+servicios+flete+etiquetado+
+// empaquetado) es el mismo para todas las tallas de un producto -- el sobrecosto de
+// una talla más grande se suma encima de ese base, el overhead % se aplica sobre el
+// total ya con sobrecosto (igual que sin tallas), y el precio de venta usa el mismo
+// margen % objetivo del producto sobre ESE costo ya ajustado.
+function computeTallaCost(t, prod, base, m) {
+  const sobrecosto = t.sobrecosto_tipo === "Fijo" ? (t.sobrecosto_valor || 0)
+    : t.sobrecosto_tipo === "Porcentaje" ? base * ((t.sobrecosto_valor || 0) / 100)
+    : 0;
+  const conSobrecosto = base + sobrecosto;
+  const overheadT = conSobrecosto * ((prod.overhead_pct || 0) / 100);
+  t.costo_unitario = round2(conSobrecosto + overheadT);
+  t.precio_venta = round2((m > 0 && m < 1) ? t.costo_unitario / (1 - m) : t.costo_unitario);
+  t.costo_total = round2(t.costo_unitario * (t.qty || 0));
+  return overheadT;
+}
+function recalcTalla(t, prod) {
+  const base = directCost(prod);
+  const m = (prod.margin_pct || 0) / 100;
+  computeTallaCost(t, prod, base, m);
+  recalcProducto(prod);
+}
+function tallasAsignadas(prod) { return tallasDe(prod.finished_item).reduce((s, t) => s + (t.qty || 0), 0); }
+function tallasCostoTotal(prod) { return tallasDe(prod.finished_item).reduce((s, t) => s + (t.costo_total || 0), 0); }
 async function onEtapaServicioChange(e, prod) {
   if (e.servicio && !e.precio_servicio) {
     try {
@@ -1782,19 +2206,58 @@ async function onEtapaServicioChange(e, prod) {
   }
   recalcProducto(prod);
 }
+// Cuando el producto tiene desglose por talla, el costo/precio "por pieza" y los
+// totales dejan de ser un solo número plano (costo × cantidad) y pasan a ser el
+// promedio ponderado real de la mezcla de tallas (cada una con su propio sobrecosto) --
+// así el desglose por talla sí afecta todos los cálculos del costeo, no solo su
+// propia tabla. Sin renglones de talla, el cálculo es exactamente el de antes.
 function recalcProducto(prod) {
   const fi = prod.finished_item;
   prod.material_cost = detalles.value.filter(d => d.finished_item === fi && d.concept_type === "Materia Prima").reduce((s, d) => s + (d.total || 0), 0);
   const detServ = detalles.value.filter(d => d.finished_item === fi && d.concept_type === "Servicio").reduce((s, d) => s + (d.total || 0), 0);
   const stageServ = etapas.value.filter(e => e.producto_terminado === fi && e.servicio).reduce((s, e) => s + (e.precio_servicio || 0), 0);
   prod.services_cost = detServ + stageServ;
-  const base = prod.material_cost + prod.services_cost + (prod.shipping_cost || 0);
-  prod.overhead_amt = base * ((prod.overhead_pct || 0) / 100);
-  prod.total_unit_cost = base + prod.overhead_amt;
+  const base = prod.material_cost + prod.services_cost + (prod.shipping_cost || 0) + (prod.labeling_cost || 0) + (prod.packaging_cost || 0);
   const m = (prod.margin_pct || 0) / 100;
-  const price = (m > 0 && m < 1) ? prod.total_unit_cost / (1 - m) : prod.total_unit_cost;
-  prod.unit_sales_price = Math.round(price * 100) / 100;
-  prod.total_sales_price = prod.unit_sales_price * (prod.qty || 0);
+
+  const tRows = tallasDe(fi);
+  const totalTallaQty = tRows.reduce((s, t) => s + (t.qty || 0), 0);
+
+  if (tRows.length && totalTallaQty > 0) {
+    // Si las tallas no cubren toda la cantidad a producir, las piezas restantes
+    // (sin talla asignada aún) se valúan al costo plano (sin sobrecosto) para que
+    // el promedio ponderado represente SIEMPRE las prod.qty piezas totales, no
+    // solo las ya asignadas -- si no, los totales se extrapolaban mal cuando la
+    // asignación era parcial.
+    const totalQty = prod.qty || 0;
+    const remainder = Math.max(0, totalQty - totalTallaQty);
+    let sumCosto = 0, sumOverheadQty = 0, sumVenta = 0;
+    tRows.forEach(t => {
+      const overheadT = computeTallaCost(t, prod, base, m);
+      sumCosto += t.costo_total;
+      sumOverheadQty += overheadT * (t.qty || 0);
+      sumVenta += t.precio_venta * (t.qty || 0);
+    });
+    if (remainder > 0) {
+      const overheadFlat = base * ((prod.overhead_pct || 0) / 100);
+      const costoFlat = round2(base + overheadFlat);
+      const precioFlat = round2((m > 0 && m < 1) ? costoFlat / (1 - m) : costoFlat);
+      sumCosto += costoFlat * remainder;
+      sumOverheadQty += overheadFlat * remainder;
+      sumVenta += precioFlat * remainder;
+    }
+    const divisor = totalQty > 0 ? totalQty : totalTallaQty;
+    prod.overhead_amt = round2(sumOverheadQty / divisor);
+    prod.total_unit_cost = round2(sumCosto / divisor);
+    prod.unit_sales_price = round2(sumVenta / divisor);
+    prod.total_sales_price = round2(sumVenta);
+  } else {
+    prod.overhead_amt = round2(base * ((prod.overhead_pct || 0) / 100));
+    prod.total_unit_cost = round2(base + prod.overhead_amt);
+    const price = (m > 0 && m < 1) ? prod.total_unit_cost / (1 - m) : prod.total_unit_cost;
+    prod.unit_sales_price = round2(price);
+    prod.total_sales_price = round2(prod.unit_sales_price * (prod.qty || 0));
+  }
 }
 // Editar el precio unitario → recalcula el margen (sentido inverso, sin sobrescribir el precio)
 function onPriceChange(prod) {
@@ -1839,6 +2302,32 @@ async function loadAllSuppliers() {
     }) || [];
   } catch { /* ignore */ }
 }
+// Catálogo completo de Talla (~110 registros) cargado una sola vez -- de ahí se arman
+// en el cliente los 3 selects encadenados (Género → Tipo de prenda → Talla) sin ir
+// al servidor por cada nivel, caminando el árbol un nivel a la vez con parent_talla.
+async function loadAllTallas() {
+  if (allTallas.value.length) return;
+  try {
+    allTallas.value = await call("frappe.client.get_list", {
+      doctype: "Talla", fields: ["name", "talla", "is_group", "parent_talla", "genero"],
+      filters: [["disabled", "=", 0]], limit_page_length: 0, order_by: "lft asc",
+    }) || [];
+  } catch { /* ignore */ }
+}
+function gruposDeGenero(genero) {
+  if (!genero) return [];
+  const root = allTallas.value.find(t => t.is_group && !t.parent_talla && t.talla === genero);
+  if (!root) return [];
+  const wrapper = allTallas.value.find(t => t.is_group && t.parent_talla === root.name);
+  if (!wrapper) return [];
+  return allTallas.value.filter(t => t.is_group && t.parent_talla === wrapper.name);
+}
+function tallasDeGrupo(grupoName) {
+  if (!grupoName) return [];
+  return allTallas.value.filter(t => !t.is_group && t.parent_talla === grupoName);
+}
+function onTallaGeneroChange(t) { t.grupo_talla = ""; t.talla = ""; }
+function onTallaGrupoChange(t) { t.talla = ""; }
 async function hydrateSupplierOptions() {
   for (const d of detalles.value) {
     if (d.concept_type !== "Materia Prima" || !d.item) continue;
@@ -1871,6 +2360,7 @@ function buildPayload() {
     costeo_producto: productos.value.map(stripLocal),
     costeo_producto_detalle: detalles.value.map(stripLocal),
     tabla_etapas_costeo: etapas.value.map(stripLocal),
+    tabla_tallas_costeo: tallas.value.map(stripLocal),
   };
 }
 async function fillFromDoc(data) {
@@ -1880,10 +2370,15 @@ async function fillFromDoc(data) {
   form.cliente = data.cliente || ""; form.fecha = data.fecha || today(); form.compania = data["compañia"] || "";
   form.proyecto = data.proyecto || ""; form.familia_prenda = data.familia_prenda || "";
   form.centro_de_costos = data.centro_de_costos || ""; form.almacen_materias_primas = data.almacen_materias_primas || ""; form.almacen_trabajo_en_proceso = data.almacen_trabajo_en_proceso || "";
-  productos.value = (data.costeo_producto || []).map(r => ({ _tid: uid(), _image: "", ...r }));
+  productos.value = (data.costeo_producto || []).map(r => ({ _tid: uid(), image: "", description: "", ...r }));
   detalles.value = (data.costeo_producto_detalle || []).map(r => ({ _tid: uid(), _supplierOptions: [], _qtyMode: "rendimiento", ...r }));
   etapas.value = (data.tabla_etapas_costeo || []).map(r => ({ _tid: uid(), ...r }));
-  for (const p of productos.value) { if (p.finished_item) p._image = await fetchItemImage(p.finished_item); }
+  tallas.value = (data.tabla_tallas_costeo || []).map(r => ({ _tid: uid(), sobrecosto_tipo: "Ninguno", ...r }));
+  for (const p of productos.value) { if (p.finished_item) { const fetched = await fetchItemImage(p.finished_item); if (fetched) p.image = fetched; } }
+  // Recalcular siempre al cargar (no confiar en la foto guardada la última vez) --
+  // así los KPIs reflejan la fórmula actual (con tallas) aunque el costeo se haya
+  // guardado antes de este cambio, o si se abrió sin tocar ningún campo todavía.
+  productos.value.forEach(p => recalcProducto(p));
   hydrateSupplierOptions();
 }
 
@@ -1919,11 +2414,22 @@ async function loadRelated() {
       cotForm.payment_terms_template = r.quotation.payment_terms_template || "";
       cotForm.tc_name = r.quotation.tc_name || "";
       cotForm.custom_tipo_formato = r.quotation.custom_tipo_formato || "Normal";
+      cotForm.currency = r.quotation.currency || "MXN";
+      cotForm.selling_price_list = r.quotation.selling_price_list || "";
+      cotForm.taxes_and_charges = r.quotation.taxes_and_charges || "";
+      cotForm.contact_email = r.quotation.contact_email || "";
+      cotForm.contact_mobile = r.quotation.contact_mobile || "";
     }
     if (r.sales_order) {
       soForm.delivery_date = r.sales_order.delivery_date || "";
       soForm.payment_terms_template = r.sales_order.payment_terms_template || "";
       soForm.tc_name = r.sales_order.tc_name || "";
+      soForm.po_no = r.sales_order.po_no || "";
+      soForm.currency = r.sales_order.currency || "MXN";
+      soForm.selling_price_list = r.sales_order.selling_price_list || "";
+      soForm.taxes_and_charges = r.sales_order.taxes_and_charges || "";
+      soForm.contact_email = r.sales_order.contact_email || "";
+      soForm.contact_mobile = r.sales_order.contact_mobile || "";
     }
   } catch { /* ignore */ }
 }
@@ -2722,6 +3228,12 @@ async function guardarBorradorOrdenVenta() {
       delivery_date: soForm.delivery_date || null,
       payment_terms_template: soForm.payment_terms_template || null,
       tc_name: soForm.tc_name || null,
+      po_no: soForm.po_no || null,
+      currency: soForm.currency || null,
+      selling_price_list: soForm.selling_price_list || null,
+      taxes_and_charges: soForm.taxes_and_charges || null,
+      contact_email: soForm.contact_email || null,
+      contact_mobile: soForm.contact_mobile || null,
     });
     if (ORDER.indexOf(docStatus.value) < 2) docStatus.value = "Orden de Venta";
     await loadRelated();
@@ -2739,6 +3251,12 @@ async function guardarCambiosOrdenVenta() {
       delivery_date: soForm.delivery_date || null,
       payment_terms_template: soForm.payment_terms_template || null,
       tc_name: soForm.tc_name || null,
+      po_no: soForm.po_no || null,
+      currency: soForm.currency || null,
+      selling_price_list: soForm.selling_price_list || null,
+      taxes_and_charges: soForm.taxes_and_charges || null,
+      contact_email: soForm.contact_email || null,
+      contact_mobile: soForm.contact_mobile || null,
     });
     await loadRelated();
     previewKey.value++;
@@ -2772,6 +3290,11 @@ async function guardarBorradorCotizacion() {
       payment_terms_template: cotForm.payment_terms_template || null,
       tc_name: cotForm.tc_name || null,
       custom_tipo_formato: cotForm.custom_tipo_formato || "Normal",
+      currency: cotForm.currency || null,
+      selling_price_list: cotForm.selling_price_list || null,
+      taxes_and_charges: cotForm.taxes_and_charges || null,
+      contact_email: cotForm.contact_email || null,
+      contact_mobile: cotForm.contact_mobile || null,
     });
     if (ORDER.indexOf(docStatus.value) < 1) docStatus.value = "Cotizado";
     await loadRelated();
@@ -2780,6 +3303,69 @@ async function guardarBorradorCotizacion() {
   } catch (e) { showToast(e.message || "No se pudo guardar la cotización", "error"); }
   finally { advancing.value = false; }
 }
+async function cotizarDeNuevo() {
+  advancing.value = true;
+  try {
+    await call("costeo_yelke.api.costeo_api.crear_cotizacion", {
+      costeo: docName.value,
+      valid_till: cotForm.valid_till || null,
+      payment_terms_template: cotForm.payment_terms_template || null,
+      tc_name: cotForm.tc_name || null,
+      custom_tipo_formato: cotForm.custom_tipo_formato || "Normal",
+      currency: cotForm.currency || null,
+      selling_price_list: cotForm.selling_price_list || null,
+      taxes_and_charges: cotForm.taxes_and_charges || null,
+      contact_email: cotForm.contact_email || null,
+      contact_mobile: cotForm.contact_mobile || null,
+    });
+    await loadRelated();
+    previewKey.value++;
+    showToast("Nueva cotización creada — la anterior queda como historial");
+  } catch (e) { showToast(e.message || "No se pudo crear la cotización", "error"); }
+  finally { advancing.value = false; }
+}
+
+function openRechazarModal() { rechazarMotivo.value = ""; showRechazarModal.value = true; }
+async function confirmarCotizacionRechazada() {
+  if (!related.quotation) return;
+  advancing.value = true;
+  try {
+    const res = await call("costeo_yelke.api.quotation_api.marcar_rechazada", { name: related.quotation.name, motivo: rechazarMotivo.value || null });
+    related.quotation.status = res.status;
+    related.quotation.order_lost_reason = res.order_lost_reason;
+    showRechazarModal.value = false;
+    showToast("Cotización marcada como rechazada");
+  } catch (e) { showToast(e.message || "Error al marcar como rechazada", "error"); }
+  finally { advancing.value = false; }
+}
+
+function openAcordadoModal() {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() + 1);
+  acordadoValidUpto.value = d.toISOString().slice(0, 10);
+  showAcordadoModal.value = true;
+}
+
+async function guardarPrecioAcordado() {
+  const items = productos.value.filter(p => p.finished_item);
+  if (!items.length) { showToast("El costeo no tiene productos", "error"); return; }
+  advancing.value = true;
+  try {
+    for (const p of items) {
+      await call("costeo_yelke.api.item_api.crear_precio_acordado", {
+        item_code: p.finished_item,
+        customer: form.cliente,
+        price_list_rate: p.unit_sales_price || 0,
+        valid_from: today(),
+        valid_upto: acordadoValidUpto.value || null,
+      });
+    }
+    showAcordadoModal.value = false;
+    showToast(`Precio acordado guardado para ${items.length} artículo(s)`);
+  } catch (e) { showToast(e.message || "Error al guardar el precio acordado", "error"); }
+  finally { advancing.value = false; }
+}
+
 async function onTipoFormatoChange() {
   if (!related.quotation || quotValidated.value) return;
   try {
@@ -2801,6 +3387,11 @@ async function guardarCambiosCotizacion() {
       payment_terms_template: cotForm.payment_terms_template || null,
       tc_name: cotForm.tc_name || null,
       custom_tipo_formato: cotForm.custom_tipo_formato || "Normal",
+      currency: cotForm.currency || null,
+      selling_price_list: cotForm.selling_price_list || null,
+      taxes_and_charges: cotForm.taxes_and_charges || null,
+      contact_email: cotForm.contact_email || null,
+      contact_mobile: cotForm.contact_mobile || null,
     });
     await loadRelated();
     previewKey.value++;
@@ -2833,7 +3424,15 @@ async function doAssign() {
   finally { assignModal.sending = false; }
 }
 async function loadCotDefaults() {
-  try { const r = await call("costeo_yelke.api.costeo_api.get_cotizacion_defaults", { company: form.compania }); cotDefaults.payment_terms_templates = r.payment_terms_templates || []; cotDefaults.terms = r.terms || []; cotDefaults.users = r.users || []; } catch { /* ignore */ }
+  try {
+    const r = await call("costeo_yelke.api.costeo_api.get_cotizacion_defaults", { company: form.compania });
+    cotDefaults.payment_terms_templates = r.payment_terms_templates || [];
+    cotDefaults.terms = r.terms || [];
+    cotDefaults.users = r.users || [];
+    cotDefaults.price_lists = r.price_lists || [];
+    cotDefaults.currencies = r.currencies || [];
+    cotDefaults.tax_templates = r.tax_templates || [];
+  } catch { /* ignore */ }
 }
 
 // ── Materializar Producto Terminado (al pasar a cotización) ──
@@ -2865,6 +3464,8 @@ async function processNextMaterialize() {
   materializeCurrentProd = prod;
   materializeModal.text = prod.finished_item;
   materializeModal.suggestedPrice = prod.unit_sales_price || 0;
+  materializeModal.suggestedDescription = (prod.description || "") + buildTallaDescriptionSuffix(prod);
+  materializeModal.suggestedImage = prod.image || "";
   materializeModal.saving = false;
   materializeModal.open = true;
 }
@@ -2890,10 +3491,12 @@ async function confirmMaterialize(payload) {
       pricing_rules: JSON.stringify(payload.pricing_rules || []),
       mx_product_service_key: payload.mx_product_service_key || null,
       description: payload.description || null,
+      image: payload.image || null,
     });
     prod.finished_item = r.item_code;
     detalles.value.forEach(d => { if (d.finished_item === oldText) d.finished_item = r.item_code; });
     etapas.value.forEach(e => { if (e.producto_terminado === oldText) e.producto_terminado = r.item_code; });
+    tallas.value.forEach(t => { if (t.finished_item === oldText) t.finished_item = r.item_code; });
     materializeModal.open = false;
     materializeQueue.shift();
     await processNextMaterialize();
@@ -2990,26 +3593,46 @@ async function guardarComoPlantilla() {
 }
 function openCancel() { actionsOpen.value = false; confirmCancel.open = true; }
 async function doCancel() {
+  if (!headerDoc.value) return;
+  const { doctype, name, isCosteo } = headerDoc.value;
   confirmCancel.loading = true;
   try {
-    const r = await call("costeo_yelke.api.costeo_api.cancelar_documento", { doctype: "Costeo", name: docName.value });
-    docState.value = r.docstatus;
+    const r = await call("costeo_yelke.api.costeo_api.cancelar_documento", { doctype, name });
+    if (isCosteo) docState.value = r.docstatus;
+    else if (doctype === "Quotation" && related.quotation) related.quotation.docstatus = r.docstatus;
+    else if (doctype === "Sales Order" && related.sales_order) related.sales_order.docstatus = r.docstatus;
+    else if (doctype === "Delivery Note" && related.delivery_note) related.delivery_note.docstatus = r.docstatus;
+    else if (doctype === "Sales Invoice" && related.sales_invoice) related.sales_invoice.docstatus = r.docstatus;
     confirmCancel.open = false;
-    showToast("Costeo cancelado. Ahora puedes eliminarlo.");
+    showToast(isCosteo ? "Costeo cancelado. Ahora puedes eliminarlo." : `${doctype} cancelado.`);
   } catch (e) { showToast(e.message || "No se pudo cancelar", "error"); }
   finally { confirmCancel.loading = false; }
 }
 function openDelete() { actionsOpen.value = false; confirmDelete.open = true; }
 async function doDelete() { confirmDelete.loading = true; try { await call("costeo_yelke.api.costeo_api.delete_costeo", { name: docName.value }); confirmDelete.open = false; router.replace({ name: "CosteoList" }); } catch (e) { showToast(e.message || "Error al eliminar", "error"); } finally { confirmDelete.loading = false; } }
 async function duplicateDoc() { actionsOpen.value = false; try { const res = await call("costeo_yelke.api.costeo_api.duplicate_costeo", { name: docName.value }); showToast("Costeo duplicado"); router.push({ name: "CosteoDetail", params: { name: res.name } }); } catch (e) { showToast(e.message || "Error al duplicar", "error"); } }
-function printDoc() { actionsOpen.value = false; openPdf("Costeo", docName.value); }
-function openInDesk() { actionsOpen.value = false; if (docName.value) deskOpen("Costeo", docName.value); }
+function openRevisionModal() { actionsOpen.value = false; revisionMotivo.value = ""; showRevisionModal.value = true; }
+async function confirmarRevision() {
+  revisionCreating.value = true;
+  try {
+    const res = await call("costeo_yelke.api.costeo_api.crear_revision_costeo", { costeo: docName.value, motivo: revisionMotivo.value || "" });
+    showRevisionModal.value = false;
+    showToast(`Revisión creada: ${res.name}`);
+    router.push({ name: "CosteoDetail", params: { name: res.name } });
+  } catch (e) { showToast(e.message || "Error al crear la revisión", "error"); }
+  finally { revisionCreating.value = false; }
+}
+function printDoc() { actionsOpen.value = false; if (headerDoc.value) openPdf(headerDoc.value.doctype, headerDoc.value.name); }
+function openInDesk() { actionsOpen.value = false; if (headerDoc.value) deskOpen(headerDoc.value.doctype, headerDoc.value.name); }
 
 // ── Lifecycle ──
-onMounted(async () => {
-  document.addEventListener("click", onDocClick, true);
-  loadFamilias();
-  loadAllSuppliers();
+// Extraído de onMounted para poder recargar cuando se navega DENTRO de la misma
+// página a otro Costeo (p.ej. al redirigir a la revisión recién creada) -- Vue Router
+// reusa la instancia del componente cuando solo cambia el :name de la misma ruta, así
+// que sin esto onMounted nunca se vuelve a disparar y la pantalla se queda mostrando
+// el documento anterior con la URL ya apuntando al nuevo.
+async function loadCosteoData() {
+  loading.value = true;
   if (isNew.value) { loading.value = false; return; }
   try {
     const data = await db.get("Costeo", route.params.name);
@@ -3019,8 +3642,20 @@ onMounted(async () => {
     await loadCotDefaults();
     await loadPlan();
     await loadPendientesArticulos();
+    await loadRevisionInfo();
   } catch { showToast("No se pudo cargar el costeo", "error"); }
   finally { loading.value = false; }
+}
+
+onMounted(async () => {
+  document.addEventListener("click", onDocClick, true);
+  loadFamilias();
+  loadAllSuppliers();
+  loadAllTallas();
+  await loadCosteoData();
+});
+watch(() => route.params.name, (newName, oldName) => {
+  if (newName && newName !== oldName) loadCosteoData();
 });
 onUnmounted(() => document.removeEventListener("click", onDocClick, true));
 </script>
@@ -3048,7 +3683,7 @@ onUnmounted(() => document.removeEventListener("click", onDocClick, true));
 .prod-tab { @apply flex items-center gap-2 px-3 py-1.5 rounded-lg text-[13px] font-medium text-ink-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed; }
 .prod-tab--active { @apply bg-surface-raised text-ink; }
 .prod-tab-num { @apply w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-semibold flex-shrink-0; }
-.metric { @apply bg-surface-raised rounded-lg px-3 py-2.5; }
+.metric { @apply bg-white/60 rounded-lg px-3 py-2.5; }
 .metric-label { @apply text-[11px] text-ink-muted; }
 .metric-val { @apply text-lg font-semibold text-ink mt-0.5; }
 .panel-enter-active { transition: opacity 0.12s ease, transform 0.12s ease; }

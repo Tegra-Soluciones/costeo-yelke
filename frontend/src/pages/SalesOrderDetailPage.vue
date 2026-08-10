@@ -191,6 +191,10 @@
               </div>
 
             </div>
+
+            <div v-if="!isNew" class="pt-4 border-t border-gray-100">
+              <AttachmentsPanel doctype="Sales Order" :docname="so.name" />
+            </div>
           </div>
 
           <!-- Items tab -->
@@ -580,6 +584,7 @@
 import { ref, reactive, computed, onMounted, watch, defineComponent, h } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import PageHeader from "@/components/PageHeader.vue";
+import AttachmentsPanel from "@/components/AttachmentsPanel.vue";
 import { call, defaultPrintFormat } from "@/utils/frappe.js";
 
 const props  = defineProps({ name: { type: String, default: "" } });

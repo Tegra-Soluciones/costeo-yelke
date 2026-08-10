@@ -139,6 +139,8 @@ def get_quotation(name):
         "name": doc.name,
         "docstatus": doc.docstatus,
         "status": doc.status,
+        "costeo": doc.get("costeo") or "",
+        "order_lost_reason": doc.get("order_lost_reason") or "",
         "quotation_to": doc.quotation_to,
         "party_name": doc.party_name,
         "customer_name": doc.customer_name or "",
@@ -188,6 +190,11 @@ def save_quotation(data):
             frappe.throw("Solo se pueden editar cotizaciones en borrador.")
     else:
         doc = frappe.new_doc("Quotation")
+
+    # El costeo de origen sólo se fija al crear -- no se debe poder cambiar después,
+    # es lo que permite reconstruir el historial completo (costeo -> cotización).
+    if not name and data.get("costeo") and not doc.get("costeo"):
+        doc.costeo = data.get("costeo")
 
     # Scalar fields
     for field in [
@@ -256,6 +263,18 @@ def cancel_quotation(name):
     doc.cancel()
     frappe.db.commit()
     return {"name": doc.name, "docstatus": doc.docstatus, "status": doc.status}
+
+
+@frappe.whitelist()
+def marcar_rechazada(name, motivo=None):
+    """Marca la cotización como Rechazada (status nativo 'Lost' de ERPNext) guardando el
+    motivo en texto libre. Reusa erpnext.Quotation.declare_enquiry_lost en vez de tocar
+    status/order_lost_reason a mano, para no perder ninguna validación nativa."""
+    doc = frappe.get_doc("Quotation", name)
+    doc.flags.ignore_permissions = True
+    doc.declare_enquiry_lost(lost_reasons_list=[], competitors=[], detailed_reason=motivo)
+    frappe.db.commit()
+    return {"name": doc.name, "status": "Lost", "order_lost_reason": motivo or ""}
 
 
 @frappe.whitelist()

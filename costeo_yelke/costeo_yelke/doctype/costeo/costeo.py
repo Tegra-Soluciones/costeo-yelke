@@ -116,6 +116,12 @@ class Costeo(Document):
                 [e for e in self.get("tabla_etapas_costeo") if e.producto_terminado in valid_items],
             )
 
+        if self.get("tabla_tallas_costeo"):
+            self.set(
+                "tabla_tallas_costeo",
+                [t for t in self.get("tabla_tallas_costeo") if t.finished_item in valid_items],
+            )
+
 
 def _as_dict(doc):
     if isinstance(doc, str):

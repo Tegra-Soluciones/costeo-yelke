@@ -14,7 +14,10 @@ fixtures = [
 	{
 		"doctype": "Item Group",
 		"filters": [["name", "in", ["Productos Terminados"]]],
-	}
+	},
+	{
+		"doctype": "Talla",
+	},
 ]
 
 website_route_rules = [

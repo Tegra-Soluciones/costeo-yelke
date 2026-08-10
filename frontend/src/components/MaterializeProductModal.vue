@@ -22,6 +22,11 @@
         <LinkInput v-model="form.stock_uom" doctype="UOM" placeholder="Unidad de medida…" :error="!!errors.stock_uom" />
       </div>
 
+      <div v-if="form.image" class="mb-3 flex items-center gap-2">
+        <img :src="form.image" class="w-12 h-12 rounded-lg object-cover border border-surface-border" alt="" />
+        <p class="text-[11px] text-ink-light">Imagen tomada del costeo — se usará para este artículo.</p>
+      </div>
+
       <div class="mb-3">
         <label class="field-label">Descripción <span class="text-ink-light font-normal">(opcional)</span></label>
         <textarea v-model="form.description" rows="2" class="field-input resize-none" placeholder="Descripción del producto…"></textarea>
@@ -89,13 +94,15 @@ const props = defineProps({
   open: { type: Boolean, default: false },
   finishedItemText: { type: String, default: "" },
   suggestedPrice: { type: Number, default: 0 },
+  suggestedDescription: { type: String, default: "" },
+  suggestedImage: { type: String, default: "" },
   company: { type: String, default: "" },
   saving: { type: Boolean, default: false },
 });
 const emit = defineEmits(["cancel", "confirm"]);
 
 const form = reactive({
-  item_code: "", item_name: "", stock_uom: "", description: "",
+  item_code: "", item_name: "", stock_uom: "", description: "", image: "",
   precio_venta: 0, conPrecioVolumen: false, rangos: [], mx_product_service_key: "",
 });
 const errors = reactive({ item_code: false, item_name: false, stock_uom: false });
@@ -123,7 +130,8 @@ watch(() => props.open, (isOpen) => {
   form.precio_venta = props.suggestedPrice || 0;
   form.conPrecioVolumen = false;
   form.rangos = [];
-  form.description = "";
+  form.description = props.suggestedDescription || "";
+  form.image = props.suggestedImage || "";
   form.mx_product_service_key = "";
   errors.item_code = false; errors.item_name = false; errors.stock_uom = false;
 });
@@ -145,6 +153,7 @@ function onConfirm() {
     item_name: form.item_name.trim(),
     stock_uom: form.stock_uom,
     description: form.description || null,
+    image: form.image || null,
     precio_venta: form.precio_venta || 0,
     pricing_rules,
     mx_product_service_key: form.mx_product_service_key || null,

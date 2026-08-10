@@ -1,10 +1,15 @@
 [
-  {
-    "doctype": "Item Group",
-    "name": "Productos Terminados",
-    "item_group_name": "Productos Terminados",
-    "parent_item_group": "Todos los grupos de artículos",
-    "is_group": 0,
-    "show_in_website": 0
-  }
+ {
+  "docstatus": 0,
+  "doctype": "Item Group",
+  "image": null,
+  "is_group": 0,
+  "item_group_defaults": [],
+  "item_group_name": "Productos Terminados",
+  "modified": "2026-08-07 12:49:33.937758",
+  "name": "Productos Terminados",
+  "old_parent": "Todos los grupos de artículos",
+  "parent_item_group": "Todos los grupos de artículos",
+  "taxes": []
+ }
 ]

@@ -7,10 +7,14 @@
  "engine": "InnoDB",
  "field_order": [
   "finished_item",
+  "image",
+  "description",
   "qty",
   "material_cost",
   "services_cost",
   "shipping_cost",
+  "labeling_cost",
+  "packaging_cost",
   "overhead_pct",
   "overhead_amt",
   "total_unit_cost",
@@ -19,6 +23,16 @@
   "total_sales_price"
  ],
  "fields": [
+  {
+   "fieldname": "image",
+   "fieldtype": "Attach Image",
+   "label": "Imagen"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Descripción"
+  },
   {
    "fieldname": "qty",
    "fieldtype": "Int",
@@ -42,6 +56,16 @@
    "fieldname": "shipping_cost",
    "fieldtype": "Currency",
    "label": "Gastos de Env\u00edo"
+  },
+  {
+   "fieldname": "labeling_cost",
+   "fieldtype": "Currency",
+   "label": "Etiquetado"
+  },
+  {
+   "fieldname": "packaging_cost",
+   "fieldtype": "Currency",
+   "label": "Empaquetado"
   },
   {
    "fieldname": "overhead_pct",
