@@ -1839,7 +1839,8 @@ def get_plan_detail(costeo: str) -> dict:
         "sales_order": pp.sales_orders[0].sales_order if pp.get("sales_orders") else None,
         "total_planned_qty": pp.total_planned_qty,
         "po_items": [{"item_code": r.item_code, "planned_qty": r.planned_qty, "bom_no": r.bom_no,
-                      "sales_order": r.sales_order} for r in pp.get("po_items") or []],
+                      "planned_start_date": r.planned_start_date, "sales_order": r.sales_order}
+                     for r in pp.get("po_items") or []],
         "sub_assembly_items": [{"production_item": r.production_item, "qty": r.qty,
                                 "type_of_manufacturing": r.type_of_manufacturing, "supplier": r.supplier}
                                for r in pp.get("sub_assembly_items") or []],
@@ -2420,17 +2421,39 @@ def sub_get_flujo(po: str) -> dict:
 
 
 @frappe.whitelist()
-def sub_crear_sco(po: str) -> dict:
-    """Crea la Subcontracting Order (borrador) a partir de la OC validada."""
+def sub_crear_sco(po: str, qty: float = None, schedule_date: str = None) -> dict:
+    """Crea una Subcontracting Order (borrador) a partir de la OC validada.
+
+    Sin `qty`, mapea todo el saldo pendiente por subcontratar de la OC (comportamiento
+    nativo). Con `qty`/`schedule_date`, crea un LOTE parcial con esa cantidad y fecha de
+    entrega — se puede llamar varias veces mientras quede saldo, para escalonar la
+    producción en tandas (ERPNext ya soporta varias SCO parciales contra una misma OC).
+    Si la OC ya está completamente subcontratada, lanza el error nativo correspondiente.
+    """
     from erpnext.buying.doctype.purchase_order.purchase_order import make_subcontracting_order
 
     if frappe.db.get_value("Purchase Order", po, "docstatus") != 1:
         frappe.throw(_("Valida la orden de compra primero."))
-    existing = frappe.db.get_value("Subcontracting Order", {"purchase_order": po, "docstatus": ["<", 2]}, "name")
-    if existing:
-        return {"ok": True, "sco": existing}
+
+    if qty:
+        po_item = frappe.db.get_value(
+            "Purchase Order Item", {"parent": po}, ["qty", "subcontracted_quantity"], as_dict=True
+        )
+        disponible = flt(po_item.qty) - flt(po_item.subcontracted_quantity) if po_item else 0
+        if flt(qty) > disponible + 0.001:
+            frappe.throw(_(
+                "La cantidad del lote ({0}) excede el saldo pendiente de subcontratar ({1})."
+            ).format(qty, disponible))
 
     sco = make_subcontracting_order(po)
+    if qty:
+        for it in sco.get("items") or []:
+            it.qty = flt(qty)
+    if schedule_date:
+        sco.schedule_date = schedule_date
+        for it in sco.get("items") or []:
+            it.schedule_date = schedule_date
+
     sco.flags.ignore_permissions = True
     sco.flags.ignore_mandatory = True
     sco.insert()
@@ -2823,6 +2846,63 @@ def guardar_documento_compra(doctype: str, name: str, schedule_date=None, valid_
     doc.flags.ignore_permissions = True
     doc.save()
     return {"name": doc.name}
+
+
+@frappe.whitelist()
+def plan_dividir_lotes(plan: str, item_code: str, lotes) -> dict:
+    """Divide la cantidad planificada de un producto del plan en varios lotes
+    (cantidad + fecha), para poder generar Órdenes de Trabajo escalonadas.
+
+    `lotes` es una lista de dicts {"qty": float, "planned_start_date": "YYYY-MM-DD"}.
+    La suma de los lotes debe igualar la cantidad ya planificada para el producto
+    (ERPNext genera una Work Order por cada fecha distinta al crear las órdenes).
+    """
+    if isinstance(lotes, str):
+        lotes = frappe.parse_json(lotes)
+    if not lotes:
+        frappe.throw(_("Indica al menos un lote."))
+
+    pp = frappe.get_doc("Production Plan", plan)
+    if pp.docstatus != 0:
+        frappe.throw(_("El plan ya está validado."))
+
+    existing = [r for r in pp.get("po_items") or [] if r.item_code == item_code]
+    if not existing:
+        frappe.throw(_("El producto {0} no está en el plan.").format(item_code))
+
+    total_actual = sum(flt(r.planned_qty) for r in existing)
+    total_lotes = sum(flt(l.get("qty")) for l in lotes)
+    if abs(total_lotes - total_actual) > 0.001:
+        frappe.throw(_(
+            "La suma de los lotes ({0}) debe ser igual a la cantidad planificada ({1})."
+        ).format(total_lotes, total_actual))
+
+    template = existing[0]
+    keep = {
+        "item_code":   template.item_code,
+        "bom_no":      template.bom_no,
+        "warehouse":   template.warehouse,
+        "sales_order": template.sales_order,
+        "sales_order_item": template.sales_order_item,
+        "description": template.description,
+        "stock_uom":   template.stock_uom,
+    }
+    pp.set("po_items", [r for r in pp.get("po_items") or [] if r.item_code != item_code])
+    for lote in lotes:
+        row = dict(keep)
+        row["planned_qty"] = flt(lote.get("qty"))
+        row["planned_start_date"] = lote.get("planned_start_date") or None
+        pp.append("po_items", row)
+
+    pp.flags.ignore_permissions = True
+    pp.save()
+    frappe.db.commit()
+    return {
+        "name": pp.name,
+        "po_items": [{"item_code": r.item_code, "planned_qty": r.planned_qty, "bom_no": r.bom_no,
+                      "planned_start_date": r.planned_start_date, "sales_order": r.sales_order}
+                     for r in pp.get("po_items") or []],
+    }
 
 
 @frappe.whitelist()
