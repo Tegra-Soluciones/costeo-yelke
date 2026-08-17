@@ -46,6 +46,12 @@
           >
             Guardar precio acordado
           </button>
+          <template v-if="precioAcordadoStatus.items.length">
+            <span class="text-xs font-medium" :class="precioAcordadoStatus.todos_validados ? 'text-green-600' : 'text-amber-600'">
+              Precio acordado: {{ precioAcordadoStatus.todos_validados ? 'Validado' : 'Borrador' }} ({{ precioAcordadoStatus.items.length }})
+            </span>
+            <button v-if="!precioAcordadoStatus.todos_validados && precioAcordadoStatus.es_ceo" :disabled="acting === 'validar_precio'" class="text-xs font-semibold text-brand-600 hover:text-brand-700 hover:underline disabled:opacity-50" @click="validarPrecioAcordado">Validar</button>
+          </template>
 
           <button
             v-if="quot.status !== 'Lost'"
@@ -111,10 +117,20 @@
               <span class="block text-[11px] font-normal text-red-500">Solo cambió el precio o las condiciones — el costeo se queda igual.</span>
             </button>
             <button :disabled="acting === 'revision'" class="w-full text-left text-xs font-medium text-red-700 bg-white border border-red-200 rounded-lg px-3 py-2 hover:bg-red-100/50 disabled:opacity-50" @click="openRevisionModal">
-              Crear revisión del costeo
+              Editar Costeo
               <span class="block text-[11px] font-normal text-red-500">Hay que ajustar materiales, cantidades u otra parte del costeo.</span>
             </button>
           </div>
+        </div>
+
+        <!-- Cancelada de verdad: solo un camino, editar el costeo para reactivar el proyecto -->
+        <div v-if="quot.docstatus === 2" class="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+          <p class="text-xs font-semibold text-gray-700 mb-0.5">Cotización cancelada</p>
+          <p class="text-xs text-gray-500 mb-2.5">El proyecto quedó marcado como cancelado. Si en realidad sigue en pie, edita el costeo para reactivarlo con una revisión nueva.</p>
+          <button v-if="form.costeo" :disabled="acting === 'revision'" class="w-full text-left text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-100/50 disabled:opacity-50" @click="openRevisionModal">
+            Editar Costeo
+            <span class="block text-[11px] font-normal text-gray-500">Crea una revisión del costeo y reactiva el proyecto.</span>
+          </button>
         </div>
 
         <!-- Dirty save bar -->
@@ -887,6 +903,7 @@ const showWAModal    = ref(false);
 const showSendModal  = ref(false);
 const showAcordadoModal = ref(false);
 const acordadoValidUpto = ref("");
+const precioAcordadoStatus = reactive({ items: [], todos_validados: false, es_ceo: false });
 const showRechazarModal = ref(false);
 const rechazarMotivo = ref("");
 const showRevisionModal = ref(false);
@@ -1174,12 +1191,36 @@ async function guardarPrecioAcordado() {
         price_list_rate: r.rate,
         valid_from: form.transaction_date || today(),
         valid_upto: acordadoValidUpto.value || null,
+        costeo: form.costeo || null,
       });
     }
     showAcordadoModal.value = false;
-    showToast(`Precio acordado guardado para ${items.length} artículo(s)`);
+    showToast(`Precio acordado guardado para ${items.length} artículo(s) -- pendiente de validar`);
+    await loadPrecioAcordadoStatus();
   } catch (e) {
     showToast(e.message || "Error al guardar el precio acordado", "error");
+  } finally {
+    acting.value = "";
+  }
+}
+
+async function loadPrecioAcordadoStatus() {
+  if (!form.costeo) return;
+  try {
+    const r = await call("costeo_yelke.api.item_api.get_precio_acordado_costeo_status", { costeo: form.costeo });
+    Object.assign(precioAcordadoStatus, r);
+  } catch { /* ignore */ }
+}
+
+async function validarPrecioAcordado() {
+  if (!form.costeo) return;
+  acting.value = "validar_precio";
+  try {
+    const r = await call("costeo_yelke.api.item_api.validar_precios_acordados_costeo", { costeo: form.costeo });
+    showToast(`Precio acordado validado (${r.validated} artículo(s))`);
+    await loadPrecioAcordadoStatus();
+  } catch (e) {
+    showToast(e.message || "No se pudo validar", "error");
   } finally {
     acting.value = "";
   }
@@ -1368,6 +1409,7 @@ onMounted(async () => {
 
     // Pre-fill email form defaults
     prepareEmailForm();
+    await loadPrecioAcordadoStatus();
   } catch (e) {
     showToast(e.message || "Error al cargar", "error");
   } finally {

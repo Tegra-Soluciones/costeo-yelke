@@ -1,5 +1,6 @@
 import frappe
 from frappe import _
+from frappe.utils import flt, formatdate, getdate, now_datetime, nowdate
 
 
 def _valuation_expense_account(company):
@@ -331,13 +332,27 @@ def save_item_prices(item_code, prices):
     return {"saved": saved, "errors": errors}
 
 
+_ROLES_PRECIO_ACORDADO = {"CEO", "Sales Manager"}
+_ROLE_VALIDAR_PRECIO_ACORDADO = "CEO"
+
+
+def _es_ceo():
+    return _ROLE_VALIDAR_PRECIO_ACORDADO in frappe.get_roles()
+
+
 @frappe.whitelist()
-def crear_precio_acordado(item_code, customer, price_list_rate, valid_from, valid_upto=None, price_list=None):
+def crear_precio_acordado(item_code, customer, price_list_rate, valid_from, valid_upto=None, price_list=None, costeo=None):
     """Guarda (o extiende) un Item Price para Cliente+Artículo con vigencia -- así un
     pedido recurrente dentro de esa ventana ya no necesita pasar por un Costeo/Cotización
     nuevo: ERPNext toma el precio directamente por la vigencia, sin depender de una
     aprobación por pedido. Si ya existe un precio vigente para ese mismo periodo, lo
-    actualiza en vez de duplicarlo."""
+    actualiza en vez de duplicarlo.
+
+    Cualquier usuario interno puede CAPTURARLO (queda en borrador, igual que cualquier
+    documento sin validar en esta app) -- lo que está restringido es VALIDARLO (ver
+    validar_precio_acordado, solo rol CEO). Por eso cada guardado (nuevo o editado)
+    regresa el precio a borrador: si alguien ajusta un precio ya validado, tiene que
+    volver a pasar por la validación del CEO antes de contar como vigente."""
     price_list = price_list or frappe.db.get_single_value("Selling Settings", "selling_price_list") or "Standard Selling"
     stock_uom  = frappe.db.get_value("Item", item_code, "stock_uom") or ""
     item_name  = frappe.db.get_value("Item", item_code, "item_name") or ""
@@ -357,6 +372,10 @@ def crear_precio_acordado(item_code, customer, price_list_rate, valid_from, vali
     doc.customer        = customer
     doc.valid_from       = valid_from
     doc.valid_upto       = valid_upto or None
+    if costeo and frappe.db.has_column("Item Price", "costeo"):
+        doc.costeo = costeo
+    if frappe.db.has_column("Item Price", "precio_acordado_validado"):
+        doc.precio_acordado_validado = 0
     doc.flags.ignore_permissions = True
     doc.flags.ignore_links       = True
     doc.flags.ignore_mandatory   = True
@@ -371,6 +390,215 @@ def crear_precio_acordado(item_code, customer, price_list_rate, valid_from, vali
     frappe.db.set_value("Item Price", doc.name, "customer", customer, update_modified=False)
     frappe.db.commit()
     return {"name": doc.name, "price_list": price_list}
+
+
+@frappe.whitelist()
+def get_precio_acordado_costeo_status(costeo: str) -> dict:
+    """Precios acordados capturados para este costeo (todos los artículos fijados juntos
+    desde 'Fijar Precio'), con su estado borrador/validado -- para que el SPA muestre el
+    badge y, si el usuario es CEO, el botón de validar."""
+    rows = frappe.get_all(
+        "Item Price",
+        filters={"costeo": costeo},
+        fields=["name", "item_code", "item_name", "price_list_rate", "valid_upto", "precio_acordado_validado"],
+        order_by="item_code asc",
+    )
+    return {
+        "items": rows,
+        "todos_validados": bool(rows) and all(r.precio_acordado_validado for r in rows),
+        "es_ceo": _es_ceo(),
+    }
+
+
+@frappe.whitelist()
+def validar_precios_acordados_costeo(costeo: str) -> dict:
+    """Valida (aprueba) TODOS los precios acordados capturados para este costeo de un
+    jalón -- solo un usuario con rol CEO puede hacerlo. Mientras no estén validados,
+    _precio_acordado_vigente (costeo_api.py) no los cuenta como vigentes, así que
+    generar_replica_ov los sigue tratando como si no existiera precio acordado."""
+    if not _es_ceo():
+        frappe.throw(_("Solo un usuario con rol CEO puede validar el precio acordado."))
+    names = frappe.get_all("Item Price", filters={"costeo": costeo}, pluck="name")
+    if not names:
+        frappe.throw(_("No hay ningún precio acordado capturado para este costeo."))
+    for name in names:
+        frappe.db.set_value("Item Price", name, "precio_acordado_validado", 1, update_modified=False)
+    frappe.db.commit()
+    return {"ok": True, "validated": len(names)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Recordatorios de vigencia del precio acordado
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _precio_acordado_actual():
+    """Fila más reciente (por valid_upto) de cada Item Price con cliente -- mismo
+    criterio que _precio_acordado_vigente en costeo_api.py, para no avisar de un precio
+    viejo que ya quedó superado por uno posterior con distinta vigencia."""
+    price_list = frappe.db.get_single_value("Selling Settings", "selling_price_list") or "Standard Selling"
+    return frappe.db.sql(
+        """
+        select ip.name as item_price, ip.item_code, ip.customer, ip.valid_upto,
+               ip.price_list_rate, ip.costeo
+        from `tabItem Price` ip
+        inner join (
+            select item_code, customer, max(valid_upto) as max_upto
+            from `tabItem Price`
+            where price_list=%(pl)s and customer is not null and customer != '' and valid_upto is not null
+            group by item_code, customer
+        ) latest
+          on latest.item_code = ip.item_code
+         and latest.customer = ip.customer
+         and latest.max_upto = ip.valid_upto
+        where ip.price_list=%(pl)s
+        """,
+        {"pl": price_list},
+        as_dict=True,
+    )
+
+
+def _crear_recordatorio_si_falta(row, tipo_aviso):
+    """Crea el recordatorio (con su Notification Log para CEO/Sales Manager) si no
+    existe ya uno para esta misma fila de Item Price + tipo de aviso -- así una corrida
+    del scheduler que se repite (o que corre varios días después de lo esperado) no
+    duplica avisos."""
+    if frappe.db.exists("Precio Acordado Recordatorio", {"item_price": row.item_price, "tipo_aviso": tipo_aviso}):
+        return
+
+    item_name = frappe.db.get_value("Item", row.item_code, "item_name") or row.item_code
+    doc = frappe.get_doc({
+        "doctype": "Precio Acordado Recordatorio",
+        "customer": row.customer,
+        "item_code": row.item_code,
+        "item_name": item_name,
+        "costeo": row.get("costeo"),
+        "item_price": row.item_price,
+        "price_list_rate": row.price_list_rate,
+        "valid_upto": row.valid_upto,
+        "tipo_aviso": tipo_aviso,
+        "estado": "Pendiente",
+    })
+    doc.flags.ignore_permissions = True
+    doc.insert()
+
+    vence_texto = "vence" if tipo_aviso == "Un mes antes" else "venció"
+    subject = _("El precio acordado de {0} con {1} {2} el {3}").format(
+        item_name, row.customer, vence_texto, formatdate(row.valid_upto),
+    )
+    usuarios = set(frappe.get_all(
+        "Has Role",
+        filters={"role": ["in", list(_ROLES_PRECIO_ACORDADO)], "parenttype": "User"},
+        pluck="parent",
+    ))
+    for user in usuarios:
+        if not frappe.db.get_value("User", user, "enabled"):
+            continue
+        frappe.get_doc({
+            "doctype": "Notification Log",
+            "subject": subject,
+            "for_user": user,
+            "type": "Alert",
+            "document_type": "Precio Acordado Recordatorio",
+            "document_name": doc.name,
+        }).insert(ignore_permissions=True)
+
+
+def revisar_vigencias_precio_acordado():
+    """Diario (scheduler, ver hooks.py): avisa 1 mes antes y el día que vence un precio
+    acordado. El '<=' (en vez de '==') hace el chequeo tolerante a que el cron no corra
+    exactamente ese día -- el dedupe de _crear_recordatorio_si_falta evita duplicados en
+    las corridas siguientes."""
+    hoy = getdate(nowdate())
+    for row in _precio_acordado_actual():
+        dias = (getdate(row.valid_upto) - hoy).days
+        if dias <= 30:
+            _crear_recordatorio_si_falta(row, "Un mes antes")
+        if dias <= 0:
+            _crear_recordatorio_si_falta(row, "Día de vencimiento")
+
+
+def _customer_primary_contact(customer):
+    """Email/teléfono del contacto del cliente -- vía Dynamic Link -> Contact (no hay
+    selector de contacto aquí como en el SPA, así que se resuelve del lado servidor)."""
+    contact_name = frappe.db.get_value(
+        "Dynamic Link",
+        {"link_doctype": "Customer", "link_name": customer, "parenttype": "Contact"},
+        "parent",
+    )
+    if not contact_name:
+        return {"email": None, "phone": None}
+    c = frappe.db.get_value("Contact", contact_name, ["email_id", "mobile_no", "phone"], as_dict=True) or {}
+    return {"email": c.get("email_id"), "phone": c.get("mobile_no") or c.get("phone")}
+
+
+@frappe.whitelist()
+def enviar_recordatorio_precio_email(recordatorio):
+    """Envía al cliente un correo avisando la vigencia de su precio acordado -- mismo
+    patrón de frappe.sendmail usado en costeo_api.enviar_por_correo, sin adjunto (este
+    aviso no tiene un documento que mandar)."""
+    doc = frappe.get_doc("Precio Acordado Recordatorio", recordatorio)
+    contact = _customer_primary_contact(doc.customer)
+    if not contact.get("email"):
+        frappe.throw(_("El cliente {0} no tiene un correo de contacto registrado.").format(doc.customer))
+
+    vence_texto = "vence" if doc.tipo_aviso == "Un mes antes" else "venció"
+    message = _(
+        "Estimado cliente,<br><br>Le recordamos que el precio acordado de <b>{0}</b> "
+        "{1} el <b>{2}</b>. Quedamos atentos para renovar las condiciones si así lo desea."
+    ).format(doc.item_name or doc.item_code, vence_texto, formatdate(doc.valid_upto))
+    frappe.sendmail(
+        recipients=[contact["email"]],
+        subject=_("Vigencia de precio acordado -- {0}").format(doc.item_name or doc.item_code),
+        message=message,
+        reference_doctype=doc.doctype,
+        reference_name=doc.name,
+    )
+    doc.db_set("enviado_email_el", now_datetime(), update_modified=False)
+    doc.db_set("estado", "Enviado", update_modified=False)
+    return {"ok": True, "email": contact["email"]}
+
+
+@frappe.whitelist()
+def get_recordatorio_whatsapp_link(recordatorio):
+    """Arma el link manual de wa.me con el mensaje precargado -- mismo patrón ya usado
+    en el SPA (useDocumentActions.js: descarga PDF + abre wa.me); aquí no hay PDF que
+    adjuntar, solo el mensaje. El envío en sí lo hace el usuario a mano en WhatsApp Web,
+    por eso marcar_recordatorio_enviado se llama aparte, después de abrir el link."""
+    from urllib.parse import quote
+
+    doc = frappe.get_doc("Precio Acordado Recordatorio", recordatorio)
+    contact = _customer_primary_contact(doc.customer)
+    phone = "".join(ch for ch in (contact.get("phone") or "") if ch.isdigit())
+    if not phone:
+        frappe.throw(_("El cliente {0} no tiene un teléfono de contacto registrado.").format(doc.customer))
+
+    vence_texto = "vence" if doc.tipo_aviso == "Un mes antes" else "venció"
+    message = _("Hola, le recordamos que el precio acordado de *{0}* {1} el {2}. Quedamos atentos.").format(
+        doc.item_name or doc.item_code, vence_texto, formatdate(doc.valid_upto),
+    )
+    return {"url": f"https://wa.me/{phone}?text={quote(message)}"}
+
+
+@frappe.whitelist()
+def marcar_recordatorio_enviado(recordatorio, canal):
+    """Marca un recordatorio como enviado por el canal indicado -- usado por el botón de
+    WhatsApp, que al ser un flujo manual (abrir wa.me) no tiene confirmación real del
+    lado servidor."""
+    if canal not in ("email", "whatsapp"):
+        frappe.throw(_("Canal inválido."))
+    field = "enviado_email_el" if canal == "email" else "enviado_whatsapp_el"
+    frappe.db.set_value("Precio Acordado Recordatorio", recordatorio, {
+        field: now_datetime(),
+        "estado": "Enviado",
+    })
+    return {"ok": True}
+
+
+@frappe.whitelist()
+def descartar_recordatorio(recordatorio):
+    """Cierra un recordatorio que ya no aplica (ej. el cliente ya renovó por otro medio)."""
+    frappe.db.set_value("Precio Acordado Recordatorio", recordatorio, "estado", "Descartado")
+    return {"ok": True}
 
 
 @frappe.whitelist()
@@ -538,6 +766,29 @@ def update_item(item_code, data):
         frappe.db.set_value("Item", doc.name, "mx_product_service_key", sat_key, update_modified=False)
     frappe.db.commit()
     return {"updated": True, "item_code": item_code}
+
+
+@frappe.whitelist()
+def get_tela_conversion_fields(item_code: str) -> dict:
+    """Metros por kilo guardados en el Item, para precargar el conversor $/kg -> $/m
+    de telas en el Costeo. El "item" de un renglón de materia prima en el Costeo es
+    texto libre (no siempre corresponde todavía a un Item real) -- por eso no truena
+    si no existe, solo regresa vacío para que el conversor arranque en blanco."""
+    if not item_code or not frappe.db.exists("Item", item_code):
+        return {}
+    return {"metros_por_kilo": frappe.db.get_value("Item", item_code, "metros_por_kilo")}
+
+
+@frappe.whitelist()
+def guardar_tela_conversion(item_code: str, metros_por_kilo=None) -> dict:
+    """Guarda metros_por_kilo en el Item para no volver a capturarlo la próxima vez
+    que esa misma tela se use en otro costeo."""
+    if not item_code or not frappe.db.exists("Item", item_code):
+        frappe.throw(_('El artículo "{0}" todavía no existe como Item -- créalo primero para poder guardar la conversión.').format(item_code))
+    # metros_por_kilo es una columna Float estándar de Frappe -- no acepta NULL, solo 0
+    # como "sin capturar" (mismo criterio que ya usa get_tela_conversion_fields al leer).
+    frappe.db.set_value("Item", item_code, "metros_por_kilo", flt(metros_por_kilo), update_modified=False)
+    return {"ok": True}
 
 
 @frappe.whitelist()

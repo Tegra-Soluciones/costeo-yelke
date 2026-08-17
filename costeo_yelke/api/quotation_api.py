@@ -81,13 +81,17 @@ def get_quotations(status=None, customer=None, limit=50):
     if customer:
         filters["party_name"] = customer
 
+    fields = [
+        "name", "status", "quotation_to", "party_name", "customer_name",
+        "transaction_date", "valid_till", "grand_total", "currency",
+        "company", "order_type", "docstatus",
+    ]
+    if frappe.db.has_column("Quotation", "costeo"):
+        fields.append("costeo")
+
     rows = frappe.get_all(
         "Quotation",
-        fields=[
-            "name", "status", "quotation_to", "party_name", "customer_name",
-            "transaction_date", "valid_till", "grand_total", "currency",
-            "company", "order_type", "docstatus",
-        ],
+        fields=fields,
         filters=filters,
         order_by="transaction_date desc, creation desc",
         limit=int(limit),
@@ -258,9 +262,12 @@ def submit_quotation(name):
 @frappe.whitelist()
 def cancel_quotation(name):
     """Cancel a submitted quotation."""
+    from costeo_yelke.api.costeo_api import _marcar_costeo_cancelado_si_aplica
+
     doc = frappe.get_doc("Quotation", name)
     doc.flags.ignore_permissions = True
     doc.cancel()
+    _marcar_costeo_cancelado_si_aplica(doc)
     frappe.db.commit()
     return {"name": doc.name, "docstatus": doc.docstatus, "status": doc.status}
 

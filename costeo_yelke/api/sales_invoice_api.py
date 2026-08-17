@@ -90,6 +90,25 @@ def get_sales_invoices(status=None, customer=None, limit=50):
         order_by="posting_date desc, creation desc",
         limit=int(limit),
     )
+    # Sales Invoice no trae 'costeo' directo -- se resuelve vía Sales Invoice Item.sales_order
+    # -> Sales Order.costeo (mismo camino que usa get_reporte_final/crear_factura_venta).
+    if rows and frappe.db.has_column("Sales Order", "costeo"):
+        names = [r["name"] for r in rows]
+        so_by_si = {
+            i.parent: i.sales_order
+            for i in frappe.get_all(
+                "Sales Invoice Item", filters={"parent": ["in", names], "sales_order": ["is", "set"]},
+                fields=["parent", "sales_order"],
+            )
+        }
+        so_names = list(set(so_by_si.values()))
+        costeo_by_so = {
+            s.name: s.costeo
+            for s in frappe.get_all("Sales Order", filters={"name": ["in", so_names]}, fields=["name", "costeo"])
+        } if so_names else {}
+        for r in rows:
+            so = so_by_si.get(r["name"])
+            r["costeo"] = costeo_by_so.get(so) if so else None
     return rows
 
 

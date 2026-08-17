@@ -33,7 +33,7 @@
         <input
           v-model="search"
           type="text"
-          placeholder="Buscar por cliente o ID..."
+          placeholder="Buscar por título, cliente o ID..."
           class="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
         />
       </div>
@@ -64,7 +64,7 @@
         <table class="w-full text-sm">
           <thead>
             <tr class="border-b border-gray-100">
-              <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">ID</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Título</th>
               <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Cliente</th>
               <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Compañía</th>
               <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Fecha</th>
@@ -79,7 +79,10 @@
               class="hover:bg-gray-50 cursor-pointer transition-colors group"
               @click="$router.push(`/costeo/${item.name}`)"
             >
-              <td class="px-4 py-3 font-mono text-xs text-gray-500">{{ item.name }}</td>
+              <td class="px-4 py-3">
+                <p class="font-medium text-gray-900">{{ item.titulo || item.name }}</p>
+                <p v-if="item.titulo" class="font-mono text-[11px] text-gray-400 mt-0.5">{{ item.name }}</p>
+              </td>
               <td class="px-4 py-3 font-medium text-gray-900">{{ item.cliente }}</td>
               <td class="px-4 py-3 text-gray-600">{{ item["compañia"] }}</td>
               <td class="px-4 py-3 text-gray-500">{{ formatDate(item.fecha) }}</td>
@@ -178,6 +181,7 @@ const filteredItems = computed(() =>
     const q = search.value.toLowerCase();
     const matchSearch = !q ||
       (i.cliente || "").toLowerCase().includes(q) ||
+      (i.titulo  || "").toLowerCase().includes(q) ||
       (i.name    || "").toLowerCase().includes(q);
     const matchStatus = !filterStatus.value || i.costeo_status === filterStatus.value;
     return matchSearch && matchStatus;
@@ -251,7 +255,7 @@ onMounted(async () => {
   document.addEventListener("click", closeMenus, true);
   try {
     items.value = await db.getList("Costeo", {
-      fields: ["name", "cliente", "fecha", "compañia", "costeo_status"],
+      fields: ["name", "titulo", "cliente", "fecha", "compañia", "costeo_status"],
       orderBy: "modified desc",
       limit: 200,
     });

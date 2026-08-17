@@ -35,59 +35,65 @@
       <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
     </svg>
 
-    <!-- Dropdown -->
-    <Transition name="drop">
-      <div
-        v-if="showDrop"
-        class="absolute z-[60] left-0 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden"
-        style="min-width: 220px;"
-      >
-        <!-- Results list -->
-        <div class="max-h-56 overflow-y-auto">
-          <div
-            v-for="(item, idx) in results"
-            :key="item.value"
-            class="px-3 py-2 cursor-pointer flex flex-col gap-0.5 border-b border-gray-50 last:border-0"
-            :class="idx === highlighted ? 'bg-brand-50' : 'hover:bg-gray-50'"
-            @mousedown.prevent="select(item)"
-          >
-            <!-- Primary: description (human label) if available, else the name/code -->
-            <span
-              class="text-sm font-medium leading-tight"
-              :class="idx === highlighted ? 'text-brand-700' : 'text-gray-800'"
+    <!-- Dropdown -- va en un Teleport a <body> con position:fixed calculada a mano
+         (no absolute dentro de .relative) para que un ancestro con overflow (ej. el
+         tablero de niveles de Preparar Manufactura, que hace scroll horizontal) no lo
+         recorte ni le meta su propia barra de desplazamiento -- debe poder flotar
+         encima de lo que sea, igual que un <select> nativo. -->
+    <Teleport to="body">
+      <Transition name="drop">
+        <div
+          v-if="showDrop"
+          class="fixed z-[9999] bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden"
+          :style="dropStyle"
+        >
+          <!-- Results list -->
+          <div class="max-h-56 overflow-y-auto">
+            <div
+              v-for="(item, idx) in results"
+              :key="item.value"
+              class="px-3 py-2 cursor-pointer flex flex-col gap-0.5 border-b border-gray-50 last:border-0"
+              :class="idx === highlighted ? 'bg-brand-50' : 'hover:bg-gray-50'"
+              @mousedown.prevent="select(item)"
             >
-              {{ item.description || item.value }}
-            </span>
-            <!-- Secondary: show code/ID only when different from description -->
-            <span
-              v-if="item.description && item.description !== item.value"
-              class="text-xs text-gray-400 font-mono leading-tight"
-            >
-              {{ item.value }}
-            </span>
+              <!-- Primary: description (human label) if available, else the name/code -->
+              <span
+                class="text-sm font-medium leading-tight"
+                :class="idx === highlighted ? 'text-brand-700' : 'text-gray-800'"
+              >
+                {{ item.description || item.value }}
+              </span>
+              <!-- Secondary: show code/ID only when different from description -->
+              <span
+                v-if="item.description && item.description !== item.value"
+                class="text-xs text-gray-400 font-mono leading-tight"
+              >
+                {{ item.value }}
+              </span>
+            </div>
+          </div>
+
+          <!-- Empty state -->
+          <div v-if="!loading && !results.length" class="px-3 py-3 text-xs text-gray-400 text-center">
+            Sin resultados para "{{ lastQuery }}"
+          </div>
+
+          <!-- Loading inside dropdown (initial fetch) -->
+          <div v-if="loading && !results.length" class="px-3 py-3 flex items-center justify-center gap-2 text-xs text-gray-400">
+            <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+            </svg>
+            Buscando…
           </div>
         </div>
-
-        <!-- Empty state -->
-        <div v-if="!loading && !results.length" class="px-3 py-3 text-xs text-gray-400 text-center">
-          Sin resultados para "{{ lastQuery }}"
-        </div>
-
-        <!-- Loading inside dropdown (initial fetch) -->
-        <div v-if="loading && !results.length" class="px-3 py-3 flex items-center justify-center gap-2 text-xs text-gray-400">
-          <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-          </svg>
-          Buscando…
-        </div>
-      </div>
-    </Transition>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { ref, onBeforeUnmount } from "vue";
 import { searchLink } from "@/utils/frappe.js";
 
 const props = defineProps({
@@ -107,8 +113,31 @@ const showDrop   = ref(false);
 const loading    = ref(false);
 const highlighted = ref(-1);
 const lastQuery  = ref("");
+const dropStyle  = ref({});
 let timer = null;
 let currentReq  = 0; // for cancelling stale requests
+
+// ── Posición del dropdown (Teleport a body, position:fixed) ──────────────────
+// Se recalcula al abrir y mientras esté abierto, en cualquier scroll de la
+// página O de un contenedor interno (capture:true en window sí ve esos scrolls)
+// -- así se queda anclado al input aunque el ancestro con overflow se mueva.
+function updateDropPosition() {
+  const el = inputEl.value;
+  if (!el) return;
+  const rect = el.getBoundingClientRect();
+  dropStyle.value = {
+    top: `${rect.bottom + 4}px`,
+    left: `${rect.left}px`,
+    width: `${Math.max(rect.width, 220)}px`,
+  };
+}
+function onWindowScrollOrResize() { if (showDrop.value) updateDropPosition(); }
+window.addEventListener("scroll", onWindowScrollOrResize, true);
+window.addEventListener("resize", onWindowScrollOrResize);
+onBeforeUnmount(() => {
+  window.removeEventListener("scroll", onWindowScrollOrResize, true);
+  window.removeEventListener("resize", onWindowScrollOrResize);
+});
 
 // ── Search ────────────────────────────────────────────────────────────────────
 async function doSearch(txt) {
@@ -116,6 +145,7 @@ async function doSearch(txt) {
   loading.value   = true;
   showDrop.value  = true;
   highlighted.value = -1;
+  updateDropPosition();
 
   const req = ++currentReq;
   try {

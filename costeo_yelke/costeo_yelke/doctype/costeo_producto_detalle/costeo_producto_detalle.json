@@ -9,6 +9,7 @@
   "finished_item",
   "concept_type",
   "item",
+  "tipo_material",
   "internal_uom",
   "rendimiento",
   "internal_qty",
@@ -41,6 +42,13 @@
    "label": "Item"
   },
   {
+   "description": "Determina qué unidades de medida tienen sentido para esta materia prima -- Tela: Kilogramo o Metro. Avío: Metro, Kilogramo, Mazo, Gruesa o Pieza.",
+   "fieldname": "tipo_material",
+   "fieldtype": "Select",
+   "label": "Tipo",
+   "options": "\nTela\nAvío"
+  },
+  {
    "fieldname": "internal_uom",
    "fieldtype": "Link",
    "label": "UOM",
@@ -56,7 +64,7 @@
    "fieldname": "internal_qty",
    "fieldtype": "Float",
    "label": "Consumo por pieza (UDM)",
-   "precision": "4"
+   "precision": "8"
   },
   {
    "fieldname": "supplier",
@@ -95,6 +103,8 @@
    "precision": "2"
   },
   {
+   "allow_on_submit": 1,
+   "description": "Se asigna en el paso 'Preparar Manufactura' (después de generar la Orden de Venta), no al costear -- por eso es editable aunque el Costeo ya esté validado.",
    "fieldname": "etapa",
    "fieldtype": "Data",
    "label": "Etapa"

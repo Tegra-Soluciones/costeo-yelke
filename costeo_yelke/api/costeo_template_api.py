@@ -102,7 +102,10 @@ def _recompute_aggregates(doc):
 
         for etapa in etapas:
             if etapa.producto_terminado == finished and etapa.servicio and etapa.precio_servicio:
-                services += flt(etapa.precio_servicio)
+                # precio_servicio es el precio del LOTE completo si el proveedor cobra
+                # por lote (ej. $19 por 25 confecciones, lote_qty=25) -- con lote_qty=1
+                # (default) el precio ya es por pieza, igual que antes de este campo.
+                services += flt(etapa.precio_servicio) / (flt(etapa.lote_qty) or 1)
 
         prod.material_cost = material
         prod.services_cost = services

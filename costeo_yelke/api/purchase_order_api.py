@@ -79,13 +79,17 @@ def get_purchase_orders(status=None, supplier=None, limit=50):
     if supplier:
         filters["supplier"] = supplier
 
+    fields = [
+        "name", "status", "supplier", "supplier_name",
+        "transaction_date", "schedule_date", "grand_total", "currency",
+        "company", "docstatus", "is_subcontracted",
+    ]
+    if frappe.db.has_column("Purchase Order", "costeo"):
+        fields.append("costeo")
+
     rows = frappe.get_all(
         "Purchase Order",
-        fields=[
-            "name", "status", "supplier", "supplier_name",
-            "transaction_date", "schedule_date", "grand_total", "currency",
-            "company", "docstatus",
-        ],
+        fields=fields,
         filters=filters,
         order_by="transaction_date desc, creation desc",
         limit=int(limit),

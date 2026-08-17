@@ -79,13 +79,17 @@ def get_sales_orders(status=None, customer=None, limit=50):
     if customer:
         filters["customer"] = customer
 
+    fields = [
+        "name", "status", "customer", "customer_name",
+        "transaction_date", "delivery_date", "grand_total", "currency",
+        "company", "order_type", "docstatus",
+    ]
+    if frappe.db.has_column("Sales Order", "costeo"):
+        fields.append("costeo")
+
     rows = frappe.get_all(
         "Sales Order",
-        fields=[
-            "name", "status", "customer", "customer_name",
-            "transaction_date", "delivery_date", "grand_total", "currency",
-            "company", "order_type", "docstatus",
-        ],
+        fields=fields,
         filters=filters,
         order_by="transaction_date desc, creation desc",
         limit=int(limit),

@@ -1,5 +1,22 @@
 const BASE = "";
 
+// El texto real de un frappe.throw()/frappe.msgprint() no viaja en `message` (eso solo
+// trae algo en respuestas EXITOSAS) ni en `exc_type` (que es apenas el nombre de la
+// clase, ej. "ValidationError") -- viaja en `_server_messages`, una lista de objetos
+// codificados en JSON dos veces. Sin esto, cualquier error de validación del backend le
+// mostraba al usuario literalmente "ValidationError" en vez de la explicación.
+function extractErrorMessage(err, fallback) {
+  if (err?._server_messages) {
+    try {
+      const msgs = JSON.parse(err._server_messages)
+        .map((m) => { try { return JSON.parse(m).message; } catch { return m; } })
+        .filter(Boolean);
+      if (msgs.length) return msgs.join(" ");
+    } catch { /* ignore, cae al resto de los campos */ }
+  }
+  return err?.message || err?.exc_type || fallback;
+}
+
 async function request(method, url, body) {
   const opts = {
     method,
@@ -13,7 +30,7 @@ async function request(method, url, body) {
   const res = await fetch(BASE + url, opts);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err?.exc_type || err?.message || res.statusText);
+    throw new Error(extractErrorMessage(err, res.statusText));
   }
   return res.json();
 }
@@ -81,7 +98,7 @@ export async function uploadFile(file, { doctype, docname, folder = "Home", isPr
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err?.exc_type || err?.message || res.statusText);
+    throw new Error(extractErrorMessage(err, res.statusText));
   }
   return (await res.json()).message;
 }
@@ -129,4 +146,13 @@ export async function searchLink(doctype, query, filters = []) {
 
 function slugify(str) {
   return str.toLowerCase().replace(/\s+/g, "-");
+}
+
+/**
+ * "%" entre palabras hace que el LIKE de Frappe (usado por search_link) encuentre
+ * el nombre aunque el texto libre no tenga exactamente la misma puntuación que el
+ * registro real (ej. "IMPERMEABLE GABARDINA MARS" -> "IMPERMEABLE GABARDINA - MARS").
+ */
+export function fuzzyQuery(text) {
+  return (text || "").trim().split(/\s+/).filter(Boolean).join("%");
 }

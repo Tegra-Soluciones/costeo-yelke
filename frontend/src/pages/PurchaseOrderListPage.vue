@@ -1,6 +1,19 @@
 <template>
-  <div class="flex flex-col h-full">
-    <PageHeader title="Órdenes de Compra" subtitle="Gestión de pedidos a proveedores">
+  <DocumentListPage
+    title="Órdenes de Compra"
+    subtitle="Gestión de pedidos a proveedores"
+    :stats="stats"
+    :loading="loading"
+    :rows="filtered"
+    v-model:search="search"
+    search-placeholder="Buscar proveedor, número…"
+    :show-clear="!!(filterStatus || search)"
+    empty-label="No hay órdenes de compra"
+    empty-icon="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"
+    @clear="filterStatus = ''; search = ''"
+    @row-click="openRow"
+  >
+    <template #actions>
       <button
         class="px-3 py-1.5 bg-brand-500 text-white text-sm font-semibold rounded-md hover:bg-brand-600 flex items-center gap-1.5 transition-colors"
         @click="router.push('/ordenes-compra/nueva')"
@@ -8,25 +21,9 @@
         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
         Nueva OC
       </button>
-    </PageHeader>
+    </template>
 
-    <!-- Stats -->
-    <div class="px-5 pt-4 pb-2 grid grid-cols-4 gap-3 flex-shrink-0">
-      <div v-for="s in stats" :key="s.label" class="bg-white border border-gray-200 rounded-xl px-4 py-3">
-        <p class="text-xs text-gray-400 font-medium">{{ s.label }}</p>
-        <p class="text-xl font-bold mt-1" :style="{ color: s.color || '#1e293b' }">{{ s.value }}</p>
-        <p v-if="s.sub" class="text-xs text-gray-400 mt-0.5">{{ s.sub }}</p>
-      </div>
-    </div>
-
-    <!-- Filters -->
-    <div class="px-5 py-2 flex items-center gap-3 flex-shrink-0">
-      <input
-        v-model="search"
-        type="text"
-        placeholder="Buscar proveedor, número…"
-        class="h-8 px-3 text-sm border border-gray-200 rounded-lg flex-1 max-w-xs focus:outline-none focus:ring-2 focus:ring-brand-500"
-      />
+    <template #filters>
       <select v-model="filterStatus" class="h-8 px-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500">
         <option value="">Todos los estados</option>
         <option value="Draft">Borrador</option>
@@ -36,68 +33,39 @@
         <option value="Completed">Completada</option>
         <option value="Cancelled">Cancelada</option>
       </select>
-      <button v-if="filterStatus || search" class="text-xs text-gray-400 hover:text-gray-600" @click="filterStatus = ''; search = ''">Limpiar</button>
-    </div>
+    </template>
 
-    <!-- Table -->
-    <div class="flex-1 overflow-y-auto px-5 pb-5">
-      <div v-if="loading" class="flex items-center justify-center h-40">
-        <svg class="w-6 h-6 animate-spin text-gray-300" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-        </svg>
-      </div>
-      <div v-else-if="!filtered.length" class="flex flex-col items-center justify-center h-40 text-gray-400">
-        <svg class="w-8 h-8 mb-2 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
-        <p class="text-sm">No hay órdenes de compra</p>
-      </div>
-      <table v-else class="w-full text-sm">
-        <thead class="sticky top-0 bg-white z-10">
-          <tr class="border-b border-gray-100">
-            <th class="text-left py-3 pr-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">OC / Proveedor</th>
-            <th class="text-left py-3 pr-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Fecha</th>
-            <th class="text-left py-3 pr-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Entrega Esp.</th>
-            <th class="text-left py-3 pr-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Estado</th>
-            <th class="text-right py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Total</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-50">
-          <tr
-            v-for="po in filtered"
-            :key="po.name"
-            class="group cursor-pointer hover:bg-gray-50 transition-colors"
-            @click="router.push(`/ordenes-compra/${encodeURIComponent(po.name)}`)"
-          >
-            <td class="py-3 pr-3">
-              <div class="flex items-center gap-2.5">
-                <div class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-white text-xs font-bold" :style="{ background: avatarColor(po.supplier_name || po.supplier) }">
-                  {{ initials(po.supplier_name || po.supplier) }}
-                </div>
-                <div>
-                  <p class="font-semibold text-gray-800 text-xs">{{ po.name }}</p>
-                  <p class="text-xs text-gray-400 truncate max-w-[180px]">{{ po.supplier_name || po.supplier }}</p>
-                </div>
-              </div>
-            </td>
-            <td class="py-3 pr-3 text-xs text-gray-600">{{ fmtDate(po.transaction_date) }}</td>
-            <td class="py-3 pr-3 text-xs" :class="isOverdue(po.schedule_date, po.docstatus) ? 'text-red-500 font-medium' : 'text-gray-600'">
-              {{ po.schedule_date ? fmtDate(po.schedule_date) : '—' }}
-            </td>
-            <td class="py-3 pr-3"><StatusBadge :docstatus="po.docstatus" :status="po.status" /></td>
-            <td class="py-3 text-right">
-              <span class="font-semibold text-gray-800 text-xs">{{ fmtC(po.grand_total) }}</span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
+    <template #head>
+      <th class="text-left py-3 pr-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">OC / Proveedor</th>
+      <th class="text-left py-3 pr-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Costeo</th>
+      <th class="text-left py-3 pr-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Fecha</th>
+      <th class="text-left py-3 pr-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Entrega Esp.</th>
+      <th class="text-left py-3 pr-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Estado</th>
+      <th class="text-right py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Total</th>
+    </template>
+
+    <template #row="{ row: po }">
+      <td class="py-3 pr-3">
+        <p class="font-semibold text-gray-800 text-xs">{{ po.name }}</p>
+        <p class="text-xs text-gray-400 truncate max-w-[180px]">{{ po.supplier_name || po.supplier }}</p>
+      </td>
+      <td class="py-3 pr-3 text-xs text-gray-600 truncate max-w-[160px]">{{ po.costeo || '—' }}</td>
+      <td class="py-3 pr-3 text-xs text-gray-600">{{ fmtDate(po.transaction_date) }}</td>
+      <td class="py-3 pr-3 text-xs" :class="isOverdue(po.schedule_date, po.docstatus) ? 'text-red-500 font-medium' : 'text-gray-600'">
+        {{ po.schedule_date ? fmtDate(po.schedule_date) : '—' }}
+      </td>
+      <td class="py-3 pr-3"><StatusBadge :docstatus="po.docstatus" :status="po.status" /></td>
+      <td class="py-3 text-right">
+        <span class="font-semibold text-gray-800 text-xs">{{ fmtC(po.grand_total) }}</span>
+      </td>
+    </template>
+  </DocumentListPage>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, defineComponent, h } from "vue";
 import { useRouter } from "vue-router";
-import PageHeader from "@/components/PageHeader.vue";
+import DocumentListPage from "@/components/DocumentListPage.vue";
 import { call } from "@/utils/frappe.js";
 
 const router = useRouter();
@@ -167,9 +135,17 @@ function fmtDate(s) {
 }
 function fmtC(v) { return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(v || 0); }
 function isOverdue(dateStr, docstatus) { if (!dateStr || docstatus !== 1) return false; return new Date(dateStr + "T23:59:59") < new Date(); }
-function initials(name) { if (!name) return "?"; return name.split(" ").slice(0, 2).map(w => w[0]).join("").toUpperCase(); }
-const AVATAR_COLORS = ["#6366f1","#f59e0b","#10b981","#3b82f6","#ef4444","#8b5cf6","#ec4899","#14b8a6"];
-function avatarColor(name) { let h = 0; for (let i = 0; i < (name||"").length; i++) h = (h*31+name.charCodeAt(i)) % AVATAR_COLORS.length; return AVATAR_COLORS[Math.abs(h)]; }
+
+// Si la OC nace de un Costeo, ir directo al paso "Producir" de ese Costeo con esta OC
+// resaltada -- es donde realmente se opera (recibos, transferencias, etc.), la vista
+// standalone de abajo es solo para OCs sueltas que no vienen del flujo de Costeo.
+function openRow(po) {
+  if (po.costeo) {
+    router.push({ name: "CosteoDetail", params: { name: po.costeo }, query: { step: "4", highlight: po.name, doctype: "Purchase Order" } });
+  } else {
+    router.push(`/ordenes-compra/${encodeURIComponent(po.name)}`);
+  }
+}
 
 onMounted(async () => {
   try {

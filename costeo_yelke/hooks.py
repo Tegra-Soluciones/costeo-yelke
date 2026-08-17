@@ -57,6 +57,7 @@ add_to_apps_screen = [
 # include js in doctype views
 doctype_js = {
 	"Purchase Order": "public/js/purchase_order_manufacturing_order.js",
+	"Precio Acordado Recordatorio": "public/js/precio_acordado_recordatorio.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -151,34 +152,26 @@ after_install = "costeo_yelke.install.after_install"
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+	"Purchase Receipt": {
+		"before_submit": "costeo_yelke.api.costeo_api.validar_envio_capturado_recibo",
+	},
+	"Subcontracting Receipt": {
+		"before_submit": "costeo_yelke.api.costeo_api.validar_envio_capturado_recibo",
+	},
+	"Subcontracting Order": {
+		"validate": "costeo_yelke.api.costeo_api.redondear_materia_prima_sco",
+	},
+}
 
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"costeo_yelke.tasks.all"
-# 	],
-# 	"daily": [
-# 		"costeo_yelke.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"costeo_yelke.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"costeo_yelke.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"costeo_yelke.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+	"daily": [
+		"costeo_yelke.api.item_api.revisar_vigencias_precio_acordado",
+	],
+}
 
 # Testing
 # -------

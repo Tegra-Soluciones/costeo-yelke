@@ -197,6 +197,8 @@
       "label": "HTML"
     },
     {
+      "allow_on_submit": 1,
+      "description": "Se pueden agregar/quitar etapas en 'Preparar Manufactura' (después de generar la Orden de Venta) -- por eso la tabla en sí es editable aunque el Costeo ya esté validado.",
       "fieldname": "tabla_etapas_costeo",
       "fieldtype": "Table",
       "hidden": 1,

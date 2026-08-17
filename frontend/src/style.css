@@ -29,6 +29,26 @@
   .ring-brand { --tw-ring-color: rgb(255 107 21 / 0.25); }
 }
 
+/* Clases compartidas de formularios/documentos de compra-producción -- usadas por
+   CosteoDetailPage.vue y sus componentes hijos (LoteCard, PurchaseDocPanel, etc.).
+   Viven aquí (no en <style scoped>) para que los componentes hijos también las usen
+   sin duplicar las reglas @apply en cada archivo. */
+@layer components {
+  .section-title { @apply text-[11px] font-semibold text-ink-light uppercase tracking-wider; }
+  .field-label { @apply text-xs font-medium text-ink-muted block mb-1; }
+  .field-input { @apply w-full text-sm border border-surface-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400 bg-white transition-colors; }
+  .add-link { @apply flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 px-2.5 py-1.5 rounded-md hover:bg-brand-50 transition-colors; }
+  .del-btn { @apply w-6 h-6 flex items-center justify-center rounded hover:bg-red-50 hover:text-red-400 text-gray-300; }
+  .doc-action { @apply h-8 px-3 flex items-center gap-1.5 text-[13px] font-medium text-ink-muted border border-surface-border rounded-lg hover:bg-surface-raised transition-colors no-underline; }
+  .prod-card { @apply bg-white rounded-xl border border-surface-border p-4; }
+  .prod-head { @apply flex items-center justify-between mb-2; }
+  .prod-title { @apply text-[13px] font-semibold text-ink flex items-center gap-2; }
+  .prod-count { @apply text-[11px] font-medium text-ink-muted bg-surface-raised rounded-full px-2 py-0.5; }
+  .prod-row { @apply flex items-center gap-3 py-1.5 border-b border-surface-border/60 last:border-0; }
+  .prod-status { @apply text-[11px] font-medium text-ink-muted bg-surface-raised rounded-full px-2 py-0.5 whitespace-nowrap; }
+  .prod-empty { @apply text-[12px] text-ink-light py-1; }
+}
+
 /* Page transitions */
 .fade-enter-active,
 .fade-leave-active  { transition: opacity 0.12s ease; }

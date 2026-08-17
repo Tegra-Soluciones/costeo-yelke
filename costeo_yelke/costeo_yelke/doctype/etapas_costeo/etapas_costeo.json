@@ -8,35 +8,80 @@
   "field_order": [
   "producto_terminado",
   "etapa",
+  "stage_id",
+  "recibe_de",
   "servicio",
   "proveedor",
   "precio_servicio",
+  "lote_qty",
+  "lote_uom",
   "subensamblaje"
  ],
  "fields": [
   {
+   "allow_on_submit": 1,
+   "description": "Se asigna en el paso 'Preparar Manufactura' (después de generar la Orden de Venta), no al costear -- por eso es editable aunque el Costeo ya esté validado.",
    "fieldname": "etapa",
    "fieldtype": "Data",
    "label": "Etapa"
   },
   {
+   "allow_on_submit": 1,
+   "description": "Identificador estable de esta etapa (no cambia al eliminar/renumerar otras etapas del mismo producto) -- lo referencia 'recibe_de' de otras etapas y 'etapa' de los materiales, para que la relación no se rompa si el número de etapa se recorre.",
+   "fieldname": "stage_id",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "ID interno de etapa"
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "stage_id de la(s) etapa(s) de las que ESTA etapa recibe material -- lista separada por comas. Vacío = arranca directo de materia prima (etapa raíz). Permite modelar procesos en paralelo que convergen (ej. confección + bordado de manga, ambos entran a un ensamble final).",
+   "fieldname": "recibe_de",
+   "fieldtype": "Small Text",
+   "label": "Recibe de"
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "Editable en 'Preparar Manufactura' -- ahí se pueden agregar etapas nuevas (con su propio servicio) después de generar la Orden de Venta.",
    "fieldname": "servicio",
    "fieldtype": "Data",
    "label": "Servicio"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "proveedor",
    "fieldtype": "Link",
    "label": "Proveedor",
    "options": "Supplier"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "precio_servicio",
    "fieldtype": "Currency",
    "label": "Precio",
    "precision": "2"
   },
   {
+   "allow_on_submit": 1,
+   "default": "1",
+   "description": "Cuántas unidades (de la UDM elegida al lado) incluye ese precio -- p. ej. si el proveedor cobra $19 por 25 confecciones, el precio es 19 y aquí va 25. Con 1 (valor por default) el precio ya es por unidad, igual que antes.",
+   "fieldname": "lote_qty",
+   "fieldtype": "Float",
+   "label": "Cantidad por lote",
+   "precision": "2"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "H87 - Pieza",
+   "description": "Unidad en la que se cuenta \"Cantidad por lote\" -- normalmente Pieza, pero puede ser otra.",
+   "fieldname": "lote_uom",
+   "fieldtype": "Link",
+   "label": "UDM del lote",
+   "options": "UOM"
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "Se asigna en el paso 'Preparar Manufactura' (después de generar la Orden de Venta), no al costear -- por eso es editable aunque el Costeo ya esté validado.",
    "fieldname": "subensamblaje",
    "fieldtype": "Data",
    "label": "Subensamblaje"

@@ -3,6 +3,7 @@
 # For license information, please see license.txt
 
 import json
+import math
 import re
 import unicodedata
 
@@ -408,6 +409,82 @@ def _stage_sort_key(row):
         return (1, str(value or ""))
 
 
+def _resolve_stage_graph(etapas):
+    """Resuelve las dependencias entre etapas de UN producto (lista de dicts/
+    frappe._dict de Etapas Costeo). Regresa (info, ordered):
+
+    - info: {stage_key(e): {"row": e, "upstream": [rows], "is_terminal": bool}}
+      upstream = etapas de las que ESTA recibe material (vía 'recibe_de' -> stage_id).
+      is_terminal = True si ninguna otra etapa la referencia como entrada -- esa es
+      la que produce el PRODUCTO TERMINADO (puede haber procesos en paralelo que
+      convergen en ella, no solo una cadena de uno).
+    - ordered: las mismas etapas en orden topológico (primero las que no dependen
+      de nada), para que crear_boms_spa arme primero los BOM que otros van a
+      referenciar.
+
+    Modo lineal (fallback): si NINGUNA etapa del producto tiene 'recibe_de'
+    capturado, se comporta EXACTAMENTE como antes de que existiera esta función --
+    cadena estricta por número de etapa, cada una recibe solo de la inmediata
+    anterior, la última (por número) es la terminal. Así los costeos ya existentes
+    (todos, hasta que alguien empiece a usar ramas paralelas) no cambian de
+    comportamiento."""
+    etapas = list(etapas)
+
+    def stage_key(e):
+        return e.get("stage_id") or e.get("name") or e.get("etapa")
+
+    any_wired = any(str(e.get("recibe_de") or "").strip() for e in etapas)
+
+    if not any_wired:
+        ordered = sorted(etapas, key=_stage_sort_key)
+        info = {}
+        for i, e in enumerate(ordered):
+            info[stage_key(e)] = {
+                "row": e,
+                "upstream": [ordered[i - 1]] if i > 0 else [],
+                "is_terminal": i == len(ordered) - 1,
+            }
+        return info, ordered
+
+    by_id = {e.get("stage_id"): e for e in etapas if e.get("stage_id")}
+    upstream_map = {}
+    consumed_ids = set()
+    for e in etapas:
+        deps = [d.strip() for d in str(e.get("recibe_de") or "").split(",") if d.strip()]
+        rows = [by_id[d] for d in deps if d in by_id]
+        upstream_map[stage_key(e)] = rows
+        consumed_ids.update(d for d in deps if d in by_id)
+
+    info = {}
+    for e in etapas:
+        sid = e.get("stage_id")
+        info[stage_key(e)] = {
+            "row": e,
+            "upstream": upstream_map[stage_key(e)],
+            "is_terminal": (sid not in consumed_ids) if sid else True,
+        }
+
+    # Orden topológico (Kahn) -- si hay un ciclo o una referencia rota (dato mal
+    # capturado), se agrega lo que quede al final en vez de tronar la generación.
+    ordered, seen, remaining, guard = [], set(), list(etapas), 0
+    while remaining and guard < 1000:
+        guard += 1
+        still_remaining, progressed = [], False
+        for e in remaining:
+            ups = info[stage_key(e)]["upstream"]
+            if all(stage_key(u) in seen for u in ups):
+                ordered.append(e)
+                seen.add(stage_key(e))
+                progressed = True
+            else:
+                still_remaining.append(e)
+        remaining = still_remaining
+        if not progressed:
+            ordered.extend(remaining)
+            break
+    return info, ordered
+
+
 def _get_finished_qty_map(source):
     qty_map = {}
     for row in source.get("costeo_producto") or []:
@@ -566,9 +643,14 @@ def _get_service_stock_uom(item_code):
     return frappe.db.get_value("Item", item_code, "stock_uom")
 
 
-def _build_stage_subcontracting_rows(source):
+def _build_stage_subcontracting_rows(source, qty_map_override=None):
+    """``qty_map_override``, si se manda, reemplaza el mapa producto->cantidad que por
+    default sale del costeo completo (_get_finished_qty_map) -- lo usa
+    plan_crear_subcontratacion para que la cantidad de cada etapa refleje la OV
+    específica del plan (que puede diferir del costeo si es una réplica con otra
+    cantidad), no el total histórico del costeo."""
     stage_rows = []
-    qty_map = _get_finished_qty_map(source)
+    qty_map = qty_map_override or _get_finished_qty_map(source)
     fg_warehouse_map = _get_finished_goods_warehouse_map(source)
     company = _get_company_name(source)
 
@@ -586,16 +668,22 @@ def _build_stage_subcontracting_rows(source):
             etapas_por_producto.setdefault(producto, []).append(frappe._dict(row))
 
     for producto_terminado, etapas in etapas_por_producto.items():
-        etapas_ordenadas = sorted(etapas, key=_stage_sort_key)
+        if qty_map_override is not None and producto_terminado not in qty_map_override:
+            # Con override (plan de una OV específica), un producto que no está en el
+            # mapa simplemente no es parte de ESA OV -- se omite en vez de caer al
+            # default de 1, que generaría una OC de subcontratación fantasma.
+            continue
         fg_qty = qty_map.get(producto_terminado) or 1
+        graph_info, etapas_ordenadas = _resolve_stage_graph(etapas)
 
-        for index, etapa in enumerate(etapas_ordenadas):
+        for etapa in etapas_ordenadas:
             proveedor = etapa.get("proveedor")
             servicio = etapa.get("servicio")
             if not proveedor or not servicio:
                 continue
 
-            es_ultima = index == len(etapas_ordenadas) - 1
+            key = etapa.get("stage_id") or etapa.get("name") or etapa.get("etapa")
+            es_ultima = graph_info.get(key, {}).get("is_terminal", True)
             finished_good = producto_terminado if es_ultima else (etapa.get("subensamblaje") or producto_terminado)
 
             target_warehouse = None
@@ -631,10 +719,23 @@ def _build_stage_subcontracting_rows(source):
     return stage_rows
 
 
-def _create_subcontracting_pos_from_stages(source, stage_rows):
+def _create_subcontracting_pos_from_stages(source, stage_rows, sales_order=None):
+    """``sales_order``, si se manda, se graba en 'sales_order' de la línea de servicio de
+    cada OC de subcontratación creada (campo nativo de Purchase Order Item) -- es lo que
+    permite después filtrar las OC de maquila por OV (get_produccion_docs,
+    get_reporte_final), ya que Subcontracting Order no tiene ese campo y hereda todo de
+    la OC que le dio origen."""
     company = _get_company_name(source)
     if not company:
         frappe.throw(_("Company is required to create Subcontracting Purchase Orders."))
+
+    so_item_cache = {}
+    def _sales_order_item(item_code):
+        if item_code not in so_item_cache:
+            so_item_cache[item_code] = frappe.db.get_value(
+                "Sales Order Item", {"parent": sales_order, "item_code": item_code}, "name"
+            )
+        return so_item_cache[item_code]
 
     bom_map = _get_subcontracting_bom_map([row.finished_good for row in stage_rows])
     taxes_template = _get_purchase_tax_template(company)
@@ -670,6 +771,10 @@ def _create_subcontracting_pos_from_stages(source, stage_rows):
         fg_qty = flt(row.finished_good_qty) or 1
         service_qty = fg_qty * conversion_factor
         service_uom = (bom_data.service_item_uom if bom_data else None) or _get_service_stock_uom(service_item) or "Nos"
+        if service_uom == "Lote":
+            # El proveedor solo entrega lotes completos (ej. lotes de 25 piezas) -- si
+            # fg_qty no es múltiplo exacto, hay que pedir de más, no truncar.
+            service_qty = math.ceil(service_qty - 1e-6)
 
         po = frappe.new_doc("Purchase Order")
         po.company = company
@@ -681,6 +786,12 @@ def _create_subcontracting_pos_from_stages(source, stage_rows):
         supplier_warehouse = _get_supplier_warehouse(company, row.supplier)
         if supplier_warehouse:
             po.supplier_warehouse = supplier_warehouse
+
+        # Sin esto, set_missing_values() cae al almacén por defecto de la compañía
+        # (normalmente "Sucursales") en vez del almacén de destino real de la etapa
+        # (WIP para etapas intermedias, Productos Terminados para la última) --
+        # "Almacén (aceptado)" en el SPA mostraba ese default en vez del correcto.
+        po.set_warehouse = row.target_warehouse
 
         if taxes_template:
             po.taxes_and_charges = taxes_template
@@ -697,6 +808,14 @@ def _create_subcontracting_pos_from_stages(source, stage_rows):
         }
         if bom_data and bom_data.finished_good_bom:
             item_row["bom"] = bom_data.finished_good_bom
+        if sales_order:
+            item_row["sales_order"] = sales_order
+            # Solo el producto terminado (última etapa) es línea directa de la OV; un
+            # subensamblaje intermedio no tiene su propia Sales Order Item -- se deja
+            # sales_order_item vacío para esas filas, sales_order alcanza para filtrar.
+            soi = _sales_order_item(row.finished_good)
+            if soi:
+                item_row["sales_order_item"] = soi
 
         po.append("items", item_row)
         po.flags.ignore_permissions = 1

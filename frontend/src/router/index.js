@@ -22,6 +22,10 @@ const routes = [
   { path: "/facturas", name: "SalesInvoiceList", component: () => import("@/pages/SalesInvoiceListPage.vue") },
   { path: "/facturas/nueva", name: "SalesInvoiceNueva", component: () => import("@/pages/SalesInvoiceDetailPage.vue") },
   { path: "/facturas/:name", name: "SalesInvoiceDetail", component: () => import("@/pages/SalesInvoiceDetailPage.vue"), props: true },
+  { path: "/solicitudes-material", name: "MaterialRequestList", component: () => import("@/pages/MaterialRequestListPage.vue") },
+  { path: "/recibos-compra", name: "PurchaseReceiptList", component: () => import("@/pages/PurchaseReceiptListPage.vue") },
+  { path: "/remisiones", name: "DeliveryNoteList", component: () => import("@/pages/DeliveryNoteListPage.vue") },
+  { path: "/facturas-compra", name: "PurchaseInvoiceList", component: () => import("@/pages/PurchaseInvoiceListPage.vue") },
 ];
 
 export default createRouter({

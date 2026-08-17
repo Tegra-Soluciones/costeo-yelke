@@ -41,12 +41,16 @@
    "reqd": 1
   },
   {
+   "allow_on_submit": 1,
+   "description": "Se recalcula al modificar etapas en 'Preparar Manufactura' (después de generar la Orden de Venta) -- por eso es editable aunque el Costeo ya esté validado.",
    "fieldname": "material_cost",
    "fieldtype": "Currency",
    "label": "Importe Materiales",
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
+   "description": "Se recalcula al modificar etapas en 'Preparar Manufactura' (después de generar la Orden de Venta) -- por eso es editable aunque el Costeo ya esté validado.",
    "fieldname": "services_cost",
    "fieldtype": "Currency",
    "label": "Importe Servicios",
@@ -73,18 +77,21 @@
    "label": "Gastos OP %"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "overhead_amt",
    "fieldtype": "Currency",
    "label": "Monto Gastos Operaci\u00f3n",
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "total_unit_cost",
    "fieldtype": "Currency",
    "label": "Costo",
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "unit_sales_price",
    "fieldtype": "Currency",
    "label": "Precio Venta Unitario",
@@ -97,6 +104,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "total_sales_price",
    "fieldtype": "Currency",
    "label": "Precio de Venta Total",
