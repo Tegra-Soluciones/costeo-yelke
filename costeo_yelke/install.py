@@ -13,9 +13,21 @@ def after_migrate():
 
 
 def ensure_default_warehouses():
-	"""Create app-required warehouses in an idempotent way for every company."""
+	"""Create app-required warehouses in an idempotent way for every company.
+
+	Corre como hook after_migrate, así que NO puede tronar: si falla con una
+	compañía, aborta el resto del bucle de hooks del migrate (y con él, el de las
+	apps que vengan después). Cualquier problema con una compañía se registra y se
+	sigue con las demás.
+	"""
 	for company in frappe.get_all("Company", pluck="name"):
-		_ensure_company_warehouse(company, DEFAULT_RAW_MATERIALS_WAREHOUSE)
+		try:
+			_ensure_company_warehouse(company, DEFAULT_RAW_MATERIALS_WAREHOUSE)
+		except Exception:
+			frappe.log_error(
+				title="costeo_yelke: no se pudo asegurar el almacén de materia prima",
+				message=f"Compañía: {company}\n\n{frappe.get_traceback()}",
+			)
 
 
 def _ensure_company_warehouse(company, warehouse_name):
@@ -29,6 +41,29 @@ def _ensure_company_warehouse(company, warehouse_name):
 	)
 	if existing_warehouse:
 		return existing_warehouse
+
+	# El NOMBRE del documento es "<warehouse_name> - <abbr>". Puede existir ya aunque
+	# la búsqueda de arriba no lo encuentre: su campo warehouse_name pudo quedar
+	# distinto (renombrado a mano), o dos compañías comparten abreviatura. Insertarlo
+	# a ciegas revienta con Duplicate entry y tumba el hook del migrate.
+	abbr = frappe.get_cached_value("Company", company, "abbr")
+	nombre_documento = f"{warehouse_name} - {abbr}" if abbr else warehouse_name
+	if frappe.db.exists("Warehouse", nombre_documento):
+		dueño = frappe.db.get_value("Warehouse", nombre_documento, "company")
+		if dueño == company:
+			return nombre_documento
+		# Es de OTRA compañía (abreviaturas repetidas): no se puede crear uno con ese
+		# mismo nombre ni se debe reutilizar el ajeno -- se avisa y se deja que el
+		# usuario elija el almacén a mano en el Costeo.
+		frappe.log_error(
+			title="costeo_yelke: abreviatura de compañía duplicada",
+			message=(
+				f"No se pudo crear '{warehouse_name}' para {company}: el almacén "
+				f"'{nombre_documento}' ya existe y pertenece a {dueño}. Revisa que las "
+				"compañías no compartan la misma abreviatura."
+			),
+		)
+		return None
 
 	parent_warehouse = _get_company_root_warehouse(company)
 

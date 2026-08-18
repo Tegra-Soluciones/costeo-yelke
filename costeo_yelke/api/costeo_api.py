@@ -58,6 +58,19 @@ def get_company_defaults(company: str) -> dict:
             )
             if wh:
                 return wh
+        # 3) El MISMO patrón contra el nombre del documento. El campo warehouse_name se
+        # puede editar después de crear el almacén sin que el documento se renombre: en
+        # producción hay un "Materia Prima - YT" cuyo warehouse_name quedó en "mp", así
+        # que buscando sólo por ese campo no aparecía nunca -- y el nombre del documento,
+        # que sí lo delata, estaba ahí desde el principio.
+        for pat in patrones:
+            wh = frappe.db.get_value(
+                "Warehouse",
+                {"company": company, "name": ["like", f"%{pat}%"], "is_group": 0, "disabled": 0},
+                "name",
+            )
+            if wh:
+                return wh
         # Si nada coincide se regresa vacío A PROPÓSITO (en vez de tomar el primer
         # almacén que aparezca): elegir mal el almacén mueve inventario al lugar
         # equivocado. El SPA muestra los campos para capturarlos a mano.
