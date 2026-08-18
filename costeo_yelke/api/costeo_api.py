@@ -36,8 +36,9 @@ def get_company_defaults(company: str) -> dict:
     if not company:
         return {"centro_de_costos": "", "almacen_materias_primas": "", "almacen_trabajo_en_proceso": ""}
 
-    def find_warehouse(candidates):
-        for name in candidates:
+    def find_warehouse(exactos, patrones):
+        # 1) Nombre exacto (los que crea ERPNext al dar de alta la compañía).
+        for name in exactos:
             wh = frappe.db.get_value(
                 "Warehouse",
                 {"company": company, "warehouse_name": name, "is_group": 0, "disabled": 0},
@@ -45,12 +46,40 @@ def get_company_defaults(company: str) -> dict:
             )
             if wh:
                 return wh
+        # 2) Nombre que CONTENGA el término: una compañía puede llamarlos
+        # "Almacén de Materias Primas", "MP Planta 2", "WIP", etc. Antes sólo se
+        # buscaba el nombre exacto, así que con cualquier variante el costeo quedaba
+        # sin almacenes y sin forma de guardarse.
+        for pat in patrones:
+            wh = frappe.db.get_value(
+                "Warehouse",
+                {"company": company, "warehouse_name": ["like", f"%{pat}%"], "is_group": 0, "disabled": 0},
+                "name",
+            )
+            if wh:
+                return wh
+        # Si nada coincide se regresa vacío A PROPÓSITO (en vez de tomar el primer
+        # almacén que aparezca): elegir mal el almacén mueve inventario al lugar
+        # equivocado. El SPA muestra los campos para capturarlos a mano.
         return ""
 
+    cost_center = frappe.db.get_value("Company", company, "cost_center") or ""
+    if not cost_center:
+        # La compañía puede no tener centro de costos por defecto configurado.
+        cost_center = frappe.db.get_value(
+            "Cost Center", {"company": company, "is_group": 0, "disabled": 0}, "name"
+        ) or ""
+
     return {
-        "centro_de_costos": frappe.db.get_value("Company", company, "cost_center") or "",
-        "almacen_materias_primas": find_warehouse(["Materia Prima", "Stores"]),
-        "almacen_trabajo_en_proceso": find_warehouse(["Trabajo en Proceso", "Work In Progress"]),
+        "centro_de_costos": cost_center,
+        "almacen_materias_primas": find_warehouse(
+            ["Materia Prima", "Materias Primas", "Stores"],
+            ["Materia Prima", "Materias Primas", "Stores", "Insumo", "Almacén General", "Almacen General"],
+        ),
+        "almacen_trabajo_en_proceso": find_warehouse(
+            ["Trabajo en Proceso", "Work In Progress"],
+            ["Trabajo en Proceso", "Work In Progress", "WIP", "Proceso", "Producción", "Produccion"],
+        ),
     }
 
 
@@ -180,7 +209,7 @@ def crear_cotizacion(
     if frappe.db.has_column("Quotation", "costeo"):
         quot.costeo = costeo
 
-    quot.taxes_and_charges = taxes_and_charges or _get_sales_tax_template(doc.compañia)
+    _aplicar_impuestos_venta(quot, taxes_and_charges or _get_sales_tax_template(doc.compañia))
 
     for p in doc.costeo_producto:
         for item in _quotation_items_para_producto(doc, p):
@@ -221,10 +250,22 @@ def materializar_producto_terminado(
     if isinstance(uom_conversions, str):
         uom_conversions = json.loads(uom_conversions) if uom_conversions else None
 
+    from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _guess_finished_goods_warehouse
+
     company = frappe.db.get_value("Costeo", costeo, "compañia")
     price_list = frappe.db.get_default("selling_price_list") or "Venta estándar"
+    # Almacén de PRODUCTO TERMINADO. Sin esto el Item nacía sin almacén por defecto y
+    # el recibo de la última etapa de maquila lo metía donde cayera -- en la práctica,
+    # al almacén de materia prima. Materiales y sub-ensamblajes ya lo resolvían así
+    # (ver materializar_articulo, con almacen_materias_primas / almacen_trabajo_en_proceso);
+    # el terminado no tiene campo propio en el Costeo, así que se deduce por nombre,
+    # igual que hace _build_stage_subcontracting_rows al fijar el almacén destino.
+    fg_warehouse = _guess_finished_goods_warehouse(company)
 
     if not frappe.db.exists("Item", item_code):
+        item_default = {"company": company, "default_price_list": price_list}
+        if fg_warehouse:
+            item_default["default_warehouse"] = fg_warehouse
         payload = {
             "item_code": item_code,
             "item_name": item_name,
@@ -235,7 +276,7 @@ def materializar_producto_terminado(
             "is_purchase_item": 0,
             "include_item_in_manufacturing": 1,
             "is_sub_contracted_item": 1,
-            "item_defaults": [{"company": company, "default_price_list": price_list}],
+            "item_defaults": [item_default],
         }
         if description:
             payload["description"] = description
@@ -268,6 +309,22 @@ def materializar_producto_terminado(
             price_doc.currency = frappe.db.get_value("Price List", price_list, "currency") or "MXN"
             price_doc.flags.ignore_permissions = True
             price_doc.insert()
+
+    # Item que ya existía (creado desde el catálogo, importado, o de un costeo previo):
+    # se le completa el almacén de producto terminado SOLO si viene vacío -- si alguien
+    # ya eligió uno a propósito, no se le pisa.
+    if fg_warehouse and frappe.db.exists("Item", item_code):
+        fila_default = frappe.db.get_value(
+            "Item Default", {"parent": item_code, "company": company}, ["name", "default_warehouse"], as_dict=True
+        )
+        if fila_default and not fila_default.default_warehouse:
+            frappe.db.set_value("Item Default", fila_default.name, "default_warehouse", fg_warehouse)
+        elif not fila_default:
+            item_doc = frappe.get_doc("Item", item_code)
+            item_doc.append("item_defaults", {"company": company, "default_warehouse": fg_warehouse})
+            item_doc.flags.ignore_permissions = True
+            item_doc.flags.ignore_mandatory = True
+            item_doc.save()
 
     if old_finished_item and old_finished_item != item_code:
         frappe.db.set_value(
@@ -315,7 +372,7 @@ def actualizar_cotizacion(
     doc.tc_name = tc_name or None
     doc.currency = currency or doc.currency
     doc.selling_price_list = selling_price_list or doc.selling_price_list
-    doc.taxes_and_charges = taxes_and_charges or None
+    _aplicar_impuestos_venta(doc, taxes_and_charges or None)
     doc.contact_email = contact_email or None
     doc.contact_mobile = contact_mobile or None
     if frappe.db.has_column("Quotation", "custom_tipo_formato"):
@@ -364,6 +421,9 @@ def get_articulos_pendientes(costeo: str) -> dict:
             candidatos.add(e.servicio)
         if e.subensamblaje:
             candidatos.add(e.subensamblaje)
+    for s in doc.get("tabla_salidas_etapa") or []:
+        if s.subensamblaje:
+            candidatos.add(s.subensamblaje)
 
     existentes = set()
     if candidatos:
@@ -415,10 +475,9 @@ def get_articulos_pendientes(costeo: str) -> dict:
         if not fi:
             continue
         etapas_prod = [e for e in doc.tabla_etapas_costeo if e.producto_terminado == fi]
-        graph_info, etapas_ord = _resolve_stage_graph(etapas_prod)
+        graph_info, etapas_ord = _resolve_stage_graph(etapas_prod, doc.get("tabla_salidas_etapa"))
         for e in etapas_ord:
-            key = e.get("stage_id") or e.get("name") or e.get("etapa")
-            es_ultima = graph_info.get(key, {}).get("is_terminal", True)
+            es_ultima = graph_info.get(e.get("node_key"), {}).get("is_terminal", True)
             # La UDM del servicio es lote_uom (lo que ya se capturó en el costeo, ej.
             # "Pieza") -- y si el proveedor cobra por lote (lote_qty > 1, ej. $19 por
             # 25 confecciones), se sugiere de una vez la conversión "1 Lote = lote_qty
@@ -517,6 +576,16 @@ def materializar_articulo(costeo: str, row_type: str, texto: str, item_code: str
     filters = {"parent": costeo, fieldname: texto}
     filters.update(extra_filters)
     frappe.db.set_value(child_doctype, filters, fieldname, item_code)
+
+    if row_type == "subensamblaje_etapa":
+        # El mismo texto libre también puede vivir en tabla_salidas_etapa (etapas
+        # con más de una salida) -- vive como tabla HERMANA de Etapas Costeo en
+        # Costeo (parent = el costeo, igual que arriba), no anidada dentro de la
+        # etapa. Actualiza ambos lugares para que el checklist no vuelva a
+        # detectar la misma salida como pendiente.
+        frappe.db.set_value(
+            "Etapa Costeo Salida", {"parent": costeo, "subensamblaje": texto}, "subensamblaje", item_code
+        )
 
     frappe.db.commit()
     return {"item_code": item_code}
@@ -743,7 +812,7 @@ def crear_orden_venta(
     if frappe.db.has_column("Sales Order", "costeo"):
         so.costeo = costeo
 
-    so.taxes_and_charges = taxes_and_charges or _get_sales_tax_template(doc.compañia)
+    _aplicar_impuestos_venta(so, taxes_and_charges or _get_sales_tax_template(doc.compañia))
 
     for p in doc.costeo_producto:
         so.append("items", {
@@ -780,7 +849,7 @@ def actualizar_orden_venta(
     doc.po_no = po_no or None
     doc.currency = currency or doc.currency
     doc.selling_price_list = selling_price_list or doc.selling_price_list
-    doc.taxes_and_charges = taxes_and_charges or None
+    _aplicar_impuestos_venta(doc, taxes_and_charges or None)
     doc.contact_email = contact_email or None
     doc.contact_mobile = contact_mobile or None
     doc.flags.ignore_permissions = True
@@ -1759,6 +1828,58 @@ def _match_material_stage(mat_etapa_value, etapas_of_product):
     return None
 
 
+def _split_materials_by_stage(mats, etapas_of_product, splits_all):
+    """Reparte cada materia prima entre las etapas que la consumen.
+
+    ``splits_all`` es Costeo.tabla_materiales_etapa completa (filas cuyo stage_id no
+    corresponda a ninguna de ``etapas_of_product`` se ignoran, así que es seguro
+    mandarla sin filtrar por producto). Regresa (por_etapa, sin_etapa) donde cada
+    elemento es una tupla ``(fila_de_material, qty_por_pieza)``:
+
+    - por_etapa: {stage_id: [(mat, qty), ...]} -- lo que consume esa etapa física.
+    - sin_etapa: [(mat, qty), ...] -- material que no quedó atribuido a ninguna
+      etapa; el caller lo mete en la(s) etapa(s) raíz, como siempre.
+
+    Un material con filas propias en ``splits_all`` usa ESAS cantidades (puede
+    aparecer en varias etapas a la vez, ej. 4 de cinta reflejante = 2 en la manga +
+    2 en el frente). Un material SIN filas ahí -- o cuyas filas quedaron todas
+    inválidas (cantidad 0, o etapa borrada) -- cae al comportamiento de siempre:
+    se atribuye COMPLETO a la única etapa de su campo escalar 'etapa'. Por eso los
+    costeos ya capturados dan exactamente el mismo BOM que antes de este cambio."""
+    splits_by_material = {}
+    for row in splits_all or []:
+        mid = row.get("material_id")
+        sid = row.get("stage_id")
+        if mid and sid:
+            splits_by_material.setdefault(mid, []).append(row)
+
+    stage_keys = {e.get("stage_id") for e in etapas_of_product if e.get("stage_id")}
+
+    por_etapa, sin_etapa = {}, []
+    for mat in mats:
+        # supplier_qty es el total a comprar (consumo x piezas); solo sirve de
+        # respaldo para costeos viejos que nunca capturaron internal_qty.
+        base_qty = float(mat.internal_qty or mat.supplier_qty or 1)
+
+        asignado = [
+            (row.get("stage_id"), float(row.get("qty") or 0))
+            for row in splits_by_material.get(mat.get("material_id") or "", [])
+            if row.get("stage_id") in stage_keys and float(row.get("qty") or 0) > 0
+        ]
+        if asignado:
+            for stage_id, qty in asignado:
+                por_etapa.setdefault(stage_id, []).append((mat, qty))
+            continue
+
+        matched = _match_material_stage(mat.etapa, etapas_of_product)
+        if matched:
+            mk = matched.get("stage_id") or matched.get("name") or matched.get("etapa")
+            por_etapa.setdefault(mk, []).append((mat, base_qty))
+        else:
+            sin_etapa.append((mat, base_qty))
+    return por_etapa, sin_etapa
+
+
 @frappe.whitelist()
 def crear_boms_spa(costeo: str) -> dict:
     """Crea BOMs siguiendo exactamente la lógica del botón del doctype antiguo:
@@ -1810,24 +1931,32 @@ def crear_boms_spa(costeo: str) -> dict:
         # existe cuando le toca su turno. Si el costeo nunca usó "recibe_de"
         # (procesos en paralelo), _resolve_stage_graph cae al comportamiento
         # lineal de siempre (cadena estricta por número de etapa).
-        graph_info, etapas_ord = _resolve_stage_graph(etapas)
-        mats_by_key = {}
-        mats_sin_etapa = []
-        for mat in mats_por_producto.get(finished_item, []):
-            matched = _match_material_stage(mat.etapa, etapas)
-            if matched:
-                mk = matched.get("stage_id") or matched.get("name") or matched.get("etapa")
-                mats_by_key.setdefault(mk, []).append(mat)
-            else:
-                mats_sin_etapa.append(mat)
+        graph_info, etapas_ord = _resolve_stage_graph(etapas, doc.get("tabla_salidas_etapa"))
+        # Cada entrada es (fila_de_material, qty_por_pieza): la cantidad ya viene
+        # repartida por etapa cuando el costeo declaró el reparto explícito (ver
+        # _split_materials_by_stage), en vez de asumir que la etapa consume el
+        # material completo.
+        mats_by_key, mats_sin_etapa = _split_materials_by_stage(
+            mats_por_producto.get(finished_item, []), etapas, doc.get("tabla_materiales_etapa")
+        )
         root_keys = {k for k, info in graph_info.items() if not info["upstream"]}
 
         for etapa_cfg in etapas_ord:
-            key = etapa_cfg.get("stage_id") or etapa_cfg.get("name") or etapa_cfg.get("etapa")
-            g = graph_info.get(key, {})
+            node_key = etapa_cfg.get("node_key")
+            g = graph_info.get(node_key, {})
             es_ultima     = g.get("is_terminal", True)
             subensamblaje = etapa_cfg.get("subensamblaje") or ""
             etapa_num_str = str(etapa_cfg.get("etapa") or "")
+            # Fracción de esta salida sobre el costo TOTAL de la etapa (100% si la
+            # etapa no tiene 'salidas'), derivada de las cantidades producidas.
+            # Reparte la materia prima de la etapa entre sus salidas sin
+            # duplicar/triplicar el consumo.
+            pct = (float(etapa_cfg.get("pct_participacion") or 100)) / 100.0
+            # Unidades de ESTA salida por pieza de producto terminado. El BOM se arma
+            # para 1 unidad del ítem, así que el material que le toca a la salida
+            # (mat x pct) se divide entre las unidades que produce; quien la consuma
+            # río abajo pedirá qty_salida de ellas y el total vuelve a cuadrar.
+            qty_salida = float(etapa_cfg.get("qty_salida") or 1) or 1
 
             # Ítem para el que se crea el BOM
             bom_item = finished_item if es_ultima else subensamblaje
@@ -1852,11 +1981,13 @@ def crear_boms_spa(costeo: str) -> dict:
                 # Referencia explícita al BOM del subensamblaje previo, para que la
                 # explosión multinivel del Production Plan recurra correctamente.
                 up_bom = frappe.db.get_value(
-                    "BOM", {"item": up_sub, "is_active": 1, "docstatus": ["in", [0, 1]]}, "name"
+                    "BOM", {"item": up_sub, "is_active": 1, "docstatus": ["in", [0, 1]], "company": company}, "name"
                 ) or ""
                 items_bom.append({
                     "item_code": up_sub,
-                    "qty":       1,
+                    # Cuántas unidades de esa salida lleva una pieza de lo que produce
+                    # ESTA etapa (ej. 2 mangas cortadas iguales por prenda).
+                    "qty":       float(up.get("qty_salida") or 1) or 1,
                     "uom":       up_uom,
                     "stock_uom": up_uom,
                     "rate":      0,
@@ -1865,16 +1996,22 @@ def crear_boms_spa(costeo: str) -> dict:
 
             # Materias primas de esta etapa. Las materias primas SIN etapa asignada
             # se incluyen en la(s) etapa(s) RAÍZ (sin upstream) -- ahí es donde
-            # arranca la producción.
-            stage_mats = list(mats_by_key.get(key, []))
-            if key in root_keys:
+            # arranca la producción. La atribución sigue siendo por ETAPA física
+            # (parent_stage_key), no por salida individual -- el material lo
+            # consume la operación completa, no una salida en particular.
+            stage_mats = list(mats_by_key.get(etapa_cfg.get("parent_stage_key"), []))
+            if node_key in root_keys:
                 stage_mats += mats_sin_etapa
 
-            for mat in stage_mats:
+            for mat, mat_qty in stage_mats:
                 uom = (mat.internal_uom
                        or frappe.db.get_value("Item", mat.item, "stock_uom")
                        or "Nos")
-                qty = float(mat.internal_qty or mat.supplier_qty or 1)
+                # pct sigue aplicando ENCIMA del reparto por etapa: mat_qty es lo que
+                # consume la operación completa, y pct lo divide entre las salidas de
+                # esa operación (100% si la etapa tiene una sola salida). El /qty_salida
+                # lo baja a "por unidad" del ítem para el que se arma este BOM.
+                qty = mat_qty * pct / qty_salida
                 items_bom.append({
                     "item_code": mat.item,
                     "qty":       qty,
@@ -1891,9 +2028,13 @@ def crear_boms_spa(costeo: str) -> dict:
                 continue
 
             # ── Verificar si ya existe BOM ───────────────────────────────────
+            # SIEMPRE acotado a la compañía: el BOM es por compañía en ERPNext, así que
+            # el de otra empresa no sirve aquí -- sin este filtro, un costeo de la
+            # compañía B se saltaba la creación porque A ya tenía un BOM de ese ítem, y
+            # después la producción de B se quedaba sin BOM propio.
             existing = frappe.db.get_value(
                 "BOM",
-                {"item": bom_item, "docstatus": ["in", [0, 1]]},
+                {"item": bom_item, "docstatus": ["in", [0, 1]], "company": company},
                 "name",
             )
             if existing:
@@ -1911,6 +2052,10 @@ def crear_boms_spa(costeo: str) -> dict:
                 bom.with_operations    = 0
                 bom.rm_cost_as_per     = "Price List"
                 bom.buying_price_list  = "Compra estandar"
+                if frappe.db.has_column("BOM", "costeo"):
+                    bom.costeo = costeo
+                if frappe.db.has_column("BOM", "salida_id"):
+                    bom.salida_id = node_key
                 for it in items_bom:
                     bom.append("items", it)
                 bom.flags.ignore_permissions = True
@@ -1984,8 +2129,11 @@ def crear_ordenes_trabajo(costeo: str) -> dict:
             {"item": finished_item, "is_active": 1, "is_default": 1, "docstatus": 1, "company": company},
             "name",
         ) or frappe.db.get_value(
+            # Respaldo por si el BOM no está marcado como predeterminado -- pero SIN
+            # salirse de la compañía: usar el BOM de otra empresa haría que la orden
+            # de trabajo apunte a estructuras y almacenes que no son suyos.
             "BOM",
-            {"item": finished_item, "is_active": 1, "docstatus": 1},
+            {"item": finished_item, "is_active": 1, "docstatus": 1, "company": company},
             "name",
         )
         if not bom:
@@ -2060,32 +2208,49 @@ def crear_subcontracting_bom(costeo: str) -> dict:
         etapas_prod = [e for e in doc.tabla_etapas_costeo if e.producto_terminado == finished_item]
         if not etapas_prod:
             continue
-        graph_info, etapas = _resolve_stage_graph(etapas_prod)
+        graph_info, etapas = _resolve_stage_graph(etapas_prod, doc.get("tabla_salidas_etapa"))
 
         for etapa in etapas:
-            key           = etapa.get("stage_id") or etapa.get("name") or etapa.get("etapa")
+            node_key      = etapa.get("node_key")
             servicio      = etapa.servicio
             subensamblaje = etapa.subensamblaje
-            es_ultima     = graph_info.get(key, {}).get("is_terminal", True)
+            es_ultima     = graph_info.get(node_key, {}).get("is_terminal", True)
             finished_good = finished_item if es_ultima else subensamblaje
+            # % de esta salida sobre el precio de servicio de la etapa completa (100
+            # si la etapa no tiene 'salidas' -- sin cambio de comportamiento).
+            pct = (float(etapa.get("pct_participacion") or 100)) / 100.0
+            qty_salida = float(etapa.get("qty_salida") or 1) or 1
 
             if not finished_good or not servicio:
                 continue
 
-            # Skip if Subcontracting BOM already exists for this finished_good
-            existing = frappe.db.get_value(
-                "Subcontracting BOM",
-                {"finished_good": finished_good},
-                "name",
+            # Subcontracting BOM NO tiene campo de compañía (es un mapeo global
+            # producto→servicio en ERPNext), así que se acota por la compañía del BOM
+            # que referencia: si el que existe es de OTRA empresa, saltarlo en silencio
+            # dejaría a ésta apuntando a la estructura equivocada, así que se avisa.
+            existentes = frappe.get_all(
+                "Subcontracting BOM", filters={"finished_good": finished_good},
+                fields=["name", "finished_good_bom"],
             )
-            if existing:
-                skipped.append(f"{finished_good} (ya existe: {existing})")
+            propio = next(
+                (e for e in existentes
+                 if frappe.db.get_value("BOM", e.finished_good_bom, "company") == doc.compañia),
+                None,
+            )
+            if propio:
+                skipped.append(f"{finished_good} (ya existe: {propio.name})")
+                continue
+            if existentes:
+                errors.append(
+                    f"{finished_good}: ya hay un BOM de subcontratación ({existentes[0].name}) "
+                    f"de otra compañía. Revísalo antes de producirlo en {doc.compañia}."
+                )
                 continue
 
-            # Require a submitted BOM for the finished_good
+            # Require a submitted BOM for the finished_good (de ESTA compañía)
             bom_name = frappe.db.get_value(
                 "BOM",
-                {"item": finished_good, "is_active": 1, "is_default": 1, "docstatus": 1},
+                {"item": finished_good, "is_active": 1, "is_default": 1, "docstatus": 1, "company": doc.compañia},
                 "name",
             )
             if not bom_name:
@@ -2104,12 +2269,18 @@ def crear_subcontracting_bom(costeo: str) -> dict:
                 finished_good_uom = etapa.lote_uom or frappe.db.get_value("Item", finished_good, "stock_uom") or "Nos"
                 svc_uom = LOTE_UOM
                 finished_good_qty = lote_qty
-                service_item_qty = 1
             else:
                 finished_good_uom = frappe.db.get_value("Item", finished_good, "stock_uom") or "Nos"
                 svc_uom = frappe.db.get_value("Item", servicio, "stock_uom") or "Nos"
                 finished_good_qty = 1
-                service_item_qty = 1
+            # service_item_qty se escala por la participación de esta salida: si es el
+            # 33% de la operación, 1 unidad física de servicio completo (1 Lote) se
+            # reparte en 0.33 aquí -- así, al sumar el service_qty resultante de las
+            # 3 salidas en la OC de subcontratación, da el total real de la operación,
+            # no el triple (ver _create_subcontracting_pos_from_stages). El /qty_salida
+            # lo deja "por unidad producida", que es la base del Subcontracting BOM:
+            # una salida de 2 piezas cuesta la mitad de servicio por pieza.
+            service_item_qty = (pct / qty_salida) or 1
 
             try:
                 subc = frappe.new_doc("Subcontracting BOM")
@@ -2125,6 +2296,10 @@ def crear_subcontracting_bom(costeo: str) -> dict:
                 subc.flags.ignore_permissions = True
                 subc.flags.ignore_links       = True
                 subc.flags.ignore_mandatory   = True
+                if frappe.db.has_column("Subcontracting BOM", "costeo"):
+                    subc.costeo = costeo
+                if frappe.db.has_column("Subcontracting BOM", "salida_id"):
+                    subc.salida_id = node_key
                 subc.insert()
                 subc.submit()
                 created.append(subc.name)
@@ -2207,7 +2382,9 @@ def desbloquear_plan_produccion(costeo: str, sales_order: str = None) -> dict:
             for row in pp.get("po_items") or []:
                 if not row.bom_no:
                     row.bom_no = frappe.db.get_value(
-                        "BOM", {"item": row.item_code, "is_active": 1, "docstatus": 1}, "name"
+                        "BOM",
+                        {"item": row.item_code, "is_active": 1, "docstatus": 1, "company": doc.compañia},
+                        "name",
                     ) or ""
             if pp.get("po_items"):
                 linked_so = so.name
@@ -2261,6 +2438,12 @@ def _fill_mr_items_from_inventory(pp, warehouse):
     for row in (rows or []):
         clean = {k: v for k, v in dict(row).items() if not str(k).startswith("__") and k not in skip}
         clean["warehouse"] = warehouse
+        # Redondear SIEMPRE hacia arriba -- para compra y control es mejor pedir de
+        # más (aunque quede una merma pequeña) que quedarse corto de materia prima
+        # a medio proceso. flt() por seguridad (get_items_for_material_requests
+        # puede regresar Decimal/str según la versión de ERPNext).
+        if clean.get("quantity") is not None:
+            clean["quantity"] = math.ceil(flt(clean["quantity"]) - 1e-6)
         pp.append("mr_items", clean)
 
 
@@ -2275,7 +2458,9 @@ def _fill_po_items_from_costeo(pp, doc, company):
         bom_name = (
             frappe.db.get_value("BOM", {"item": finished_item, "is_active": 1,
                                         "is_default": 1, "docstatus": 1, "company": company}, "name")
-            or frappe.db.get_value("BOM", {"item": finished_item, "is_active": 1, "docstatus": 1}, "name")
+            # Respaldo sin "is_default", pero SIEMPRE dentro de la compañía del costeo.
+            or frappe.db.get_value("BOM", {"item": finished_item, "is_active": 1,
+                                           "docstatus": 1, "company": company}, "name")
             or ""
         )
         pp.append("po_items", {
@@ -2307,6 +2492,19 @@ def _get_sales_tax_template(company: str):
         limit=1,
     )
     return rows[0].name if rows else None
+
+
+def _aplicar_impuestos_venta(doc, template):
+    """Aplica una plantilla de impuestos de venta (IVA) poblando doc.taxes -- fijar
+    solo taxes_and_charges no llena la tabla hija (mismo patrón que _aplicar_impuestos_doc,
+    versión venta)."""
+    doc.taxes = []
+    doc.taxes_and_charges = template
+    if not template:
+        return
+    from erpnext.controllers.accounts_controller import get_taxes_and_charges
+    for t in get_taxes_and_charges("Sales Taxes and Charges Template", template):
+        doc.append("taxes", t)
 
 
 # ── Documentos ligados y envío ────────────────────────────────────────────────
@@ -3365,11 +3563,18 @@ def get_om(po: str) -> dict:
 
 
 def _guardar_om_una(po: str, general=None, tallas_caballero=None, tallas_dama=None, procesos=None, tablas=None, archivos=None) -> str:
-    """Guarda la Orden de Manufactura en UNA OC subcontratada (en borrador). Uso interno
-    -- ver guardar_om, que además la replica automáticamente al resto del proyecto."""
+    """Guarda la Orden de Manufactura en UNA OC subcontratada. Uso interno -- ver
+    guardar_om, que además la replica automáticamente al resto del proyecto (solo
+    a las hermanas que sigan en borrador, ver ahí).
+
+    Se permite en borrador O ya validada -- es una ficha técnica de proyecto, no
+    parte de los términos comerciales de la OC, así que validar la OC no debe
+    bloquearla (los campos om_* tienen allow_on_submit=1, ver patch v0_0_4). Solo
+    se bloquea si la OC ya está CANCELADA (docstatus 2): esa ya no representa
+    nada vigente."""
     doc = frappe.get_doc("Purchase Order", po)
-    if doc.docstatus != 0:
-        frappe.throw(_("La orden ya está validada; no se puede editar."))
+    if doc.docstatus == 2:
+        frappe.throw(_("La orden está cancelada; no se puede editar."))
 
     if general:
         g = json.loads(general) if isinstance(general, str) else general
@@ -3608,18 +3813,18 @@ def get_lotes_produccion(plan: str) -> dict:
         etapas_prod = [e for e in doc.tabla_etapas_costeo if e.producto_terminado == fi]
         if not etapas_prod:
             continue
-        graph_info, etapas_ord = _resolve_stage_graph(etapas_prod)
+        graph_info, etapas_ord = _resolve_stage_graph(etapas_prod, doc.get("tabla_salidas_etapa"))
 
         etapas_out = []
         for etapa in etapas_ord:
-            key = etapa.get("stage_id") or etapa.get("name") or etapa.get("etapa")
-            es_ultima = graph_info.get(key, {}).get("is_terminal", True)
+            node_key = etapa.get("node_key")
+            es_ultima = graph_info.get(node_key, {}).get("is_terminal", True)
             bom_item = fi if es_ultima else (etapa.get("subensamblaje") or "")
             if not bom_item:
                 continue
             po = _po_for_bom_item(bom_item, sales_order, costeo)
             etapas_out.append({
-                "key": key,
+                "key": node_key,
                 "label": etapa.get("servicio") or f"Etapa {etapa.get('etapa')}",
                 "bom_item": bom_item,
                 "po": po.name if po else None,
@@ -3718,7 +3923,10 @@ def sub_get_flujo(po: str) -> dict:
     fechas distintas); cada una trae su propio avance de transferencia y recibo."""
     po_doc = frappe.get_doc("Purchase Order", po)
     po_item = po_doc.items[0] if po_doc.items else None
-    qty_total = flt(po_item.qty) if po_item else 0
+    # En PIEZAS (fg_item_qty), que es la unidad de Subcontracting Order Item.qty con la
+    # que se resta abajo -- po_item.qty está en unidades de SERVICIO y en una etapa con
+    # varias salidas viene repartido entre ellas (ver sub_crear_sco).
+    qty_total = (flt(po_item.get("fg_item_qty")) or flt(po_item.qty)) if po_item else 0
     # ERPNext solo actualiza po_item.subcontracted_quantity al VALIDAR una SCO -- para que
     # el saldo mostrado (y el candado de "no te pases") sea correcto incluso con lotes en
     # borrador, se calcula sumando las SCO existentes (borrador + validadas), no ese campo.
@@ -3839,7 +4047,11 @@ def _sub_qty_disponible_info(po: str) -> dict:
     sco_draft.insert()
     frappe.delete_doc("Subcontracting Order", sco_draft.name, force=True, ignore_permissions=True)
 
-    saldo_pendiente = sum(flt(r.qty) for r in (sco_draft.service_items or []))
+    # En PIEZAS (items), no en unidades de servicio (service_items): required_qty de la
+    # materia prima está calculado para las piezas, así que dividir entre el servicio
+    # daría un consumo por unidad inflado (x3 en una etapa de 3 salidas) y el chequeo
+    # de stock rechazaría lotes que sí alcanzan.
+    saldo_pendiente = sum(flt(r.qty) for r in (sco_draft.items or []))
     mp, wip, semi_terminados = _stage_material_warehouses(po)
 
     materiales = []
@@ -3888,7 +4100,8 @@ def sub_qty_disponible(po: str) -> dict:
 
 
 @frappe.whitelist()
-def sub_crear_sco(po: str, qty: float = None, schedule_date: str = None, lote_ref: str = None) -> dict:
+def sub_crear_sco(po: str, qty: float = None, schedule_date: str = None, lote_ref: str = None,
+                  validar_stock: bool = True) -> dict:
     """Crea una Subcontracting Order (borrador) a partir de la OC validada.
 
     Sin `qty`, mapea todo el saldo pendiente por subcontratar de la OC (comportamiento
@@ -3922,7 +4135,15 @@ def sub_crear_sco(po: str, qty: float = None, schedule_date: str = None, lote_re
     # Suma lo ya comprometido en SCO existentes (borrador + validadas) -- no basta con
     # subcontracted_quantity porque ERPNext solo la actualiza al VALIDAR una SCO, y
     # aquí puede haber lotes en borrador todavía sin validar.
-    po_item_qty = flt(frappe.db.get_value("Purchase Order Item", {"parent": po}, "qty"))
+    # En PIEZAS del producto de la etapa (fg_item_qty), NO en unidades de servicio
+    # (qty): en una etapa con varias salidas el servicio viene repartido entre ellas
+    # (un corte que produce 3 piezas cobra 1/3 por cada una), así que qty vale una
+    # fracción de las piezas y comparar contra ella capaba el lote a ese tercio.
+    # Subcontracting Order Item.qty -- con lo que se compara abajo -- sí está en piezas.
+    po_item = frappe.db.get_value(
+        "Purchase Order Item", {"parent": po}, ["qty", "fg_item_qty"], as_dict=True
+    ) or {}
+    po_item_qty = flt(po_item.get("fg_item_qty")) or flt(po_item.get("qty"))
     comprometido = flt(frappe.db.sql(
         """select coalesce(sum(qty), 0) from `tabSubcontracting Order Item`
            where parent in %(scos)s""",
@@ -3946,11 +4167,18 @@ def sub_crear_sco(po: str, qty: float = None, schedule_date: str = None, lote_re
 
     # No dejar pedir (ni mapear por default) más de lo que la materia prima EN STOCK
     # ahora mismo soporta -- si no, la SCO se crea "completa" y hasta la transferencia
-    # (mucho después) se descubre que faltaba material. Este chequeo corre SIEMPRE,
-    # se haya indicado `qty` o no -- de lo contrario, la primera SCO de un lote sin
-    # cantidad aún establecida se cuela sin validar nada (justo lo que pasaba antes).
-    info = _sub_qty_disponible_info(po)
-    if qty_efectiva > info["sugerido"] + 0.001:
+    # (mucho después) se descubre que faltaba material.
+    #
+    # `validar_stock=False` lo salta a propósito para abrir un lote COMPLETO de golpe
+    # (ver lote_abrir): ahí las etapas 2+ todavía no pueden tener su insumo -- lo
+    # produce la etapa anterior, que ni siquiera ha empezado -- así que exigir stock
+    # al comprometerse con el taller es pedir algo imposible. Una SCO es el encargo
+    # ("te pido esto"), no el movimiento de material; quien sí debe exigir existencias
+    # es la TRANSFERENCIA, y ahí el candado lo pone ERPNext solo (stock negativo) al
+    # validar el Stock Entry. De paso se ahorra el cálculo, que es caro: crea y borra
+    # una SCO borrador en cada llamada.
+    info = _sub_qty_disponible_info(po) if validar_stock else None
+    if info and qty_efectiva > info["sugerido"] + 0.001:
         faltantes = [
             m for m in info["materiales"]
             if m["unidades_soportadas"] is not None and m["unidades_soportadas"] + 0.001 < qty_efectiva
@@ -4099,13 +4327,13 @@ def _etapa_row_for_po(po: str):
     for row in doc.tabla_etapas_costeo:
         etapas_por_producto.setdefault(row.producto_terminado, []).append(row)
     for producto, etapas in etapas_por_producto.items():
-        graph_info, _ = _resolve_stage_graph(etapas)
-        for etapa in etapas:
-            key = etapa.stage_id or etapa.name or etapa.etapa
-            es_ultima = graph_info.get(key, {}).get("is_terminal", True)
-            finished_good = producto if es_ultima else (etapa.subensamblaje or producto)
+        graph_info, ordered = _resolve_stage_graph(etapas, doc.get("tabla_salidas_etapa"))
+        for node in ordered:
+            node_key = node.get("node_key")
+            es_ultima = graph_info.get(node_key, {}).get("is_terminal", True)
+            finished_good = producto if es_ultima else (node.get("subensamblaje") or producto)
             if finished_good == fg_item:
-                return {"row": etapa, "is_root": not graph_info.get(key, {}).get("upstream")}
+                return {"row": node, "is_root": not graph_info.get(node_key, {}).get("upstream")}
     return None
 
 
@@ -4131,11 +4359,11 @@ def _stage_material_warehouses(po: str):
         producto = etapa_info["row"].producto_terminado
         doc = frappe.get_doc("Costeo", costeo)
         etapas_prod = [e for e in doc.tabla_etapas_costeo if e.producto_terminado == producto]
-        graph_info, _ = _resolve_stage_graph(etapas_prod)
-        for e in etapas_prod:
-            key = e.stage_id or e.name or e.etapa
-            es_ultima = graph_info.get(key, {}).get("is_terminal", True)
-            bom_item = producto if es_ultima else (e.subensamblaje or producto)
+        graph_info, ordered = _resolve_stage_graph(etapas_prod, doc.get("tabla_salidas_etapa"))
+        for node in ordered:
+            node_key = node.get("node_key")
+            es_ultima = graph_info.get(node_key, {}).get("is_terminal", True)
+            bom_item = producto if es_ultima else (node.get("subensamblaje") or producto)
             if bom_item:
                 semi_terminados.add(bom_item)
     return mp, wip, semi_terminados
@@ -4381,6 +4609,105 @@ def sub_crear_recibo(sco: str) -> dict:
     scr.flags.ignore_mandatory = True
     scr.insert()
     return {"ok": True, "scr": scr.name}
+
+
+@frappe.whitelist()
+def lote_abrir(plan: str, lote_ref: str, qty: float, schedule_date: str = None,
+               producto: str = None) -> dict:
+    """Abre un lote de producción de un jalón: crea y valida la orden de
+    subcontratación de TODAS las etapas del producto, con la misma cantidad y
+    referencia de lote.
+
+    Es el compromiso completo del lote -- lo que se le encarga a cada taller -- y se
+    decide una sola vez (cantidad + fecha), así que no tiene sentido volver a
+    capturarlo etapa por etapa. Antes esto eran 2 acciones por etapa (crear + validar);
+    con 10 etapas, 20 pasos que no aportaban ningún dato nuevo.
+
+    NO exige materia prima en stock (validar_stock=False): las etapas 2+ reciben su
+    insumo de la etapa anterior, que todavía no ha producido nada. El candado de
+    existencias vive en la TRANSFERENCIA, donde sí corresponde -- ahí ERPNext bloquea
+    solo si el almacén se iría a negativo.
+
+    Las etapas que ya tengan SCO de este lote se saltan, así que es seguro volver a
+    llamarlo (por ejemplo si una etapa falló y se corrigió el dato)."""
+    from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_stage_graph
+
+    qty = flt(qty)
+    if qty <= 0:
+        frappe.throw(_("Indica la cantidad del lote."))
+    if not lote_ref:
+        frappe.throw(_("Indica la referencia del lote."))
+
+    costeo = frappe.db.get_value("Production Plan", plan, "costeo")
+    if not costeo:
+        frappe.throw(_("El plan no está ligado a ningún costeo."))
+    doc = frappe.get_doc("Costeo", costeo)
+
+    productos = [producto] if producto else [p.finished_item for p in doc.costeo_producto if p.finished_item]
+    creadas, saltadas, errores = [], [], []
+
+    for prod in productos:
+        etapas = [e for e in doc.tabla_etapas_costeo if e.producto_terminado == prod]
+        if not etapas:
+            continue
+        info, ordenadas = _resolve_stage_graph(etapas, doc.get("tabla_salidas_etapa"))
+        for nodo in ordenadas:
+            es_ultima = info[nodo["node_key"]]["is_terminal"]
+            fg = prod if es_ultima else (nodo.get("subensamblaje") or "")
+            if not fg:
+                continue
+            # La OC de maquila de esta etapa: se identifica por el fg_item con el que
+            # _create_subcontracting_pos_from_stages etiquetó su línea de servicio.
+            po = frappe.db.get_value(
+                "Purchase Order Item",
+                {"fg_item": fg, "docstatus": 1},
+                "parent",
+            )
+            if not po or frappe.db.get_value("Purchase Order", po, "costeo") != costeo:
+                errores.append(_("{0}: su orden de compra de maquila no está validada.").format(fg))
+                continue
+            if frappe.db.exists("Subcontracting Order",
+                                {"purchase_order": po, "lote_ref": lote_ref, "docstatus": ["<", 2]}):
+                saltadas.append(fg)
+                continue
+            try:
+                r = sub_crear_sco(po, qty=qty, schedule_date=schedule_date, lote_ref=lote_ref,
+                                  validar_stock=False)
+                sub_validar_sco(r["sco"])
+                creadas.append({"etapa": fg, "sco": r["sco"]})
+            except Exception as exc:
+                errores.append(f"{fg}: {exc}")
+
+    frappe.db.commit()
+    return {"ok": not errores, "creadas": creadas, "saltadas": saltadas, "errores": errores}
+
+
+@frappe.whitelist()
+def sub_enviar_material(sco: str) -> dict:
+    """Manda la materia prima al taller y deja listo el recibo: crea la transferencia,
+    la VALIDA (el material sale del almacén de verdad) y crea el Subcontracting Receipt
+    en BORRADOR, esperando la confirmación de cuánto entregó el taller.
+
+    Junta 4 pasos que no aportaban ningún dato (crear transferencia, validarla, crear
+    recibo) en una sola acción con un significado claro: "ya le mandé el material".
+    Lo que NO se automatiza es validar el recibo -- ahí sí hay un dato real que sólo
+    conoce el usuario (la cantidad entregada, con su merma o rechazo)."""
+    if frappe.db.get_value("Subcontracting Order", sco, "docstatus") != 1:
+        frappe.throw(_("Valida la orden de subcontratación primero."))
+
+    se_name = frappe.db.get_value(
+        "Stock Entry", {"subcontracting_order": sco, "purpose": "Send to Subcontractor", "docstatus": 1}, "name"
+    )
+    if not se_name:
+        se_name = sub_transferir_material(sco)["stock_entry"]
+        se = frappe.get_doc("Stock Entry", se_name)
+        if se.docstatus == 0:
+            se.flags.ignore_permissions = True
+            se.submit()
+
+    scr_name = sub_crear_recibo(sco)["scr"]
+    frappe.db.commit()
+    return {"ok": True, "stock_entry": se_name, "scr": scr_name}
 
 
 @frappe.whitelist()

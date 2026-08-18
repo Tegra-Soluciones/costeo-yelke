@@ -1,0 +1,54 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-08-17 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "material_id",
+  "stage_id",
+  "qty"
+ ],
+ "fields": [
+  {
+   "allow_on_submit": 1,
+   "description": "material_id de la fila de Costeo Producto Detalle (materia prima) que se reparte -- vive como tabla HERMANA de Costeo Producto Detalle (no anidada dentro de ella: Frappe no guarda tablas dentro de tablas) y se relaciona por este campo, igual que Etapa Costeo Salida se relaciona con su etapa por stage_id.",
+   "fieldname": "material_id",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "ID del material"
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "stage_id de la etapa que CONSUME esta porción del material.",
+   "fieldname": "stage_id",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "ID de etapa consumidora"
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "Cuánto de ese material consume ESTA etapa, en la UDM interna del material (internal_uom) y por pieza de producto terminado -- misma unidad que 'Consumo por pieza' del costeo. La suma de las filas de un material debería dar su consumo total; si un material no tiene ninguna fila aquí, se comporta como siempre (se atribuye completo a la etapa de su campo 'etapa').",
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "label": "Cantidad en esta etapa",
+   "precision": "6"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-08-17 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Costeo Yelke",
+ "name": "Costeo Material Etapa",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

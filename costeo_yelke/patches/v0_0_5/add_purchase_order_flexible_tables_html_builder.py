@@ -16,6 +16,7 @@ def execute():
                     "fieldtype": "HTML",
                     "insert_after": "om_section_tablas_flexibles",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_tablas_flexibles",
@@ -25,6 +26,7 @@ def execute():
                     "insert_after": "om_tablas_html",
                     "depends_on": SUBCONTRACT_DEPENDS,
                     "hidden": 1,
+                    "allow_on_submit": 1,
                 },
             ]
         },

@@ -6,7 +6,16 @@ SUBCONTRACT_DEPENDS = "eval:doc.is_subcontracted==1"
 
 
 def execute():
-    """Add Orden de Manufactura tab on subcontracted Purchase Orders."""
+    """Add Orden de Manufactura tab on subcontracted Purchase Orders.
+
+    allow_on_submit=1 en TODOS estos campos (agregado después, ver v0_2_21): la
+    Orden de Manufactura es una ficha técnica de proyecto, no parte de los
+    términos comerciales de la OC -- debe poder seguir editándose desde la OC
+    "maestra" (_om_maestra_po) aunque esa OC ya esté validada con el proveedor.
+    Sin esto, en cuanto se valida la ÚNICA OC que puede editarla, la ficha
+    técnica queda bloqueada para siempre en ese proyecto (bug real: el usuario
+    validaba su primera OC de subcontratación sin haber llenado la Orden de
+    Manufactura todavía, y ya no había forma de volver a abrirla)."""
     create_custom_fields(
         {
             "Purchase Order": [
@@ -16,6 +25,7 @@ def execute():
                     "fieldtype": "Tab Break",
                     "insert_after": "connections_tab",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_section_info_general",
@@ -23,6 +33,7 @@ def execute():
                     "fieldtype": "Section Break",
                     "insert_after": "om_tab_orden_manufactura",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_fecha_requerida",
@@ -31,12 +42,14 @@ def execute():
                     "insert_after": "om_section_info_general",
                     "read_only": 1,
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_column_info_general",
                     "fieldtype": "Column Break",
                     "insert_after": "om_fecha_requerida",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_bordado",
@@ -44,6 +57,7 @@ def execute():
                     "fieldtype": "Check",
                     "insert_after": "om_column_info_general",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_estampado",
@@ -51,6 +65,7 @@ def execute():
                     "fieldtype": "Check",
                     "insert_after": "om_bordado",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_sublimado",
@@ -58,6 +73,7 @@ def execute():
                     "fieldtype": "Check",
                     "insert_after": "om_estampado",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_reflejante",
@@ -65,6 +81,7 @@ def execute():
                     "fieldtype": "Check",
                     "insert_after": "om_sublimado",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_aberturas",
@@ -72,6 +89,7 @@ def execute():
                     "fieldtype": "Int",
                     "insert_after": "om_reflejante",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_section_detallada",
@@ -79,6 +97,7 @@ def execute():
                     "fieldtype": "Section Break",
                     "insert_after": "om_aberturas",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_modelo",
@@ -86,6 +105,7 @@ def execute():
                     "fieldtype": "Data",
                     "insert_after": "om_section_detallada",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_tela",
@@ -93,6 +113,7 @@ def execute():
                     "fieldtype": "Data",
                     "insert_after": "om_modelo",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_color_principal",
@@ -100,12 +121,14 @@ def execute():
                     "fieldtype": "Data",
                     "insert_after": "om_tela",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_column_detallada",
                     "fieldtype": "Column Break",
                     "insert_after": "om_color_principal",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_combinacion",
@@ -113,6 +136,7 @@ def execute():
                     "fieldtype": "Small Text",
                     "insert_after": "om_column_detallada",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_color",
@@ -120,6 +144,7 @@ def execute():
                     "fieldtype": "Data",
                     "insert_after": "om_combinacion",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_forro",
@@ -127,6 +152,7 @@ def execute():
                     "fieldtype": "Data",
                     "insert_after": "om_color",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_ubicacion",
@@ -134,6 +160,7 @@ def execute():
                     "fieldtype": "Small Text",
                     "insert_after": "om_forro",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_section_tallas_caballero",
@@ -141,6 +168,7 @@ def execute():
                     "fieldtype": "Section Break",
                     "insert_after": "om_ubicacion",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_prendas_caballero_total",
@@ -149,6 +177,7 @@ def execute():
                     "insert_after": "om_section_tallas_caballero",
                     "read_only": 1,
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_tallas_caballero",
@@ -157,6 +186,7 @@ def execute():
                     "options": "Orden Manufactura Talla Caballero",
                     "insert_after": "om_prendas_caballero_total",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_section_tallas_dama",
@@ -164,6 +194,7 @@ def execute():
                     "fieldtype": "Section Break",
                     "insert_after": "om_tallas_caballero",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_prendas_dama_total",
@@ -172,6 +203,7 @@ def execute():
                     "insert_after": "om_section_tallas_dama",
                     "read_only": 1,
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_tallas_dama",
@@ -180,6 +212,7 @@ def execute():
                     "options": "Orden Manufactura Talla Dama",
                     "insert_after": "om_prendas_dama_total",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_section_procesos",
@@ -187,6 +220,7 @@ def execute():
                     "fieldtype": "Section Break",
                     "insert_after": "om_tallas_dama",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_procesos",
@@ -195,6 +229,7 @@ def execute():
                     "options": "Orden Manufactura Proceso",
                     "insert_after": "om_section_procesos",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_section_observaciones",
@@ -202,6 +237,7 @@ def execute():
                     "fieldtype": "Section Break",
                     "insert_after": "om_procesos",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_observaciones",
@@ -209,6 +245,7 @@ def execute():
                     "fieldtype": "Small Text",
                     "insert_after": "om_section_observaciones",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_section_tablas_flexibles",
@@ -216,6 +253,7 @@ def execute():
                     "fieldtype": "Section Break",
                     "insert_after": "om_observaciones",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_tablas_flexibles",
@@ -224,6 +262,7 @@ def execute():
                     "options": "Orden Manufactura Tabla Flexible",
                     "insert_after": "om_section_tablas_flexibles",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_section_archivos",
@@ -231,6 +270,7 @@ def execute():
                     "fieldtype": "Section Break",
                     "insert_after": "om_tablas_flexibles",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
                 {
                     "fieldname": "om_archivos",
@@ -239,6 +279,7 @@ def execute():
                     "options": "Orden Manufactura Archivo",
                     "insert_after": "om_section_archivos",
                     "depends_on": SUBCONTRACT_DEPENDS,
+                    "allow_on_submit": 1,
                 },
             ]
         },

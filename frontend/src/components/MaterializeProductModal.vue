@@ -26,11 +26,12 @@
           <span v-if="existingSuggested" class="text-[10.5px] font-medium text-brand-600 bg-brand-50 rounded-full px-2 py-0.5 flex-shrink-0">Sugerido</span>
         </div>
         <div class="mb-3">
-          <label class="field-label">Precio de venta <span class="text-ink-light font-normal">(déjalo para no tocar el actual)</span></label>
-          <div class="flex items-center border border-surface-border rounded-lg focus-within:ring-2 focus-within:ring-brand-500/30 focus-within:border-brand-400 bg-white">
-            <span class="pl-3 pr-1 text-sm text-ink-light select-none">$</span>
-            <input v-model.number="form.precio_venta" type="number" min="0" step="0.01" class="flex-1 min-w-0 py-2 pr-3 text-sm focus:outline-none bg-transparent" />
+          <label class="field-label flex items-center gap-1.5">Precio de venta <span class="text-[10px] font-normal text-ink-light bg-surface-raised border border-surface-border rounded px-1">sin IVA</span></label>
+          <div class="flex items-center border border-surface-border rounded-lg bg-surface-raised/60 text-ink-light">
+            <span class="pl-3 pr-1 text-sm select-none">$</span>
+            <span class="flex-1 min-w-0 py-2 pr-3 text-sm">{{ (form.precio_venta || 0).toFixed(2) }}</span>
           </div>
+          <p class="text-[10.5px] text-ink-light mt-1">Ya se fijó en el costeo — no se puede editar aquí.</p>
         </div>
       </template>
 
@@ -61,11 +62,12 @@
         </div>
 
         <div class="mb-3">
-          <label class="field-label">Precio de venta</label>
-          <div class="flex items-center border border-surface-border rounded-lg focus-within:ring-2 focus-within:ring-brand-500/30 focus-within:border-brand-400 bg-white">
-            <span class="pl-3 pr-1 text-sm text-ink-light select-none">$</span>
-            <input v-model.number="form.precio_venta" type="number" min="0" step="0.01" class="flex-1 min-w-0 py-2 pr-3 text-sm focus:outline-none bg-transparent" />
+          <label class="field-label flex items-center gap-1.5">Precio de venta <span class="text-[10px] font-normal text-ink-light bg-surface-raised border border-surface-border rounded px-1">sin IVA</span></label>
+          <div class="flex items-center border border-surface-border rounded-lg bg-surface-raised/60 text-ink-light">
+            <span class="pl-3 pr-1 text-sm select-none">$</span>
+            <span class="flex-1 min-w-0 py-2 pr-3 text-sm">{{ (form.precio_venta || 0).toFixed(2) }}</span>
           </div>
+          <p class="text-[10.5px] text-ink-light mt-1">Ya se fijó en el costeo — no se puede editar aquí.</p>
         </div>
 
         <label class="flex items-center gap-2 text-[13px] text-ink cursor-pointer mb-2">
@@ -92,11 +94,6 @@
             </button>
           </div>
           <button class="text-[12px] font-medium text-brand-600 hover:text-brand-700 mt-1" @click="addRango">+ Agregar rango</button>
-        </div>
-
-        <div class="mb-3">
-          <label class="field-label">Clave de producto/servicio SAT <span class="text-ink-light font-normal">(opcional)</span></label>
-          <input v-model="form.mx_product_service_key" class="field-input" placeholder="Ej: 53101800" />
         </div>
       </template>
 
@@ -142,7 +139,7 @@ let suggestReq = 0;
 
 const form = reactive({
   item_code: "", item_name: "", stock_uom: "", description: "", image: "",
-  precio_venta: 0, conPrecioVolumen: false, rangos: [], mx_product_service_key: "",
+  precio_venta: 0, conPrecioVolumen: false, rangos: [],
 });
 const errors = reactive({ item_code: false, item_name: false, stock_uom: false, existing: false });
 
@@ -152,17 +149,14 @@ async function onSelectExisting(code, { suggested = false } = {}) {
   existingSuggested.value = suggested;
   if (!code) return;
   try {
+    // El precio YA no se trae del artículo existente ni se deja editar aquí --
+    // siempre es el que se fijó en el costeo (props.suggestedPrice), fijo.
     const doc = await call("frappe.client.get_value", {
       doctype: "Item",
       filters: { name: code },
       fieldname: ["item_name", "stock_uom", "image"],
     });
     existingPreview.value = doc || null;
-    const priceRes = await call("costeo_yelke.api.costeo_api.get_item_price", {
-      item_code: code,
-      price_list: "Venta estándar",
-    });
-    form.precio_venta = priceRes?.price || 0;
   } catch { /* ignore — el usuario puede reintentar la búsqueda */ }
 }
 
@@ -211,7 +205,6 @@ watch(() => props.open, (isOpen) => {
   form.rangos = [];
   form.description = props.suggestedDescription || "";
   form.image = props.suggestedImage || "";
-  form.mx_product_service_key = "";
   errors.item_code = false; errors.item_name = false; errors.stock_uom = false; errors.existing = false;
 });
 
@@ -251,7 +244,7 @@ function onConfirm() {
     image: form.image || null,
     precio_venta: form.precio_venta || 0,
     pricing_rules,
-    mx_product_service_key: form.mx_product_service_key || null,
+    mx_product_service_key: null,
   });
 }
 </script>

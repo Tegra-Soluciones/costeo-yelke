@@ -34,6 +34,11 @@
    Viven aquí (no en <style scoped>) para que los componentes hijos también las usen
    sin duplicar las reglas @apply en cada archivo. */
 @layer components {
+  /* Puerto de entrada de una tarjeta del diagrama de etapas. Centrado en el borde
+     SUPERIOR (top:0 + -translate-y-1/2), que es exactamente el punto donde
+     recomputeDiagram termina cada conector -- así la línea muere en el punto y no
+     en el filo de la tarjeta. El anillo blanco lo despega visualmente de la curva. */
+  .diagram-port { @apply absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-brand-400 ring-2 ring-white; }
   .section-title { @apply text-[11px] font-semibold text-ink-light uppercase tracking-wider; }
   .field-label { @apply text-xs font-medium text-ink-muted block mb-1; }
   .field-input { @apply w-full text-sm border border-surface-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400 bg-white transition-colors; }

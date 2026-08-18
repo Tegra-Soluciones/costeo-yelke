@@ -39,3 +39,6 @@ costeo_yelke.patches.v0_2_14.add_qty_original_fields
 costeo_yelke.patches.v0_2_15.add_item_price_costeo_field
 costeo_yelke.patches.v0_2_16.add_item_price_validado_field
 costeo_yelke.patches.v0_2_17.add_costeo_titulo_field
+costeo_yelke.patches.v0_2_18.add_etapa_salidas
+costeo_yelke.patches.v0_2_19.add_material_etapa_split
+costeo_yelke.patches.v0_2_20.add_qty_salida

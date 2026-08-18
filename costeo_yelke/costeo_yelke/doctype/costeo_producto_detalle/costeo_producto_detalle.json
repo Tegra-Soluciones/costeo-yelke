@@ -6,6 +6,7 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "material_id",
   "finished_item",
   "concept_type",
   "item",
@@ -26,6 +27,14 @@
  ],
  "fields": [
   {
+   "allow_on_submit": 1,
+   "description": "Identificador estable de esta fila de material (no cambia al reordenar/renombrar el item) -- lo referencian las filas de Costeo Material Etapa para repartir su consumo entre varias etapas.",
+   "fieldname": "material_id",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "ID interno de material"
+  },
+  {
    "fieldname": "finished_item",
    "fieldtype": "Data",
    "label": "Producto Terminado"
@@ -34,7 +43,7 @@
    "fieldname": "concept_type",
    "fieldtype": "Select",
    "label": "Tipo",
-   "options": "Materia Prima\nServicio\nEnv\u00edo"
+   "options": "Materia Prima\nServicio\nEnvío"
   },
   {
    "fieldname": "item",
@@ -82,7 +91,7 @@
    "fieldname": "conversion_factor",
    "fieldtype": "Float",
    "hidden": 1,
-   "label": "Factor de Conversi\u00f3n"
+   "label": "Factor de Conversión"
   },
   {
    "fieldname": "supplier_qty",

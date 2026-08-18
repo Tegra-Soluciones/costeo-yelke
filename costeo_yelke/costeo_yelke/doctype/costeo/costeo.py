@@ -409,75 +409,179 @@ def _stage_sort_key(row):
         return (1, str(value or ""))
 
 
-def _resolve_stage_graph(etapas):
-    """Resuelve las dependencias entre etapas de UN producto (lista de dicts/
-    frappe._dict de Etapas Costeo). Regresa (info, ordered):
+def _explode_stage_nodes(etapas, salidas_all):
+    """Expande cada fila de etapa en 1+ 'nodos' -- uno por cada fila de
+    ``salidas_all`` (Costeo.tabla_salidas_etapa) cuyo 'stage_id' apunte a esa
+    etapa (una etapa que produce varios resultados nombrados, ej. un corte que
+    produce manga izquierda / manga derecha / frente por separado), o uno solo
+    implícito si esa etapa no tiene ninguna (el caso normal, una etapa = un
+    resultado). ``tabla_salidas_etapa`` vive como tabla HERMANA de
+    tabla_etapas_costeo en Costeo -- no anidada dentro de Etapas Costeo, porque
+    Frappe no cascada el guardado de una tabla dentro de OTRA tabla hija (ver
+    docstring del patch v0_2_18).
 
-    - info: {stage_key(e): {"row": e, "upstream": [rows], "is_terminal": bool}}
-      upstream = etapas de las que ESTA recibe material (vía 'recibe_de' -> stage_id).
-      is_terminal = True si ninguna otra etapa la referencia como entrada -- esa es
-      la que produce el PRODUCTO TERMINADO (puede haber procesos en paralelo que
-      convergen en ella, no solo una cadena de uno).
-    - ordered: las mismas etapas en orden topológico (primero las que no dependen
+    Cada nodo es un frappe._dict con TODOS los campos de la etapa dueña, más:
+    - node_key: identifica a ESTE nodo en el grafo (upstream/is_terminal/bom_item).
+      Es el stage_id de la etapa si no tiene salidas propias (igual que antes de
+      que existiera este concepto); es el salida_id de esa fila si sí las tiene.
+    - parent_stage_key: stage_id de la etapa dueña -- para atribuir materia prima
+      (_match_material_stage sigue siendo por ETAPA física, no por salida
+      individual: el material lo consume la operación completa, no una salida).
+    - qty_salida: cuántas unidades de este resultado produce la operación por pieza
+      de producto terminado (1 si la etapa no tiene salidas propias). Es el dato que
+      se captura.
+    - pct_participacion: qué fracción del costo de la etapa (precio de servicio +
+      materia prima) toca a este nodo -- se DERIVA de qty_salida repartido entre las
+      salidas hermanas, y es 100 si la etapa no tiene salidas propias. Existe porque
+      la operación se cobra y consume material UNA sola vez aunque produzca varios
+      resultados: sin repartir, cada BOM pediría el material completo y cada OC de
+      subcontratación pagaría el servicio completo. Si las salidas no traen
+      qty_salida (dato viejo), se respeta el pct que tuvieran guardado.
+    - subensamblaje: el de esta salida específica si aplica; si no, el escalar de
+      la etapa, como siempre."""
+    def as_plain_dict(row):
+        # doc.tabla_etapas_costeo trae instancias reales de Document (no iterables
+        # con dict(...)) cuando viene de frappe.get_doc; los callers que arman la
+        # lista a mano (ej. _build_stage_subcontracting_rows) ya mandan frappe._dict.
+        # as_dict() normaliza ambos casos sin perder ningún campo. OJO: no usar
+        # hasattr() aquí -- frappe._dict.__getattr__ regresa None en vez de lanzar
+        # AttributeError, así que hasattr(dict_de_frappe, "as_dict") da True igual.
+        as_dict_fn = getattr(row, "as_dict", None)
+        return dict(as_dict_fn()) if callable(as_dict_fn) else dict(row)
+
+    salidas_by_stage = {}
+    for s in salidas_all or []:
+        sid = s.get("stage_id")
+        if sid:
+            salidas_by_stage.setdefault(sid, []).append(s)
+
+    nodes = []
+    for e in etapas:
+        parent_key = e.get("stage_id") or e.get("name") or e.get("etapa")
+        own_salidas = salidas_by_stage.get(parent_key) or []
+        if not own_salidas:
+            node = as_plain_dict(e)
+            node["node_key"] = parent_key
+            node["parent_stage_key"] = parent_key
+            node["pct_participacion"] = 100.0
+            node["qty_salida"] = 1.0
+            nodes.append(frappe._dict(node))
+            continue
+        # El reparto sale de las cantidades: una salida que produce 2 unidades pesa
+        # el doble que una que produce 1. Si ninguna trae cantidad (costeos guardados
+        # antes de que existiera el campo), se respeta el pct guardado tal cual.
+        total_qty = sum(float(s.get("qty_salida") or 0) for s in own_salidas)
+        for s in own_salidas:
+            node = as_plain_dict(e)
+            node["node_key"] = s.get("salida_id") or parent_key
+            node["parent_stage_key"] = parent_key
+            qty_salida = float(s.get("qty_salida") or 0)
+            if total_qty > 0:
+                node["qty_salida"] = qty_salida
+                node["pct_participacion"] = 100.0 * qty_salida / total_qty
+            else:
+                node["qty_salida"] = 1.0
+                node["pct_participacion"] = float(s.get("pct_participacion") or 0)
+            node["subensamblaje"] = s.get("subensamblaje") or ""
+            nodes.append(frappe._dict(node))
+    return nodes
+
+
+def _resolve_stage_graph(etapas, salidas=None):
+    """Resuelve las dependencias entre etapas de UN producto (lista de dicts/
+    frappe._dict de Etapas Costeo). ``salidas``, si se manda, es la tabla
+    completa (o ya pre-filtrada) de Costeo.tabla_salidas_etapa -- filas cuyo
+    stage_id no corresponda a ninguna de ``etapas`` simplemente se ignoran, así
+    que es seguro mandar la tabla completa del Costeo sin filtrar por producto.
+    Regresa (info, ordered):
+
+    - info: {node_key: {"row": node, "upstream": [nodes], "is_terminal": bool}}
+      upstream = nodos de los que ESTE recibe material (vía 'recibe_de').
+      is_terminal = True si ningún otro nodo lo referencia como entrada -- ese es
+      el que produce el PRODUCTO TERMINADO (puede haber procesos en paralelo que
+      convergen en él, no solo una cadena de uno).
+    - ordered: los mismos nodos en orden topológico (primero los que no dependen
       de nada), para que crear_boms_spa arme primero los BOM que otros van a
       referenciar.
 
+    Cada "nodo" es, normalmente, una etapa completa -- salvo que esa etapa tenga
+    filas propias en ``salidas`` (ver _explode_stage_nodes), en cuyo caso cada
+    salida es su propio nodo independiente, referenciable por separado desde
+    'recibe_de' de otras etapas (por su salida_id) además de por el stage_id de
+    la etapa (que, en ese caso, apunta ambiguamente a la primera salida -- caso
+    legado tolerado, se espera que el usuario reasigne la referencia exacta
+    desde el selector).
+
     Modo lineal (fallback): si NINGUNA etapa del producto tiene 'recibe_de'
     capturado, se comporta EXACTAMENTE como antes de que existiera esta función --
-    cadena estricta por número de etapa, cada una recibe solo de la inmediata
-    anterior, la última (por número) es la terminal. Así los costeos ya existentes
-    (todos, hasta que alguien empiece a usar ramas paralelas) no cambian de
-    comportamiento."""
+    cadena estricta por número de etapa/nodo, cada uno recibe solo del inmediato
+    anterior, el último es el terminal. Así los costeos ya existentes (todos,
+    hasta que alguien empiece a usar ramas paralelas o salidas múltiples) no
+    cambian de comportamiento."""
     etapas = list(etapas)
-
-    def stage_key(e):
-        return e.get("stage_id") or e.get("name") or e.get("etapa")
+    nodes = _explode_stage_nodes(etapas, salidas)
 
     any_wired = any(str(e.get("recibe_de") or "").strip() for e in etapas)
 
     if not any_wired:
-        ordered = sorted(etapas, key=_stage_sort_key)
+        ordered = sorted(nodes, key=_stage_sort_key)
         info = {}
-        for i, e in enumerate(ordered):
-            info[stage_key(e)] = {
-                "row": e,
+        for i, n in enumerate(ordered):
+            info[n["node_key"]] = {
+                "row": n,
                 "upstream": [ordered[i - 1]] if i > 0 else [],
                 "is_terminal": i == len(ordered) - 1,
             }
         return info, ordered
 
-    by_id = {e.get("stage_id"): e for e in etapas if e.get("stage_id")}
+    by_node_key = {n["node_key"]: n for n in nodes}
+    by_parent_key = {}
+    for n in nodes:
+        by_parent_key.setdefault(n["parent_stage_key"], []).append(n)
+
+    def resolve_token(token):
+        # Match directo (salida_id, o stage_id de una etapa sin 'salidas') primero
+        # -- solo si no matchea nada se cae al legado ambiguo (stage_id de una
+        # etapa que ahora tiene varias salidas: se toma la primera).
+        if token in by_node_key:
+            return by_node_key[token]
+        siblings = by_parent_key.get(token)
+        return siblings[0] if siblings else None
+
     upstream_map = {}
-    consumed_ids = set()
-    for e in etapas:
-        deps = [d.strip() for d in str(e.get("recibe_de") or "").split(",") if d.strip()]
-        rows = [by_id[d] for d in deps if d in by_id]
-        upstream_map[stage_key(e)] = rows
-        consumed_ids.update(d for d in deps if d in by_id)
+    consumed_keys = set()
+    for n in nodes:
+        deps = [d.strip() for d in str(n.get("recibe_de") or "").split(",") if d.strip()]
+        rows = []
+        for d in deps:
+            resolved = resolve_token(d)
+            if resolved is not None:
+                rows.append(resolved)
+                consumed_keys.add(resolved["node_key"])
+        upstream_map[n["node_key"]] = rows
 
     info = {}
-    for e in etapas:
-        sid = e.get("stage_id")
-        info[stage_key(e)] = {
-            "row": e,
-            "upstream": upstream_map[stage_key(e)],
-            "is_terminal": (sid not in consumed_ids) if sid else True,
+    for n in nodes:
+        info[n["node_key"]] = {
+            "row": n,
+            "upstream": upstream_map[n["node_key"]],
+            "is_terminal": n["node_key"] not in consumed_keys,
         }
 
     # Orden topológico (Kahn) -- si hay un ciclo o una referencia rota (dato mal
     # capturado), se agrega lo que quede al final en vez de tronar la generación.
-    ordered, seen, remaining, guard = [], set(), list(etapas), 0
+    ordered, seen, remaining, guard = [], set(), list(nodes), 0
     while remaining and guard < 1000:
         guard += 1
         still_remaining, progressed = [], False
-        for e in remaining:
-            ups = info[stage_key(e)]["upstream"]
-            if all(stage_key(u) in seen for u in ups):
-                ordered.append(e)
-                seen.add(stage_key(e))
+        for n in remaining:
+            ups = info[n["node_key"]]["upstream"]
+            if all(u["node_key"] in seen for u in ups):
+                ordered.append(n)
+                seen.add(n["node_key"])
                 progressed = True
             else:
-                still_remaining.append(e)
+                still_remaining.append(n)
         remaining = still_remaining
         if not progressed:
             ordered.extend(remaining)
@@ -674,7 +778,7 @@ def _build_stage_subcontracting_rows(source, qty_map_override=None):
             # default de 1, que generaría una OC de subcontratación fantasma.
             continue
         fg_qty = qty_map.get(producto_terminado) or 1
-        graph_info, etapas_ordenadas = _resolve_stage_graph(etapas)
+        graph_info, etapas_ordenadas = _resolve_stage_graph(etapas, source.get("tabla_salidas_etapa"))
 
         for etapa in etapas_ordenadas:
             proveedor = etapa.get("proveedor")
@@ -682,8 +786,7 @@ def _build_stage_subcontracting_rows(source, qty_map_override=None):
             if not proveedor or not servicio:
                 continue
 
-            key = etapa.get("stage_id") or etapa.get("name") or etapa.get("etapa")
-            es_ultima = graph_info.get(key, {}).get("is_terminal", True)
+            es_ultima = graph_info.get(etapa.get("node_key"), {}).get("is_terminal", True)
             finished_good = producto_terminado if es_ultima else (etapa.get("subensamblaje") or producto_terminado)
 
             target_warehouse = None
@@ -700,6 +803,14 @@ def _build_stage_subcontracting_rows(source, qty_map_override=None):
                 if not target_warehouse:
                     target_warehouse = _get_item_default_warehouse(finished_good, company)
 
+            # Una salida que produce varias unidades por prenda necesita esas unidades
+            # pedidas al taller (2 mangas cortadas por prenda = 2x la cantidad de
+            # prendas). El servicio NO se multiplica por eso: el conversion_factor del
+            # Subcontracting BOM ya viene dividido entre qty_salida, así que
+            # fg_qty x qty_salida x conversion_factor sigue dando una sola operación
+            # por prenda (ver crear_subcontracting_bom).
+            qty_salida = flt(etapa.get("qty_salida")) or 1
+
             stage_rows.append(
                 frappe._dict(
                     {
@@ -709,7 +820,7 @@ def _build_stage_subcontracting_rows(source, qty_map_override=None):
                         "service_item": servicio,
                         "service_price": flt(etapa.get("precio_servicio")),
                         "finished_good": finished_good,
-                        "finished_good_qty": fg_qty,
+                        "finished_good_qty": fg_qty * qty_salida,
                         "target_warehouse": target_warehouse,
                         "schedule_date": default_schedule_date,
                     }
@@ -724,7 +835,19 @@ def _create_subcontracting_pos_from_stages(source, stage_rows, sales_order=None)
     cada OC de subcontratación creada (campo nativo de Purchase Order Item) -- es lo que
     permite después filtrar las OC de maquila por OV (get_produccion_docs,
     get_reporte_final), ya que Subcontracting Order no tiene ese campo y hereda todo de
-    la OC que le dio origen."""
+    la OC que le dio origen.
+
+    Sigue creando UNA Purchase Order por fila de ``stage_rows`` -- una etapa con
+    varias 'salidas' produce varias filas (una por salida, ver
+    _build_stage_subcontracting_rows) y por lo tanto varias OC independientes,
+    cada una para su propio fg_item/salida (mismo criterio que una OC por etapa
+    de siempre; cada salida sigue caminos de producción distintos río abajo, así
+    que conviene que cada una tenga su propio documento rastreable). Esto NO
+    sobre-factura al proveedor: ``service_qty`` de cada fila ya viene escalado a
+    la porción exacta de esta salida (vía el conversion_factor ya repartido por
+    pct_participacion en el Subcontracting BOM de cada salida -- ver
+    crear_subcontracting_bom), así que la suma de las OC de una misma etapa da el
+    costo total real de la operación, no un múltiplo."""
     company = _get_company_name(source)
     if not company:
         frappe.throw(_("Company is required to create Subcontracting Purchase Orders."))
@@ -804,6 +927,11 @@ def _create_subcontracting_pos_from_stages(source, stage_rows, sales_order=None)
             "uom": service_uom,
             "warehouse": row.target_warehouse,
             "schedule_date": row.schedule_date or nowdate(),
+            # precio_servicio SIN escalar por pct_participacion a propósito: el
+            # reparto entre salidas ya vive en service_qty (vía el conversion_factor
+            # ya escalado del Subcontracting BOM de esta salida, ver
+            # crear_subcontracting_bom) -- escalar aquí TAMBIÉN duplicaría el
+            # descuento y subfacturaría al proveedor.
             "rate": row.service_price or 0,
         }
         if bom_data and bom_data.finished_good_bom:

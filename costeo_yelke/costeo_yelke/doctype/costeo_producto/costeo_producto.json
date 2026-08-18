@@ -19,6 +19,7 @@
   "overhead_amt",
   "total_unit_cost",
   "unit_sales_price",
+  "precio_manual",
   "margin_pct",
   "total_sales_price"
  ],
@@ -101,6 +102,15 @@
    "fieldname": "margin_pct",
    "fieldtype": "Percent",
    "label": "Margen %",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "0",
+   "description": "Se marca solo al escribir el Precio Venta Unitario directamente. Mientras esté activo, ese precio queda fijo (no se recalcula a partir del Margen %) aunque cambien materiales/etapas/otros costos -- el margen se ajusta a él, no al revés. Se desactiva en cuanto se vuelve a editar el Margen % a mano.",
+   "fieldname": "precio_manual",
+   "fieldtype": "Check",
+   "label": "Precio fijado manualmente",
    "read_only": 1
   },
   {

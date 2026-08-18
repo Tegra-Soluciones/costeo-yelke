@@ -15,6 +15,9 @@
   "precio_servicio",
   "lote_qty",
   "lote_uom",
+  "modo_precio",
+  "operaciones_por_pieza",
+  "precio_por_operacion",
   "subensamblaje"
  ],
  "fields": [
@@ -78,6 +81,34 @@
    "fieldtype": "Link",
    "label": "UDM del lote",
    "options": "UOM"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "Por lote",
+   "description": "Cómo se calcula 'Precio' -- 'Por lote' (de siempre): precio ÷ lote_qty = precio por pieza (ej. $19 por un lote de 25 confecciones). 'Por operación': cantidad de operaciones que se repiten dentro de CADA pieza × precio de cada operación (ej. 4 segmentos de cinta reflejante por prenda a $1.87 c/u) -- lo opuesto, una multiplicación en vez de una división.",
+   "fieldname": "modo_precio",
+   "fieldtype": "Select",
+   "label": "Modo de precio",
+   "options": "Por lote\nPor operación"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "1",
+   "depends_on": "eval:doc.modo_precio == 'Por operación'",
+   "description": "Cuántas veces se repite esta operación dentro de CADA pieza (ej. 4 segmentos de cinta a colocar).",
+   "fieldname": "operaciones_por_pieza",
+   "fieldtype": "Float",
+   "label": "Operaciones por pieza",
+   "precision": "2"
+  },
+  {
+   "allow_on_submit": 1,
+   "depends_on": "eval:doc.modo_precio == 'Por operación'",
+   "description": "Precio de CADA operación individual -- 'Precio' se calcula solo como operaciones_por_pieza × este valor.",
+   "fieldname": "precio_por_operacion",
+   "fieldtype": "Currency",
+   "label": "Precio por operación",
+   "precision": "2"
   },
   {
    "allow_on_submit": 1,

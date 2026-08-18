@@ -36,9 +36,28 @@
 
       <div v-if="tipoInfo.hasSupplier" class="mb-3">
         <label class="field-label">Precio de compra</label>
-        <div class="flex items-center border border-surface-border rounded-lg focus-within:ring-2 focus-within:ring-brand-500/30 focus-within:border-brand-400 bg-white">
+        <div class="relative flex items-center border border-surface-border rounded-lg focus-within:ring-2 focus-within:ring-brand-500/30 focus-within:border-brand-400 bg-white">
           <span class="pl-3 pr-1 text-sm text-ink-light select-none">$</span>
-          <input v-model.number="form.precio" type="number" min="0" step="0.01" class="flex-1 min-w-0 py-2 pr-3 text-sm focus:outline-none bg-transparent" />
+          <input v-model.number="form.precio" type="number" min="0" step="0.01" class="flex-1 min-w-0 py-2 pr-8 text-sm focus:outline-none bg-transparent" />
+          <button v-if="rowType === 'material'" type="button" class="absolute right-1 text-ink-light hover:text-brand-600" title="Convertir precio de $/kg a $/m" @click="openTelaConvert">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><rect x="5" y="3" width="14" height="18" rx="2"/><path stroke-linecap="round" d="M8 7h8M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01"/></svg>
+          </button>
+          <template v-if="telaConvert.open">
+            <div class="fixed inset-0 z-40" @click="closeTelaConvert()"></div>
+            <div class="absolute z-50 right-0 top-full mt-1 w-64 bg-white border border-surface-border rounded-lg shadow-lg p-3 text-left">
+              <p class="text-xs font-semibold text-ink mb-2">Convertir $/kg → $/m</p>
+              <label class="field-label mb-0.5">Precio por kilo (el que te dio el proveedor)</label>
+              <div class="relative mb-2"><span class="prefix text-xs">$</span><input v-model.number="telaConvert.precio_kg" type="number" min="0" step="0.01" class="field-input text-right pl-5 py-1" /></div>
+              <label class="field-label mb-0.5">Metros que salen de 1 kilo</label>
+              <input v-model.number="telaConvert.metros_por_kilo" type="number" min="0" step="0.01" placeholder="ej. 5.2" class="field-input text-right py-1" />
+              <p class="text-[11px] text-ink-muted mt-2">Precio por metro: <span class="font-semibold text-brand-600">${{ telaConvertPrecioM.toFixed(2) }}</span></p>
+              <p class="text-[10px] text-ink-xlight mt-1">Al usarlo, la UOM del artículo cambia a Metro -- ahí capturas tú el consumo por prenda en Costear.</p>
+              <div class="flex items-center justify-end gap-3 mt-3">
+                <button type="button" class="text-xs text-ink-light hover:text-ink" @click="closeTelaConvert()">Cancelar</button>
+                <button type="button" class="text-xs font-semibold text-white bg-brand-500 hover:bg-brand-600 rounded-lg px-3 py-1.5" @click="aplicarTelaConvert()">Usar este precio</button>
+              </div>
+            </div>
+          </template>
         </div>
         <p v-if="suggestedPrice" class="text-[11px] text-ink-light mt-1">Tomado del precio unitario ya capturado en el costeo.</p>
       </div>
@@ -46,7 +65,7 @@
       <!-- Conversión de unidades: el proveedor puede surtir en una UOM distinta a la interna (ej. rollos de 10m) -->
       <div class="mb-3">
         <div class="flex items-center justify-between mb-1">
-          <label class="field-label mb-0">Conversión de unidades <span class="text-ink-light font-normal">(opcional)</span></label>
+          <label class="field-label mb-0">Múltiplos de compra <span class="text-ink-light font-normal">(opcional)</span></label>
           <button v-if="!form.uomConversions.length" class="text-[11px] font-medium text-brand-600 hover:text-brand-700" @click="addConversion">+ Agregar</button>
         </div>
         <p class="text-[11px] text-ink-light mb-2">Si el proveedor surte en una unidad distinta a "{{ form.stock_uom || 'UOM base' }}" (ej. rollos, cajas).</p>
@@ -142,6 +161,27 @@ function suggestCode(text) {
 
 function addConversion() {
   form.uomConversions.push({ uom: "", conversion_factor: 1 });
+}
+
+// Mismo conversor $/kg -> $/m que ya existe en Costear (telaConvertModal en
+// CosteoDetailPage.vue) -- aquí el artículo todavía NO existe, así que no hay
+// nada que guardar en el Item (metros_por_kilo se persiste allá, no aquí); solo
+// calcula y aplica el precio por metro + cambia la UOM del alta a Metro.
+const telaConvert = reactive({ open: false, precio_kg: 0, metros_por_kilo: null });
+const telaConvertPrecioM = computed(() => {
+  const kg = telaConvert.metros_por_kilo || 0;
+  return kg > 0 ? Math.round(((telaConvert.precio_kg || 0) / kg) * 100) / 100 : 0;
+});
+function openTelaConvert() {
+  telaConvert.open = true;
+  telaConvert.precio_kg = form.precio || 0;
+  telaConvert.metros_por_kilo = null;
+}
+function closeTelaConvert() { telaConvert.open = false; }
+function aplicarTelaConvert() {
+  form.precio = telaConvertPrecioM.value;
+  form.stock_uom = "MTR - Metro";
+  closeTelaConvert();
 }
 
 watch(() => props.open, (isOpen) => {

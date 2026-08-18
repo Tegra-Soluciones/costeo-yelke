@@ -182,6 +182,28 @@
               <datalist id="familias-list"><option v-for="f in familias" :key="f" :value="f" /></datalist>
             </div>
           </div>
+          <!-- Almacenes y centro de costos: se rellenan solos al elegir la compañía,
+               pero SIEMPRE se pueden capturar a mano. Si la compañía nombra sus
+               almacenes distinto a lo que busca get_company_defaults, antes quedaban
+               vacíos y no había forma de guardar el costeo ni de corregirlos. -->
+          <div v-if="form.compania" class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 pt-3 border-t border-surface-border">
+            <div>
+              <label class="field-label">Almacén de materia prima <span class="text-red-400">*</span></label>
+              <LinkInput v-model="form.almacen_materias_primas" doctype="Warehouse" :filters="warehouseFilters" placeholder="Almacén…" :error="!!errors.almacen_materias_primas" />
+            </div>
+            <div>
+              <label class="field-label">Almacén de trabajo en proceso <span class="text-red-400">*</span></label>
+              <LinkInput v-model="form.almacen_trabajo_en_proceso" doctype="Warehouse" :filters="warehouseFilters" placeholder="Almacén…" :error="!!errors.almacen_trabajo_en_proceso" />
+            </div>
+            <div>
+              <label class="field-label">Centro de costos <span class="text-red-400">*</span></label>
+              <LinkInput v-model="form.centro_de_costos" doctype="Cost Center" :filters="costCenterFilters" placeholder="Centro de costos…" :error="!!errors.centro_de_costos" />
+            </div>
+          </div>
+          <p v-if="form.compania && faltanAlmacenes" class="text-[11.5px] text-amber-700 mt-2 flex items-start gap-1.5">
+            <svg class="w-4 h-4 flex-shrink-0 mt-px" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.71-3l-6.93-12a2 2 0 00-3.42 0l-6.93 12a2 2 0 001.71 3z"/></svg>
+            No encontramos los almacenes de esta compañía por su nombre — elígelos aquí arriba para poder guardar.
+          </p>
         </section>
 
         <section class="bg-white rounded-xl border border-surface-border">
@@ -243,14 +265,20 @@
                     <div><label class="field-label mb-0.5">Flete / envío</label><div class="relative"><span class="prefix">$</span><input v-model.number="prod.shipping_cost" type="number" min="0" class="field-input py-1.5 pl-6" @input="recalcProducto(prod)" /></div></div>
                     <div><label class="field-label mb-0.5">Etiquetado</label><div class="relative"><span class="prefix">$</span><input v-model.number="prod.labeling_cost" type="number" min="0" class="field-input py-1.5 pl-6" @input="recalcProducto(prod)" /></div></div>
                     <div><label class="field-label mb-0.5">Empaquetado</label><div class="relative"><span class="prefix">$</span><input v-model.number="prod.packaging_cost" type="number" min="0" class="field-input py-1.5 pl-6" @input="recalcProducto(prod)" /></div></div>
-                    <div><label class="field-label mb-0.5">Margen %</label><div class="relative"><input v-model.number="prod.margin_pct" type="number" min="0" max="99" class="field-input py-1.5 pr-7" @input="recalcProducto(prod)" /><span class="suffix">%</span></div></div>
-                    <div><label class="field-label mb-0.5">Precio unit.</label><div class="relative"><span class="prefix text-brand-600">$</span><input v-model.number="prod.unit_sales_price" type="number" min="0" step="0.01" class="field-input py-1.5 pl-6 text-brand-600 font-semibold" @input="onPriceChange(prod)" /></div></div>
+                    <div><label class="field-label mb-0.5">Margen %</label><div class="relative"><input v-model.number="prod.margin_pct" type="number" min="0" max="99" class="field-input py-1.5 pr-7" @input="onMarginChange(prod)" /><span class="suffix">%</span></div></div>
+                    <div>
+                      <label class="field-label mb-0.5 flex items-center gap-1">Precio unit.<span v-if="prod.precio_manual" class="text-[9.5px] font-normal text-brand-600 bg-brand-50 border border-brand-200 rounded px-1" title="Precio fijado a mano -- no se recalcula aunque cambien costos, el margen se ajusta a él">fijo</span></label>
+                      <div class="relative"><span class="prefix text-brand-600">$</span><input v-model.number="prod.unit_sales_price" type="number" min="0" step="0.01" class="field-input py-1.5 pl-6 text-brand-600 font-semibold" @input="onPriceChange(prod)" /></div>
+                    </div>
                   </div>
-                  <p class="text-[11px] font-semibold text-ink-muted uppercase tracking-wide mt-3 mb-2 pt-2 border-t border-surface-border">Desglose por grupo</p>
-                  <div class="grid grid-cols-3 gap-2">
+                  <p class="text-[11px] font-semibold text-ink-muted uppercase tracking-wide mt-3 mb-2 pt-2 border-t border-surface-border">Desglose por grupo <span class="normal-case font-medium text-ink-light">— por pieza y por las {{ prod.qty || 0 }}</span></p>
+                  <div class="grid grid-cols-6 gap-2">
                     <div><label class="field-label mb-0.5">Telas</label><div class="field-input py-1.5 bg-surface-raised text-ink-muted cursor-default select-text">{{ fmtC(telasCost(prod)) }}</div></div>
+                    <div><label class="field-label mb-0.5 text-ink-light">Telas × {{ prod.qty || 0 }}</label><div class="field-input py-1.5 bg-surface-raised text-ink cursor-default select-text">{{ fmtC(telasCost(prod) * (prod.qty || 0)) }}</div></div>
                     <div><label class="field-label mb-0.5">Avíos</label><div class="field-input py-1.5 bg-surface-raised text-ink-muted cursor-default select-text">{{ fmtC(aviosCost(prod)) }}</div></div>
+                    <div><label class="field-label mb-0.5 text-ink-light">Avíos × {{ prod.qty || 0 }}</label><div class="field-input py-1.5 bg-surface-raised text-ink cursor-default select-text">{{ fmtC(aviosCost(prod) * (prod.qty || 0)) }}</div></div>
                     <div><label class="field-label mb-0.5">Servicios</label><div class="field-input py-1.5 bg-surface-raised text-ink-muted cursor-default select-text">{{ fmtC(serviciosCost(prod)) }}</div></div>
+                    <div><label class="field-label mb-0.5 text-ink-light">Servicios × {{ prod.qty || 0 }}</label><div class="field-input py-1.5 bg-surface-raised text-ink cursor-default select-text">{{ fmtC(serviciosCost(prod) * (prod.qty || 0)) }}</div></div>
                   </div>
                 </div>
 
@@ -358,6 +386,20 @@
                           <td class="py-1.5"><button class="del-btn" @click="removeDetalle(d, prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button></td>
                         </tr>
                       </tbody>
+                      <tfoot v-if="materialesDe(prod.finished_item).length">
+                        <tr class="border-t-2 border-surface-border">
+                          <td colspan="5" class="py-2 text-xs font-semibold text-ink-muted uppercase tracking-wide">Total materias primas</td>
+                          <td class="py-2 pr-2 text-right text-[11px] text-ink-light">por pieza</td>
+                          <td class="py-2 pr-2 text-right font-semibold text-ink">{{ fmtC(totalMaterias(prod)) }}</td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td colspan="5"></td>
+                          <td class="py-1 pr-2 text-right text-[11px] text-ink-light">× {{ prod.qty || 0 }} pzas</td>
+                          <td class="py-1 pr-2 text-right font-semibold text-ink">{{ fmtC(totalMaterias(prod) * (prod.qty || 0)) }}</td>
+                          <td></td>
+                        </tr>
+                      </tfoot>
                     </table>
                   <button class="add-link" @click="addDetalle(prod, 'Materia Prima')"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Agregar material</button>
                 </div>
@@ -369,26 +411,34 @@
                       <span v-if="etapasDe(prod.finished_item).length" class="px-1.5 py-0.5 rounded-full text-xs bg-surface-raised text-ink-muted">{{ etapasDe(prod.finished_item).length }}</span>
                     </div>
                     <table class="w-full table-fixed text-sm mb-3">
-                      <thead><tr class="border-b border-surface-border text-left text-xs font-semibold text-ink-light"><th class="py-2">Servicio</th><th class="py-2">Proveedor</th><th class="py-2 w-24 text-right">Precio</th><th class="py-2 w-40">Cantidad / UDM del lote</th><th class="w-7"></th></tr></thead>
+                      <thead><tr class="border-b border-surface-border text-left text-xs font-semibold text-ink-light"><th class="py-2">Servicio</th><th class="py-2 w-1/5">Proveedor</th><th class="py-2 w-28">UDM</th><th class="py-2 w-20 text-right">Cantidad</th><th class="py-2 w-24 text-right">Costo</th><th class="py-2 w-24 text-right">Total</th><th class="w-7"></th></tr></thead>
                       <tbody>
-                        <tr v-for="e in etapasDe(prod.finished_item)" :key="e._tid" class="border-b border-surface-border/60">
+                        <tr v-for="e in etapasDe(prod.finished_item)" :key="e._tid" class="border-b border-surface-border/60 align-top">
                           <td class="py-1.5 pr-2"><LinkInput v-model="e.servicio" doctype="Item" :filters="ITEM_FILTERS.servicio" placeholder="Servicio…" @update:model-value="onEtapaServicioChange(e, prod)" /></td>
                           <td class="py-1.5 pr-2"><LinkInput v-model="e.proveedor" doctype="Supplier" placeholder="Taller…" /></td>
-                          <td class="py-1.5 pr-2">
-                            <div class="relative"><span class="prefix text-xs">$</span><input v-model.number="e.precio_servicio" type="number" min="0" step="0.01" class="field-input text-right pl-5" @input="recalcProducto(prod)" /></div>
-                            <p v-if="(e.lote_qty || 1) > 1" class="text-[10.5px] text-ink-light mt-1 truncate">≈ {{ fmtC(precioPorPiezaEtapa(e)) }} c/u</p>
-                          </td>
-                          <td class="py-1.5 pr-2">
-                            <div class="flex items-center gap-1">
-                              <input v-model.number="e.lote_qty" type="number" min="1" step="1" placeholder="1" class="field-input text-right" style="flex: 1 1 0; min-width: 0;" title="Cuántas unidades incluye ese precio -- ej. $19 por 25 confecciones: precio 19, cantidad 25" @input="recalcProducto(prod)" />
-                              <LinkInput v-model="e.lote_uom" doctype="UOM" placeholder="UDM" class="min-w-0" style="flex: 1 1 0;" />
-                            </div>
-                          </td>
+                          <td class="py-1.5 pr-2"><LinkInput v-model="e.lote_uom" doctype="UOM" placeholder="UDM" class="min-w-0" /></td>
+                          <td class="py-1.5 pr-2"><input v-model.number="e.operaciones_por_pieza" type="number" min="0" step="1" placeholder="1" class="field-input text-right" title="Cuántas veces se aplica esta operación en CADA pieza -- ej. 4 segmentos de cinta reflejante por prenda" @input="recalcPrecioOperacion(e, prod)" /></td>
+                          <td class="py-1.5 pr-2"><div class="relative"><span class="prefix text-xs">$</span><input v-model.number="e.precio_por_operacion" type="number" min="0" step="0.01" class="field-input text-right pl-4" title="Precio de cada una" @input="recalcPrecioOperacion(e, prod)" /></div></td>
+                          <td class="py-1.5 pr-2 text-right font-medium text-ink pt-3.5">{{ fmtC(precioPorPiezaEtapa(e)) }}</td>
                           <td class="py-1.5"><button class="del-btn" @click="removeEtapa(e, prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button></td>
                         </tr>
                       </tbody>
+                      <tfoot v-if="etapasDe(prod.finished_item).length">
+                        <tr class="border-t-2 border-surface-border">
+                          <td colspan="4" class="py-2 text-xs font-semibold text-ink-muted uppercase tracking-wide">Total etapas de manufactura</td>
+                          <td class="py-2 pr-2 text-right text-[11px] text-ink-light">por pieza</td>
+                          <td class="py-2 pr-2 text-right font-semibold text-ink">{{ fmtC(totalEtapas(prod)) }}</td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td colspan="4"></td>
+                          <td class="py-1 pr-2 text-right text-[11px] text-ink-light">× {{ prod.qty || 0 }} pzas</td>
+                          <td class="py-1 pr-2 text-right font-semibold text-ink">{{ fmtC(totalEtapas(prod) * (prod.qty || 0)) }}</td>
+                          <td></td>
+                        </tr>
+                      </tfoot>
                     </table>
-                    <p class="text-[11px] text-ink-light -mt-2 mb-3">La etapa (secuencia) y el sub-ensamblaje que produce se asignan más adelante, en "Preparar Manufactura" — una vez que la orden de venta esté confirmada.</p>
+                    <p class="text-[11px] text-ink-light -mt-2 mb-3">La etapa (secuencia) y el sub-ensamblaje que produce se asignan más adelante, en "Alta de Productos" — una vez que la orden de venta esté confirmada.</p>
                   <button class="add-link" @click="addEtapa(prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Agregar etapa</button>
                 </div>
 
@@ -469,38 +519,10 @@
           </div>
 
           <div v-if="expandedQuotName === q.name" class="bg-surface-raised/40 border-t border-surface-border p-5 space-y-5">
-            <!-- Artículos -->
-            <div class="bg-white rounded-xl border border-surface-border p-5">
-              <div class="flex items-center justify-between mb-3">
-                <p class="text-sm font-semibold text-ink">Artículos</p>
-                <span class="text-[12px] text-ink-muted">Total: <span class="font-semibold text-ink">{{ fmtC(cotItemsTotal) }}</span></span>
-              </div>
-              <table class="w-full table-fixed text-sm mb-3">
-                <thead><tr class="border-b border-surface-border text-left text-xs font-semibold text-ink-light"><th class="py-2">Artículo</th><th class="py-2 w-28 text-right">Cantidad</th><th class="py-2 w-28 text-right">Precio</th><th class="py-2 w-28 text-right">Importe</th><th class="w-7"></th></tr></thead>
-                <tbody>
-                  <tr v-for="(row, idx) in cotItems" :key="idx" class="border-b border-surface-border/60">
-                    <td class="py-1.5 pr-2">
-                      <LinkInput v-if="q.docstatus !== 1" v-model="row.item_code" doctype="Item" placeholder="Artículo…" @update:model-value="onCotItemChange(row)" />
-                      <span v-else class="text-ink text-xs">{{ row.item_name || row.item_code }}</span>
-                      <p v-if="q.docstatus !== 1 && row.item_name && row.item_name !== row.item_code" class="text-[10.5px] text-ink-light mt-0.5 truncate">{{ row.item_name }}</p>
-                    </td>
-                    <td class="py-1.5 pr-2">
-                      <input v-if="q.docstatus !== 1" v-model.number="row.qty" type="number" min="0.001" step="any" class="field-input text-right" @input="recalcCotItem(row)" />
-                      <span v-else class="text-ink text-xs">{{ row.qty }}</span>
-                    </td>
-                    <td class="py-1.5 pr-2">
-                      <div v-if="q.docstatus !== 1" class="relative"><span class="prefix text-xs">$</span><input v-model.number="row.rate" type="number" min="0" step="0.01" class="field-input text-right pl-5" @input="recalcCotItem(row)" /></div>
-                      <span v-else class="text-ink text-xs">{{ fmtC(row.rate) }}</span>
-                    </td>
-                    <td class="py-1.5 pr-2 text-right font-medium text-ink">{{ fmtC(row.amount) }}</td>
-                    <td class="py-1.5"><button v-if="q.docstatus !== 1" class="del-btn" @click="removeCotItem(idx)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button></td>
-                  </tr>
-                  <tr v-if="!cotItems.length"><td colspan="5" class="py-3 text-center text-ink-light text-xs">Sin artículos</td></tr>
-                </tbody>
-              </table>
-              <button v-if="q.docstatus !== 1" class="add-link" @click="addCotItem"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Agregar producto</button>
-              <p v-if="q.docstatus !== 1" class="text-[11px] text-ink-light mt-2">Los cambios de cantidad, precio o artículos se guardan con "Guardar cambios", abajo.</p>
-            </div>
+            <!-- La tabla de artículos se quitó a propósito: los productos/precios ya
+                 quedaron fijos desde Costear, este paso no permite editarlos -- se
+                 siguen guardando/enviando tal cual (cotItems), solo ya no se muestran
+                 ni se pueden tocar aquí. -->
 
             <div class="flex gap-5 items-start">
               <!-- Izquierda: campos manuales -->
@@ -512,13 +534,9 @@
                   <p class="text-[11.5px] font-semibold text-red-700 mb-0.5">Cotización rechazada</p>
                   <p v-if="q.order_lost_reason" class="text-[11.5px] text-red-600 mb-2.5">{{ q.order_lost_reason }}</p>
                   <div class="space-y-1.5">
-                    <button :disabled="advancing" class="w-full text-left text-[11.5px] font-medium text-red-700 bg-white border border-red-200 rounded-lg px-2.5 py-1.5 hover:bg-red-100/50 disabled:opacity-50" @click="cotizarDeNuevo">
-                      Cotizar de nuevo
-                      <span class="block text-[10.5px] font-normal text-red-500">Solo cambió el precio o las condiciones — el costeo se queda igual.</span>
-                    </button>
                     <button :disabled="advancing" class="w-full text-left text-[11.5px] font-medium text-red-700 bg-white border border-red-200 rounded-lg px-2.5 py-1.5 hover:bg-red-100/50 disabled:opacity-50" @click="openRevisionModal">
                       Editar Costeo
-                      <span class="block text-[10.5px] font-normal text-red-500">Hay que ajustar materiales, cantidades u otra parte del costeo.</span>
+                      <span class="block text-[10.5px] font-normal text-red-500">Toda corrección (precio, condiciones, materiales, cantidades…) se hace desde el costeo.</span>
                     </button>
                   </div>
                 </div>
@@ -592,7 +610,12 @@
                   <a class="doc-action justify-center w-full" :href="`/app/quotation/${q.name}`" target="_blank"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>Abrir en ERPNext</a>
 
                   <div v-if="q.docstatus === 1 && q.status !== 'Lost'" class="pt-2 mt-1 border-t border-surface-border space-y-2">
-                    <button class="w-full h-8 text-[12.5px] font-medium text-ink-muted border border-surface-border rounded-lg hover:bg-surface-raised" @click="openAcordadoModal">Fijar Precio</button>
+                    <button
+                      class="w-full h-8 text-[12.5px] font-medium text-ink-muted border border-surface-border rounded-lg hover:bg-surface-raised disabled:opacity-50 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                      :disabled="precioAcordadoStatus.todos_validados"
+                      :title="precioAcordadoStatus.todos_validados ? 'El precio acordado ya está validado -- no se puede volver a fijar/editar desde aquí.' : ''"
+                      @click="openAcordadoModal"
+                    >Fijar Precio</button>
                     <div v-if="precioAcordadoStatus.items.length" class="flex items-center justify-between gap-2 px-0.5">
                       <span class="text-[11px] font-medium" :class="precioAcordadoStatus.todos_validados ? 'text-green-600' : 'text-amber-600'">
                         Precio acordado: {{ precioAcordadoStatus.todos_validados ? 'Validado' : 'Borrador' }} ({{ precioAcordadoStatus.items.length }})
@@ -709,8 +732,9 @@
                 <p class="text-sm font-semibold text-ink mb-1">Datos de la orden de venta</p>
                 <p class="text-[12px] text-ink-muted mb-4">Completa lo que no viene del costeo. Productos y totales son automáticos.</p>
 
-                <label class="field-label">Fecha de envío / entrega</label>
-                <input v-model="soForm.delivery_date" type="date" class="field-input mb-3" :disabled="so.docstatus === 1" />
+                <label class="field-label">Tiempo de entrega (semanas)</label>
+                <input v-model.number="soForm.delivery_weeks" type="number" min="1" step="1" placeholder="Ej: 3" class="field-input mb-1" :disabled="so.docstatus === 1" @input="onDeliveryWeeksChange" />
+                <p class="text-[10.5px] text-ink-light mb-3">{{ soForm.delivery_date ? `Vigencia: ${soForm.delivery_date}` : 'Captura las semanas para calcular la fecha' }}</p>
 
                 <label class="field-label">Condiciones de pago</label>
                 <select v-model="soForm.payment_terms_template" class="field-input mb-3" :disabled="so.docstatus === 1">
@@ -793,8 +817,9 @@
           <p class="text-sm font-semibold text-ink mb-1">Nueva orden de venta</p>
           <p class="text-[12px] text-ink-muted mb-4">Completa lo que no viene del costeo. Productos y totales son automáticos.</p>
 
-          <label class="field-label">Fecha de envío / entrega</label>
-          <input v-model="soForm.delivery_date" type="date" class="field-input mb-3" />
+          <label class="field-label">Tiempo de entrega (semanas)</label>
+          <input v-model.number="soForm.delivery_weeks" type="number" min="1" step="1" placeholder="Ej: 3" class="field-input mb-1" @input="onDeliveryWeeksChange" />
+          <p class="text-[10.5px] text-ink-light mb-3">{{ soForm.delivery_date ? `Vigencia: ${soForm.delivery_date}` : 'Captura las semanas para calcular la fecha' }}</p>
 
           <label class="field-label">Condiciones de pago</label>
           <select v-model="soForm.payment_terms_template" class="field-input mb-3">
@@ -897,7 +922,7 @@
          de pedido, solo la cantidad -- por eso no lleva ActiveSOSelector. -->
     <div v-else-if="activeStep === 3" class="p-5 pb-20 max-w-5xl mx-auto w-full space-y-4">
       <div class="bg-white rounded-xl border border-surface-border p-4">
-        <p class="text-sm font-semibold text-ink mb-1">Preparar Manufactura</p>
+        <p class="text-sm font-semibold text-ink mb-1">Alta de Productos</p>
         <p class="text-[12.5px] text-ink-muted">Ya con la Orden de Venta confirmada: registra los materiales/servicios que quedaron como texto libre y asigna a qué etapa corresponde cada material y qué sub-ensamblaje produce cada etapa -- esto ya no se captura en Costear, para no perder tiempo en un pedido que todavía podría no concretarse.</p>
       </div>
 
@@ -952,82 +977,135 @@
           <button class="add-link" @click="addEtapa(prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Agregar etapa</button>
         </div>
 
-        <div v-if="etapasDe(prod.finished_item).length" :ref="boardRefFor(prod._tid)" class="relative overflow-x-auto pb-2 mb-4">
+        <!-- El tablero (w-max) puede ser más ancho que la página cuando el proceso se
+             abre en muchas ramas; scrollea aquí adentro en vez de desbordar la vista.
+             El ref sigue en el div posicionado, no en el que scrollea, para no cambiar
+             el sistema de coordenadas que usa recomputeDiagram. -->
+        <div v-if="etapasDe(prod.finished_item).length" class="overflow-x-auto pb-2 mb-4">
+        <div :ref="boardRefFor(prod._tid)" class="relative w-max mx-auto">
           <svg class="absolute top-0 left-0 pointer-events-none" :width="diagram[prod._tid]?.width || 0" :height="diagram[prod._tid]?.height || 0">
             <path v-for="(d, i) in diagram[prod._tid]?.paths || []" :key="i" :d="d" fill="none" stroke="#93c5fd" stroke-width="2" />
           </svg>
-          <div class="relative flex gap-6">
-            <div v-for="nivel in nivelesDe(prod.finished_item)" :key="nivel" class="flex-shrink-0 w-64 flex flex-col">
-              <p class="text-[10px] font-semibold text-ink-light uppercase tracking-wide px-0.5 mb-3">Nivel {{ nivel + 1 }}{{ nivel === 0 ? ' · materia prima' : '' }}</p>
-              <div class="flex-1 flex flex-col justify-center gap-3">
-              <template v-for="e in etapasPorNivel(prod.finished_item, nivel)" :key="e._tid">
+          <div class="relative flex flex-col gap-8">
+            <div v-for="(fila, ni) in diagramRows(prod.finished_item)" :key="ni" class="grid gap-3 items-start" :style="{ gridTemplateColumns: `repeat(${fila.cols}, 13rem)` }">
+              <template v-for="{ item, col } in fila.slots" :key="item.key">
+
+                <!-- ── Tarjeta HUB: una por etapa (servicio/proveedor/precio/recibe-de/materiales) ── -->
                 <div
-                  :ref="cardRefFor(e._tid)"
-                  class="etapa-card rounded-lg p-3 space-y-2 transition-all"
+                  v-if="item.kind === 'hub'"
+                  :ref="cardRefFor(item.etapa._tid)"
+                  :style="{ gridColumnStart: col + 1 }"
+                  class="etapa-card relative w-52 justify-self-center rounded-lg p-2.5 space-y-1.5 transition-all"
                   :class="[
-                    draggedTid === e._tid ? 'opacity-30' : 'opacity-100',
-                    dropIndicator.tid === e._tid ? 'border-2 border-brand-400 bg-brand-50/60' : 'border border-surface-border bg-white',
+                    draggedTid === item.etapa._tid ? 'opacity-30' : 'opacity-100',
+                    dropIndicator.tid === item.etapa._tid ? 'border-2 border-brand-400 bg-brand-50/60' : 'border border-surface-border bg-white',
                   ]"
-                  @dragover.prevent="onEtapaCardDragOver($event, e)"
+                  @dragover.prevent="onEtapaCardDragOver($event, item.etapa)"
                   @drop.prevent="onEtapaDrop(prod)"
                 >
+                  <!-- Puerto de entrada: los conectores se dibujan hasta el centro del
+                       borde superior de la tarjeta, que es justo donde queda este punto. -->
+                  <span class="diagram-port" aria-hidden="true"></span>
                   <div class="flex items-center justify-between gap-1">
                     <span
-                      class="text-ink-light cursor-grab active:cursor-grabbing select-none flex-shrink-0 px-0.5"
+                      class="text-ink-light cursor-grab active:cursor-grabbing select-none flex-shrink-0 px-0.5 text-xs"
                       title="Arrastra para reordenar"
                       draggable="true"
-                      @dragstart="onEtapaDragStart($event, e)"
+                      @dragstart="onEtapaDragStart($event, item.etapa)"
                       @dragend="onEtapaDragEnd"
                     >⠿</span>
-                    <LinkInput v-model="e.servicio" doctype="Item" :filters="ITEM_FILTERS.servicio" :error="isDuplicateServicio(e, prod.finished_item)" class="flex-1 min-w-0" placeholder="Servicio…" @update:model-value="onEtapaServicioChange(e, prod)" />
-                    <button class="del-btn flex-shrink-0" @click="removeEtapa(e, prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
+                    <LinkInput v-model="item.etapa.servicio" doctype="Item" :filters="ITEM_FILTERS.servicio" class="flex-1 min-w-0 text-[12px]" placeholder="Servicio…" @update:model-value="onEtapaServicioChange(item.etapa, prod)" />
+                    <button class="del-btn flex-shrink-0" title="Duplicar etapa — misma operación sobre otra pieza" @click="duplicarEtapa(item.etapa, prod)"><svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg></button>
+                    <button class="del-btn flex-shrink-0" title="Eliminar etapa" @click="removeEtapa(item.etapa, prod)"><svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
                   </div>
-                  <p v-if="isDuplicateServicio(e, prod.finished_item)" class="text-[10.5px] text-red-500 -mt-1">Este servicio se repite en otra etapa de este producto.</p>
-                  <p class="text-[11px] text-ink-muted break-words">{{ e.proveedor || "sin proveedor" }} · {{ fmtC(e.precio_servicio) }}</p>
+                  <p class="text-[10.5px] text-ink-muted break-words truncate">
+                    {{ item.etapa.proveedor || "sin proveedor" }} · {{ fmtC(item.etapa.precio_servicio) }}
+                    <span v-if="vecesServicio(item.etapa, prod.finished_item) > 1" class="text-ink-xlight" :title="`Este mismo servicio se aplica en ${vecesServicio(item.etapa, prod.finished_item)} etapas, cada una sobre una pieza distinta`"> · ↻{{ vecesServicio(item.etapa, prod.finished_item) }}</span>
+                  </p>
 
-                  <p class="text-[10.5px] text-ink-light italic">{{ recibeDeResumen(e, prod.finished_item) }}</p>
+                  <p class="text-[10px] text-ink-light italic truncate" :title="recibeDeResumen(item.etapa, prod.finished_item)">{{ recibeDeResumen(item.etapa, prod.finished_item) }}</p>
                   <div>
-                    <label class="field-label mb-0.5">Recibe de</label>
+                    <label class="field-label mb-0.5 text-[9.5px]">Recibe de</label>
                     <div class="flex flex-wrap gap-1">
                       <button
-                        v-for="cand in candidatosRecibeDe(prod.finished_item, e)"
-                        :key="cand._tid"
+                        v-for="cand in candidatosRecibeDe(prod.finished_item, item.etapa)"
+                        :key="cand.nodeKey"
                         type="button"
-                        class="text-[10.5px] px-1.5 py-0.5 rounded-full border transition-colors"
-                        :class="recibeDeIncludes(e, cand) ? 'bg-brand-100 border-brand-300 text-brand-700 font-semibold' : 'bg-white border-surface-border text-ink-light hover:bg-surface-raised'"
-                        @click="toggleRecibeDe(e, cand, prod)"
-                      >{{ cand.servicio || ('Etapa ' + cand.etapa) }}</button>
-                      <span v-if="!candidatosRecibeDe(prod.finished_item, e).length" class="text-[10.5px] text-ink-xlight italic">etapa inicial — no recibe de otra etapa</span>
+                        class="text-[9.5px] px-1.5 py-0.5 rounded-full border transition-colors"
+                        :class="recibeDeIncludes(item.etapa, cand) ? 'bg-brand-100 border-brand-300 text-brand-700 font-semibold' : 'bg-white border-surface-border text-ink-light hover:bg-surface-raised'"
+                        @click="toggleRecibeDe(item.etapa, cand, prod)"
+                      >{{ candidatoLabel(cand) }}</button>
+                      <span v-if="!candidatosRecibeDe(prod.finished_item, item.etapa).length" class="text-[9.5px] text-ink-xlight italic">etapa inicial</span>
                     </div>
                   </div>
 
                   <div>
-                    <label class="field-label mb-0.5">Materiales que usa</label>
-                    <div class="flex flex-wrap gap-1">
-                      <button
-                        v-for="m in materialesDe(prod.finished_item)"
-                        :key="m._tid"
-                        type="button"
-                        class="text-[10.5px] px-1.5 py-0.5 rounded-full border transition-colors"
-                        :class="materialBadgeClass(m, e)"
-                        @click="toggleMaterialEtapa(m, e)"
-                      >{{ m.item || "material sin nombre" }}<span v-if="m.etapa && m.etapa !== e.stage_id" class="opacity-70"> (otra etapa)</span></button>
-                      <span v-if="!materialesDe(prod.finished_item).length" class="text-[10.5px] text-ink-xlight italic">no hay materiales capturados en Costear</span>
+                    <label class="field-label mb-0.5 text-[9.5px]">Materiales</label>
+                    <div class="flex flex-col gap-1">
+                      <div v-for="m in materialesDe(prod.finished_item)" :key="m._tid" class="flex items-center gap-1">
+                        <button
+                          type="button"
+                          class="text-[9.5px] px-1.5 py-0.5 rounded-full border transition-colors flex-1 min-w-0 truncate text-left"
+                          :class="materialBadgeClass(m, item.etapa)"
+                          :title="matRow(m, item.etapa) ? 'Quitar este material de la etapa' : `Asignar a esta etapa (sin repartir: ${fmtQty(matPendiente(m))} de ${fmtQty(matTotal(m))} ${m.internal_uom || 'UDM'})`"
+                          @click="toggleMaterialEtapa(m, item.etapa)"
+                        >{{ m.item || "sin nombre" }}</button>
+                        <!-- Cantidad que consume ESTA etapa, en la UDM interna del costeo
+                             (ej. 4 de cinta reflejante repartidas 2 y 2 entre dos etapas). -->
+                        <template v-if="matRow(m, item.etapa)">
+                          <input
+                            :value="matQty(m, item.etapa)"
+                            type="number" min="0" step="0.0001"
+                            class="field-input text-[10px] w-12 flex-shrink-0 text-right px-1"
+                            :title="`${m.internal_uom || 'UDM'} por pieza en esta etapa`"
+                            @input="setMatQty(m, item.etapa, $event.target.value)"
+                          />
+                          <span class="text-[9px] text-ink-xlight flex-shrink-0 w-8 truncate" :title="m.internal_uom">{{ (m.internal_uom || '').split(' ')[0] || 'UDM' }}</span>
+                        </template>
+                        <span v-else class="text-[9px] text-ink-xlight flex-shrink-0 w-[5rem] text-right truncate">{{ matEnAlgunaEtapa(m) ? 'en otra etapa' : fmtQty(matTotal(m)) + ' sin asignar' }}</span>
+                      </div>
+                      <span v-if="!materialesDe(prod.finished_item).length" class="text-[9.5px] text-ink-xlight italic">ninguno</span>
                     </div>
                   </div>
 
-                  <div v-if="!etapaEsTerminal(e, prod.finished_item)">
+                  <div v-if="!salidasDe(item.etapa).length && !etapaEsTerminal(item.etapa, prod.finished_item)">
                     <div class="flex items-center justify-between mb-0.5">
-                      <label class="field-label mb-0">Sub-ensamblaje que produce</label>
-                      <button type="button" class="text-[10px] font-medium text-brand-600 hover:text-brand-700 flex-shrink-0" @click="e.subensamblaje = subensamblajeSugerido(e, prod); manufacturaGuardada = false">Usar sugerido</button>
+                      <label class="field-label mb-0 text-[9.5px]">Sub-ensamblaje</label>
+                      <div class="flex items-center gap-1.5 flex-shrink-0">
+                        <button type="button" class="text-[9.5px] font-medium text-brand-600 hover:text-brand-700" @click="item.etapa.subensamblaje = subensamblajeSugerido(item.etapa, prod); manufacturaGuardada = false">Sugerido</button>
+                        <button type="button" class="text-[9.5px] font-medium text-ink-light hover:text-ink" title="Esta etapa produce varias piezas distintas (ej. corte que da manga izquierda, manga derecha y frente)" @click="convertirAMultiSalida(item.etapa)">+ Salidas</button>
+                      </div>
                     </div>
-                    <textarea v-model="e.subensamblaje" rows="2" class="field-input resize-none leading-snug" :class="isDuplicateSubensamblaje(e, prod.finished_item) ? 'border-red-400' : ''" :placeholder="subensamblajeSugerido(e, prod)" @input="manufacturaGuardada = false"></textarea>
-                    <p v-if="isDuplicateSubensamblaje(e, prod.finished_item)" class="text-[10.5px] text-red-500 mt-1">Este sub-ensamblaje se repite en otra etapa de este producto.</p>
+                    <textarea v-model="item.etapa.subensamblaje" rows="2" class="field-input resize-none leading-snug text-[11px]" :class="isDuplicateSubensamblaje(item.etapa, prod.finished_item) ? 'border-red-400' : ''" :placeholder="subensamblajeSugerido(item.etapa, prod)" @input="manufacturaGuardada = false"></textarea>
+                    <p v-if="isDuplicateSubensamblaje(item.etapa, prod.finished_item)" class="text-[10px] text-red-500 mt-1">Se repite en otra etapa.</p>
+                  </div>
+                  <div v-else-if="salidasDe(item.etapa).length" class="flex items-center justify-between">
+                    <p class="text-[10px] text-ink-light italic">{{ salidasDe(item.etapa).length }} salida{{ salidasDe(item.etapa).length === 1 ? '' : 's' }} ↓</p>
+                    <button type="button" class="text-[9.5px] font-medium text-brand-600 hover:text-brand-700 flex-shrink-0" @click="agregarSalida(item.etapa)">+ Agregar</button>
                   </div>
                   <div v-else>
-                    <label class="field-label mb-0.5">Sub-ensamblaje que produce</label>
-                    <div class="field-input bg-surface-raised/60 text-ink-light italic truncate" title="La etapa terminal siempre produce el producto terminado">= Producto terminado</div>
+                    <div class="field-input bg-surface-raised/60 text-ink-light italic truncate text-[10.5px]" title="La etapa terminal siempre produce el producto terminado">= Producto terminado</div>
                   </div>
+                </div>
+
+                <!-- ── Tarjeta SALIDA: delgada, una por sub-ensamblaje de una etapa multi-salida ── -->
+                <div
+                  v-else
+                  :ref="salidaAnchorRefFor(item.salida.salida_id)"
+                  :style="{ gridColumnStart: col + 1 }"
+                  class="salida-card relative w-36 justify-self-center rounded-lg border border-dashed border-brand-300 bg-brand-50/30 p-2 space-y-1"
+                >
+                  <span class="diagram-port" aria-hidden="true"></span>
+                  <p class="text-[9px] font-semibold text-brand-600 uppercase tracking-wide truncate" :title="item.etapa.servicio">{{ item.etapa.servicio || 'salida' }}</p>
+                  <div v-if="salidaEsTerminal(item.salida, prod.finished_item)" class="field-input text-[10.5px] bg-surface-raised/60 text-ink-light italic truncate" title="Ninguna otra etapa recibe de esta salida — se trata como producto terminado">= Terminado</div>
+                  <input v-else v-model="item.salida.subensamblaje" type="text" class="field-input text-[10.5px]" :class="isDuplicateSalidaSubensamblaje(item.salida, item.etapa, prod.finished_item) ? 'border-red-400' : ''" :placeholder="salidaSugerida(item.salida, item.etapa, prod, salidasDe(item.etapa).indexOf(item.salida))" @input="manufacturaGuardada = false" />
+                  <div class="flex items-center gap-1">
+                    <input v-model.number="item.salida.qty_salida" type="number" min="0" step="1" class="field-input text-[10px] flex-1 min-w-0 text-right" title="Cuántas piezas de esta salida produce la operación por cada prenda" @input="syncPctSalidas(item.etapa)" />
+                    <span class="text-[9px] text-ink-light flex-shrink-0">pza</span>
+                    <button type="button" class="del-btn flex-shrink-0" title="Quitar salida" @click="quitarSalida(item.etapa, item.salida, prod)"><svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
+                  </div>
+                  <p v-if="salidasDe(item.etapa).length > 1" class="text-[9px] text-ink-xlight" title="Del costo de la etapa (servicio + materia prima), que se paga y se consume una sola vez aunque salgan varias piezas">{{ pctSalida(item.salida, item.etapa) }}% del costo</p>
+                  <p v-if="isDuplicateSalidaSubensamblaje(item.salida, item.etapa, prod.finished_item)" class="text-[9.5px] text-red-500">Nombre repetido.</p>
                 </div>
               </template>
               </div>
@@ -1035,6 +1113,10 @@
           </div>
         </div>
         <p v-else class="text-[12.5px] text-ink-light py-3">Todavía no hay etapas para este producto — agrega la primera con "Agregar etapa".</p>
+        <p v-if="salidasSinCantidad(prod.finished_item)" class="text-[10.5px] text-amber-600 -mt-2 mb-3">Alguna salida quedó en 0 piezas — ponle cuántas produce la operación por prenda.</p>
+        <p v-for="m in materialesDesbalanceados(prod.finished_item)" :key="'desb' + m._tid" class="text-[10.5px] text-amber-600 -mt-2 mb-1">
+          {{ m.item || "Un material" }}: repartiste {{ fmtQty(matAsignado(m)) }} de {{ fmtQty(matTotal(m)) }} {{ m.internal_uom || 'UDM' }} — los BOMs solo van a consumir lo repartido.
+        </p>
       </div>
 
       <div class="flex justify-end items-center gap-2">
@@ -1098,7 +1180,7 @@
             <div class="grid grid-cols-3 gap-4">
               <div>
                 <label class="field-label">Almacén materias primas</label>
-                <LinkInput v-if="!planValidated" v-model="planWh" doctype="Warehouse" placeholder="Almacén MP…" />
+                <LinkInput v-if="!planValidated" v-model="planWh" doctype="Warehouse" :filters="warehouseFilters" placeholder="Almacén MP…" />
                 <div v-else class="field-input bg-surface-raised/60">{{ planDetail.for_warehouse || '—' }}</div>
               </div>
               <div>
@@ -1270,7 +1352,7 @@
               <OrdenManufacturaForm
                 class="mt-3"
                 :general="omGeneral" :om-cab="omCab" :om-dama="omDama" :om-proc="omProc" :om-tablas="omTablas" :om-archivos="omArchivos"
-                :uploading="omUploading" :disabled="subValidated || !omEsMaestra" :OM_CAB="OM_CAB" :OM_DAMA="OM_DAMA" :talla-total="tallaTotal"
+                :uploading="omUploading" :disabled="!omEsMaestra" :OM_CAB="OM_CAB" :OM_DAMA="OM_DAMA" :talla-total="tallaTotal"
                 :medidas-templates="medidasTemplates"
                 @add-proceso="addProceso" @remove-proceso="removeProceso" @add-tabla="addTabla" @add-tabla-plantilla="addTablaPlantilla" @remove-tabla="removeTabla"
                 @add-columna="addColumna" @remove-columna="removeColumna" @add-fila="addFila" @remove-fila="removeFila"
@@ -1285,12 +1367,13 @@
               <input v-model.number="nuevoLoteForm.qty" type="number" min="0" step="1" placeholder="Cantidad" :disabled="nuevoLoteForm.loading" class="field-input flex-1" />
               <input v-model="nuevoLoteForm.schedule_date" type="date" class="field-input w-40" />
               <button class="doc-action" @click="cerrarNuevoLote">Cancelar</button>
-              <button :disabled="advancing || nuevoLoteForm.loading" class="h-8 px-3 text-[12.5px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="crearNuevoLote">Crear lote</button>
+              <button :disabled="advancing || nuevoLoteForm.loading" class="h-8 px-3 text-[12.5px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="crearNuevoLote">Abrir lote</button>
             </div>
+            <p class="text-[11.5px] text-ink-muted">Se encargan de una vez TODAS las etapas del producto con esta cantidad y fecha. La materia prima se envía después, taller por taller.</p>
             <p v-if="nuevoLoteForm.loading" class="text-[11px] text-ink-light">Revisando materia prima disponible…</p>
             <p v-else-if="nuevoLoteForm.limitadoPorStock" class="text-[11.5px] text-amber-700 flex items-start gap-1.5">
               <svg class="w-4 h-4 flex-shrink-0 mt-px" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.71-3l-6.93-12a2 2 0 00-3.42 0l-6.93 12a2 2 0 001.71 3z"/></svg>
-              Cantidad sugerida según la materia prima disponible en stock — puedes ajustarla a mano.
+              Cantidad sugerida según la materia prima disponible para la primera etapa — puedes ajustarla a mano.
             </p>
           </template>
         </div>
@@ -1443,7 +1526,7 @@
                   <OrdenManufacturaForm
                     class="mt-3"
                     :general="omGeneral" :om-cab="omCab" :om-dama="omDama" :om-proc="omProc" :om-tablas="omTablas" :om-archivos="omArchivos"
-                    :uploading="omUploading" :disabled="subValidated || !omEsMaestra" :OM_CAB="OM_CAB" :OM_DAMA="OM_DAMA" :talla-total="tallaTotal"
+                    :uploading="omUploading" :disabled="!omEsMaestra" :OM_CAB="OM_CAB" :OM_DAMA="OM_DAMA" :talla-total="tallaTotal"
                     :medidas-templates="medidasTemplates"
                     @add-proceso="addProceso" @remove-proceso="removeProceso" @add-tabla="addTabla" @add-tabla-plantilla="addTablaPlantilla" @remove-tabla="removeTabla"
                     @add-columna="addColumna" @remove-columna="removeColumna" @add-fila="addFila" @remove-fila="removeFila"
@@ -1553,9 +1636,15 @@
                       </table>
                     </div>
                     <p v-else class="prod-empty">La orden de subcontratación no tiene materia prima ligada (revisa el BOM de subcontratación).</p>
-                    <div class="flex items-center gap-2 mt-3">
+                    <!-- Camino rápido: "ya le mandé el material" hace transferencia +
+                         validación + recibo en borrador de un jalón. El camino largo
+                         (crear la transferencia y revisarla antes de validar) se
+                         conserva para cuando hay que ajustar almacenes o cantidades. -->
+                    <div class="flex items-center gap-2 mt-3 flex-wrap">
+                      <p class="text-[11.5px] text-ink-muted">Al enviar, el recibo queda listo para que confirmes cuánto entregó el taller.</p>
                       <div class="flex-1"></div>
-                      <button :disabled="advancing || !scoSel?.supplied_items?.length" class="h-8 px-4 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex items-center gap-1.5" @click="transferirMaterial"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>Crear transferencia</button>
+                      <button :disabled="advancing || !scoSel?.supplied_items?.length" class="doc-action" @click="transferirMaterial">Revisar transferencia antes</button>
+                      <button :disabled="advancing || !scoSel?.supplied_items?.length" class="h-8 px-4 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex items-center gap-1.5" @click="enviarMaterialTaller()"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>Enviar al taller</button>
                     </div>
                   </div>
                   <template v-else>
@@ -2087,6 +2176,11 @@ import { useToast } from "@/composables/useToast.js";
 import { useDocumentActions } from "@/composables/useDocumentActions.js";
 import { useProduccion } from "@/composables/useProduccion.js";
 
+// Almacenes / centros de costos de la compañía elegida -- se acotan a ella para que
+// el buscador no ofrezca los de otra empresa del mismo sitio.
+const warehouseFilters = computed(() => [["company", "=", form.compania || ""], ["is_group", "=", 0], ["disabled", "=", 0]]);
+const costCenterFilters = computed(() => [["company", "=", form.compania || ""], ["is_group", "=", 0]]);
+const faltanAlmacenes = computed(() => !form.almacen_materias_primas || !form.almacen_trabajo_en_proceso || !form.centro_de_costos);
 const ITEM_FILTERS = {
   terminado: [["item_group", "=", "Productos Terminados"]],
   mp:        [["item_group", "in", ["Materia prima", "Sub-Ensamblajes", "Consumible"]]],
@@ -2307,7 +2401,6 @@ const cotForm = reactive({
 // get_quotation (mismo endpoint que usa la página dedicada de Cotización) y se guarda
 // con actualizar_cotizacion cuando se le da "Guardar cambios".
 const cotItems = ref([]);
-const cotItemsTotal = computed(() => cotItems.value.reduce((s, r) => s + (r.amount || 0), 0));
 async function loadCotItems(name) {
   if (!name) { cotItems.value = []; return; }
   try {
@@ -2338,23 +2431,21 @@ async function toggleQuotation(q) {
   applyQuotToForm(q);
   await loadCotItems(q.name);
 }
-function addCotItem() {
-  cotItems.value.push({ item_code: "", item_name: "", qty: 1, rate: 0, amount: 0 });
-}
-function removeCotItem(idx) { cotItems.value.splice(idx, 1); }
-function recalcCotItem(row) { row.amount = round2((row.qty || 0) * (row.rate || 0)); }
-async function onCotItemChange(row) {
-  if (!row.item_code) return;
-  try {
-    const res = await call("costeo_yelke.api.quotation_api.get_item_details_for_quotation", { item_code: row.item_code, price_list: cotForm.selling_price_list || "" });
-    if (res) { row.item_name = res.item_name || row.item_code; row.rate = res.rate || 0; }
-  } catch { /* ignore */ }
-  recalcCotItem(row);
-}
 const soForm = reactive({
-  delivery_date: "", payment_terms_template: "", tc_name: "", po_no: "",
+  delivery_date: "", delivery_weeks: null, payment_terms_template: "", tc_name: "", po_no: "",
   currency: "MXN", selling_price_list: "", taxes_and_charges: "", contact_email: "", contact_mobile: "",
 });
+// El usuario captura el tiempo de entrega en SEMANAS (lo que de verdad conoce al
+// cotizar) -- delivery_date (la fecha real que se guarda en la Orden de Venta
+// nativa) se calcula sola a partir de hoy + esas semanas, en vez de pedirle que
+// calcule la fecha exacta a mano.
+function onDeliveryWeeksChange() {
+  const weeks = Number(soForm.delivery_weeks);
+  if (!weeks || weeks <= 0) { soForm.delivery_date = ""; return; }
+  const d = new Date();
+  d.setDate(d.getDate() + Math.round(weeks * 7));
+  soForm.delivery_date = d.toISOString().slice(0, 10);
+}
 // Igual patrón que las cotizaciones: puede haber varias OV bajo un mismo Costeo
 // (réplicas de un pedido recurrente) -- acordeón, solo una expandida a la vez, y esa
 // misma es la que "activa" (activeSOName) filtra Producir/Enviar/Facturar/Reportar.
@@ -2362,6 +2453,15 @@ const expandedSOName = ref(null);
 let soAutoExpandDone = false;
 function applySOToForm(so) {
   soForm.delivery_date = so.delivery_date || "";
+  // Reconstruye las semanas mostradas a partir de la fecha ya guardada (redondeo
+  // razonable) -- solo para mostrar algo sensato al reabrir; en cuanto el usuario
+  // vuelve a tocar el campo de semanas, delivery_date se recalcula desde cero.
+  if (so.delivery_date) {
+    const dias = Math.round((new Date(so.delivery_date) - new Date(today())) / 86400000);
+    soForm.delivery_weeks = dias > 0 ? Math.round(dias / 7) : null;
+  } else {
+    soForm.delivery_weeks = null;
+  }
   soForm.payment_terms_template = so.payment_terms_template || "";
   soForm.tc_name = so.tc_name || "";
   soForm.po_no = so.po_no || "";
@@ -2404,22 +2504,52 @@ const form = reactive({ titulo: "", cliente: "", fecha: today(), compania: "", p
 // petición vigente, una respuesta vieja (p.ej. de "Teg") puede resolverse
 // después de la buena y borrar los almacenes en silencio, bloqueando el guardado.
 let companyDefaultsReq = 0;
+// `cargandoDoc` evita que abrir un costeo ya guardado dispare la autodetección y
+// PISE los almacenes con los que se guardó: fillFromDoc asigna la compañía y luego
+// los almacenes, pero el watcher es asíncrono y su respuesta llegaba después,
+// sobrescribiéndolos (y borrándolos si esa compañía no los tiene con el nombre
+// esperado).
+let cargandoDoc = false;
 async function applyCompanyDefaults(company) {
-  if (!company) return;
+  if (!company || cargandoDoc) return;
   const req = ++companyDefaultsReq;
   try {
     const r = await call("costeo_yelke.api.costeo_api.get_company_defaults", { company });
     if (req !== companyDefaultsReq) return;
-    form.centro_de_costos = r?.centro_de_costos || "";
-    form.almacen_materias_primas = r?.almacen_materias_primas || "";
-    form.almacen_trabajo_en_proceso = r?.almacen_trabajo_en_proceso || "";
+    // Sólo se escribe lo que el backend SÍ pudo resolver. Si no encontró un almacén,
+    // se respeta lo que el usuario haya capturado a mano en vez de borrárselo -- ése
+    // era el callejón sin salida: se limpiaba el campo y no había dónde corregirlo.
+    if (r?.centro_de_costos) form.centro_de_costos = r.centro_de_costos;
+    if (r?.almacen_materias_primas) form.almacen_materias_primas = r.almacen_materias_primas;
+    if (r?.almacen_trabajo_en_proceso) form.almacen_trabajo_en_proceso = r.almacen_trabajo_en_proceso;
   } catch { /* ignore */ }
 }
-watch(() => form.compania, (val) => applyCompanyDefaults(val));
+// Al CAMBIAR de compañía (no al cargar) los almacenes de la anterior ya no aplican:
+// se limpian para que la autodetección -- o el usuario -- ponga los de la nueva.
+watch(() => form.compania, (val, prev) => {
+  if (prev && val !== prev && !cargandoDoc) {
+    form.centro_de_costos = "";
+    form.almacen_materias_primas = "";
+    form.almacen_trabajo_en_proceso = "";
+  }
+  applyCompanyDefaults(val);
+});
 const errors = reactive({});
 const productos = ref([]);
 const detalles = ref([]);
 const etapas = ref([]);
+// Salidas de etapas con más de un resultado nombrado (ej. un corte que produce
+// manga izquierda / manga derecha / frente por separado). Vive como lista PLANA
+// hermana de 'etapas' (igual que 'detalles'/'tallas'), relacionada por stage_id --
+// no anidada dentro de cada fila de 'etapas': Frappe no guarda una tabla dentro
+// de otra tabla hija (ver patch v0_2_18), así que el modelo del SPA espeja
+// exactamente cómo vive en el backend.
+const salidasEtapa = ref([]);
+// Reparto de un material entre varias etapas, con cantidad explícita por etapa
+// (ej. 4 de cinta reflejante = 2 en la manga + 2 en el frente). Misma forma que
+// 'salidasEtapa': lista PLANA hermana de 'detalles', relacionada por material_id +
+// stage_id, espejo de Costeo.tabla_materiales_etapa (patch v0_2_19).
+const materialesEtapa = ref([]);
 const tallas = ref([]);
 const allSuppliers = ref([]);
 const allTallas = ref([]);
@@ -2447,7 +2577,7 @@ const {
   loadSubcontratos, crearSubcontratos, selectSub, guardarSub, validarSub,
   flujo, scoSel, scoValidated, scoForm, scoCostos,
   guardarSco, validarSco, addCosto, removeCosto,
-  transDoc, transForm, transCostos, transValidated, transferDone, transferirMaterial, guardarTrans, validarTransferencia,
+  transDoc, transForm, transCostos, transValidated, transferDone, transferirMaterial, guardarTrans, validarTransferencia, enviarMaterialTaller,
   addCostoTrans, removeCostoTrans,
   scr, scrForm, scrCostos, scrValidated, crearReciboSub, guardarScr, validarScr,
   addCostoScr, removeCostoScr,
@@ -2675,15 +2805,23 @@ const phaseReady = computed(() => {
   return true;
 });
 const canAdvance = computed(() => checklist.value.every(i => i.ok) && phaseReady.value);
-// "Registrar entrega" y "Preparar manufactura" solo cambian de pestaña (ver
-// advance()) -- no crean ni validan ningún documento, así que no deben esperar el
-// checklist completo. En particular, "Etapas con servicio y proveedor" ya no tiene
-// sentido como requisito PREVIO a "Preparar manufactura": ese es justo el paso
-// donde las etapas se arman (agregar/quitar, asignar servicio) -- exigirlas antes
-// de poder entrar bloqueaba el botón aunque la OV ya estuviera validada.
+// "Preparar manufactura" solo cambia de pestaña (ver advance()) -- no crea ni
+// valida ningún documento, así que no debe esperar el checklist completo. En
+// particular, "Etapas con servicio y proveedor" ya no tiene sentido como
+// requisito PREVIO a "Preparar manufactura": ese es justo el paso donde las
+// etapas se arman (agregar/quitar, asignar servicio) -- exigirlas antes de
+// poder entrar bloqueaba el botón aunque la OV ya estuviera validada.
+// "Registrar entrega" (enviar) NO entra en esta excepción de "sin checklist" --
+// antes se dejaba pasar siempre (bug reportado: el botón se desbloqueaba sin
+// haber recibido nada de producción todavía). Pero tampoco debe esperar el
+// 100% (canAdvance/prodComplete.complete): las remisiones son POR LOTE, así que
+// basta con que al menos un lote ya esté recibido para poder ir registrando
+// entregas parciales conforme van llegando -- exigir el 100% aquí bloquearía
+// ese flujo de entregas parciales a propósito soportado en "Enviar".
 const canAdvanceCta = computed(() => {
   const action = cta.value?.action;
-  if (action === "enviar" || action === "ir_preparar_manufactura") return true;
+  if (action === "ir_preparar_manufactura") return true;
+  if (action === "enviar") return (prodComplete.lotes_recibidos || 0) > 0;
   if (action === "pasar_produccion") return manufacturaGuardada.value;
   return canAdvance.value;
 });
@@ -2795,35 +2933,84 @@ function esUltimaEtapa(e, fi) {
 // niveles (profundidad en el grafo) para agrupar visualmente lo que puede hacerse
 // en paralelo, y qué etapa es TERMINAL (nadie la referencia como entrada = produce
 // el producto terminado, puede ser resultado de varias ramas que convergen).
+// Salidas (ver salidasEtapa arriba): tabla plana hermana de 'etapas', relacionada
+// por stage_id -- igual que en el backend (_explode_stage_nodes en costeo.py).
+function salidasDe(e) { return salidasEtapa.value.filter(s => s.stage_id === e.stage_id); }
+
+// Expande cada etapa en 1+ "nodos" -- uno por cada fila de salidasDe(e), o uno
+// solo implícito si no tiene ninguna (el caso normal, espejo exacto de
+// _explode_stage_nodes en costeo.py). nodeKey identifica al nodo en el grafo
+// (stage_id si no hay salidas propias, salida_id si sí); etapa apunta siempre a
+// la fila de 'etapas' dueña (servicio/proveedor/precio se leen de ahí, nunca se
+// duplican).
+function stageNodesFor(fi) {
+  const nodes = [];
+  etapasDe(fi).forEach(e => {
+    const salidas = salidasDe(e);
+    if (!salidas.length) {
+      nodes.push({ nodeKey: e.stage_id, parentStageKey: e.stage_id, etapa: e, salida: null, subensamblaje: e.subensamblaje || "" });
+      return;
+    }
+    salidas.forEach(s => {
+      nodes.push({ nodeKey: s.salida_id, parentStageKey: e.stage_id, etapa: e, salida: s, subensamblaje: s.subensamblaje || "" });
+    });
+  });
+  return nodes;
+}
+
+// Espejo en JS de _resolve_stage_graph (costeo.py): si NINGUNA etapa del producto
+// tiene recibe_de capturado, cae al modo lineal de siempre (stageSortKey, cada
+// nodo recibe solo del inmediato anterior) -- así un costeo que nunca usó
+// procesos en paralelo ni salidas múltiples se ve exactamente igual que antes.
+// En cuanto se usa recibe_de, calcula niveles (profundidad en el grafo) para
+// agrupar visualmente lo que puede hacerse en paralelo, y qué NODO es TERMINAL
+// (nadie lo referencia como entrada = produce el producto terminado, puede ser
+// resultado de varias ramas que convergen). info queda indexada por nodeKey.
 function stageGraphFor(fi) {
-  const list = etapasDe(fi);
-  const anyWired = list.some(e => (e.recibe_de || "").trim());
+  const nodes = stageNodesFor(fi);
+  const anyWired = etapasDe(fi).some(e => (e.recibe_de || "").trim());
   const info = new Map();
 
   if (!anyWired) {
-    const ordered = list.slice().sort((a, b) => {
-      const ka = stageSortKey(a), kb = stageSortKey(b);
+    const ordered = nodes.slice().sort((a, b) => {
+      const ka = stageSortKey(a.etapa), kb = stageSortKey(b.etapa);
       if (ka[0] !== kb[0]) return ka[0] - kb[0];
-      return ka[1] < kb[1] ? -1 : ka[1] > kb[1] ? 1 : 0;
+      if (ka[1] !== kb[1]) return ka[1] < kb[1] ? -1 : 1;
+      return 0; // varias salidas de la misma etapa: conserva su orden original
     });
-    ordered.forEach((e, i) => {
-      info.set(e._tid, { upstream: i > 0 ? [ordered[i - 1]] : [], isTerminal: i === ordered.length - 1, nivel: i });
+    ordered.forEach((n, i) => {
+      info.set(n.nodeKey, { upstream: i > 0 ? [ordered[i - 1]] : [], isTerminal: i === ordered.length - 1, nivel: i, node: n });
     });
     return { info, ordered };
   }
 
-  const byStageId = new Map();
-  list.forEach(e => { if (e.stage_id) byStageId.set(e.stage_id, e); });
-  const consumed = new Set();
-  list.forEach(e => {
-    const deps = (e.recibe_de || "").split(",").map(s => s.trim()).filter(Boolean);
-    const upstream = deps.map(d => byStageId.get(d)).filter(Boolean);
-    info.set(e._tid, { upstream, isTerminal: false, nivel: 0 });
-    deps.forEach(d => { if (byStageId.has(d)) consumed.add(d); });
+  const byNodeKey = new Map();
+  nodes.forEach(n => byNodeKey.set(n.nodeKey, n));
+  const byParentKey = new Map();
+  nodes.forEach(n => {
+    if (!byParentKey.has(n.parentStageKey)) byParentKey.set(n.parentStageKey, []);
+    byParentKey.get(n.parentStageKey).push(n);
   });
-  list.forEach(e => { info.get(e._tid).isTerminal = e.stage_id ? !consumed.has(e.stage_id) : true; });
+  // Match directo (salida_id, o stage_id de una etapa sin salidas propias)
+  // primero; si no matchea nada se cae al legado ambiguo (stage_id de una etapa
+  // que ahora tiene varias salidas: se toma la primera) -- mismo criterio que
+  // resolve_token en _resolve_stage_graph (costeo.py).
+  function resolveToken(tok) {
+    if (byNodeKey.has(tok)) return byNodeKey.get(tok);
+    const siblings = byParentKey.get(tok);
+    return siblings && siblings.length ? siblings[0] : null;
+  }
 
-  let remaining = list.slice();
+  const consumed = new Set();
+  nodes.forEach(n => {
+    const deps = (n.etapa.recibe_de || "").split(",").map(s => s.trim()).filter(Boolean);
+    const upstream = deps.map(resolveToken).filter(Boolean);
+    info.set(n.nodeKey, { upstream, isTerminal: false, nivel: 0, node: n });
+    upstream.forEach(u => consumed.add(u.nodeKey));
+  });
+  nodes.forEach(n => { info.get(n.nodeKey).isTerminal = !consumed.has(n.nodeKey); });
+
+  let remaining = nodes.slice();
   const seen = new Set();
   const ordered = [];
   let guard = 0;
@@ -2831,15 +3018,15 @@ function stageGraphFor(fi) {
     guard++;
     const stillRemaining = [];
     let progressed = false;
-    for (const e of remaining) {
-      const ups = info.get(e._tid).upstream;
-      if (ups.every(u => seen.has(u._tid))) {
-        info.get(e._tid).nivel = ups.length ? Math.max(...ups.map(u => info.get(u._tid).nivel)) + 1 : 0;
-        ordered.push(e);
-        seen.add(e._tid);
+    for (const n of remaining) {
+      const ups = info.get(n.nodeKey).upstream;
+      if (ups.every(u => seen.has(u.nodeKey))) {
+        info.get(n.nodeKey).nivel = ups.length ? Math.max(...ups.map(u => info.get(u.nodeKey).nivel)) + 1 : 0;
+        ordered.push(n);
+        seen.add(n.nodeKey);
         progressed = true;
       } else {
-        stillRemaining.push(e);
+        stillRemaining.push(n);
       }
     }
     remaining = stillRemaining;
@@ -2847,76 +3034,277 @@ function stageGraphFor(fi) {
   }
   return { info, ordered };
 }
-function nivelesDe(fi) {
+// ── Layout visual del diagrama ──
+// Separado a propósito de stageGraphFor (que es el grafo de COSTEO/BOM real,
+// usado también para guardar/validar) -- este es puramente para decidir en qué
+// nivel y en qué orden se dibuja cada tarjeta, con dos tipos de "ítem visual":
+//   - "hub": una por etapa (servicio/proveedor/precio/recibe-de/materiales).
+//   - "salida": una por cada fila de salidasDe(e), SOLO para etapas con más de
+//     una -- se dibuja como tarjeta propia, delgada, un nivel abajo de su hub,
+//     para que las líneas salgan de un punto propio y no se amontonen.
+//
+// El acomodo se hace por GRUPO (un hub + TODAS sus salidas), nunca ítem por ítem:
+// un grupo ocupa una fila (hub) o dos (hub arriba, todas sus salidas juntas justo
+// abajo) y se mueve completo. Esa rigidez es justamente lo que faltaba antes: al
+// nivelar cada salida por separado, dos salidas de la misma etapa terminaban en
+// filas distintas (o hasta a la par de su propio hub) según qué tan larga fuera la
+// cadena que colgaba de cada una, y el diagrama se leía desordenado.
+//
+// Nivel de cada grupo: ASAP (camino más largo desde una raíz, garantiza que toda
+// flecha baje) y luego ALAP -- se "jala" cada grupo hacia abajo hasta justo encima
+// de su consumidor más cercano, para que un nodo cuyo único consumidor está lejos
+// no se quede pegado arriba atravesando con su línea filas que no le tocan. Los
+// grupos sin consumidores (finales) se quedan en su ASAP para que el diagrama no
+// se estire de más. Es el mismo criterio de los editores de nodos tipo n8n, con el
+// flujo en vertical.
+// Dentro de cada fila, el orden se decide por "centro de gravedad" (promedio de la
+// posición de sus ítems de entrada en la fila anterior), para minimizar cruces --
+// mismo criterio de los layouts tipo Sugiyama.
+function diagramLayout(fi) {
   const { info } = stageGraphFor(fi);
-  const max = Math.max(0, ...Array.from(info.values()).map(v => v.nivel));
-  return Array.from({ length: max + 1 }, (_, i) => i);
+  const items = [];
+  const groupIds = [];
+  etapasDe(fi).forEach(e => {
+    items.push({ kind: "hub", key: "hub:" + e.stage_id, group: e.stage_id, offset: 0, etapa: e });
+    groupIds.push(e.stage_id);
+    salidasDe(e).forEach(s => items.push({ kind: "salida", key: "sal:" + s.salida_id, group: e.stage_id, offset: 1, etapa: e, salida: s }));
+  });
+  const byKey = new Map(items.map(it => [it.key, it]));
+  const byNodeKeyItem = new Map();
+  items.forEach(it => {
+    if (it.kind === "salida") byNodeKeyItem.set(it.salida.salida_id, it);
+  });
+  function itemForCostNode(nodeKey, parentStageKey) {
+    return byNodeKeyItem.get(nodeKey) || items.find(it => it.kind === "hub" && it.etapa.stage_id === parentStageKey);
+  }
+
+  // Solo las aristas ENTRE grupos entran al cálculo de niveles -- la de un hub a su
+  // propia salida ya está implícita en el offset del grupo (y meterla como
+  // restricción real duplicaría la separación).
+  const edgeKeys = new Set();
+  const edges = [];
+  function addEdge(fromKey, toKey) {
+    if (fromKey === toKey) return;
+    const k = fromKey + ">" + toKey;
+    if (edgeKeys.has(k)) return;
+    edgeKeys.add(k);
+    edges.push([fromKey, toKey]);
+  }
+  items.forEach(it => { if (it.kind === "salida") addEdge("hub:" + it.etapa.stage_id, it.key); });
+  stageNodesFor(fi).forEach(n => {
+    const toItem = itemForCostNode(n.nodeKey, n.parentStageKey);
+    if (!toItem) return;
+    (info.get(n.nodeKey)?.upstream || []).forEach(u => {
+      const fromItem = itemForCostNode(u.nodeKey, u.parentStageKey);
+      if (fromItem) addEdge(fromItem.key, toItem.key);
+    });
+  });
+
+  const incoming = new Map(items.map(it => [it.key, []]));
+  edges.forEach(([f, t]) => incoming.get(t)?.push(f));
+
+  // Restricción entre grupos: nivel(gDestino) + offset(destino) >= nivel(gOrigen) +
+  // offset(origen) + 1. Se guarda ya despejada como "mínimo que le exige esta
+  // arista al grupo destino" (gapIn) y su simétrica para el jalón hacia abajo.
+  const gIn = new Map(groupIds.map(g => [g, []]));
+  const gOut = new Map(groupIds.map(g => [g, []]));
+  edges.forEach(([fKey, tKey]) => {
+    const from = byKey.get(fKey);
+    const to = byKey.get(tKey);
+    if (!from || !to || from.group === to.group) return;
+    const gap = from.offset + 1 - to.offset;
+    gIn.get(to.group)?.push({ group: from.group, gap });
+    gOut.get(from.group)?.push({ group: to.group, gap });
+  });
+
+  // ASAP por grupo (Kahn sobre el grafo de grupos).
+  const asap = new Map();
+  let remaining = groupIds.slice();
+  const seen = new Set();
+  let guard = 0;
+  while (remaining.length && guard < 2000) {
+    guard++;
+    const still = [];
+    let progressed = false;
+    for (const g of remaining) {
+      const ups = gIn.get(g) || [];
+      if (ups.every(u => seen.has(u.group))) {
+        asap.set(g, ups.length ? Math.max(...ups.map(u => asap.get(u.group) + u.gap)) : 0);
+        seen.add(g);
+        progressed = true;
+      } else {
+        still.push(g);
+      }
+    }
+    remaining = still;
+    // Ciclo o referencia rota (dato mal capturado): se acomoda lo que quede en su
+    // mínimo en vez de colgarse, igual que hace _resolve_stage_graph en el backend.
+    if (!progressed) { remaining.forEach(g => { asap.set(g, 0); seen.add(g); }); break; }
+  }
+
+  // ALAP: en orden topológico inverso, cada grupo baja hasta pegarse a su consumidor
+  // más cercano. Siempre da >= ASAP (el consumidor nunca está por encima), así que
+  // no puede romper la dirección de ninguna flecha.
+  // DOS excepciones que se quedan donde las dejó el ASAP:
+  //   - los grupos que no alimentan a nadie (finales), para no estirar el diagrama.
+  //   - los que no reciben de nadie (arranques): jerarquía primero -- una etapa que
+  //     no depende de ninguna otra se lee arriba de todo aunque su único consumidor
+  //     esté hasta el final (ej. tejer cuellos, que solo entra en la confección: se
+  //     queda arriba y baja con una línea larga hasta ese paso).
+  const nivelGrupo = new Map(asap);
+  groupIds.slice().sort((a, b) => (asap.get(b) ?? 0) - (asap.get(a) ?? 0)).forEach(g => {
+    const outs = gOut.get(g) || [];
+    if (!outs.length || !(gIn.get(g) || []).length) return;
+    nivelGrupo.set(g, Math.min(...outs.map(o => (nivelGrupo.get(o.group) ?? 0) - o.gap)));
+  });
+
+  const nivelOf = new Map(items.map(it => [it.key, (nivelGrupo.get(it.group) ?? 0) + it.offset]));
+  const maxLevel = Math.max(0, ...items.map(it => nivelOf.get(it.key)));
+
+  return { items, edges, incoming, nivelOf, maxLevel };
 }
-function etapasPorNivel(fi, nivel) {
-  const { info } = stageGraphFor(fi);
-  return etapasDe(fi).filter(e => info.get(e._tid)?.nivel === nivel);
+// Reparte las tarjetas en filas Y COLUMNAS. La columna es lo que hace que el
+// diagrama se lea ordenado: es un mismo sistema de coordenadas para todas las filas,
+// así que un hijo cae justo debajo de su padre en vez de que cada fila se centre por
+// su cuenta (que era lo que descuadraba todo: tres salidas angostas centradas no
+// coinciden con dos tarjetas anchas centradas).
+// Columna de cada ítem = promedio de las columnas de sus entradas (baricentro, el
+// criterio de los layouts tipo Sugiyama para minimizar cruces); los que comparten
+// baricentro se reparten simétricamente alrededor de él, y si dos quedaran en la
+// misma columna el segundo se recorre a la derecha.
+function diagramRows(fi) {
+  const { items, nivelOf, incoming, maxLevel } = diagramLayout(fi);
+  const colOf = new Map();
+  const filas = [];
+
+  for (let nivel = 0; nivel <= maxLevel; nivel++) {
+    const enNivel = items.filter(it => (nivelOf.get(it.key) ?? 0) === nivel);
+    const deseada = new Map();
+    enNivel.forEach((it, i) => {
+      const cols = (incoming.get(it.key) || []).map(k => colOf.get(k)).filter(c => c !== undefined);
+      // Sin entradas colocadas (los arranques de la fila 0) conserva su orden actual.
+      deseada.set(it.key, cols.length ? cols.reduce((a, b) => a + b, 0) / cols.length : i);
+    });
+    const orden = enNivel.slice().sort((a, b) => deseada.get(a.key) - deseada.get(b.key));
+
+    // Bloques de hermanos (misma columna deseada) para poder centrarlos bajo su padre.
+    const bloques = [];
+    orden.forEach(it => {
+      const d = deseada.get(it.key);
+      const ultimo = bloques[bloques.length - 1];
+      if (ultimo && Math.abs(ultimo.d - d) < 1e-9) ultimo.items.push(it);
+      else bloques.push({ d, items: [it] });
+    });
+
+    let previa = -1;
+    bloques.forEach(b => {
+      const inicio = Math.round(b.d - (b.items.length - 1) / 2);
+      b.items.forEach((it, i) => {
+        const col = Math.max(inicio + i, previa + 1);
+        colOf.set(it.key, col);
+        previa = col;
+      });
+    });
+    filas.push(orden);
+  }
+
+  const cols = Math.max(1, ...items.map(it => (colOf.get(it.key) ?? 0) + 1));
+  return filas.map(fila => ({ cols, slots: fila.map(it => ({ item: it, col: colOf.get(it.key) ?? 0 })) }));
 }
+// Terminal de la ETAPA completa: true solo si TODOS sus nodos son terminales (una
+// etapa sin salidas propias tiene exactamente 1 nodo, así que coincide con el
+// criterio de antes). Con salidas múltiples, algunas pueden ser terminales y
+// otras no -- para eso está etapaSalidaEsTerminal, que se usa fila por fila.
 function etapaEsTerminal(e, fi) {
   const { info } = stageGraphFor(fi);
-  return info.get(e._tid)?.isTerminal ?? true;
+  const nodes = stageNodesFor(fi).filter(n => n.parentStageKey === e.stage_id);
+  if (!nodes.length) return true;
+  return nodes.every(n => info.get(n.nodeKey)?.isTerminal ?? true);
 }
-// Validaciones de duplicados dentro del MISMO producto -- dos etapas con el mismo
-// servicio o el mismo sub-ensamblaje son casi siempre un error de captura (y para
-// sub-ensamblaje, además rompería crear_boms_spa: dos etapas distintas terminarían
-// compartiendo el mismo BOM, la segunda simplemente se saltaría por "ya existe").
-function isDuplicateServicio(e, fi) {
+function salidaEsTerminal(s, fi) {
+  const { info } = stageGraphFor(fi);
+  return info.get(s.salida_id)?.isTerminal ?? true;
+}
+// Repetir el MISMO servicio en varias etapas es legítimo y común: la misma
+// operación (ej. colocar reflejante) se aplica por separado a dos piezas distintas
+// que después siguen caminos propios, así que cada aplicación necesita su etapa.
+// No rompe nada río abajo -- crear_boms_spa indexa por ítem del BOM,
+// crear_subcontracting_bom por finished_good y _create_subcontracting_pos_from_stages
+// crea una OC por fila de etapa; ninguno agrupa por servicio. Por eso esto NO es un
+// error, solo se anota cuántas veces aparece para que se lea de un vistazo.
+function vecesServicio(e, fi) {
   const val = (e.servicio || "").trim().toLowerCase();
-  if (!val) return false;
-  return etapasDe(fi).some(o => o._tid !== e._tid && (o.servicio || "").trim().toLowerCase() === val);
+  if (!val) return 0;
+  return etapasDe(fi).filter(o => (o.servicio || "").trim().toLowerCase() === val).length;
 }
+// El sub-ensamblaje sí debe ser único: dos etapas/salidas que declaren el mismo
+// nombre terminarían compartiendo un solo BOM (la segunda se salta por "ya existe"
+// en crear_boms_spa / crear_subcontracting_bom), así que ahí el error se conserva.
 function isDuplicateSubensamblaje(e, fi) {
   const val = (e.subensamblaje || "").trim().toLowerCase();
   if (!val) return false;
-  return etapasDe(fi).some(o => o._tid !== e._tid && !etapaEsTerminal(o, fi) && (o.subensamblaje || "").trim().toLowerCase() === val);
+  return etapasDe(fi).some(o => o._tid !== e._tid && !etapaEsTerminal(o, fi) && (o.subensamblaje || "").trim().toLowerCase() === val)
+    || salidasEtapa.value.some(s => (s.subensamblaje || "").trim().toLowerCase() === val);
+}
+function isDuplicateSalidaSubensamblaje(s, e, fi) {
+  const val = (s.subensamblaje || "").trim().toLowerCase();
+  if (!val) return false;
+  if (salidasDe(e).some(o => o._tid !== s._tid && (o.subensamblaje || "").trim().toLowerCase() === val)) return true;
+  return etapasDe(fi).some(o => o.stage_id !== e.stage_id && !etapaEsTerminal(o, fi) && (
+    (o.subensamblaje || "").trim().toLowerCase() === val
+    || salidasDe(o).some(os => (os.subensamblaje || "").trim().toLowerCase() === val)
+  ));
 }
 function subensamblajeSugerido(e, prod) {
   return `${prod.finished_item} - ${e.servicio || "etapa " + e.etapa}`;
 }
-function isAncestor(fi, ancestorTid, descendantTid) {
+function salidaSugerida(s, e, prod, idx) {
+  return `${prod.finished_item} - ${e.servicio || "etapa " + e.etapa} - salida ${idx + 1}`;
+}
+function isAncestor(fi, ancestorKey, descendantKey) {
   const { info } = stageGraphFor(fi);
-  const upstream = info.get(descendantTid)?.upstream || [];
-  return upstream.some(u => u._tid === ancestorTid || isAncestor(fi, ancestorTid, u._tid));
+  const upstream = info.get(descendantKey)?.upstream || [];
+  return upstream.some(u => u.nodeKey === ancestorKey || isAncestor(fi, ancestorKey, u.nodeKey));
 }
-function selectedRecibeDeTids(fi, e) {
-  const ids = (e.recibe_de || "").split(",").map(s => s.trim()).filter(Boolean);
-  return etapasDe(fi).filter(x => ids.includes(x.stage_id)).map(x => x._tid);
+function selectedRecibeDeKeys(e) {
+  return (e.recibe_de || "").split(",").map(s => s.trim()).filter(Boolean);
 }
-// Candidatos: cualquier otra etapa del mismo producto que no cierre un ciclo (que
-// "e" ya sea, directa o transitivamente, ancestro de "cand") y que no esté ya
-// implícita en algo que "e" ya recibe (si ya eligió "Confección" y Confección a su
-// vez recibe de "Bordado", no se vuelve a ofrecer "Bordado" por separado). No se
-// filtra por nivel/columna: el nivel es solo un resultado visual del cableado, no
-// una restricción -- de lo contrario una etapa recién agregada (nivel 0, sin
-// conexiones) nunca podría ofrecerse como candidata de otra etapa igual de nueva.
+// Candidatos: cualquier NODO (etapa o salida específica) de otra etapa del mismo
+// producto que no cierre un ciclo (que la etapa de "e" ya sea, directa o
+// transitivamente, ancestro de "cand") y que no esté ya implícita en algo que
+// "e" ya recibe. No se filtra por nivel/columna: el nivel es solo un resultado
+// visual del cableado, no una restricción.
 function candidatosRecibeDe(fi, e) {
-  const selected = selectedRecibeDeTids(fi, e);
-  return etapasDe(fi).filter(cand => {
-    if (cand._tid === e._tid) return false;
-    if (isAncestor(fi, e._tid, cand._tid)) return false;
-    if (selected.includes(cand._tid)) return true;
-    return !selected.some(sel => isAncestor(fi, cand._tid, sel));
+  const selected = selectedRecibeDeKeys(e);
+  const ownKeys = [...new Set(stageNodesFor(fi).filter(n => n.parentStageKey === e.stage_id).map(n => n.nodeKey))];
+  return stageNodesFor(fi).filter(cand => {
+    if (ownKeys.includes(cand.nodeKey)) return false;
+    // Ciclo: cand ya sería, directa o transitivamente, descendiente de e (alguno
+    // de los nodos de e es ancestro de cand) -- conectarlo cerraría el círculo.
+    if (ownKeys.some(own => isAncestor(fi, own, cand.nodeKey))) return false;
+    if (selected.includes(cand.nodeKey)) return true;
+    // Redundante: cand ya es ancestro de algo que e ya recibe (ej. si e ya recibe
+    // de "Confección" y Confección a su vez recibe de "Bordado", no se vuelve a
+    // ofrecer "Bordado" por separado).
+    return !selected.some(sel => isAncestor(fi, cand.nodeKey, sel));
   });
 }
+function candidatoLabel(cand) {
+  const base = cand.etapa.servicio || `Etapa ${cand.etapa.etapa}`;
+  if (!cand.salida) return base;
+  const idx = salidasDe(cand.etapa).findIndex(s => s.salida_id === cand.nodeKey);
+  return `${base} → ${cand.subensamblaje || "salida " + (idx + 1)}`;
+}
 function recibeDeIncludes(e, cand) {
-  if (!cand.stage_id) return false;
-  return (e.recibe_de || "").split(",").map(s => s.trim()).filter(Boolean).includes(cand.stage_id);
+  return selectedRecibeDeKeys(e).includes(cand.nodeKey);
 }
 function toggleRecibeDe(e, cand, prod) {
-  if (!cand.stage_id) return;
   const fi = prod.finished_item;
-  let ids = (e.recibe_de || "").split(",").map(s => s.trim()).filter(Boolean);
-  const idx = ids.indexOf(cand.stage_id);
+  let ids = selectedRecibeDeKeys(e);
+  const idx = ids.indexOf(cand.nodeKey);
   if (idx === -1) {
-    ids = ids.filter(id => {
-      const sel = etapasDe(fi).find(x => x.stage_id === id);
-      return !sel || !isAncestor(fi, sel._tid, cand._tid);
-    });
-    ids.push(cand.stage_id);
+    ids = ids.filter(id => !isAncestor(fi, id, cand.nodeKey));
+    ids.push(cand.nodeKey);
   } else {
     ids.splice(idx, 1);
   }
@@ -2927,21 +3315,141 @@ function toggleRecibeDe(e, cand, prod) {
 }
 function recibeDeResumen(e, fi) {
   const { info } = stageGraphFor(fi);
-  const upstream = info.get(e._tid)?.upstream || [];
+  const nodes = stageNodesFor(fi).filter(n => n.parentStageKey === e.stage_id);
+  const upstream = nodes.length ? (info.get(nodes[0].nodeKey)?.upstream || []) : [];
   if (!upstream.length) return "Arranca de materia prima.";
-  const nombres = upstream.map(u => u.servicio || `Etapa ${u.etapa}`);
+  const nombres = upstream.map(candidatoLabel);
   return `Recibe el resultado de: ${nombres.join(" + ")}.`;
 }
+// ── Reparto de un material entre varias etapas ──
+// El consumo capturado en el costeo (internal_qty, "Consumo por pieza") es el total
+// que lleva UNA pieza de producto terminado. Cuando ese insumo lo aplican dos
+// operaciones distintas (ej. 4 de cinta reflejante: 2 en la manga, 2 en el frente)
+// hace falta decir cuánto va en cada etapa -- eso vive en materialesEtapa y es lo
+// que crear_boms_spa usa como cantidad de cada BOM.
+function matTotal(m) { return Number(m.internal_qty) || 0; }
+function matRow(m, e) { return materialesEtapa.value.find(r => r.material_id === m.material_id && r.stage_id === e.stage_id); }
+function matQty(m, e) { return Number(matRow(m, e)?.qty) || 0; }
+function matAsignado(m) {
+  return round4(materialesEtapa.value.filter(r => r.material_id === m.material_id).reduce((sum, r) => sum + (Number(r.qty) || 0), 0));
+}
+function matPendiente(m) { return round4(matTotal(m) - matAsignado(m)); }
+function matEnAlgunaEtapa(m) { return materialesEtapa.value.some(r => r.material_id === m.material_id); }
+// Materiales cuyo reparto no cuadra con lo capturado en el costeo -- se avisa pero
+// no se bloquea: repartir de menos es a veces intencional (merma que no entra al
+// BOM), y crear_boms_spa consume exactamente lo repartido, así que basta con que
+// sea visible. Un material sin repartir nada todavía no se cuenta como error.
+function materialesDesbalanceados(fi) {
+  return materialesDe(fi).filter(m => matTotal(m) > 0 && matEnAlgunaEtapa(m) && Math.abs(matAsignado(m) - matTotal(m)) > 0.0001);
+}
+// 'etapa' (escalar, dato viejo) se mantiene apuntando a la PRIMERA etapa asignada:
+// es el respaldo que usa crear_boms_spa para los costeos que nunca declararon
+// reparto, y dejarlo desincronizado haría que un costeo viejo reabierto y guardado
+// cambiara de comportamiento sin que nadie lo tocara.
+function syncMaterialEtapaEscalar(m) {
+  const primera = materialesEtapa.value.find(r => r.material_id === m.material_id);
+  m.etapa = primera ? primera.stage_id : "";
+}
 function materialBadgeClass(m, e) {
-  if (m.etapa === e.stage_id) return "bg-brand-100 border-brand-300 text-brand-700 font-semibold";
-  if (m.etapa) return "bg-surface-raised border-surface-border text-ink-xlight";
+  if (matRow(m, e)) return "bg-brand-100 border-brand-300 text-brand-700 font-semibold";
+  if (matEnAlgunaEtapa(m)) return "bg-surface-raised border-surface-border text-ink-xlight";
   return "bg-white border-surface-border text-ink-light hover:bg-surface-raised";
 }
 function toggleMaterialEtapa(m, e) {
-  m.etapa = m.etapa === e.stage_id ? "" : e.stage_id;
+  const row = matRow(m, e);
+  if (row) {
+    materialesEtapa.value.splice(materialesEtapa.value.indexOf(row), 1);
+  } else {
+    // Al asignarlo por primera vez toma lo que quede sin repartir -- así el caso
+    // normal (un material, una etapa) queda completo de un solo clic, y el de
+    // reparto arranca con el resto exacto en vez de obligar a recalcular a mano.
+    const pendiente = matPendiente(m);
+    materialesEtapa.value.push({ _tid: uid(), material_id: m.material_id, stage_id: e.stage_id, qty: pendiente > 0 ? pendiente : matTotal(m) });
+  }
+  syncMaterialEtapaEscalar(m);
   manufacturaGuardada.value = false;
 }
+function setMatQty(m, e, valor) {
+  const qty = Number(valor) || 0;
+  const row = matRow(m, e);
+  if (qty <= 0) {
+    if (row) materialesEtapa.value.splice(materialesEtapa.value.indexOf(row), 1);
+  } else if (row) {
+    row.qty = qty;
+  } else {
+    materialesEtapa.value.push({ _tid: uid(), material_id: m.material_id, stage_id: e.stage_id, qty });
+  }
+  syncMaterialEtapaEscalar(m);
+  manufacturaGuardada.value = false;
+}
+// Costeos guardados antes del reparto explícito: su único dato es el escalar
+// 'etapa' (stage_id nuevo, o número de etapa en los más viejos). Se convierte a
+// filas al abrir para que el diagrama tenga una sola fuente de verdad; el backend
+// mantiene el mismo respaldo por si el costeo nunca se reabre.
+function migrarMaterialesEtapaLegado() {
+  if (materialesEtapa.value.length) return;
+  detalles.value.forEach(m => {
+    if (m.concept_type !== "Materia Prima" || !m.etapa) return;
+    const candidatas = etapasDe(m.finished_item);
+    const etapa = candidatas.find(e => e.stage_id === m.etapa) || candidatas.find(e => String(e.etapa || "") === String(m.etapa));
+    if (!etapa) return;
+    materialesEtapa.value.push({ _tid: uid(), material_id: m.material_id, stage_id: etapa.stage_id, qty: matTotal(m) });
+    m.etapa = etapa.stage_id;
+  });
+}
 function genStageId() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
+
+// ── Salidas múltiples de una etapa ──
+// Lo que se captura es CUÁNTAS piezas produce la operación de cada resultado (un
+// corte da 1 manga izquierda, 1 manga derecha y 1 frente). El % de participación
+// no describe el resultado: existe solo para repartir un costo COMPARTIDO -- la
+// operación se cobra y consume materia prima una sola vez aunque salgan varias
+// piezas, así que sin repartir cada BOM pediría el material completo y cada OC de
+// maquila pagaría el servicio completo. Por eso se DERIVA de las cantidades en vez
+// de pedirse a mano.
+function totalQtySalidas(e) {
+  return salidasDe(e).reduce((sum, s) => sum + (Number(s.qty_salida) || 0), 0);
+}
+function pctSalida(s, e) {
+  const total = totalQtySalidas(e);
+  return total > 0 ? round2((100 * (Number(s.qty_salida) || 0)) / total) : 0;
+}
+// El pct guardado se mantiene al día con las cantidades para que la tabla sea
+// coherente por sí sola (el backend lo re-deriva igual, pero así el dato en crudo
+// no queda contradiciendo lo que se ve en pantalla).
+function syncPctSalidas(e) {
+  salidasDe(e).forEach(s => { s.pct_participacion = pctSalida(s, e); });
+  manufacturaGuardada.value = false;
+}
+function salidasSinCantidad(fi) {
+  return etapasDe(fi).some(e => salidasDe(e).length && salidasDe(e).some(s => !(Number(s.qty_salida) > 0)));
+}
+function agregarSalida(e) {
+  salidasEtapa.value.push({ _tid: uid(), stage_id: e.stage_id, salida_id: genStageId(), subensamblaje: "", qty_salida: 1, pct_participacion: 0 });
+  syncPctSalidas(e);
+}
+// Convierte una etapa de "un solo sub-ensamblaje" a "varias salidas": el texto ya
+// capturado se preserva como la primera salida, y se agrega una segunda vacía --
+// el campo escalar 'subensamblaje' de la etapa queda sin usar mientras
+// salidasDe(e).length > 0 (el backend lo ignora igual, ver _explode_stage_nodes).
+function convertirAMultiSalida(e) {
+  salidasEtapa.value.push({ _tid: uid(), stage_id: e.stage_id, salida_id: genStageId(), subensamblaje: e.subensamblaje || "", qty_salida: 1, pct_participacion: 0 });
+  agregarSalida(e);
+}
+function quitarSalida(e, s, prod) {
+  const i = salidasEtapa.value.findIndex(x => x._tid === s._tid);
+  if (i === -1) return;
+  salidasEtapa.value.splice(i, 1);
+  // Si alguna otra etapa "recibía de" específicamente esta salida, esa referencia
+  // queda colgante -- hay que limpiarla, igual que al eliminar una etapa completa.
+  etapasDe(e.producto_terminado).forEach(et => {
+    const ids = selectedRecibeDeKeys(et);
+    if (ids.includes(s.salida_id)) et.recibe_de = ids.filter(id => id !== s.salida_id).join(",");
+  });
+  syncPctSalidas(e);
+  if (prod) scheduleRecomputeDiagram(prod);
+  manufacturaGuardada.value = false;
+}
 
 // ── Arrastrar para reordenar etapas ──
 // El handle (⠿) es lo único con draggable="true" -- si se pone en toda la tarjeta,
@@ -2988,20 +3496,35 @@ function onEtapaDragEnd() {
 }
 
 const cardEls = new Map();
+// Ancla de SALIDA específica (nodeKey -> elemento) -- un puntito junto a cada fila
+// de la mini-lista de salidas, solo existe cuando la etapa tiene más de una. Con
+// 0 o 1 salida el conector sigue saliendo del punto medio de la tarjeta completa
+// (mismo comportamiento visual que siempre), sin necesidad de estos anclajes.
+const salidaEls = new Map();
 const boardEls = new Map();
 const boardObservers = new Map();
 const diagram = reactive({});
 
-// Refs cacheados por _tid: Vue solo debe invocar el callback cuando el nodo del
-// DOM realmente se monta/desmonta. Una arrow function inline en :ref cambia de
-// identidad en cada render, así que Vue la reinvoca en cada actualización aunque
-// el nodo sea el mismo, lo que reprograma recomputeDiagram sin fin.
+// Refs cacheados por _tid/nodeKey: Vue solo debe invocar el callback cuando el
+// nodo del DOM realmente se monta/desmonta. Una arrow function inline en :ref
+// cambia de identidad en cada render, así que Vue la reinvoca en cada
+// actualización aunque el nodo sea el mismo, lo que reprograma recomputeDiagram
+// sin fin.
 const cardRefFns = new Map();
 function cardRefFor(tid) {
   let fn = cardRefFns.get(tid);
   if (!fn) {
     fn = (el) => setCardEl(tid, el);
     cardRefFns.set(tid, fn);
+  }
+  return fn;
+}
+const salidaRefFns = new Map();
+function salidaAnchorRefFor(nodeKey) {
+  let fn = salidaRefFns.get(nodeKey);
+  if (!fn) {
+    fn = (el) => setSalidaEl(nodeKey, el);
+    salidaRefFns.set(nodeKey, fn);
   }
   return fn;
 }
@@ -3018,6 +3541,10 @@ function boardRefFor(prodTid) {
 function setCardEl(tid, el) {
   if (el) cardEls.set(tid, el);
   else cardEls.delete(tid);
+}
+function setSalidaEl(nodeKey, el) {
+  if (el) salidaEls.set(nodeKey, el);
+  else salidaEls.delete(nodeKey);
 }
 function setBoardEl(prodTid, el) {
   if (boardEls.get(prodTid) === el) return;
@@ -3043,33 +3570,46 @@ function recomputeDiagram(prodTid) {
   const boardRect = boardEl.getBoundingClientRect();
   const originX = boardRect.left - boardEl.scrollLeft;
   const originY = boardRect.top - boardEl.scrollTop;
-  const { info } = stageGraphFor(prod.finished_item);
   const paths = [];
   let maxX = 0;
   let maxY = 0;
-  etapasDe(prod.finished_item).forEach(e => {
-    const toEl = cardEls.get(e._tid);
-    if (!toEl) return;
+  // Diagrama VERTICAL (niveles apilados de arriba a abajo, ver template): cada
+  // conector sale del borde INFERIOR de la tarjeta origen y entra por el borde
+  // SUPERIOR de la tarjeta destino, con la curva de control desplazada en Y.
+  // Las aristas ya vienen resueltas por diagramLayout (incluye hub->salida y
+  // las del grafo de costeo traducidas a tarjeta hub/salida según corresponda),
+  // así que aquí solo hace falta medir posiciones reales en el DOM y dibujar.
+  const { items, edges } = diagramLayout(prod.finished_item);
+  const byKey = new Map(items.map(it => [it.key, it]));
+  const elFor = (it) => it.kind === "hub" ? cardEls.get(it.etapa._tid) : salidaEls.get(it.salida.salida_id);
+  items.forEach(it => {
+    const el = elFor(it);
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    maxX = Math.max(maxX, r.right - originX);
+    maxY = Math.max(maxY, r.bottom - originY);
+  });
+  edges.forEach(([fromKey, toKey]) => {
+    const fromItem = byKey.get(fromKey);
+    const toItem = byKey.get(toKey);
+    if (!fromItem || !toItem) return;
+    const fromEl = elFor(fromItem);
+    const toEl = elFor(toItem);
+    if (!fromEl || !toEl) return;
+    const fromRect = fromEl.getBoundingClientRect();
     const toRect = toEl.getBoundingClientRect();
-    const toX = toRect.left - originX;
-    const toY = toRect.top + toRect.height / 2 - originY;
-    maxX = Math.max(maxX, toRect.right - originX);
-    maxY = Math.max(maxY, toRect.bottom - originY);
-    (info.get(e._tid)?.upstream || []).forEach(u => {
-      const fromEl = cardEls.get(u._tid);
-      if (!fromEl) return;
-      const fromRect = fromEl.getBoundingClientRect();
-      const fromX = fromRect.right - originX;
-      const fromY = fromRect.top + fromRect.height / 2 - originY;
-      const midX = (fromX + toX) / 2;
-      paths.push(`M ${fromX} ${fromY} C ${midX} ${fromY}, ${midX} ${toY}, ${toX} ${toY}`);
-    });
+    const fromX = fromRect.left + fromRect.width / 2 - originX;
+    const fromY = fromRect.bottom - originY;
+    const toX = toRect.left + toRect.width / 2 - originX;
+    const toY = toRect.top - originY;
+    const midY = (fromY + toY) / 2;
+    paths.push(`M ${fromX} ${fromY} C ${fromX} ${midY}, ${toX} ${midY}, ${toX} ${toY}`);
   });
   diagram[prodTid] = { paths, width: maxX, height: maxY };
 }
 
 // ── Product / detail / stage ──
-function addProducto() { const p = { _tid: uid(), image: "", description: "", finished_item: "", qty: 1, shipping_cost: 0, labeling_cost: 0, packaging_cost: 0, overhead_pct: 0, margin_pct: 0, material_cost: 0, services_cost: 0, overhead_amt: 0, total_unit_cost: 0, unit_sales_price: 0, total_sales_price: 0 }; productos.value.push(p); expandedTid.value = p._tid; }
+function addProducto() { const p = { _tid: uid(), image: "", description: "", finished_item: "", qty: 1, shipping_cost: 0, labeling_cost: 0, packaging_cost: 0, overhead_pct: 0, margin_pct: 0, material_cost: 0, services_cost: 0, overhead_amt: 0, total_unit_cost: 0, unit_sales_price: 0, precio_manual: 0, total_sales_price: 0 }; productos.value.push(p); expandedTid.value = p._tid; }
 function directCost(prod) { return (prod.material_cost || 0) + (prod.services_cost || 0) + (prod.shipping_cost || 0) + (prod.labeling_cost || 0) + (prod.packaging_cost || 0); }
 // Desglose informativo de directCost por grupo -- telas y avíos son subconjuntos
 // de material_cost (según tipo_material de cada renglón), servicios agrupa todo
@@ -3081,8 +3621,17 @@ function telasCost(prod) { return materialesDe(prod.finished_item).filter(d => d
 // el Tipo sin seleccionar todavía -- no se pierde ese costo del desglose.
 function aviosCost(prod) { return (prod.material_cost || 0) - telasCost(prod); }
 function serviciosCost(prod) { return (prod.services_cost || 0) + (prod.shipping_cost || 0) + (prod.labeling_cost || 0) + (prod.packaging_cost || 0); }
+// Totales de las dos tablas del costeo, por PIEZA (el x cantidad se muestra aparte).
+// Se calculan sobre las mismas filas que se ven en pantalla, así que siempre cuadran
+// con lo listado aunque haya renglones a medio capturar.
+function totalMaterias(prod) {
+  return round2(materialesDe(prod.finished_item).reduce((s, d) => s + (Number(d.total) || 0), 0));
+}
+function totalEtapas(prod) {
+  return round2(etapasDe(prod.finished_item).reduce((s, e) => s + precioPorPiezaEtapa(e), 0));
+}
 function expectedProfit(prod) { return (prod.unit_sales_price || 0) - (prod.total_unit_cost || 0); }
-function removeProducto(idx) { const prod = productos.value[idx]; if (!prod) return; detalles.value = detalles.value.filter(d => d.finished_item !== prod.finished_item); etapas.value = etapas.value.filter(e => e.producto_terminado !== prod.finished_item); tallas.value = tallas.value.filter(t => t.finished_item !== prod.finished_item); productos.value.splice(idx, 1); if (expandedTid.value === prod._tid) expandedTid.value = null; }
+function removeProducto(idx) { const prod = productos.value[idx]; if (!prod) return; const stageIdsDeProd = new Set(etapas.value.filter(e => e.producto_terminado === prod.finished_item).map(e => e.stage_id)); const materialIdsDeProd = new Set(detalles.value.filter(d => d.finished_item === prod.finished_item).map(d => d.material_id)); detalles.value = detalles.value.filter(d => d.finished_item !== prod.finished_item); etapas.value = etapas.value.filter(e => e.producto_terminado !== prod.finished_item); salidasEtapa.value = salidasEtapa.value.filter(s => !stageIdsDeProd.has(s.stage_id)); materialesEtapa.value = materialesEtapa.value.filter(r => !materialIdsDeProd.has(r.material_id) && !stageIdsDeProd.has(r.stage_id)); tallas.value = tallas.value.filter(t => t.finished_item !== prod.finished_item); productos.value.splice(idx, 1); if (expandedTid.value === prod._tid) expandedTid.value = null; }
 function toggleProduct(tid) { expandedTid.value = expandedTid.value === tid ? null : tid; }
 async function onProductoItemChange(prod) { recalcProducto(prod); const fetched = await fetchItemImage(prod.finished_item); if (fetched) prod.image = fetched; }
 // La imagen se sube desde aquí (aunque el producto todavía sea texto libre) para que
@@ -3102,7 +3651,7 @@ function pickImage(prod) {
   };
   input.click();
 }
-function addDetalle(prod, type) { detalles.value.push({ _tid: uid(), finished_item: prod.finished_item, concept_type: type, item: "", supplier: "", tipo_material: "", internal_uom: "", rendimiento: 0, internal_qty: 0, supplier_qty: 0, unit_price: 0, total: 0, etapa: "", _supplierOptions: [], _qtyMode: "rendimiento" }); }
+function addDetalle(prod, type) { detalles.value.push({ _tid: uid(), material_id: genStageId(), finished_item: prod.finished_item, concept_type: type, item: "", supplier: "", tipo_material: "", internal_uom: "", rendimiento: 0, internal_qty: 0, supplier_qty: 0, unit_price: 0, total: 0, etapa: "", _supplierOptions: [], _qtyMode: "rendimiento" }); }
 // ── Tipo de materia prima (Tela/Avío) ──
 // Filtra qué UDM tiene sentido según el tipo, y para avíos que se compran por Mazo o
 // Gruesa (botones, broches…) ya trae la equivalencia fija en piezas, para poder
@@ -3199,30 +3748,59 @@ function onProdQtyChange(prod) {
 }
 function addEtapa(prod) {
   const next = etapasDe(prod.finished_item).length + 1;
-  etapas.value.push({ _tid: uid(), producto_terminado: prod.finished_item, etapa: String(next), stage_id: genStageId(), recibe_de: "", servicio: "", proveedor: "", precio_servicio: 0, lote_qty: 1, lote_uom: "H87 - Pieza", subensamblaje: "" });
+  etapas.value.push({ _tid: uid(), producto_terminado: prod.finished_item, etapa: String(next), stage_id: genStageId(), recibe_de: "", servicio: "", proveedor: "", precio_servicio: 0, lote_qty: 1, lote_uom: "H87 - Pieza", modo_precio: "Por operación", operaciones_por_pieza: 1, precio_por_operacion: 0, subensamblaje: "" });
+  scheduleRecomputeDiagram(prod);
+  manufacturaGuardada.value = false;
+}
+// La misma operación aplicada a piezas distintas necesita una etapa por pieza (ej.
+// colocar reflejante en la manga y en el frente, cada una siguiendo su propio
+// camino después). Duplicar copia lo que se repite -- servicio, taller, precio,
+// esquema de cobro -- y deja en blanco lo que por definición es distinto: de qué
+// pieza recibe y qué sub-ensamblaje produce.
+function duplicarEtapa(e, prod) {
+  const next = etapasDe(prod.finished_item).length + 1;
+  etapas.value.push({
+    ...stripLocal(e), _tid: uid(), etapa: String(next), stage_id: genStageId(),
+    recibe_de: "", subensamblaje: "",
+  });
   scheduleRecomputeDiagram(prod);
   manufacturaGuardada.value = false;
 }
 // Precio de la etapa por UNA pieza -- si el proveedor cobra por lote (ej. $19 por 25
 // confecciones), precio_servicio es el precio del lote completo, no de la pieza.
 function precioPorPiezaEtapa(e) { return round2((e.precio_servicio || 0) / (e.lote_qty || 1)); }
+// Modo "Por operación": lo opuesto a "Por lote" -- en vez de dividir un precio de
+// lote entre varias piezas, MULTIPLICA cuántas veces se repite la operación
+// DENTRO de cada pieza por el precio de cada una (ej. 4 segmentos de cinta
+// reflejante por prenda a $1.87 c/u = $7.48/prenda). precio_servicio queda
+// siempre como el precio final por pieza -- lote_qty no se usa en este modo
+// (se deja en 1, sin agrupar por lote).
+function recalcPrecioOperacion(e, prod) {
+  e.precio_servicio = round2((e.operaciones_por_pieza || 0) * (e.precio_por_operacion || 0));
+  recalcProducto(prod);
+}
 function removeEtapa(e, prod) {
   const i = etapas.value.findIndex(x => x._tid === e._tid);
   if (i !== -1) etapas.value.splice(i, 1);
+  // Referencias posibles a esta etapa desde 'recibe_de' de otras: su propio
+  // stage_id (etapa sin salidas) o el salida_id de cualquiera de sus salidas.
+  const ownKeys = [e.stage_id, ...salidasDe(e).map(s => s.salida_id)].filter(Boolean);
+  salidasEtapa.value = salidasEtapa.value.filter(s => s.stage_id !== e.stage_id);
   if (prod) {
     // Renumerar para que la secuencia 1..N nunca tenga huecos -- el número de etapa
     // ya no es editable a mano, así que debe mantenerse consistente solo. stage_id NO
     // se toca (es estable a propósito) -- pero si alguien más "recibía de" la etapa
-    // eliminada, esa referencia queda colgante y hay que limpiarla, si no el grafo
-    // apuntaría a un stage_id que ya no existe.
+    // eliminada (o alguna de sus salidas), esa referencia queda colgante y hay que
+    // limpiarla, si no el grafo apuntaría a un nodo que ya no existe.
     etapasDe(prod.finished_item).forEach((et, idx) => { et.etapa = String(idx + 1); });
-    if (e.stage_id) {
+    if (ownKeys.length) {
       etapasDe(prod.finished_item).forEach(et => {
         const ids = (et.recibe_de || "").split(",").map(s => s.trim()).filter(Boolean);
-        if (ids.includes(e.stage_id)) et.recibe_de = ids.filter(id => id !== e.stage_id).join(",");
+        if (ids.some(id => ownKeys.includes(id))) et.recibe_de = ids.filter(id => !ownKeys.includes(id)).join(",");
       });
     }
-    detalles.value.forEach(d => { if (d.etapa === e.stage_id) d.etapa = ""; });
+    materialesEtapa.value = materialesEtapa.value.filter(r => r.stage_id !== e.stage_id);
+    detalles.value.forEach(d => { if (d.etapa === e.stage_id) syncMaterialEtapaEscalar(d); });
     recalcProducto(prod);
     scheduleRecomputeDiagram(prod);
     manufacturaGuardada.value = false;
@@ -3324,16 +3902,40 @@ function recalcProducto(prod) {
     const divisor = totalQty > 0 ? totalQty : totalTallaQty;
     prod.overhead_amt = round2(sumOverheadQty / divisor);
     prod.total_unit_cost = round2(sumCosto / divisor);
-    prod.unit_sales_price = round2(sumVenta / divisor);
-    prod.total_sales_price = round2(sumVenta);
+    if (prod.precio_manual) {
+      // Precio fijo: no se pisa aunque cambien los costos -- el total sí se
+      // recalcula (mismas piezas, precio fijo * qty), el margen queda como
+      // dato informativo nada más.
+      prod.total_sales_price = round2(prod.unit_sales_price * (prod.qty || 0));
+      const priceM = prod.unit_sales_price || 0;
+      prod.margin_pct = round2(Math.max(0, priceM > 0 ? ((priceM - prod.total_unit_cost) / priceM) * 100 : 0));
+    } else {
+      prod.unit_sales_price = round2(sumVenta / divisor);
+      prod.total_sales_price = round2(sumVenta);
+    }
   } else {
     prod.overhead_amt = round2(overheadFlat);
     prod.total_unit_cost = costoFlat;
-    prod.unit_sales_price = pvFlat;
+    if (prod.precio_manual) {
+      // Precio fijado a mano (onPriceChange): NO se deriva de margin_pct como de
+      // costumbre -- es al revés, el margen se recalcula contra el costo nuevo
+      // manteniendo ESE precio exacto fijo, para que cotización/documentos
+      // posteriores siempre reciban el número que se tecleó, sin que el
+      // redondeo del % (ni un cambio posterior en materiales/etapas) lo mueva.
+      const priceM = prod.unit_sales_price || 0;
+      prod.margin_pct = round2(Math.max(0, priceM > 0 ? ((priceM - prod.total_unit_cost) / priceM) * 100 : 0));
+    } else {
+      prod.unit_sales_price = pvFlat;
+    }
     prod.total_sales_price = round2(prod.unit_sales_price * (prod.qty || 0));
   }
 }
-// Editar el precio unitario → recalcula el margen (sentido inverso, sin sobrescribir el precio)
+// Editar el precio unitario → recalcula el margen (sentido inverso, sin sobrescribir el
+// precio) y marca precio_manual: mientras esté activo, recalcProducto ya NO deriva el
+// precio del margen -- es al revés, el precio manda y el margen es solo informativo.
+// Así el precio exacto que se tecleó aquí es el que llega a cotización/documentos
+// posteriores, sin que un redondeo del margen (o un cambio en materiales/etapas más
+// adelante) lo mueva ni un centavo.
 function onPriceChange(prod) {
   const price = prod.unit_sales_price || 0;
   const cost = prod.total_unit_cost || 0;
@@ -3341,6 +3943,13 @@ function onPriceChange(prod) {
   if (m < 0) m = 0;
   prod.margin_pct = Math.round(m * 100) / 100;
   prod.total_sales_price = price * (prod.qty || 0);
+  prod.precio_manual = 1;
+}
+// Volver a escribir el Margen % a mano deshace el precio fijo -- el precio vuelve a
+// derivarse del margen, como el comportamiento de siempre.
+function onMarginChange(prod) {
+  prod.precio_manual = 0;
+  recalcProducto(prod);
 }
 // Conversor $/kg -> $/m de telas: el proveedor cotiza por kilo, pero el consumo por
 // prenda se captura en metros -- la usuaria ya sabe (por experiencia con esa tela)
@@ -3467,7 +4076,11 @@ function validate() {
   if (missingWarehouse) {
     warehouseFields.forEach(f => { if (!form[f]) errors[f] = "Requerido"; });
     ok = false;
-    showToast("Selecciona la compañía de nuevo para recalcular sus almacenes", "error");
+    // El mensaje anterior ("selecciona la compañía de nuevo") mandaba a repetir justo
+    // lo que ya había fallado: si la compañía nombra sus almacenes distinto, volver a
+    // elegirla da exactamente el mismo resultado vacío. Ahora los campos están en la
+    // pantalla y se apunta a ellos.
+    showToast("Faltan los almacenes o el centro de costos — complétalos arriba, junto a la compañía", "error");
   }
   if (!productos.value.some(p => p.finished_item && (p.qty || 0) > 0)) { showToast("Agrega al menos un producto con cantidad > 0", "error"); ok = false; }
   return ok;
@@ -3482,10 +4095,15 @@ function buildPayload() {
     costeo_producto: productos.value.map(stripLocal),
     costeo_producto_detalle: detalles.value.map(stripLocal),
     tabla_etapas_costeo: etapas.value.map(stripLocal),
+    tabla_salidas_etapa: salidasEtapa.value.map(stripLocal),
+    tabla_materiales_etapa: materialesEtapa.value.map(stripLocal),
     tabla_tallas_costeo: tallas.value.map(stripLocal),
   };
 }
 async function fillFromDoc(data) {
+  // Se marca la carga para que el watcher de compañía no autodetecte almacenes
+  // encima de los que trae el documento guardado (ver applyCompanyDefaults).
+  cargandoDoc = true;
   docName.value = data.name;
   docStatus.value = data.costeo_status || "Borrador";
   docState.value = data.docstatus || 0;
@@ -3493,9 +4111,26 @@ async function fillFromDoc(data) {
   form.cliente = data.cliente || ""; form.fecha = data.fecha || today(); form.compania = data["compañia"] || "";
   form.proyecto = data.proyecto || ""; form.familia_prenda = data.familia_prenda || "";
   form.centro_de_costos = data.centro_de_costos || ""; form.almacen_materias_primas = data.almacen_materias_primas || ""; form.almacen_trabajo_en_proceso = data.almacen_trabajo_en_proceso || "";
-  productos.value = (data.costeo_producto || []).map(r => ({ _tid: uid(), image: "", description: "", ...r }));
-  detalles.value = (data.costeo_producto_detalle || []).map(r => ({ _tid: uid(), _supplierOptions: [], _qtyMode: "rendimiento", ...r }));
-  etapas.value = (data.tabla_etapas_costeo || []).map(r => ({ _tid: uid(), ...r, lote_qty: r.lote_qty || 1, lote_uom: r.lote_uom || "H87 - Pieza", stage_id: r.stage_id || genStageId() }));
+  productos.value = (data.costeo_producto || []).map(r => ({ _tid: uid(), image: "", description: "", precio_manual: 0, ...r }));
+  detalles.value = (data.costeo_producto_detalle || []).map(r => ({ _tid: uid(), _supplierOptions: [], _qtyMode: "rendimiento", ...r, material_id: r.material_id || genStageId() }));
+  // La etapa se captura SIEMPRE como cantidad x costo (multiplicación). Los costeos
+  // viejos que usaban precio por lote (precio ÷ lote_qty) se convierten al abrirlos:
+  // 1 operación al precio por pieza que ya tenían, con lote_qty de vuelta en 1 --
+  // el costo por prenda no cambia, y lote_qty>1 dejaría de significar lo mismo para
+  // crear_subcontracting_bom ("1 lote de servicio produce N piezas").
+  etapas.value = (data.tabla_etapas_costeo || []).map(r => {
+    const e = { _tid: uid(), ...r, lote_qty: r.lote_qty || 1, lote_uom: r.lote_uom || "H87 - Pieza", modo_precio: "Por operación", operaciones_por_pieza: r.operaciones_por_pieza || 1, precio_por_operacion: r.precio_por_operacion || 0, stage_id: r.stage_id || genStageId() };
+    if ((r.modo_precio || "Por lote") !== "Por operación") {
+      e.operaciones_por_pieza = 1;
+      e.precio_por_operacion = round2((Number(r.precio_servicio) || 0) / (Number(r.lote_qty) || 1));
+      e.precio_servicio = e.precio_por_operacion;
+      e.lote_qty = 1;
+    }
+    return e;
+  });
+  salidasEtapa.value = (data.tabla_salidas_etapa || []).map(r => ({ _tid: uid(), ...r, salida_id: r.salida_id || genStageId(), qty_salida: r.qty_salida || 1, pct_participacion: r.pct_participacion ?? 100 }));
+  materialesEtapa.value = (data.tabla_materiales_etapa || []).map(r => ({ _tid: uid(), ...r }));
+  migrarMaterialesEtapaLegado();
   tallas.value = (data.tabla_tallas_costeo || []).map(r => ({ _tid: uid(), sobrecosto_tipo: "Ninguno", ...r }));
   for (const p of productos.value) { if (p.finished_item) { const fetched = await fetchItemImage(p.finished_item); if (fetched) p.image = fetched; } }
   // Recalcular siempre al cargar (no confiar en la foto guardada la última vez) --
@@ -3503,6 +4138,10 @@ async function fillFromDoc(data) {
   // guardado antes de este cambio, o si se abrió sin tocar ningún campo todavía.
   productos.value.forEach(p => recalcProducto(p));
   hydrateSupplierOptions();
+  // Se libera después de un tick: el watcher de compañía es asíncrono y si se
+  // liberara aquí mismo alcanzaría a correr con la compañía recién asignada.
+  await nextTick();
+  cargandoDoc = false;
 }
 
 async function loadRelated() {
@@ -3805,9 +4444,10 @@ async function saveDoc() {
 async function advance() {
   if (isNew.value) { showToast("Guarda el costeo primero", "error"); return; }
   const c = cta.value; if (!c) return;
-  // "enviar" solo cambia de pestaña (no avanza de fase ni requiere producción
-  // completa) -- las remisiones parciales deben poder crearse lote por lote
-  // conforme va llegando cada uno, no hasta que absolutamente todo esté recibido.
+  // "enviar" solo cambia de pestaña (no crea ni valida ningún documento) -- el
+  // botón ya está deshabilitado por canAdvanceCta hasta que haya al menos un
+  // lote recibido, así que llegar aquí ya implica que hay algo que entregar;
+  // no espera el 100% porque las remisiones son por lote (parciales).
   if (c.action === "enviar") { activeStep.value = 5; return; }
   if (c.action === "ir_preparar_manufactura") { activeStep.value = 3; return; }
   if (c.action === "pasar_produccion") { await prepararProduccion(); return; }
@@ -3926,29 +4566,6 @@ async function guardarBorradorCotizacion() {
   } catch (e) { showToast(e.message || "No se pudo guardar la cotización", "error"); }
   finally { advancing.value = false; }
 }
-async function cotizarDeNuevo() {
-  advancing.value = true;
-  try {
-    const res = await call("costeo_yelke.api.costeo_api.crear_cotizacion", {
-      costeo: docName.value,
-      valid_till: cotForm.valid_till || null,
-      payment_terms_template: cotForm.payment_terms_template || null,
-      tc_name: cotForm.tc_name || null,
-      custom_tipo_formato: cotForm.custom_tipo_formato || "Normal",
-      currency: cotForm.currency || null,
-      selling_price_list: cotForm.selling_price_list || null,
-      taxes_and_charges: cotForm.taxes_and_charges || null,
-      contact_email: cotForm.contact_email || null,
-      contact_mobile: cotForm.contact_mobile || null,
-    });
-    expandedQuotName.value = res.name;
-    await loadRelated();
-    previewKey.value++;
-    showToast("Nueva cotización creada — la anterior queda como historial");
-  } catch (e) { showToast(e.message || "No se pudo crear la cotización", "error"); }
-  finally { advancing.value = false; }
-}
-
 function openRechazarModal() { rechazarMotivo.value = ""; showRechazarModal.value = true; }
 async function confirmarCotizacionRechazada() {
   const name = expandedQuotName.value;
@@ -4161,7 +4778,12 @@ async function loadPendientesArticulos() {
   if (!docName.value) { pendientesArticulos.value = []; return; }
   try {
     const r = await call("costeo_yelke.api.costeo_api.get_articulos_pendientes", { costeo: docName.value });
-    pendientesArticulos.value = r?.grupos || [];
+    // Los sub-ensamblajes NO se muestran aquí -- son artículos internos del
+    // proceso (nunca se compran ni se revisan uno por uno) y se materializan
+    // solos, sin intervención, vía auto_materializar_subensamblajes justo antes
+    // de "Pasar a producción" (ver materializeArticulosIfNeeded). Mostrarlos en
+    // este checklist obligaría a resolverlos a mano cuando no hace falta.
+    pendientesArticulos.value = (r?.grupos || []).filter(g => g.row_type !== "subensamblaje_etapa");
     pendientesAdvertencias.value = r?.advertencias || [];
     pendientesContext.company = r?.company || "";
     pendientesContext.almacen_materias_primas = r?.almacen_materias_primas || "";
@@ -4196,6 +4818,7 @@ function applyMaterializacionLocal(rowType, texto, itemCode) {
     etapas.value.forEach(e => { if (e.servicio === texto) e.servicio = itemCode; });
   } else if (rowType === "subensamblaje_etapa") {
     etapas.value.forEach(e => { if (e.subensamblaje === texto) e.subensamblaje = itemCode; });
+    salidasEtapa.value.forEach(s => { if (s.subensamblaje === texto) s.subensamblaje = itemCode; });
   }
 }
 async function resolverArticuloExistente(g, itemCode) {

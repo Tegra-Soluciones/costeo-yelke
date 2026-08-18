@@ -1166,22 +1166,51 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     finally { nuevoLoteForm.loading = false; }
   }
   function cerrarNuevoLote() { nuevoLoteForm.open = false; }
+  // Abre el lote COMPLETO: encarga de una vez todas las etapas al taller que
+  // corresponde (cantidad y fecha se deciden aquí, una sola vez). Antes esto era
+  // crear+validar la SCO etapa por etapa -- 2 acciones x etapa sin ningún dato nuevo.
+  // El material todavía no tiene que existir: lo que exige existencias es "Enviar al
+  // taller", no el encargo (ver lote_abrir en el backend).
   async function crearNuevoLote() {
-    const primeraEtapa = productoLotesActivo.value?.etapas?.[0];
-    if (!primeraEtapa?.po) return;
+    if (!planDetail.value) { showToast("No hay plan de producción", "error"); return; }
     if (!nuevoLoteForm.qty || nuevoLoteForm.qty <= 0) { showToast("Indica la cantidad del lote", "error"); return; }
     advancing.value = true;
     try {
       const lote_ref = siguienteLoteRef();
-      await call("costeo_yelke.api.costeo_api.sub_crear_sco", {
-        po: primeraEtapa.po, qty: nuevoLoteForm.qty, schedule_date: nuevoLoteForm.schedule_date || null, lote_ref,
+      const r = await call("costeo_yelke.api.costeo_api.lote_abrir", {
+        plan: planDetail.value.name, lote_ref, qty: nuevoLoteForm.qty,
+        schedule_date: nuevoLoteForm.schedule_date || null,
+        producto: loteProductoActivo.value || null,
       });
       cerrarNuevoLote();
       await loadLotesProduccion();
       await seleccionarLote(lote_ref);
-      showToast(`${lote_ref} creado`);
-    } catch (e) { showToast(e.message || "No se pudo crear el lote", "error"); }
+      const n = (r.creadas || []).length;
+      if ((r.errores || []).length) showToast(`${lote_ref}: ${n} etapa(s) abiertas · ${r.errores[0]}`, "error");
+      else showToast(`${lote_ref} abierto — ${n} etapa${n === 1 ? "" : "s"} encargada${n === 1 ? "" : "s"}`);
+    } catch (e) { showToast(e.message || "No se pudo abrir el lote", "error"); }
     finally { advancing.value = false; }
+  }
+  // Un solo paso para "ya le mandé el material al taller": crea y VALIDA la
+  // transferencia y deja el recibo en borrador esperando la cantidad real entregada
+  // (lo único que el sistema no puede deducir). Sustituye 4 acciones por 1.
+  async function enviarMaterialTaller(sco) {
+    const name = sco || scoSel.value?.name;
+    if (!name) return;
+    advancing.value = true;
+    try {
+      await call("costeo_yelke.api.costeo_api.sub_enviar_material", { sco: name });
+      if (subPo.value?.name) await loadFlujo(subPo.value.name);
+      await loadLotesProduccion();
+      showToast("Material enviado al taller · recibo listo para confirmar cantidad");
+    } catch (e) {
+      showToast(
+        /negativ|no.*suficiente|necesar/i.test(e.message || "")
+          ? "Falta materia prima en el almacén de origen: recíbela (Recibo de compra) o espera la etapa anterior."
+          : e.message || "No se pudo enviar el material",
+        "error",
+      );
+    } finally { advancing.value = false; }
   }
   // Genera la OC de materia prima de UN proveedor de un lote (ya dividido al
   // validar la solicitud) -- por su propio botón, junto a los de Solicitud de
@@ -1324,7 +1353,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     loadSubcontratos, crearSubcontratos, selectSub, loadSub, guardarSub, validarSub,
     flujo, scoActivo, scoSel, scoExists, scoValidated, scoQtyPendiente, scoForm, scoCostos, loteSco,
     loadFlujo, selectSco, abrirLoteSco, cerrarLoteSco, crearSco, guardarSco, validarSco, addCosto, removeCosto,
-    transDoc, transForm, transCostos, transValidated, transferDone, loadTrans, transferirMaterial, guardarTrans, validarTransferencia,
+    transDoc, transForm, transCostos, transValidated, transferDone, loadTrans, transferirMaterial, guardarTrans, validarTransferencia, enviarMaterialTaller,
     addCostoTrans, removeCostoTrans,
     scr, scrForm, scrCostos, scrValidated, crearReciboSub, loadScr, guardarScr, validarScr,
     addCostoScr, removeCostoScr,
