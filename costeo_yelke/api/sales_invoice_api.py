@@ -72,12 +72,14 @@ def get_sales_invoice_form_defaults():
 
 
 @frappe.whitelist()
-def get_sales_invoices(status=None, customer=None, limit=50):
+def get_sales_invoices(status=None, customer=None, company=None, limit=50):
     filters = {}
     if status:
         filters["status"] = status
     if customer:
         filters["customer"] = customer
+    if company:
+        filters["company"] = company
 
     rows = frappe.get_all(
         "Sales Invoice",

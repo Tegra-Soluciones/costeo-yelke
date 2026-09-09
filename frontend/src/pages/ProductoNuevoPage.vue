@@ -694,6 +694,9 @@ import PageHeader     from "@/components/PageHeader.vue";
 import LinkInput      from "@/components/LinkInput.vue";
 import ItemPricesForm from "@/components/ItemPricesForm.vue";
 import { call }       from "@/utils/frappe.js";
+import { useCompany } from "@/composables/useCompany.js";
+
+const { state: companyState } = useCompany();
 
 // ── Micro-components ─────────────────────────────────────────────────────────
 const FieldLabel   = defineComponent({ setup(_, { slots }) { return () => h("label", { class: "text-xs font-medium text-gray-500 block mb-1" }, slots.default?.()); } });
@@ -900,6 +903,7 @@ onMounted(async () => {
   try {
     const data = await call("costeo_yelke.api.item_api.get_item_form_defaults");
     Object.assign(defaults, data);
+    if (companyState.selected) defaults.default_company = companyState.selected;
   } catch (e) {
     showToast("No se pudieron cargar los datos del formulario", "error");
   } finally {

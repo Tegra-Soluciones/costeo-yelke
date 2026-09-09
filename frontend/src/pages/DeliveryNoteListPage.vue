@@ -46,10 +46,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, defineComponent, h } from "vue";
+import { ref, computed, onMounted, watch, defineComponent, h } from "vue";
 import { useRouter } from "vue-router";
 import DocumentListPage from "@/components/DocumentListPage.vue";
 import { call } from "@/utils/frappe.js";
+import { useCompany } from "@/composables/useCompany.js";
+
+const { state: companyState } = useCompany();
 
 const router = useRouter();
 const loading = ref(true);
@@ -101,12 +104,16 @@ function fmtDate(s) {
 function fmtC(v) { return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(v || 0); }
 
 function openRow(dn) {
-  if (dn.costeo) router.push({ name: "CosteoDetail", params: { name: dn.costeo }, query: { step: "5", highlight: dn.name, doctype: "Delivery Note" } });
+  if (dn.costeo) router.push({ name: "CosteoDetail", params: { name: dn.costeo }, query: { step: "6", highlight: dn.name, doctype: "Delivery Note" } });
 }
 
-onMounted(async () => {
-  try { rows.value = await call("costeo_yelke.api.documentos_api.get_delivery_notes", { limit: 100 }) || []; }
+async function load() {
+  loading.value = true;
+  try { rows.value = await call("costeo_yelke.api.documentos_api.get_delivery_notes", { limit: 100, company: companyState.selected || undefined }) || []; }
   catch (e) { console.error(e); }
   finally { loading.value = false; }
-});
+}
+
+onMounted(load);
+watch(() => companyState.selected, load);
 </script>

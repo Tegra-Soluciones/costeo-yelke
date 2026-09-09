@@ -7,6 +7,8 @@ from frappe.utils import flt
 
 from erpnext.stock.doctype.material_request import material_request as erpnext_material_request
 
+from costeo_yelke.security import is_internal_user
+
 
 def _parse_args(args):
     if args is None:
@@ -85,6 +87,17 @@ def _make_supplier_purchase_order(material_request_name, supplier, row_names):
 
 @frappe.whitelist()
 def make_purchase_order(source_name, target_doc=None, args=None):
+    # Este override se registra bajo el nombre del método de erpnext (ver
+    # override_whitelisted_methods en hooks.py), así que el request llega como
+    # erpnext.stock.doctype.material_request.make_purchase_order y el guard
+    # global de costeo_yelke.security.guard_internal (antes-de-request, filtra
+    # por prefijo "costeo_yelke.") nunca lo evalúa. Se repite el mismo chequeo
+    # aquí a mano para no depender solo del guard global.
+    if not is_internal_user():
+        frappe.throw(
+            _("Acceso restringido: esta herramienta es de uso interno."),
+            frappe.PermissionError,
+        )
     args = _parse_args(args)
 
     if target_doc:

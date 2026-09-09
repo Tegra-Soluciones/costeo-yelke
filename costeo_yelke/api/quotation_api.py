@@ -73,13 +73,15 @@ def get_quotation_form_defaults():
 
 
 @frappe.whitelist()
-def get_quotations(status=None, customer=None, limit=50):
+def get_quotations(status=None, customer=None, company=None, limit=50):
     """Returns a list of quotations with key fields."""
     filters = {}
     if status:
         filters["status"] = status
     if customer:
         filters["party_name"] = customer
+    if company:
+        filters["company"] = company
 
     fields = [
         "name", "status", "quotation_to", "party_name", "customer_name",

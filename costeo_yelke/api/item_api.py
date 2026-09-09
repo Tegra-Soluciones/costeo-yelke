@@ -17,6 +17,22 @@ def _valuation_expense_account(company):
 
 
 @frappe.whitelist()
+def get_companies():
+    """Compañías disponibles para el selector global del navbar (filtro de toda
+    la app). is_default = default_company del usuario actual, si no tiene uno
+    (frappe.defaults.get_user_default) cae al Global Default del sistema."""
+    default_company = frappe.defaults.get_user_default("company") or frappe.db.get_default("company")
+    companies = frappe.get_all(
+        "Company",
+        fields=["name", "default_currency", "abbr"],
+        order_by="name asc",
+    )
+    for c in companies:
+        c["is_default"] = c["name"] == default_company
+    return companies
+
+
+@frappe.whitelist()
 def get_navbar_data():
     """Returns session info for the SPA top navbar."""
     user_name = frappe.session.user
@@ -602,6 +618,48 @@ def descartar_recordatorio(recordatorio):
 
 
 @frappe.whitelist()
+def marcar_recordatorio(recordatorio, estado):
+    """Cambia el estado de un recordatorio a mano desde la página /recordatorios
+    ('Marcar como enviado' cuando ya se avisó al cliente por cualquier medio,
+    'Descartar' cuando ya no aplica, o volver a 'Pendiente' si fue un error)."""
+    if estado not in ("Pendiente", "Enviado", "Descartado"):
+        frappe.throw(_("Estado inválido."))
+    frappe.db.set_value("Precio Acordado Recordatorio", recordatorio, "estado", estado)
+    return {"ok": True, "estado": estado}
+
+
+@frappe.whitelist()
+def get_recordatorios(estado=None, limit=200):
+    """Lista de recordatorios de vigencia de precio acordado para la página
+    /recordatorios del SPA (antes solo vivían en el escritorio de ERPNext)."""
+    filters = {}
+    if estado:
+        filters["estado"] = estado
+    rows = frappe.get_all(
+        "Precio Acordado Recordatorio",
+        fields=[
+            "name", "customer", "item_code", "item_name", "costeo",
+            "price_list_rate", "valid_upto", "tipo_aviso", "estado",
+            "enviado_email_el", "enviado_whatsapp_el", "notas", "modified",
+        ],
+        filters=filters,
+        order_by="valid_upto asc, modified desc",
+        limit=int(limit),
+    )
+    cust_names = {r.customer for r in rows if r.customer}
+    label = {
+        c.name: c.customer_name
+        for c in frappe.get_all(
+            "Customer", filters={"name": ["in", list(cust_names)]},
+            fields=["name", "customer_name"],
+        )
+    } if cust_names else {}
+    for r in rows:
+        r["customer_name"] = label.get(r.customer, r.customer)
+    return rows
+
+
+@frappe.whitelist()
 def save_item_uoms(item_code, uoms):
     """Replace the UOM conversion table (Item.uoms child) for an item."""
     import json
@@ -820,6 +878,7 @@ def create_item(data, ignore_mandatory=False):
         "country_of_origin", "customs_tariff_number",
         "enable_deferred_revenue", "enable_deferred_expense",
         "over_delivery_receipt_allowance", "over_billing_allowance",
+        "allow_negative_stock",
     ]
 
     for field in scalar_fields:

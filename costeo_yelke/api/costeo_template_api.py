@@ -157,11 +157,14 @@ def _reset_production_plan(doc):
 # Endpoints
 # ---------------------------------------------------------------------------
 @frappe.whitelist()
-def get_costeo_templates():
+def get_costeo_templates(company=None):
     """Lista de plantillas de costeo con conteo de productos."""
+    filters = {"es_plantilla": 1}
+    if company:
+        filters["compañia"] = company
     templates = frappe.get_all(
         "Costeo",
-        filters={"es_plantilla": 1},
+        filters=filters,
         fields=["name", "nombre_plantilla", "familia_prenda", "compañia", "modified"],
         order_by="modified desc",
     )

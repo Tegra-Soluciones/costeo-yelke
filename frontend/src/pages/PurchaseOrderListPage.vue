@@ -63,10 +63,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, defineComponent, h } from "vue";
+import { ref, computed, onMounted, watch, defineComponent, h } from "vue";
 import { useRouter } from "vue-router";
 import DocumentListPage from "@/components/DocumentListPage.vue";
 import { call } from "@/utils/frappe.js";
+import { useCompany } from "@/composables/useCompany.js";
+
+const { state: companyState } = useCompany();
 
 const router = useRouter();
 const loading = ref(true);
@@ -141,17 +144,21 @@ function isOverdue(dateStr, docstatus) { if (!dateStr || docstatus !== 1) return
 // standalone de abajo es solo para OCs sueltas que no vienen del flujo de Costeo.
 function openRow(po) {
   if (po.costeo) {
-    router.push({ name: "CosteoDetail", params: { name: po.costeo }, query: { step: "4", highlight: po.name, doctype: "Purchase Order" } });
+    router.push({ name: "CosteoDetail", params: { name: po.costeo }, query: { step: "5", highlight: po.name, doctype: "Purchase Order" } });
   } else {
     router.push(`/ordenes-compra/${encodeURIComponent(po.name)}`);
   }
 }
 
-onMounted(async () => {
+async function load() {
+  loading.value = true;
   try {
-    const rows = await call("costeo_yelke.api.purchase_order_api.get_purchase_orders", { limit: 100 });
+    const rows = await call("costeo_yelke.api.purchase_order_api.get_purchase_orders", { limit: 100, company: companyState.selected || undefined });
     orders.value = rows || [];
   } catch (e) { console.error(e); }
   finally { loading.value = false; }
-});
+}
+
+onMounted(load);
+watch(() => companyState.selected, load);
 </script>

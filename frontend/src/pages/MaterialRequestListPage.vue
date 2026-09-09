@@ -47,10 +47,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, defineComponent, h } from "vue";
+import { ref, computed, onMounted, watch, defineComponent, h } from "vue";
 import { useRouter } from "vue-router";
 import DocumentListPage from "@/components/DocumentListPage.vue";
 import { call } from "@/utils/frappe.js";
+import { useCompany } from "@/composables/useCompany.js";
+
+const { state: companyState } = useCompany();
 
 const router = useRouter();
 const loading = ref(true);
@@ -100,12 +103,16 @@ function fmtDate(s) {
 }
 
 function openRow(mr) {
-  if (mr.costeo) router.push({ name: "CosteoDetail", params: { name: mr.costeo }, query: { step: "4", highlight: mr.name, doctype: "Material Request" } });
+  if (mr.costeo) router.push({ name: "CosteoDetail", params: { name: mr.costeo }, query: { step: "5", highlight: mr.name, doctype: "Material Request" } });
 }
 
-onMounted(async () => {
-  try { rows.value = await call("costeo_yelke.api.documentos_api.get_material_requests", { limit: 100 }) || []; }
+async function load() {
+  loading.value = true;
+  try { rows.value = await call("costeo_yelke.api.documentos_api.get_material_requests", { limit: 100, company: companyState.selected || undefined }) || []; }
   catch (e) { console.error(e); }
   finally { loading.value = false; }
-});
+}
+
+onMounted(load);
+watch(() => companyState.selected, load);
 </script>

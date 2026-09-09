@@ -199,7 +199,7 @@ watch(() => props.open, (isOpen) => {
   autoSuggestExisting(props.finishedItemText);
   form.item_code = suggestCode(props.finishedItemText);
   form.item_name = props.finishedItemText;
-  form.stock_uom = "";
+  form.stock_uom = "H87 - Pieza"; // default -- la mayoría de los productos terminados se venden por pieza, pero se puede cambiar libremente
   form.precio_venta = props.suggestedPrice || 0;
   form.conPrecioVolumen = false;
   form.rangos = [];

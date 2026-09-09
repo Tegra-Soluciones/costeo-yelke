@@ -589,6 +589,219 @@ def _resolve_stage_graph(etapas, salidas=None):
     return info, ordered
 
 
+_SLUG_STOPWORDS = {"de", "del", "la", "el", "los", "las", "y", "para", "con", "servicio", "servico"}
+
+
+def _op_slug(servicios, supplier):
+    """Etiqueta corta y legible para una operación con varios servicios:
+    - prefijo común de los códigos (BORDADO-MANGA-* -> "bordado"), o
+    - token significativo compartido por TODOS los servicios
+      (CONFECCION-DE-CUELLO + SERVICIO-DE-CONFECCION -> "confeccion"), o
+    - el proveedor como último recurso."""
+    codes = [s.get("service_item") for s in servicios if s.get("service_item")]
+    if codes:
+        tok_lists = [[t for t in c.replace("_", "-").split("-") if t] for c in codes]
+        # 1) prefijo común
+        common_prefix = []
+        for i in range(min(len(t) for t in tok_lists)):
+            tok = tok_lists[0][i]
+            if all(t[i] == tok for t in tok_lists):
+                common_prefix.append(tok)
+            else:
+                break
+        pref = [t.lower() for t in common_prefix if t.lower() not in _SLUG_STOPWORDS]
+        if pref:
+            return " ".join(pref[:2])
+        # 2) token significativo compartido (el más largo)
+        shared = set(t.lower() for t in tok_lists[0])
+        for tl in tok_lists[1:]:
+            shared &= set(t.lower() for t in tl)
+        shared = [t for t in shared if t not in _SLUG_STOPWORDS and len(t) > 2]
+        if shared:
+            return max(shared, key=len)
+    return (supplier or "operación").strip().lower()
+
+
+def _resolve_production_operations(etapas, salidas=None, producto=None):
+    """Envuelve ``_resolve_stage_graph`` fusionando las etapas del MISMO proveedor
+    que ocupan el mismo punto del flujo -- en paralelo con el mismo origen, o en
+    cadena A->B -- en UNA operación con varios servicios y UN resultado. Es lo que
+    permite que "3 bordados del mismo taller" salgan como 3 renglones de servicio en
+    una sola OC contra una sola pieza, sin 3 sub-ensamblajes intermedios.
+
+    Regresa una lista de ``frappe._dict`` en orden topológico, cada uno:
+        op_key            id estable (node_key del nodo ancla)
+        producto_terminado
+        supplier
+        is_terminal       produce el producto terminado
+        output_item       item que produce (sintético si fusiona 2+; el
+                          subensamblaje del nodo si es 1; el producto si es terminal)
+        servicios         [ {service_item, price, lote_qty, lote_uom, modo_precio,
+                             operaciones_por_pieza, precio_por_operacion} ]
+                          -- servicios con el MISMO service_item se colapsan en uno
+                          con el precio sumado (ej. dos cortes "SERVICO-DE-CORTE" a
+                          $3 -> un renglón a $6).
+        upstream_keys     set de op_key de las operaciones de las que recibe
+        member_stage_keys set de stage_id de las etapas fusionadas (materia prima /
+                          almacenes se leen por aquí)
+        pct, qty_salida   de la salida cuando la op es un único nodo-salida; 100/1
+                          en cualquier otro caso (los nodos con salidas propias NO
+                          se fusionan)
+
+    Si nada se fusiona -> exactamente una operación por nodo, con un solo servicio,
+    comportamiento idéntico al de ``_resolve_stage_graph`` recorrido a mano."""
+    info, ordered = _resolve_stage_graph(etapas, salidas)
+    salida_parents = {s.get("stage_id") for s in (salidas or []) if s.get("stage_id")}
+
+    def _svc(node):
+        return {
+            "service_item": node.get("servicio"),
+            "price": flt(node.get("precio_servicio")),
+            "lote_qty": flt(node.get("lote_qty")) or 1,
+            "lote_uom": node.get("lote_uom"),
+            "modo_precio": node.get("modo_precio"),
+            "operaciones_por_pieza": flt(node.get("operaciones_por_pieza")) or 1,
+            "precio_por_operacion": flt(node.get("precio_por_operacion")),
+        }
+
+    ops = {}
+    order = []
+    for n in ordered:
+        nk = n["node_key"]
+        g = info[nk]
+        ops[nk] = frappe._dict(
+            op_key=nk,
+            producto_terminado=n.get("producto_terminado") or producto,
+            supplier=n.get("proveedor"),
+            is_terminal=g["is_terminal"],
+            servicios=[_svc(n)] if n.get("servicio") else [],
+            upstream_keys={u["node_key"] for u in g["upstream"]},
+            member_stage_keys={n.get("parent_stage_key") or nk},
+            stage_subensamblajes=[n.get("subensamblaje") or ""],
+            anchor_node=n,
+            pct=flt(n.get("pct_participacion") or 100),
+            qty_salida=flt(n.get("qty_salida") or 1) or 1,
+            _has_salidas=(n.get("parent_stage_key") in salida_parents),
+            output_item=None,
+        )
+        order.append(nk)
+
+    def _downstream(k):
+        return {k2 for k2, o in ops.items() if k in o.upstream_keys}
+
+    def _absorb(dst, src):
+        for s in src.servicios:
+            same = next((x for x in dst.servicios if x["service_item"] == s["service_item"]), None)
+            if same:
+                same["price"] = flt(same["price"]) + flt(s["price"])
+            else:
+                dst.servicios.append(s)
+        dst.member_stage_keys |= src.member_stage_keys
+        dst.stage_subensamblajes += src.stage_subensamblajes
+        for o in ops.values():
+            if src.op_key in o.upstream_keys:
+                o.upstream_keys.discard(src.op_key)
+                if o.op_key != dst.op_key:
+                    o.upstream_keys.add(dst.op_key)
+        dst.upstream_keys |= {u for u in src.upstream_keys if u != dst.op_key}
+        del ops[src.op_key]
+
+    changed = True
+    while changed:
+        changed = False
+        # cadena A -> B (mismo proveedor, B recibe sólo de A, A alimenta sólo a B)
+        for k in list(ops):
+            b = ops.get(k)
+            if not b or b._has_salidas or not b.supplier or len(b.upstream_keys) != 1:
+                continue
+            a = ops.get(next(iter(b.upstream_keys)))
+            if not a or a._has_salidas or a.is_terminal or a.supplier != b.supplier:
+                continue
+            if a.producto_terminado != b.producto_terminado or _downstream(a.op_key) != {k}:
+                continue
+            term = b.is_terminal
+            _absorb(a, b)
+            a.is_terminal = term
+            changed = True
+            break
+        if changed:
+            continue
+        # paralelas: mismo proveedor + mismo origen
+        groups = {}
+        for k, op in ops.items():
+            if op._has_salidas or not op.supplier:
+                continue
+            groups.setdefault((op.producto_terminado, op.supplier, frozenset(op.upstream_keys)), []).append(k)
+        for members in groups.values():
+            if len(members) < 2:
+                continue
+            anchor = ops[members[0]]
+            term = any(ops[m].is_terminal for m in members)
+            for m in members[1:]:
+                _absorb(anchor, ops[m])
+            anchor.is_terminal = term
+            changed = True
+            break
+
+    # Reducción transitiva: si una operación recibe de A y de B, y B ya recibe
+    # (directa o transitivamente) de A, el vínculo A es redundante -- lo quita para
+    # que el BOM no liste dos veces la misma pieza (una directa y otra dentro de B).
+    def _upstream_de(key, visto=None):
+        visto = visto if visto is not None else set()
+        for u in ops.get(key, frappe._dict(upstream_keys=set())).upstream_keys:
+            if u not in visto:
+                visto.add(u)
+                _upstream_de(u, visto)
+        return visto
+
+    for op in ops.values():
+        directos = list(op.upstream_keys)
+        redundantes = set()
+        for a in directos:
+            for b in directos:
+                if a != b and a in _upstream_de(b):
+                    redundantes.add(a)
+        op.upstream_keys -= redundantes
+
+    # re-orden topológico
+    remaining = list(ops.values())
+    resolved, seen, guard = [], set(), 0
+    while remaining and guard < 1000:
+        guard += 1
+        progressed = False
+        still = []
+        for op in remaining:
+            if op.upstream_keys <= seen:
+                resolved.append(op)
+                seen.add(op.op_key)
+                progressed = True
+            else:
+                still.append(op)
+        remaining = still
+        if not progressed:
+            resolved.extend(remaining)
+            break
+
+    taken = set()
+    for op in resolved:
+        merged = len(op.member_stage_keys) > 1 or len(op.servicios) > 1
+        # Nombre SIEMPRE automático: "{producto} · {palabra del servicio}" -- el
+        # usuario ya no lo edita, se generó tedio sin valor. El campo 'subensamblaje'
+        # de las etapas se ignora aquí (puede traer restos de capturas viejas).
+        if op.is_terminal:
+            op.output_item = op.producto_terminado
+        else:
+            base = f"{op.producto_terminado} · {_op_slug(op.servicios, op.supplier)}"
+            name, i = base, 2
+            while name in taken:
+                name, i = f"{base} {i}", i + 1
+            op.output_item = name
+        if merged:
+            op.pct, op.qty_salida = 100.0, 1.0
+        taken.add(op.output_item)
+    return resolved
+
+
 def _get_finished_qty_map(source):
     qty_map = {}
     for row in source.get("costeo_producto") or []:
@@ -778,76 +991,86 @@ def _build_stage_subcontracting_rows(source, qty_map_override=None):
             # default de 1, que generaría una OC de subcontratación fantasma.
             continue
         fg_qty = qty_map.get(producto_terminado) or 1
-        graph_info, etapas_ordenadas = _resolve_stage_graph(etapas, source.get("tabla_salidas_etapa"))
+        operaciones = _resolve_production_operations(etapas, source.get("tabla_salidas_etapa"), producto_terminado)
 
-        for etapa in etapas_ordenadas:
-            proveedor = etapa.get("proveedor")
-            servicio = etapa.get("servicio")
-            if not proveedor or not servicio:
+        for op in operaciones:
+            servicios = [s for s in op.servicios if s.get("service_item")]
+            if not op.supplier or not servicios:
                 continue
 
-            es_ultima = graph_info.get(etapa.get("node_key"), {}).get("is_terminal", True)
-            finished_good = producto_terminado if es_ultima else (etapa.get("subensamblaje") or producto_terminado)
+            finished_good = op.output_item
 
-            target_warehouse = None
-            if es_ultima:
-                target_warehouse = fg_warehouse_map.get(producto_terminado)
-                if not target_warehouse:
-                    target_warehouse = _get_item_default_warehouse(producto_terminado, company)
-                if not target_warehouse:
-                    target_warehouse = _guess_finished_goods_warehouse(company)
-                if not target_warehouse:
-                    target_warehouse = wip_warehouse
-            else:
-                target_warehouse = wip_warehouse
-                if not target_warehouse:
-                    target_warehouse = _get_item_default_warehouse(finished_good, company)
-
-            # Una salida que produce varias unidades por prenda necesita esas unidades
-            # pedidas al taller (2 mangas cortadas por prenda = 2x la cantidad de
-            # prendas). El servicio NO se multiplica por eso: el conversion_factor del
-            # Subcontracting BOM ya viene dividido entre qty_salida, así que
-            # fg_qty x qty_salida x conversion_factor sigue dando una sola operación
-            # por prenda (ver crear_subcontracting_bom).
-            qty_salida = flt(etapa.get("qty_salida")) or 1
-
-            stage_rows.append(
-                frappe._dict(
-                    {
-                        "producto_terminado": producto_terminado,
-                        "etapa": etapa.get("etapa"),
-                        "supplier": proveedor,
-                        "service_item": servicio,
-                        "service_price": flt(etapa.get("precio_servicio")),
-                        "finished_good": finished_good,
-                        "finished_good_qty": fg_qty * qty_salida,
-                        "target_warehouse": target_warehouse,
-                        "schedule_date": default_schedule_date,
-                    }
+            if op.is_terminal:
+                target_warehouse = (
+                    fg_warehouse_map.get(producto_terminado)
+                    or _get_item_default_warehouse(producto_terminado, company)
+                    or _guess_finished_goods_warehouse(company)
+                    or wip_warehouse
                 )
-            )
+            else:
+                target_warehouse = wip_warehouse or _get_item_default_warehouse(finished_good, company)
+
+            # Cuando la operación agrupa VARIOS servicios del mismo proveedor sobre
+            # UNA pieza (ver _resolve_production_operations), cada servicio es un
+            # renglón facturable propio, pero la pieza que se recibe se reparte entre
+            # ellos para que el total producido sea UNO, no k. finished_good_qty lleva
+            # esa porción; el precio de cada renglón queda completo (se factura el
+            # servicio entero). Con un solo servicio esto es exactamente el valor de
+            # antes.
+            k = len(servicios)
+            total_fg = fg_qty * (flt(op.qty_salida) or 1)
+            # Reparto EXACTO: las k porciones suman total_fg sin drift (la última
+            # absorbe el residuo), para que la pieza producida y su facturación
+            # cuadren. Una porción puede quedar fraccionaria (5000/3) -- es una pieza
+            # interna de WIP, no se cuenta física.
+            shares, acum = [], 0.0
+            for i in range(k):
+                nuevo = total_fg if i == k - 1 else round(total_fg * (i + 1) / k, 6)
+                shares.append(round(nuevo - acum, 6))
+                acum = nuevo
+            for i, svc in enumerate(servicios):
+                stage_rows.append(
+                    frappe._dict(
+                        {
+                            "producto_terminado": producto_terminado,
+                            "op_key": op.op_key,
+                            "supplier": op.supplier,
+                            "service_item": svc["service_item"],
+                            "service_price": flt(svc["price"]),
+                            "finished_good": finished_good,
+                            "finished_good_qty": shares[i],
+                            "fg_qty_total": total_fg,
+                            "num_servicios": k,
+                            "is_root": not op.upstream_keys,
+                            "target_warehouse": target_warehouse,
+                            "schedule_date": default_schedule_date,
+                        }
+                    )
+                )
 
     return stage_rows
 
 
 def _create_subcontracting_pos_from_stages(source, stage_rows, sales_order=None):
-    """``sales_order``, si se manda, se graba en 'sales_order' de la línea de servicio de
-    cada OC de subcontratación creada (campo nativo de Purchase Order Item) -- es lo que
-    permite después filtrar las OC de maquila por OV (get_produccion_docs,
-    get_reporte_final), ya que Subcontracting Order no tiene ese campo y hereda todo de
-    la OC que le dio origen.
+    """``sales_order``, si se manda, se graba en 'sales_order' de cada línea de
+    servicio (campo nativo de Purchase Order Item) -- es lo que permite después
+    filtrar las OC de maquila por OV (get_produccion_docs, get_reporte_final), ya
+    que Subcontracting Order no tiene ese campo y hereda todo de la OC que le dio
+    origen.
 
-    Sigue creando UNA Purchase Order por fila de ``stage_rows`` -- una etapa con
-    varias 'salidas' produce varias filas (una por salida, ver
-    _build_stage_subcontracting_rows) y por lo tanto varias OC independientes,
-    cada una para su propio fg_item/salida (mismo criterio que una OC por etapa
-    de siempre; cada salida sigue caminos de producción distintos río abajo, así
-    que conviene que cada una tenga su propio documento rastreable). Esto NO
-    sobre-factura al proveedor: ``service_qty`` de cada fila ya viene escalado a
-    la porción exacta de esta salida (vía el conversion_factor ya repartido por
-    pct_participacion en el Subcontracting BOM de cada salida -- ver
-    crear_subcontracting_bom), así que la suma de las OC de una misma etapa da el
-    costo total real de la operación, no un múltiplo."""
+    UNA Purchase Order por PROVEEDOR (no por etapa): todas las etapas del mismo
+    producto que comparten proveedor entran como líneas separadas de la MISMA OC.
+
+    Las etapas del mismo proveedor en el mismo punto del flujo se FUSIONAN antes
+    (ver _resolve_production_operations): "3 servicios de bordado distintos, mismo
+    bordador" son 3 líneas de servicio con SU PRECIO que apuntan al MISMO `fg_item`
+    (la única pieza que se recibe). ``finished_good_qty`` de cada línea es 1/k de la
+    pieza (k = nº de servicios) para que ERPNext produzca UNA pieza, no k, mientras
+    que ``service_qty`` es la pieza ENTERA -- cada servicio se factura completo.
+    `fg_item` es la clave de trazabilidad de aquí en adelante (_po_for_bom_item,
+    _etapas_rows_for_po, sub_get_flujo, sub_crear_sco, _sub_qty_disponible_info),
+    que colapsan por él las líneas que lo comparten. Un fg_item DISTINTO por línea
+    (proveedor que hace 2 cosas en momentos distintos) sigue siendo pieza aparte."""
     company = _get_company_name(source)
     if not company:
         frappe.throw(_("Company is required to create Subcontracting Purchase Orders."))
@@ -862,51 +1085,33 @@ def _create_subcontracting_pos_from_stages(source, stage_rows, sales_order=None)
 
     bom_map = _get_subcontracting_bom_map([row.finished_good for row in stage_rows])
     taxes_template = _get_purchase_tax_template(company)
-    purchase_orders = []
 
+    # Agrupa por proveedor preservando el orden de aparición (Python 3.7+: dict
+    # mantiene orden de inserción) -- así la primera etapa de cada proveedor decide
+    # el orden de las OC creadas, determinista y fácil de seguir en los mensajes.
+    grupos = {}
     for row in stage_rows:
-        if not row.finished_good:
-            frappe.throw(
-                _("Stage {0} for product {1} has no finished good configured.").format(
-                    row.etapa or "?", row.producto_terminado
-                )
-            )
+        grupos.setdefault(row.supplier, []).append(row)
 
-        if not row.target_warehouse:
-            frappe.throw(
-                _(
-                    "Stage {0} for product {1} has no destination warehouse. "
-                    "Configure warehouse in Production Plan item or Item Defaults."
-                ).format(row.etapa or "?", row.producto_terminado)
-            )
+    purchase_orders = []
+    # fg_item cuyo sales_order_item ya se asignó a una línea -- ver más abajo (una
+    # operación terminal fusionada reparte el producto en k líneas de servicio, pero
+    # solo una debe contar contra la Sales Order Item).
+    _soi_ya_asignado = set()
 
-        bom_data = bom_map.get(row.finished_good)
-        service_item = row.service_item or (bom_data.service_item if bom_data else None)
-        if not service_item:
-            frappe.throw(
-                _("No service item found for stage {0} and finished good {1}.").format(
-                    row.etapa or "?", row.finished_good
-                )
-            )
-
-        conversion_factor = flt(bom_data.conversion_factor) if bom_data else 1
-        conversion_factor = conversion_factor or 1
-        fg_qty = flt(row.finished_good_qty) or 1
-        service_qty = fg_qty * conversion_factor
-        service_uom = (bom_data.service_item_uom if bom_data else None) or _get_service_stock_uom(service_item) or "Nos"
-        if service_uom == "Lote":
-            # El proveedor solo entrega lotes completos (ej. lotes de 25 piezas) -- si
-            # fg_qty no es múltiplo exacto, hay que pedir de más, no truncar.
-            service_qty = math.ceil(service_qty - 1e-6)
-
+    for supplier, rows in grupos.items():
         po = frappe.new_doc("Purchase Order")
         po.company = company
-        po.supplier = row.supplier
+        po.supplier = supplier
         po.is_subcontracted = 1
         po.transaction_date = source.get("posting_date") or source.get("fecha") or nowdate()
-        po.schedule_date = row.schedule_date or nowdate()
+        # Fecha/almacén por defecto del grupo: los de la PRIMERA etapa -- cada línea
+        # de todos modos trae los suyos propios (schedule_date/warehouse a nivel de
+        # renglón), esto solo alimenta el default del selector si alguien agrega una
+        # línea a mano después.
+        po.schedule_date = rows[0].schedule_date or nowdate()
 
-        supplier_warehouse = _get_supplier_warehouse(company, row.supplier)
+        supplier_warehouse = _get_supplier_warehouse(company, supplier)
         if supplier_warehouse:
             po.supplier_warehouse = supplier_warehouse
 
@@ -914,38 +1119,87 @@ def _create_subcontracting_pos_from_stages(source, stage_rows, sales_order=None)
         # (normalmente "Sucursales") en vez del almacén de destino real de la etapa
         # (WIP para etapas intermedias, Productos Terminados para la última) --
         # "Almacén (aceptado)" en el SPA mostraba ese default en vez del correcto.
-        po.set_warehouse = row.target_warehouse
+        po.set_warehouse = rows[0].target_warehouse
 
         if taxes_template:
             po.taxes_and_charges = taxes_template
 
-        item_row = {
-            "fg_item": row.finished_good,
-            "fg_item_qty": fg_qty,
-            "item_code": service_item,
-            "qty": service_qty,
-            "uom": service_uom,
-            "warehouse": row.target_warehouse,
-            "schedule_date": row.schedule_date or nowdate(),
-            # precio_servicio SIN escalar por pct_participacion a propósito: el
-            # reparto entre salidas ya vive en service_qty (vía el conversion_factor
-            # ya escalado del Subcontracting BOM de esta salida, ver
-            # crear_subcontracting_bom) -- escalar aquí TAMBIÉN duplicaría el
-            # descuento y subfacturaría al proveedor.
-            "rate": row.service_price or 0,
-        }
-        if bom_data and bom_data.finished_good_bom:
-            item_row["bom"] = bom_data.finished_good_bom
-        if sales_order:
-            item_row["sales_order"] = sales_order
-            # Solo el producto terminado (última etapa) es línea directa de la OV; un
-            # subensamblaje intermedio no tiene su propia Sales Order Item -- se deja
-            # sales_order_item vacío para esas filas, sales_order alcanza para filtrar.
-            soi = _sales_order_item(row.finished_good)
-            if soi:
-                item_row["sales_order_item"] = soi
+        for row in rows:
+            if not row.finished_good:
+                frappe.throw(
+                    _("Stage {0} for product {1} has no finished good configured.").format(
+                        row.get("op_key") or "?", row.producto_terminado
+                    )
+                )
 
-        po.append("items", item_row)
+            if not row.target_warehouse:
+                frappe.throw(
+                    _(
+                        "Stage {0} for product {1} has no destination warehouse. "
+                        "Configure warehouse in Production Plan item or Item Defaults."
+                    ).format(row.etapa or "?", row.producto_terminado)
+                )
+
+            bom_data = bom_map.get(row.finished_good)
+            service_item = row.service_item or (bom_data.service_item if bom_data else None)
+            if not service_item:
+                frappe.throw(
+                    _("No service item found for stage {0} and finished good {1}.").format(
+                        row.get("op_key") or "?", row.finished_good
+                    )
+                )
+
+            conversion_factor = flt(bom_data.conversion_factor) if bom_data else 1
+            conversion_factor = conversion_factor or 1
+            fg_qty = flt(row.finished_good_qty) or 1
+            if flt(row.get("num_servicios") or 1) > 1:
+                # Operación con varios servicios sobre una pieza: fg_qty es la porción
+                # (k porciones = la pieza). El servicio se factura sobre la pieza
+                # ENTERA (cada bordado se hace en las N prendas), así que la qty
+                # facturable es el total, no la porción.
+                service_qty = flt(row.get("fg_qty_total")) or (fg_qty * conversion_factor)
+            else:
+                service_qty = fg_qty * conversion_factor
+            service_uom = (bom_data.service_item_uom if bom_data else None) or _get_service_stock_uom(service_item) or "Nos"
+            if service_uom == "Lote":
+                # El proveedor solo entrega lotes completos (ej. lotes de 25 piezas) -- si
+                # fg_qty no es múltiplo exacto, hay que pedir de más, no truncar.
+                service_qty = math.ceil(service_qty - 1e-6)
+
+            item_row = {
+                "fg_item": row.finished_good,
+                "fg_item_qty": fg_qty,
+                "item_code": service_item,
+                "qty": service_qty,
+                "uom": service_uom,
+                "warehouse": row.target_warehouse,
+                "schedule_date": row.schedule_date or nowdate(),
+                # precio_servicio SIN escalar por pct_participacion a propósito: el
+                # reparto entre salidas ya vive en service_qty (vía el conversion_factor
+                # ya escalado del Subcontracting BOM de esta salida, ver
+                # crear_subcontracting_bom) -- escalar aquí TAMBIÉN duplicaría el
+                # descuento y subfacturaría al proveedor.
+                "rate": row.service_price or 0,
+            }
+            if bom_data and bom_data.finished_good_bom:
+                item_row["bom"] = bom_data.finished_good_bom
+            if sales_order:
+                item_row["sales_order"] = sales_order
+                # Solo el producto terminado (última etapa) es línea directa de la OV; un
+                # subensamblaje intermedio no tiene su propia Sales Order Item -- se deja
+                # sales_order_item vacío para esas filas, sales_order alcanza para filtrar.
+                # En una operación terminal fusionada (varios servicios -> el producto)
+                # SOLO la primera línea lleva sales_order_item: ERPNext valida el
+                # "over allowance" sumando el qty de todas las líneas que apuntan a la
+                # misma Sales Order Item, y como cada servicio factura el total, k
+                # líneas sumarían k x la cantidad vendida y lo rechazaría.
+                soi = _sales_order_item(row.finished_good)
+                if soi and row.finished_good not in _soi_ya_asignado:
+                    item_row["sales_order_item"] = soi
+                    _soi_ya_asignado.add(row.finished_good)
+
+            po.append("items", item_row)
+
         po.flags.ignore_permissions = 1
         po.set_missing_values()
         if taxes_template:

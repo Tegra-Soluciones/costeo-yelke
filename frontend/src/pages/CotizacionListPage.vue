@@ -60,10 +60,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, defineComponent, h } from "vue";
+import { ref, computed, onMounted, watch, defineComponent, h } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import DocumentListPage from "@/components/DocumentListPage.vue";
 import { call } from "@/utils/frappe.js";
+import { useCompany } from "@/composables/useCompany.js";
+
+const { state: companyState } = useCompany();
 
 const router = useRouter();
 const loading = ref(true);
@@ -137,6 +140,7 @@ async function load() {
   try {
     const args = { limit: 100 };
     if (filterStatus.value) args.status = filterStatus.value;
+    if (companyState.selected) args.company = companyState.selected;
     rows.value = await call("costeo_yelke.api.quotation_api.get_quotations", args);
   } finally {
     loading.value = false;
@@ -144,4 +148,5 @@ async function load() {
 }
 
 onMounted(load);
+watch(() => companyState.selected, load);
 </script>

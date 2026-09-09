@@ -116,8 +116,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   const docCompraHasRate = computed(() => docCompraItems.value.some((i) => i.has_rate));
   const ocSelected = ref("");
 
-  // Lote actual (cantidad por material) para crear una OC parcial contra la MR --
-  // igual patrón que loteSco para subcontratación.
+  // Lote actual (cantidad por material) para crear una OC parcial contra la MR.
   const loteOc = reactive({ open: false, items: [], schedule_date: "", lote_ref: "" });
 
   // Lotes de entrega definidos ANTES de validar la solicitud -- para no tener que ir
@@ -489,12 +488,9 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   const flujo = reactive({ po_validated: false, supplier: "", qty_total: 0, qty_subcontratada: 0, qty_pendiente: 0, scos: [], warehouses: [], address_options: [], contact_options: [] });
   const scoActivo = ref("");
   const scoSel = computed(() => flujo.scos.find((s) => s.name === scoActivo.value) || null);
-  const scoExists = computed(() => flujo.scos.length > 0);
   const scoValidated = computed(() => scoSel.value?.docstatus === 1);
-  const scoQtyPendiente = computed(() => flujo.qty_pendiente || 0);
   const scoForm = reactive({ supplier_warehouse: "", set_warehouse: "", supplier_address: "", contact_person: "", shipping_address: "", distribute_additional_costs_based_on: "Qty" });
   const scoCostos = ref([]);
-  const loteSco = reactive({ open: false, qty: 0, schedule_date: "", loading: false, limitadoPorStock: false, materiales: [] });
 
   const transDoc = ref(null);
   const transForm = reactive({ from_warehouse: "", to_warehouse: "", distribute_additional_costs_based_on: "Qty" });
@@ -599,44 +595,6 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     } catch { /* ignore */ }
   }
 
-  // Sugiere la cantidad del lote según la materia prima que YA hay en stock -- antes
-  // el primer lote se creaba a ciegas por el saldo completo de la OC, sin fijarse si
-  // de verdad había material para tanto (el usuario solo lo descubría hasta la
-  // transferencia, con NegativeStockError, o peor, comprometía al taller de más).
-  async function abrirLoteSco() {
-    loteSco.open = true;
-    loteSco.qty = scoQtyPendiente.value;
-    loteSco.schedule_date = "";
-    loteSco.limitadoPorStock = false;
-    loteSco.materiales = [];
-    if (!subPo.value) return;
-    loteSco.loading = true;
-    try {
-      const r = await call("costeo_yelke.api.costeo_api.sub_qty_disponible", { po: subPo.value.name });
-      loteSco.qty = Math.min(r.sugerido, scoQtyPendiente.value) || 0;
-      loteSco.limitadoPorStock = !!r.limitado_por_stock;
-      loteSco.materiales = r.materiales || [];
-    } catch { /* si falla el cálculo, se queda con el saldo completo como antes */ }
-    finally { loteSco.loading = false; }
-  }
-  function cerrarLoteSco() { loteSco.open = false; }
-  async function crearSco() {
-    if (!subPo.value) return;
-    const esLote = flujo.scos.length > 0 || loteSco.open;
-    if (esLote && (!loteSco.qty || loteSco.qty <= 0)) { showToast("Indica la cantidad del lote", "error"); return; }
-    advancing.value = true;
-    try {
-      const params = { po: subPo.value.name };
-      if (esLote) { params.qty = loteSco.qty; params.schedule_date = loteSco.schedule_date || null; }
-      const r = await call("costeo_yelke.api.costeo_api.sub_crear_sco", params);
-      cerrarLoteSco();
-      await loadFlujo(subPo.value.name);
-      scoActivo.value = r.sco;
-      await selectSco(r.sco);
-      showToast("Orden de subcontratación creada");
-    } catch (e) { showToast(e.message || "No se pudo crear", "error"); }
-    finally { advancing.value = false; }
-  }
   async function guardarSco() {
     if (!scoSel.value) return;
     advancing.value = true;
@@ -1051,143 +1009,153 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     finally { advancing.value = false; }
   }
 
-  // ── Lotes de producción (vista cross-etapa) ──
-  // A diferencia de subOcs/flujo (una OC de UNA etapa a la vez), esto agrupa las
-  // Subcontracting Order de TODAS las etapas de un producto que comparten el mismo
-  // lote_ref -- deja seguir un lote de principio a fin (etapa 1 -> etapa 2 -> ... ->
-  // prenda terminada) en una sola vista, en vez de saltar entre las OC de cada etapa.
+  // ── Lotes de producción (vista por PARADAS) ──
+  // Un lote es del COSTEO (cubre varios productos, cada uno a su cantidad) y se
+  // descompone en PARADAS: un paso del flujo en un taller = 1 Subcontracting Order
+  // + 1 envío + 1 recibo. `lotesProduccion` = r.lotes (lista plana); cada lote trae
+  // `paradas` en orden de flujo, con `nivel` (columna) y `recibe_de` (dependencias).
   const lotesProduccion = ref([]);
-  const loteProductoActivo = ref("");
+  const productosCosteo = ref([]);      // r.productos: [{finished_item, item_name, root_po, root_po_docstatus}]
   const loteActivoRef = ref("");
-  const loteEtapaActiva = ref("");
-  const nuevoLoteForm = reactive({ open: false, qty: 0, schedule_date: "", loading: false, limitadoPorStock: false, materiales: [] });
+  const loteParadaActiva = ref("");     // parada_id de la parada abierta en el detalle
+  const nuevoLoteForm = reactive({ open: false, schedule_date: "", loading: false, porProducto: [] });
 
-  const productoLotesActivo = computed(() =>
-    lotesProduccion.value.find((p) => p.finished_item === loteProductoActivo.value) || null
-  );
   const loteActivo = computed(() =>
-    productoLotesActivo.value?.lotes.find((l) => l.lote_ref === loteActivoRef.value) || null
+    lotesProduccion.value.find((l) => l.lote_ref === loteActivoRef.value) || null
   );
-  // Si el panel de "Nuevo lote" sigue abierto cuando se valida la OC de la primera
-  // etapa (prerrequisito), se recalcula solo la cantidad sugerida -- sin esto el
-  // formulario de cantidad/fecha aparecería con 0 hasta que el usuario reabriera el panel.
+  const paradaActiva = computed(() =>
+    loteActivo.value?.paradas.find((p) => p.parada_id === loteParadaActiva.value) || null
+  );
+  // Un "carril" por producto del lote: sus paradas en orden de flujo + el producto
+  // terminado al final. Una parada que cubre varios productos (mismo taller) aparece
+  // en el carril de cada uno -- así cada proceso se lee por separado.
+  const tracksLote = computed(() => {
+    const lote = loteActivo.value;
+    if (!lote) return [];
+    return (lote.productos || []).map((prod) => {
+      const paradas = (lote.paradas || [])
+        .filter((p) => (p.productos || []).some((x) => x.finished_item === prod.finished_item))
+        .slice()
+        .sort((a, b) => a.nivel - b.nivel || a.orden - b.orden);
+      const terminal = paradas.find((p) => p.es_terminal);
+      return { ...prod, paradas, done: !!terminal && !!terminal.receipt_validated };
+    });
+  });
+  // Si el panel "Nuevo lote" sigue abierto cuando se valida una OC de taller
+  // (prerrequisito), se recalculan las cantidades sugeridas.
   watch(
-    () => productoLotesActivo.value?.etapas?.[0]?.po_docstatus,
-    (docstatus, prev) => {
-      if (nuevoLoteForm.open && docstatus === 1 && prev !== 1) abrirNuevoLote();
-    }
-  );
-  const etapaLoteActiva = computed(() =>
-    loteActivo.value?.etapas.find((e) => e.key === loteEtapaActiva.value) || null
+    () => productosCosteo.value.map((p) => p.root_po_docstatus).join(","),
+    () => { if (nuevoLoteForm.open) abrirNuevoLote(); }
   );
 
   async function loadLotesProduccion() {
     if (!planDetail.value) return;
     try {
       const r = await call("costeo_yelke.api.costeo_api.get_lotes_produccion", { plan: planDetail.value.name });
-      lotesProduccion.value = r.productos || [];
-      if (!lotesProduccion.value.some((p) => p.finished_item === loteProductoActivo.value)) {
-        loteProductoActivo.value = lotesProduccion.value[0]?.finished_item || "";
-      }
+      lotesProduccion.value = r.lotes || [];
+      productosCosteo.value = r.productos || [];
     } catch { /* ignore */ }
   }
-  function loteCardSteps(lote) {
-    return (lote.etapas || []).map((e) => ({
-      key: e.key,
-      label: e.label,
-      status: e.receipt_validated ? "done" : (e.sco ? "active" : "pending"),
-    }));
+  function paradaEstado(p) {
+    if (p.receipt_validated) return "done";
+    if (p.transfer_done) return "transfer";
+    if (p.sco) return "sco";
+    return "pending";
   }
-  // Un mismo "Lote N" puede nacer del lado de subcontratación (SCO) o de materia
-  // prima (OC) -- get_lotes_produccion ya los fusiona en una sola lista por
-  // lote_ref, así que basta leer productoLotesActivo para no repetir número entre
-  // ambos lados. También cuenta los lotes de entrega ya definidos localmente (aún
-  // sin guardar) para no sugerir el mismo número dos veces en el mismo lote.
   function siguienteLoteLibre() {
-    const existentes = new Set((productoLotesActivo.value?.lotes || []).map((l) => l.lote_ref));
+    const existentes = new Set(lotesProduccion.value.map((l) => l.lote_ref));
     mrLotes.value.forEach((l) => { if (l.lote_ref) existentes.add(l.lote_ref); });
     let n = 1;
     while (existentes.has(`Lote ${n}`)) n++;
     return `Lote ${n}`;
   }
   const siguienteLoteRef = siguienteLoteLibre;
-  function siguienteEtapaPendiente(lote) {
-    return lote?.etapas.find((e) => !e.sco) || null;
+  function siguienteParadaPendiente(lote) {
+    return (lote?.paradas || []).find((p) => !p.receipt_validated) || null;
   }
-  // Selecciona un lote: por default muestra su PRIMERA etapa pendiente (la
-  // siguiente acción a hacer) -- si ya no queda ninguna, muestra la última (ya
-  // completa, para revisarla).
+  // Selecciona un lote y abre su primera parada pendiente (o la última si todas
+  // están recibidas, para revisar).
   async function seleccionarLote(lote_ref) {
     loteActivoRef.value = lote_ref;
-    const lote = productoLotesActivo.value?.lotes.find((l) => l.lote_ref === lote_ref);
-    if (!lote || !lote.etapas.length) return;
-    const objetivo = siguienteEtapaPendiente(lote) || lote.etapas[lote.etapas.length - 1];
-    await seleccionarEtapaLote(lote, objetivo);
+    const lote = lotesProduccion.value.find((l) => l.lote_ref === lote_ref);
+    if (!lote || !(lote.paradas || []).length) { loteParadaActiva.value = ""; return; }
+    const obj = siguienteParadaPendiente(lote) || lote.paradas[lote.paradas.length - 1];
+    await seleccionarParada(obj);
   }
-  // Ver/validar la OC + ficha técnica de una etapa SIN necesidad de tener ya un
-  // lote seleccionado -- la validación de cada OC de etapa es un paso único (no se
-  // repite por lote), así que debe poder hacerse antes de que exista ningún lote.
-  async function verEtapaPo(etapa) {
-    loteEtapaActiva.value = etapa.key;
-    if (!etapa.po) return;
-    advancing.value = true;
-    try { await selectSub(etapa.po); } finally { advancing.value = false; }
-  }
-  async function seleccionarEtapaLote(lote, etapa) {
-    loteActivoRef.value = lote.lote_ref;
-    loteEtapaActiva.value = etapa.key;
-    if (!etapa.po) return;
+  async function seleccionarParada(parada) {
+    loteParadaActiva.value = parada.parada_id;
+    if (!parada.po) return;
     advancing.value = true;
     try {
-      await selectSub(etapa.po);
-      if (etapa.sco) { scoActivo.value = etapa.sco; await selectSco(etapa.sco); }
+      await selectSub(parada.po);
+      if (parada.sco) { scoActivo.value = parada.sco; await selectSco(parada.sco); }
     } finally { advancing.value = false; }
+  }
+  // Ver/validar la OC de un taller (paso único, no por lote) desde el prerrequisito
+  // de "Nuevo lote".
+  async function verParadaPo(parada) {
+    loteParadaActiva.value = parada.parada_id;
+    if (!parada.po) return;
+    advancing.value = true;
+    try { await selectSub(parada.po); } finally { advancing.value = false; }
   }
   async function abrirNuevoLote() {
     nuevoLoteForm.open = true;
-    nuevoLoteForm.qty = 0;
     nuevoLoteForm.schedule_date = "";
-    nuevoLoteForm.limitadoPorStock = false;
-    nuevoLoteForm.materiales = [];
-    const primeraEtapa = productoLotesActivo.value?.etapas?.[0];
-    if (!primeraEtapa?.po) return; // el template ofrece "Crear órdenes de subcontrato" en su lugar
-    if (primeraEtapa.po_docstatus !== 1) {
-      // Todavía no está validada -- cargar su detalle para poder validarla aquí mismo.
-      await selectSub(primeraEtapa.po);
-      return;
-    }
+    nuevoLoteForm.porProducto = [];
+    if (productosCosteo.value.every((p) => !p.root_po)) return; // template ofrece "Crear órdenes de subcontrato"
+    const pendiente = productosCosteo.value.find((p) => p.root_po && p.root_po_docstatus !== 1);
+    if (pendiente) { await selectSub(pendiente.root_po); return; } // valida la OC del taller primero
+    nuevoLoteForm.porProducto = productosCosteo.value.map((p) => ({
+      finished_item: p.finished_item,
+      item_name: p.item_name || p.finished_item,
+      po: p.root_po || null,
+      po_docstatus: p.root_po_docstatus ?? null,
+      qty: 0, sugerido: 0, saldo: 0, limitadoPorStock: false,
+    }));
     nuevoLoteForm.loading = true;
     try {
-      const r = await call("costeo_yelke.api.costeo_api.sub_qty_disponible", { po: primeraEtapa.po });
-      nuevoLoteForm.qty = r.sugerido || 0;
-      nuevoLoteForm.limitadoPorStock = !!r.limitado_por_stock;
-      nuevoLoteForm.materiales = r.materiales || [];
-    } catch { /* se queda en 0, el usuario captura a mano */ }
-    finally { nuevoLoteForm.loading = false; }
+      // Secuencial (no Promise.all): varios productos pueden compartir la misma OC
+      // raíz y sub_qty_disponible crea/borra una SCO borrador contra ella -- dos
+      // llamadas en paralelo sobre la misma OC se pisan y una devuelve 0.
+      for (const fila of nuevoLoteForm.porProducto) {
+        if (!fila.po || fila.po_docstatus !== 1) continue;
+        try {
+          const r = await call("costeo_yelke.api.costeo_api.sub_qty_disponible",
+            { po: fila.po, producto: fila.finished_item });
+          fila.sugerido = r.sugerido || 0;
+          fila.saldo = r.saldo_pendiente || 0;
+          // Prefill con la cantidad que el stock soporta; si no hay material aún
+          // (sugerido 0), con el pendiente completo -- abrir el lote no exige stock
+          // (el candado vive en la transferencia), solo se avisa del límite.
+          fila.qty = r.sugerido || r.saldo_pendiente || 0;
+          fila.limitadoPorStock = !!r.limitado_por_stock;
+        } catch { /* fila en 0, se captura a mano */ }
+      }
+    } finally { nuevoLoteForm.loading = false; }
   }
   function cerrarNuevoLote() { nuevoLoteForm.open = false; }
-  // Abre el lote COMPLETO: encarga de una vez todas las etapas al taller que
-  // corresponde (cantidad y fecha se deciden aquí, una sola vez). Antes esto era
-  // crear+validar la SCO etapa por etapa -- 2 acciones x etapa sin ningún dato nuevo.
+  // Abre el lote COMPLETO: crea y valida la SCO de CADA parada (ver lote_abrir).
   // El material todavía no tiene que existir: lo que exige existencias es "Enviar al
-  // taller", no el encargo (ver lote_abrir en el backend).
+  // taller", no el encargo.
   async function crearNuevoLote() {
     if (!planDetail.value) { showToast("No hay plan de producción", "error"); return; }
-    if (!nuevoLoteForm.qty || nuevoLoteForm.qty <= 0) { showToast("Indica la cantidad del lote", "error"); return; }
+    const cantidades = {};
+    nuevoLoteForm.porProducto.forEach((f) => { if (f.qty > 0) cantidades[f.finished_item] = f.qty; });
+    if (!Object.keys(cantidades).length) { showToast("Indica la cantidad de al menos un producto", "error"); return; }
     advancing.value = true;
     try {
       const lote_ref = siguienteLoteRef();
       const r = await call("costeo_yelke.api.costeo_api.lote_abrir", {
-        plan: planDetail.value.name, lote_ref, qty: nuevoLoteForm.qty,
+        plan: planDetail.value.name, lote_ref, cantidades,
         schedule_date: nuevoLoteForm.schedule_date || null,
-        producto: loteProductoActivo.value || null,
       });
       cerrarNuevoLote();
       await loadLotesProduccion();
       await seleccionarLote(lote_ref);
       const n = (r.creadas || []).length;
-      if ((r.errores || []).length) showToast(`${lote_ref}: ${n} etapa(s) abiertas · ${r.errores[0]}`, "error");
-      else showToast(`${lote_ref} abierto — ${n} etapa${n === 1 ? "" : "s"} encargada${n === 1 ? "" : "s"}`);
+      if ((r.errores || []).length) showToast(`${lote_ref}: ${n} encargo(s) · ${r.errores[0]}`, "error");
+      else showToast(`${lote_ref} abierto — ${n} encargo${n === 1 ? "" : "s"} a talleres`);
     } catch (e) { showToast(e.message || "No se pudo abrir el lote", "error"); }
     finally { advancing.value = false; }
   }
@@ -1229,53 +1197,54 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     } catch (e) { showToast(e.message || "No se pudo generar la orden de compra", "error"); }
     finally { advancing.value = false; }
   }
-  // Cantidad a usar cuando se crea la SCO de la PRIMERA etapa de un lote que nació
-  // del lado de materia prima -- ahí lote.qty vale 0 (ninguna etapa tiene SCO
-  // todavía), así que hay que pedirla en vez de asumirla; se sugiere según el stock
-  // real disponible (mismo cálculo que "Nuevo lote de producción").
+  // Cantidad a usar cuando se abre la SCO de una parada de un lote que nació del
+  // lado de materia prima -- ahí la parada no trae cantidad, hay que pedirla; se
+  // sugiere según el stock real (mismo cálculo que "Nuevo lote").
   const primeraEtapaQty = ref(0);
   const primeraEtapaLoading = ref(false);
   const primeraEtapaLimitado = ref(false);
-  async function sugerirPrimeraEtapaQty(etapa) {
+  async function sugerirPrimeraEtapaQty(parada) {
     primeraEtapaQty.value = 0;
     primeraEtapaLimitado.value = false;
-    if (!etapa?.po || etapa.po_docstatus !== 1) return;
+    if (!parada?.po || parada.po_docstatus !== 1) return;
     primeraEtapaLoading.value = true;
     try {
-      const r = await call("costeo_yelke.api.costeo_api.sub_qty_disponible", { po: etapa.po });
+      const r = await call("costeo_yelke.api.costeo_api.sub_qty_disponible", { po: parada.po });
       primeraEtapaQty.value = r.sugerido || 0;
       primeraEtapaLimitado.value = !!r.limitado_por_stock;
-    } catch { /* se queda en 0, se captura a mano */ }
+    } catch { /* se queda en 0 */ }
     finally { primeraEtapaLoading.value = false; }
   }
-  // Crea la SCO de la SIGUIENTE etapa pendiente del lote activo -- con la misma
-  // cantidad y lote_ref que ya traiga el lote (etapas 2+, avanzando sin volver a
-  // capturar nada), o con `qtyOverride` cuando es la PRIMERA etapa de este lote y
-  // todavía no hay ninguna cantidad establecida (lote.qty === 0).
-  async function crearSiguienteEtapaLote(lote, qtyOverride) {
-    // Opera sobre la etapa que se está VIENDO (no siempre la "siguiente pendiente"
-    // en orden -- la navegación entre etapas del lote es libre, no hace falta
-    // terminar una para pasar a otra; si a esa otra le falta material, ya se
-    // bloqueará sola más adelante, al transferir).
-    const etapa = etapaLoteActiva.value;
-    if (!etapa) return;
-    if (!etapa.po) { showToast("La orden de compra de esa etapa todavía no está validada", "error"); return; }
-    const qty = qtyOverride != null ? qtyOverride : lote.qty;
-    if (!qty || qty <= 0) { showToast("Indica la cantidad de este lote", "error"); return; }
+  // Crea y valida la SCO de UNA parada que aún no la tiene -- con la cantidad de
+  // cada producto de la parada (o la del lote, o `qtyOverride` si el lote nació de
+  // materia prima y no trae cantidad).
+  async function abrirParada(qtyOverride) {
+    const parada = paradaActiva.value;
+    const lote = loteActivo.value;
+    if (!parada || !lote) return;
+    if (!parada.po) { showToast("La orden de compra de este taller aún no está validada", "error"); return; }
+    const cantidades = {};
+    if (qtyOverride != null && qtyOverride > 0) {
+      parada.productos.forEach((pp) => { cantidades[pp.finished_item] = qtyOverride; });
+    } else {
+      parada.productos.forEach((pp) => { if (pp.qty > 0) cantidades[pp.finished_item] = pp.qty; });
+      if (!Object.keys(cantidades).length) {
+        (lote.productos || []).forEach((pp) => { if (pp.qty > 0) cantidades[pp.finished_item] = pp.qty; });
+      }
+    }
+    if (!Object.keys(cantidades).length) { showToast("Indica la cantidad", "error"); return; }
     advancing.value = true;
     try {
-      await call("costeo_yelke.api.costeo_api.sub_crear_sco", {
-        po: etapa.po, qty, schedule_date: lote.schedule_date || null, lote_ref: lote.lote_ref,
+      const r = await call("costeo_yelke.api.costeo_api.sub_crear_sco", {
+        po: parada.po, cantidades, fg_items: parada.fg_items, validar_stock: false,
+        schedule_date: lote.schedule_date || null, lote_ref: lote.lote_ref,
       });
+      await call("costeo_yelke.api.costeo_api.sub_validar_sco", { sco: r.sco });
       await loadLotesProduccion();
-      // Se queda en la MISMA etapa (mostrando la SCO recién creada) -- antes se
-      // reseleccionaba el lote entero, que salta a la SIGUIENTE etapa pendiente en
-      // cuanto ésta ya tiene su sco.
-      const loteActualizado = productoLotesActivo.value?.lotes.find((l) => l.lote_ref === lote.lote_ref);
-      const etapaActualizada = loteActualizado?.etapas.find((e) => e.key === etapa.key);
-      if (loteActualizado && etapaActualizada) await seleccionarEtapaLote(loteActualizado, etapaActualizada);
-      showToast(`${etapa.label} creada para ${lote.lote_ref}`);
-    } catch (e) { showToast(e.message || "No se pudo crear la etapa", "error"); }
+      const p2 = loteActivo.value?.paradas.find((x) => x.parada_id === parada.parada_id);
+      if (p2) await seleccionarParada(p2);
+      showToast(`${parada.titulo} encargado a ${parada.supplier}`);
+    } catch (e) { showToast(e.message || "No se pudo crear el encargo", "error"); }
     finally { advancing.value = false; }
   }
 
@@ -1351,17 +1320,17 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     // subcontratación
     subOcs, subSel, subPo, subItems, subForm, subValidated, subHasRate, subDone,
     loadSubcontratos, crearSubcontratos, selectSub, loadSub, guardarSub, validarSub,
-    flujo, scoActivo, scoSel, scoExists, scoValidated, scoQtyPendiente, scoForm, scoCostos, loteSco,
-    loadFlujo, selectSco, abrirLoteSco, cerrarLoteSco, crearSco, guardarSco, validarSco, addCosto, removeCosto,
+    flujo, scoActivo, scoSel, scoValidated, scoForm, scoCostos,
+    loadFlujo, selectSco, guardarSco, validarSco, addCosto, removeCosto,
     transDoc, transForm, transCostos, transValidated, transferDone, loadTrans, transferirMaterial, guardarTrans, validarTransferencia, enviarMaterialTaller,
     addCostoTrans, removeCostoTrans,
     scr, scrForm, scrCostos, scrValidated, crearReciboSub, loadScr, guardarScr, validarScr,
     addCostoScr, removeCostoScr,
-    // lotes de producción (cross-etapa)
-    lotesProduccion, loteProductoActivo, loteActivoRef, loteEtapaActiva, nuevoLoteForm,
-    productoLotesActivo, loteActivo, etapaLoteActiva,
-    loadLotesProduccion, loteCardSteps, seleccionarLote, seleccionarEtapaLote, verEtapaPo,
-    abrirNuevoLote, cerrarNuevoLote, crearNuevoLote, crearSiguienteEtapaLote, siguienteEtapaPendiente, generarOcLote,
+    // lotes de producción (por paradas)
+    lotesProduccion, productosCosteo, loteActivoRef, loteParadaActiva, nuevoLoteForm,
+    loteActivo, paradaActiva, tracksLote, paradaEstado,
+    loadLotesProduccion, seleccionarLote, seleccionarParada, verParadaPo,
+    abrirNuevoLote, cerrarNuevoLote, crearNuevoLote, abrirParada, siguienteParadaPendiente, generarOcLote,
     primeraEtapaQty, primeraEtapaLoading, primeraEtapaLimitado, sugerirPrimeraEtapaQty,
     crearRfqLote, crearSqLote,
     omGeneral, omCab, omDama, omProc, omTablas, omArchivos, omUploading, omEsMaestra,

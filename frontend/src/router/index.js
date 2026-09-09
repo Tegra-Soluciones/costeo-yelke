@@ -26,6 +26,7 @@ const routes = [
   { path: "/recibos-compra", name: "PurchaseReceiptList", component: () => import("@/pages/PurchaseReceiptListPage.vue") },
   { path: "/remisiones", name: "DeliveryNoteList", component: () => import("@/pages/DeliveryNoteListPage.vue") },
   { path: "/facturas-compra", name: "PurchaseInvoiceList", component: () => import("@/pages/PurchaseInvoiceListPage.vue") },
+  { path: "/recordatorios", name: "RecordatoriosList", component: () => import("@/pages/RecordatoriosListPage.vue") },
 ];
 
 export default createRouter({

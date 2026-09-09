@@ -176,8 +176,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 import { call } from "@/utils/frappe.js";
+import { useCompany } from "@/composables/useCompany.js";
+
+const { state: companyState } = useCompany();
 
 const loading = ref(true);
 const d = ref(null);
@@ -236,12 +239,13 @@ const dashOffset = computed(() => circ * (1 - (prodPct.value * prog.value) / 100
 async function load() {
   loading.value = true;
   try {
-    d.value = await call("costeo_yelke.api.costeo_api.dashboard_metrics");
+    d.value = await call("costeo_yelke.api.costeo_api.dashboard_metrics", { company: companyState.selected || undefined });
     animateIn();
   } catch { d.value = null; }
   finally { loading.value = false; }
 }
 onMounted(load);
+watch(() => companyState.selected, load);
 </script>
 
 <style scoped>

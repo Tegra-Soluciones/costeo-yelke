@@ -154,12 +154,15 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import PageHeader from "@/components/PageHeader.vue";
 import StatusBadge from "@/components/StatusBadge.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import { db, call } from "@/utils/frappe.js";
+import { useCompany } from "@/composables/useCompany.js";
+
+const { state: companyState } = useCompany();
 
 const router = useRouter();
 
@@ -251,11 +254,12 @@ async function doDelete() {
 }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
-onMounted(async () => {
-  document.addEventListener("click", closeMenus, true);
+async function load() {
+  loading.value = true;
   try {
     items.value = await db.getList("Costeo", {
       fields: ["name", "titulo", "cliente", "fecha", "compañia", "costeo_status"],
+      filters: companyState.selected ? [["compañia", "=", companyState.selected]] : [],
       orderBy: "modified desc",
       limit: 200,
     });
@@ -264,7 +268,13 @@ onMounted(async () => {
   } finally {
     loading.value = false;
   }
+}
+
+onMounted(() => {
+  document.addEventListener("click", closeMenus, true);
+  load();
 });
+watch(() => companyState.selected, load);
 
 onUnmounted(() => {
   document.removeEventListener("click", closeMenus, true);

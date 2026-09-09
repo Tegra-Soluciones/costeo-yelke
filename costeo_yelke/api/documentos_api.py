@@ -8,12 +8,14 @@ import frappe
 
 
 @frappe.whitelist()
-def get_material_requests(status=None, limit=100):
+def get_material_requests(status=None, company=None, limit=100):
     if not frappe.db.has_column("Material Request", "costeo"):
         return []
     filters = {}
     if status:
         filters["status"] = status
+    if company:
+        filters["company"] = company
     return frappe.get_all(
         "Material Request",
         fields=[
@@ -27,10 +29,12 @@ def get_material_requests(status=None, limit=100):
 
 
 @frappe.whitelist()
-def get_purchase_receipts(status=None, limit=100):
+def get_purchase_receipts(status=None, company=None, limit=100):
     filters = {}
     if status:
         filters["status"] = status
+    if company:
+        filters["company"] = company
 
     rows = frappe.get_all(
         "Purchase Receipt",
@@ -64,12 +68,14 @@ def get_purchase_receipts(status=None, limit=100):
 
 
 @frappe.whitelist()
-def get_delivery_notes(status=None, limit=100):
+def get_delivery_notes(status=None, company=None, limit=100):
     if not frappe.db.has_column("Delivery Note", "costeo"):
         return []
     filters = {}
     if status:
         filters["status"] = status
+    if company:
+        filters["company"] = company
     return frappe.get_all(
         "Delivery Note",
         fields=[
@@ -83,10 +89,12 @@ def get_delivery_notes(status=None, limit=100):
 
 
 @frappe.whitelist()
-def get_purchase_invoices(status=None, limit=100):
+def get_purchase_invoices(status=None, company=None, limit=100):
     filters = {}
     if status:
         filters["status"] = status
+    if company:
+        filters["company"] = company
 
     rows = frappe.get_all(
         "Purchase Invoice",

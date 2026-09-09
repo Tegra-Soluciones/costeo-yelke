@@ -32,9 +32,23 @@ def _requested_method():
 		return ""
 
 
+def _is_our_override(method):
+	"""Un método de otra app (ej. erpnext.*) puede estar reemplazado por una
+	implementación de costeo_yelke via override_whitelisted_methods -- el
+	request llega con el nombre ORIGINAL (erpnext.*), así que el filtro por
+	prefijo de abajo no lo detecta. Se cubre aparte revisando ese hook, para
+	que cualquier override futuro quede blindado sin tener que acordarse de
+	repetir el chequeo a mano dentro de cada función reemplazada."""
+	overrides = frappe.get_hooks("override_whitelisted_methods") or {}
+	target = overrides.get(method)
+	if isinstance(target, list):
+		target = target[0] if target else None
+	return bool(target) and target.startswith(APP_PREFIX)
+
+
 def guard_internal():
 	method = _requested_method()
-	if not method.startswith(APP_PREFIX):
+	if not (method.startswith(APP_PREFIX) or _is_our_override(method)):
 		return
 	if not is_internal_user():
 		frappe.throw(

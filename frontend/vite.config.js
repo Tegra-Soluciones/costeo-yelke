@@ -10,11 +10,13 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       output: {
-        // Entrada principal sin hash → referencia estable desde el HTML de Frappe
-        entryFileNames: "assets/index.js",
-        assetFileNames: (info) =>
-          info.name?.endsWith(".css") ? "assets/index.css" : "assets/[name]-[hash][extname]",
-        // Chunks dinámicos (páginas lazy) sí llevan hash
+        // TODO con hash -- incluida la entrada. Los chunks lazy hacen
+        // `import "./index-<hash>.js"`, así que si la entrada NO llevara hash el
+        // navegador serviría una copia vieja cacheada y se cargarían dos versiones
+        // de la app a la vez. El controlador www lee el index.html generado para
+        // saber qué archivos referenciar (ver www/costeo_yelke.py).
+        entryFileNames: "assets/[name]-[hash].js",
+        assetFileNames: "assets/[name]-[hash][extname]",
         chunkFileNames: "assets/[name]-[hash].js",
       },
     },

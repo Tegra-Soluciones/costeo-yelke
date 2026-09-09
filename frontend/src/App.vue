@@ -6,9 +6,11 @@
     <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
       <AppNavbar />
       <RouterView v-slot="{ Component }">
-        <Transition name="fade" mode="out-in">
-          <component :is="Component" class="flex-1 overflow-y-auto" />
-        </Transition>
+        <!-- Sin <Transition>: el modo out-in dejaba el contenido pegado en
+             opacity:0 (fade-enter-from) cuando el componente entrante renderizaba
+             pesado o el saliente no terminaba de irse. La navegación instantánea
+             es preferible a ese glitch. -->
+        <component :is="Component" class="flex-1 overflow-y-auto" />
       </RouterView>
     </div>
   </div>

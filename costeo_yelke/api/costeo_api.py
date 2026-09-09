@@ -1,3 +1,4 @@
+import hashlib
 import json
 import math
 
@@ -153,8 +154,15 @@ def _quotation_items_para_producto(doc, p):
     línea extra en vez del 1 de referencia."""
     talla_rows = _tallas_extra_para_producto(doc, p.finished_item)
 
+    # price_list_rate se fija IGUAL a rate en cada línea a propósito: si se deja
+    # que Frappe lo autocomplete, toma el precio de lista del Item (el de la línea
+    # base, sin el ajuste de talla) y calcula un "descuento" = price_list_rate -
+    # rate para las líneas de talla extra -- como esas llevan un rate MAYOR (es un
+    # sobrecosto, no una rebaja), ese descuento sale negativo y se imprime en la
+    # cotización como algo confuso que en realidad no es un descuento real.
     if not talla_rows:
-        item = {"item_code": p.finished_item, "qty": p.qty, "rate": p.unit_sales_price or 0}
+        rate = p.unit_sales_price or 0
+        item = {"item_code": p.finished_item, "qty": p.qty, "rate": rate, "price_list_rate": rate}
         if p.description:
             item["description"] = p.description
         return [item]
@@ -169,7 +177,8 @@ def _quotation_items_para_producto(doc, p):
 
     items = []
     if base_qty > 0:
-        item = {"item_code": p.finished_item, "qty": base_qty, "rate": p.unit_sales_price or 0}
+        rate = p.unit_sales_price or 0
+        item = {"item_code": p.finished_item, "qty": base_qty, "rate": rate, "price_list_rate": rate}
         if p.description:
             item["description"] = p.description
         items.append(item)
@@ -182,6 +191,7 @@ def _quotation_items_para_producto(doc, p):
             "item_code": p.finished_item,
             "qty": qty,
             "rate": rate,
+            "price_list_rate": rate,
             "description": _build_talla_extra_description(p.description, sobrecosto_tipo, sobrecosto_valor, rows),
         })
 
@@ -425,6 +435,20 @@ def get_articulos_pendientes(costeo: str) -> dict:
     las vuelva a escribir."""
     doc = frappe.get_doc("Costeo", costeo)
 
+    from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_production_operations
+
+    # Operaciones por producto -- fusiona los servicios del mismo proveedor en el
+    # mismo punto del flujo (ver _resolve_production_operations). El resultado que
+    # hay que materializar es op.output_item (sintético cuando fusiona varias), no
+    # el subensamblaje de cada fila.
+    ops_por_producto = {}
+    for producto in doc.costeo_producto:
+        fi = producto.finished_item
+        if not fi:
+            continue
+        etapas_prod = [e for e in doc.tabla_etapas_costeo if e.producto_terminado == fi]
+        ops_por_producto[fi] = _resolve_production_operations(etapas_prod, doc.get("tabla_salidas_etapa"), fi)
+
     candidatos = set()
     for d in doc.costeo_producto_detalle:
         if d.concept_type == "Materia Prima" and d.item:
@@ -432,11 +456,10 @@ def get_articulos_pendientes(costeo: str) -> dict:
     for e in doc.tabla_etapas_costeo:
         if e.servicio:
             candidatos.add(e.servicio)
-        if e.subensamblaje:
-            candidatos.add(e.subensamblaje)
-    for s in doc.get("tabla_salidas_etapa") or []:
-        if s.subensamblaje:
-            candidatos.add(s.subensamblaje)
+    for ops in ops_por_producto.values():
+        for op in ops:
+            if not op.is_terminal and op.output_item:
+                candidatos.add(op.output_item)
 
     existentes = set()
     if candidatos:
@@ -472,49 +495,34 @@ def get_articulos_pendientes(costeo: str) -> dict:
                 unit_price=d.unit_price, supplier_uom=d.supplier_uom,
                 internal_uom=d.internal_uom, conversion_factor=d.conversion_factor)
 
-    # Las etapas se procesan por producto usando el mismo grafo de dependencias
-    # que crear_boms_spa / crear_subcontracting_bom (_resolve_stage_graph) -- la
-    # etapa TERMINAL (nadie la referencia como entrada, puede ser resultado de
-    # varios procesos en paralelo que convergen) usa finished_item como resultado,
-    # NO el texto que haya en "subensamblaje" de esa fila (ese campo se ignora
-    # ahí). Si no replicamos el mismo criterio aquí, el checklist le pide al
-    # usuario materializar como "Sub-Ensamblaje" un texto que en realidad es
-    # simplemente el producto terminado.
-    from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_stage_graph
-
+    # Servicios: cada fila de etapa aporta un servicio que debe existir como Item,
+    # sin importar cómo se agrupen después las etapas en operaciones.
     advertencias = []
-    for producto in doc.costeo_producto:
-        fi = producto.finished_item
-        if not fi:
-            continue
-        etapas_prod = [e for e in doc.tabla_etapas_costeo if e.producto_terminado == fi]
-        graph_info, etapas_ord = _resolve_stage_graph(etapas_prod, doc.get("tabla_salidas_etapa"))
-        for e in etapas_ord:
-            es_ultima = graph_info.get(e.get("node_key"), {}).get("is_terminal", True)
-            # La UDM del servicio es lote_uom (lo que ya se capturó en el costeo, ej.
-            # "Pieza") -- y si el proveedor cobra por lote (lote_qty > 1, ej. $19 por
-            # 25 confecciones), se sugiere de una vez la conversión "1 Lote = lote_qty
-            # {lote_uom}" para no volver a capturarla al crear el Item.
-            lote_qty = flt(e.lote_qty) or 1
-            add(
-                "servicio_etapa", e.servicio, "Servicios", e.proveedor, e.producto_terminado,
-                unit_price=e.precio_servicio,
-                internal_uom=e.lote_uom,
-                supplier_uom=LOTE_UOM if lote_qty > 1 else None,
-                conversion_factor=lote_qty if lote_qty > 1 else None,
-            )
-            if not es_ultima:
-                if not e.subensamblaje:
-                    advertencias.append(
-                        f'La etapa "{e.servicio or e.etapa}" de "{fi}" todavía no tiene sub-ensamblaje '
-                        "que produce -- complétalo en 'Preparar Manufactura' o los BOMs no se podrán crear."
-                    )
-                add("subensamblaje_etapa", e.subensamblaje, "Sub-Ensamblajes", None, e.producto_terminado)
-            elif e.subensamblaje and e.subensamblaje != fi:
+    for e in doc.tabla_etapas_costeo:
+        lote_qty = flt(e.lote_qty) or 1
+        add(
+            "servicio_etapa", e.servicio, "Servicios", e.proveedor, e.producto_terminado,
+            unit_price=e.precio_servicio,
+            internal_uom=e.lote_uom,
+            supplier_uom=LOTE_UOM if lote_qty > 1 else None,
+            conversion_factor=lote_qty if lote_qty > 1 else None,
+        )
+
+    # Sub-ensamblajes: el resultado de cada operación NO terminal (op.output_item,
+    # sintético cuando fusiona varios servicios del mismo proveedor). auto_materializar
+    # _subensamblajes los crea sin intervención.
+    for fi, ops in ops_por_producto.items():
+        for op in ops:
+            if op.is_terminal:
+                continue
+            # Etapa única sin subensamblaje capturado -> output_item cae al producto
+            # terminado, lo cual es incorrecto para una etapa intermedia.
+            if len(op.member_stage_keys) == 1 and len(op.servicios) == 1 and op.output_item == fi:
                 advertencias.append(
-                    f'En la última etapa de "{fi}", el sub-ensamblaje capturado ("{e.subensamblaje}") '
-                    f"se ignora — el resultado de la etapa terminal siempre es el producto terminado."
+                    f'La operación "{(op.servicios[0].get("service_item") if op.servicios else "?")}" de "{fi}" '
+                    "todavía no tiene sub-ensamblaje que produce -- complétalo o los BOMs no se podrán crear."
                 )
+            add("subensamblaje_etapa", op.output_item, "Sub-Ensamblajes", None, fi)
 
     return {
         "grupos": list(grupos.values()),
@@ -628,10 +636,177 @@ def auto_materializar_subensamblajes(costeo: str) -> dict:
                 "stock_uom": "H87 - Pieza",
                 "is_stock_item": 1,
                 "is_sub_contracted_item": 1,
+                # Un mismo sub-ensamblaje puede alimentar varias Subcontracting Orders
+                # (una por cada etapa que lo consume) contra un solo lote real recibido,
+                # así que el saldo en libro puede ir negativo temporalmente sin que sea
+                # un error real de inventario.
+                "allow_negative_stock": 1,
             }),
         )
         creados.append(item_code)
     return {"creados": creados}
+
+
+@frappe.whitelist()
+def get_flujo_operaciones(costeo: str) -> dict:
+    """Vista del paso "Flujo de Producción": las operaciones ya resueltas y
+    agrupadas (ver _resolve_production_operations) por producto, en orden. Es una
+    vista de CONFIRMACIÓN -- el orden y el agrupado salen solos de las etapas del
+    costeo; lo único editable es el nombre de la pieza que produce cada operación
+    intermedia y, si de plano quedó mal, de qué operación recibe.
+
+    Cada operación:
+        op_key        id estable
+        titulo        nombre corto (servicio, o "N servicios")
+        supplier
+        servicios     [{item, precio}]  -- cada uno se factura por separado
+        recibe_de     [op_key, ...]     -- operaciones upstream
+        recibe_texto  resumen legible ("Materia prima" / "Corte + Tejido")
+        produce       item que produce (editable si NO es terminal)
+        es_terminal   produce el producto terminado
+        editable_nombre / stage_ids   -- para persistir un rename
+        candidatos_recibe  [{op_key, titulo}]  -- opciones válidas de upstream
+    """
+    from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_production_operations
+
+    doc = frappe.get_doc("Costeo", costeo)
+    salidas = doc.get("tabla_salidas_etapa")
+    stage_a_op = {}          # stage_id -> op_key (para escribir recibe_de)
+    productos_out = []
+
+    for producto in doc.costeo_producto:
+        fi = producto.finished_item
+        if not fi:
+            continue
+        etapas_prod = [e for e in doc.tabla_etapas_costeo if e.producto_terminado == fi]
+        if not etapas_prod:
+            continue
+        from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _op_slug
+
+        ops = _resolve_production_operations(etapas_prod, salidas, fi)
+        titulo_por_key = {}
+        for op in ops:
+            svcs = [s["service_item"] for s in op.servicios if s.get("service_item")]
+            if not svcs:
+                titulo = op.supplier or "Operación"
+            elif len(svcs) == 1:
+                # nombre bonito del Item si existe, si no el código
+                titulo = frappe.db.get_value("Item", svcs[0], "item_name") or svcs[0]
+            else:
+                # varios servicios: la palabra que comparten ("Bordado", "Confección")
+                titulo = _op_slug(op.servicios, op.supplier).capitalize()
+            titulo_por_key[op.op_key] = titulo
+            for sk in op.member_stage_keys:
+                stage_a_op[sk] = op.op_key
+
+        ops_out = []
+        for op in ops:
+            recibe = sorted(op.upstream_keys)
+            recibe_texto = "Materia prima" if not recibe else " + ".join(titulo_por_key.get(k, "?") for k in recibe)
+            # candidatos: cualquier otra operación que NO sea descendiente de ésta
+            def _es_descendiente(cand_key, de_key, visto=None):
+                visto = visto or set()
+                for o in ops:
+                    if o.op_key == cand_key and de_key in o.upstream_keys:
+                        return True
+                    if o.op_key == cand_key:
+                        for u in o.upstream_keys:
+                            if u not in visto:
+                                visto.add(u)
+                                if _es_descendiente(u, de_key, visto):
+                                    return True
+                return False
+            candidatos = [
+                {"op_key": o.op_key, "titulo": titulo_por_key[o.op_key]}
+                for o in ops
+                if o.op_key != op.op_key and not _es_descendiente(o.op_key, op.op_key)
+            ]
+            ops_out.append({
+                "op_key": op.op_key,
+                "titulo": titulo_por_key[op.op_key],
+                "n_servicios": len([s for s in op.servicios if s.get("service_item")]),
+                "supplier": op.supplier,
+                "servicios": [{"item": s["service_item"], "precio": flt(s["price"])} for s in op.servicios if s.get("service_item")],
+                "recibe_de": recibe,
+                "recibe_texto": recibe_texto,
+                "produce": op.output_item,
+                "es_terminal": bool(op.is_terminal),
+                "stage_ids": sorted(op.member_stage_keys),
+                "candidatos_recibe": candidatos,
+            })
+        productos_out.append({
+            "finished_item": fi,
+            "qty": flt(producto.qty),
+            "image": producto.get("image") or "",
+            "operaciones": ops_out,
+        })
+
+    return {"productos": productos_out}
+
+
+@frappe.whitelist()
+def guardar_flujo_operaciones(costeo: str, cambios) -> dict:
+    """Persiste los (pocos) cambios que permite el paso "Flujo de Producción":
+    el ORDEN de los pasos y de qué operación(es) recibe cada uno. El nombre de la
+    pieza intermedia ya NO se edita -- se genera solo. ``cambios`` es una lista de:
+        {op_key: "...", orden: 1..N, recibe_op_keys: [op_key,...] | None}
+
+    - orden -> nueva posición (1..N) de la operación; se renumera 'etapa' en sus
+                 etapas para que el orden del frontend sea el orden real. Opcional.
+    - recibe_op_keys -> se EXPANDE a todas las etapas de esas operaciones upstream y
+                 se escribe como 'recibe_de' (CSV) en cada etapa de esta operación
+                 -- así las operaciones fusionadas siguen siendo consumidas por
+                 completo. None = no tocar; [] = pasa a arrancar de materia prima.
+    """
+    from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_production_operations
+
+    if isinstance(cambios, str):
+        cambios = json.loads(cambios)
+    doc = frappe.get_doc("Costeo", costeo)
+    por_stage = {e.get("stage_id"): e for e in doc.tabla_etapas_costeo if e.get("stage_id")}
+
+    # op_key -> [stage_ids] de esa operación (para expandir 'recibe' y ubicar dónde escribir)
+    op_stages = {}
+    for producto in doc.costeo_producto:
+        if not producto.finished_item:
+            continue
+        etapas_prod = [e for e in doc.tabla_etapas_costeo if e.producto_terminado == producto.finished_item]
+        for op in _resolve_production_operations(etapas_prod, doc.get("tabla_salidas_etapa"), producto.finished_item):
+            op_stages[op.op_key] = sorted(op.member_stage_keys)
+
+    tocado = False
+    # 'etapa' se renumera: todas las etapas de la operación en posición N toman "N".
+    # (El orden REAL lo manda 'recibe_de' vía el orden topológico; esto solo mantiene
+    # el número coherente con la vista y sirve de respaldo en modo lineal.)
+    ordenados = sorted((c for c in (cambios or []) if c.get("orden")), key=lambda c: c["orden"])
+    for pos, c in enumerate(ordenados, start=1):
+        for sid in op_stages.get(c.get("op_key"), []):
+            e = por_stage.get(sid)
+            if e is not None and (e.etapa or "") != str(pos):
+                e.etapa = str(pos)
+                tocado = True
+
+    for c in cambios or []:
+        sids = op_stages.get(c.get("op_key"), [])
+        recibe = c.get("recibe_op_keys")
+        recibe_expandido = None
+        if recibe is not None:
+            expand = []
+            for k in recibe:
+                expand += op_stages.get(k, [k])
+            recibe_expandido = ",".join(dict.fromkeys(expand))
+        for sid in sids:
+            e = por_stage.get(sid)
+            if not e:
+                continue
+            if recibe_expandido is not None and (e.recibe_de or "") != recibe_expandido:
+                e.recibe_de = recibe_expandido
+                tocado = True
+    if tocado:
+        doc.flags.ignore_permissions = True
+        doc.save()
+        frappe.db.commit()
+    return {"ok": True, "guardado": tocado}
 
 
 @frappe.whitelist()
@@ -916,38 +1091,71 @@ def produccion_completa(costeo: str, sales_order: str = None) -> dict:
         if po.docstatus != 1:
             continue  # OC de subcontratación sin validar → esa etapa no está lista
 
-        po_qty = flt(frappe.db.get_value("Purchase Order Item", {"parent": po.name}, "qty"))
+        # Una OC agrupa varias etapas del mismo proveedor en líneas separadas (ver
+        # _create_subcontracting_pos_from_stages). Se agrupan por fg_item: líneas con
+        # el MISMO fg_item son la misma pieza repartida entre varios servicios (sus
+        # cantidades se SUMAN); fg_item DISTINTO son piezas distintas (se toma el
+        # MÍNIMO entre ellas -- un lote combinado no puede pasar de la más corta).
+        po_items = frappe.get_all(
+            "Purchase Order Item", filters={"parent": po.name}, fields=["name", "fg_item", "fg_item_qty", "qty"]
+        )
+        if not po_items:
+            continue
+        # fg_item -> {po_item_names, qty_total}
+        fg_grupos = {}
+        poi_a_fg = {}
+        for r in po_items:
+            fg = r.fg_item or r.name
+            poi_a_fg[r.name] = fg
+            g = fg_grupos.setdefault(fg, {"pois": set(), "qty": 0.0})
+            g["pois"].add(r.name)
+            g["qty"] += flt(r.fg_item_qty) or flt(r.qty)
+        po_qty = min((g["qty"] for g in fg_grupos.values()), default=0)
+
         scos = frappe.get_all(
             "Subcontracting Order", filters={"purchase_order": po.name, "docstatus": 1}, fields=["name"]
         )
         if not scos:
             continue
         out["lotes_total"] += len(scos)
+        sco_names = [s.name for s in scos]
 
-        sco_qty_total = flt(frappe.db.sql(
-            """select coalesce(sum(qty), 0) from `tabSubcontracting Order Item`
-               where parent in %(scos)s""",
-            {"scos": [s.name for s in scos]},
-        )[0][0])
+        sco_qty_por_fg = {fg: 0.0 for fg in fg_grupos}
+        for r in frappe.get_all(
+            "Subcontracting Order Item", filters={"parent": ["in", sco_names]}, fields=["purchase_order_item", "qty"]
+        ):
+            fg = poi_a_fg.get(r.purchase_order_item)
+            if fg in sco_qty_por_fg:
+                sco_qty_por_fg[fg] += flt(r.qty)
+        sco_qty_total = min(sco_qty_por_fg.values(), default=0)
 
-        scr_qtys = frappe.db.sql(
-            """select sri.subcontracting_order as sco, sum(sri.qty) as qty
+        scr_rows = frappe.db.sql(
+            """select sri.subcontracting_order as sco, sri.purchase_order_item as poi, sum(sri.qty) as qty
                from `tabSubcontracting Receipt Item` sri
                inner join `tabSubcontracting Receipt` sr on sr.name = sri.parent
                where sri.subcontracting_order in %(scos)s and sr.docstatus = 1
-               group by sri.subcontracting_order""",
-            {"scos": [s.name for s in scos]},
+               group by sri.subcontracting_order, sri.purchase_order_item""",
+            {"scos": sco_names},
             as_dict=True,
         )
-        scr_qty_map = {r.sco: flt(r.qty) for r in scr_qtys}
+        recibido_por_sco = {}
+        for r in scr_rows:
+            fg = poi_a_fg.get(r.poi)
+            if fg is None:
+                continue
+            recibido_por_sco.setdefault(r.sco, {}).setdefault(fg, 0.0)
+            recibido_por_sco[r.sco][fg] += flt(r.qty)
 
+        # Un LOTE (SCO) cuenta como "recibido" solo si TODAS sus piezas ya tienen
+        # recibo -- un recibo parcial no debe marcar ese lote como completo.
         todas_recibidas = True
         qty_recibida = 0.0
         for sco in scos:
-            q = scr_qty_map.get(sco.name, 0.0)
-            if q > 0:
+            por_fg = recibido_por_sco.get(sco.name, {})
+            recibido_de_este_sco = min((por_fg.get(fg, 0.0) for fg in fg_grupos), default=0.0)
+            if recibido_de_este_sco > 0:
                 out["lotes_recibidos"] += 1
-                qty_recibida += q
+                qty_recibida += recibido_de_este_sco
             else:
                 todas_recibidas = False
 
@@ -1520,8 +1728,9 @@ def actualizar_factura_compra(name: str, posting_date=None, due_date=None, bill_
 
 
 @frappe.whitelist()
-def dashboard_metrics() -> dict:
-    """Métricas del flujo de costeo → venta → producción subcontratada → facturación."""
+def dashboard_metrics(company=None) -> dict:
+    """Métricas del flujo de costeo → venta → producción subcontratada → facturación.
+    `company`: filtro del selector global del navbar -- None = todas las compañías."""
     from frappe.utils import add_months
 
     # Todas las métricas monetarias usan el NETO (sin IVA): el impuesto es trasladado,
@@ -1529,13 +1738,20 @@ def dashboard_metrics() -> dict:
     def suma(dt, field="base_net_total", filters=None):
         f = dict(filters or {})
         f["docstatus"] = ["<", 2]
+        if company:
+            f["company"] = company
         rows = frappe.get_all(dt, filters=f, fields=[f"sum({field}) as t"])
         return flt(rows[0].t) if rows and rows[0].t else 0.0
 
     # ── Costeos por estado (pipeline) ────────────────────────────────────────
+    # Costeo usa "compañia" (con ñ) como campo real -- "company" en este doctype
+    # no se mantiene sincronizado, no filtrar por él.
     estados = ["Borrador", "Cotizado", "Orden de Venta", "En Producción", "Entregado", "Completado"]
     por_estado = {e: 0 for e in estados}
-    for r in frappe.get_all("Costeo", fields=["costeo_status", "count(name) as n"], group_by="costeo_status"):
+    costeo_filters = {"compañia": company} if company else {}
+    for r in frappe.get_all(
+        "Costeo", filters=costeo_filters, fields=["costeo_status", "count(name) as n"], group_by="costeo_status"
+    ):
         st = r.get("costeo_status") or "Borrador"
         por_estado[st] = por_estado.get(st, 0) + (r.n or 0)
     total_costeos = sum(por_estado.values())
@@ -1555,11 +1771,23 @@ def dashboard_metrics() -> dict:
     cp = frappe.get_meta("Costeo").get_field("costeo_producto")
     cp_dt = cp.options if cp else None
     if cp_dt and frappe.db.has_column(cp_dt, "margin_pct"):
-        r = frappe.db.sql(f"SELECT AVG(margin_pct) FROM `tab{cp_dt}` WHERE margin_pct > 0")
+        if company:
+            r = frappe.db.sql(
+                f"""SELECT AVG(margin_pct) FROM `tab{cp_dt}` cp
+                    WHERE margin_pct > 0 AND cp.parent IN (
+                        SELECT name FROM `tabCosteo` WHERE compañia = %s
+                    )""",
+                (company,),
+            )
+        else:
+            r = frappe.db.sql(f"SELECT AVG(margin_pct) FROM `tab{cp_dt}` WHERE margin_pct > 0")
         margen_prom = flt(r[0][0]) if r and r[0][0] else 0.0
 
     # ── Producción subcontratada (avance) ────────────────────────────────────
-    sub_pos = frappe.get_all("Purchase Order", filters={"is_subcontracted": 1, "docstatus": 1}, pluck="name")
+    sub_po_filters = {"is_subcontracted": 1, "docstatus": 1}
+    if company:
+        sub_po_filters["company"] = company
+    sub_pos = frappe.get_all("Purchase Order", filters=sub_po_filters, pluck="name")
     recibidas = 0
     for po in sub_pos:
         sco = frappe.db.get_value("Subcontracting Order", {"purchase_order": po, "docstatus": 1}, "name")
@@ -1568,28 +1796,35 @@ def dashboard_metrics() -> dict:
     total_sub = len(sub_pos)
 
     # ── Top clientes (por valor de OV) ───────────────────────────────────────
+    top_clientes_filters = {"docstatus": ["<", 2]}
+    if company:
+        top_clientes_filters["company"] = company
     top_clientes = frappe.get_all(
         "Sales Order",
-        filters={"docstatus": ["<", 2]},
+        filters=top_clientes_filters,
         fields=["customer", "sum(base_net_total) as monto", "sum(total_qty) as prendas", "count(name) as ordenes"],
         group_by="customer", order_by="monto desc", limit=6,
     )
 
     # ── Talleres (gasto de maquila por proveedor) ────────────────────────────
+    talleres_filters = {"is_subcontracted": 1, "docstatus": ["<", 2]}
+    if company:
+        talleres_filters["company"] = company
     talleres = frappe.get_all(
         "Purchase Order",
-        filters={"is_subcontracted": 1, "docstatus": ["<", 2]},
+        filters=talleres_filters,
         fields=["supplier", "supplier_name", "sum(base_net_total) as monto", "count(name) as ordenes"],
         group_by="supplier", order_by="monto desc", limit=6,
     )
 
     # ── Facturado por mes (últimos 6) ────────────────────────────────────────
     facturado_mes = frappe.db.sql(
-        """SELECT DATE_FORMAT(posting_date, '%%Y-%%m') AS mes, SUM(base_net_total) AS monto
+        f"""SELECT DATE_FORMAT(posting_date, '%%Y-%%m') AS mes, SUM(base_net_total) AS monto
            FROM `tabSales Invoice`
            WHERE docstatus < 2 AND posting_date >= %s
+           {"AND company = %s" if company else ""}
            GROUP BY mes ORDER BY mes""",
-        (add_months(nowdate(), -5),), as_dict=True,
+        (add_months(nowdate(), -5), *([company] if company else [])), as_dict=True,
     )
 
     return {
@@ -1907,7 +2142,7 @@ def crear_boms_spa(costeo: str) -> dict:
     - Omite si ya existe un BOM (enviado o borrador) para ese ítem.
     - Configuración: rm_cost_as_per="Price List", buying_price_list="Compra estandar".
     """
-    from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_stage_graph
+    from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_production_operations
 
     doc     = frappe.get_doc("Costeo", costeo)
     company = doc.compañia
@@ -1939,12 +2174,14 @@ def crear_boms_spa(costeo: str) -> dict:
             errors.append(f"{finished_item}: sin etapas configuradas")
             continue
 
-        # graph_info/etapas_ord ya vienen en orden topológico -- procesa primero
-        # las etapas raíz, así el BOM que una etapa referencia como upstream ya
-        # existe cuando le toca su turno. Si el costeo nunca usó "recibe_de"
-        # (procesos en paralelo), _resolve_stage_graph cae al comportamiento
-        # lineal de siempre (cadena estricta por número de etapa).
-        graph_info, etapas_ord = _resolve_stage_graph(etapas, doc.get("tabla_salidas_etapa"))
+        # Operaciones ya vienen en orden topológico -- procesa primero las raíz, así
+        # el BOM que una operación referencia como upstream ya existe cuando le toca.
+        # _resolve_production_operations fusiona las etapas del mismo proveedor que
+        # están en el mismo punto del flujo en UNA operación con varios servicios y
+        # UN resultado; si nada se fusiona hay una operación por nodo, idéntico al
+        # comportamiento lineal de siempre.
+        operaciones = _resolve_production_operations(etapas, doc.get("tabla_salidas_etapa"), finished_item)
+        op_por_key = {op.op_key: op for op in operaciones}
         # Cada entrada es (fila_de_material, qty_por_pieza): la cantidad ya viene
         # repartida por etapa cuando el costeo declaró el reparto explícito (ver
         # _split_materials_by_stage), en vez de asumir que la etapa consume el
@@ -1952,90 +2189,76 @@ def crear_boms_spa(costeo: str) -> dict:
         mats_by_key, mats_sin_etapa = _split_materials_by_stage(
             mats_por_producto.get(finished_item, []), etapas, doc.get("tabla_materiales_etapa")
         )
-        root_keys = {k for k, info in graph_info.items() if not info["upstream"]}
 
-        for etapa_cfg in etapas_ord:
-            node_key = etapa_cfg.get("node_key")
-            g = graph_info.get(node_key, {})
-            es_ultima     = g.get("is_terminal", True)
-            subensamblaje = etapa_cfg.get("subensamblaje") or ""
-            etapa_num_str = str(etapa_cfg.get("etapa") or "")
-            # Fracción de esta salida sobre el costo TOTAL de la etapa (100% si la
-            # etapa no tiene 'salidas'), derivada de las cantidades producidas.
-            # Reparte la materia prima de la etapa entre sus salidas sin
-            # duplicar/triplicar el consumo.
-            pct = (float(etapa_cfg.get("pct_participacion") or 100)) / 100.0
-            # Unidades de ESTA salida por pieza de producto terminado. El BOM se arma
-            # para 1 unidad del ítem, así que el material que le toca a la salida
-            # (mat x pct) se divide entre las unidades que produce; quien la consuma
-            # río abajo pedirá qty_salida de ellas y el total vuelve a cuadrar.
-            qty_salida = float(etapa_cfg.get("qty_salida") or 1) or 1
+        for op in operaciones:
+            # Fracción del costo de la etapa (100 % salvo salidas múltiples) y
+            # unidades producidas por prenda -- 100/1 en operaciones fusionadas.
+            pct = (float(op.pct or 100)) / 100.0
+            qty_salida = float(op.qty_salida or 1) or 1
 
-            # Ítem para el que se crea el BOM
-            bom_item = finished_item if es_ultima else subensamblaje
+            bom_item = op.output_item
             if not bom_item:
                 errors.append(
-                    f"{finished_item} (etapa {etapa_num_str}): falta el sub-ensamblaje que "
-                    "produce esta etapa. Complétalo en 'Preparar Manufactura' antes de crear los BOMs."
+                    f"{finished_item} ({op.supplier or '?'}): falta el sub-ensamblaje que "
+                    "produce esta operación. Complétalo antes de crear los BOMs."
                 )
                 continue
 
             # ── Ítems del BOM ────────────────────────────────────────────────
             items_bom = []
 
-            # Sub-ensamblajes de las etapas de las que ESTA recibe -- puede ser
-            # más de una (procesos en paralelo que convergen, ej. confección +
-            # bordado de manga entrando ambos al ensamble final).
-            for up in g.get("upstream", []):
-                up_sub = up.get("subensamblaje") or ""
+            # Resultados de las operaciones de las que ESTA recibe -- puede ser
+            # más de una (procesos en paralelo que convergen).
+            for up_key in op.upstream_keys:
+                up = op_por_key.get(up_key)
+                up_sub = up.output_item if up else None
                 if not up_sub:
                     continue
                 up_uom = frappe.db.get_value("Item", up_sub, "stock_uom") or "Nos"
-                # Referencia explícita al BOM del subensamblaje previo, para que la
-                # explosión multinivel del Production Plan recurra correctamente.
+                # Referencia explícita al BOM previo, para que la explosión
+                # multinivel del Production Plan recurra correctamente.
                 up_bom = frappe.db.get_value(
                     "BOM", {"item": up_sub, "is_active": 1, "docstatus": ["in", [0, 1]], "company": company}, "name"
                 ) or ""
                 items_bom.append({
                     "item_code": up_sub,
-                    # Cuántas unidades de esa salida lleva una pieza de lo que produce
-                    # ESTA etapa (ej. 2 mangas cortadas iguales por prenda).
-                    "qty":       float(up.get("qty_salida") or 1) or 1,
+                    "qty":       float(up.qty_salida or 1) or 1,
                     "uom":       up_uom,
                     "stock_uom": up_uom,
                     "rate":      0,
                     "bom_no":    up_bom,
                 })
 
-            # Materias primas de esta etapa. Las materias primas SIN etapa asignada
-            # se incluyen en la(s) etapa(s) RAÍZ (sin upstream) -- ahí es donde
-            # arranca la producción. La atribución sigue siendo por ETAPA física
-            # (parent_stage_key), no por salida individual -- el material lo
-            # consume la operación completa, no una salida en particular.
-            stage_mats = list(mats_by_key.get(etapa_cfg.get("parent_stage_key"), []))
-            if node_key in root_keys:
+            # Materias primas de TODAS las etapas fusionadas en esta operación. Las
+            # que no quedaron atribuidas a ninguna etapa se incluyen en la(s)
+            # operación(es) RAÍZ (sin upstream) -- ahí arranca la producción. Un mismo
+            # material repartido entre varias etapas de la operación (ej. hilo de
+            # bordado 0.5 en cada bordado) se SUMA en un solo renglón del BOM.
+            stage_mats = []
+            for sk in op.member_stage_keys:
+                stage_mats += mats_by_key.get(sk, [])
+            if not op.upstream_keys:
                 stage_mats += mats_sin_etapa
 
+            mats_agrupados = {}
+            mat_uom = {}
             for mat, mat_qty in stage_mats:
-                uom = (mat.internal_uom
-                       or frappe.db.get_value("Item", mat.item, "stock_uom")
-                       or "Nos")
-                # pct sigue aplicando ENCIMA del reparto por etapa: mat_qty es lo que
-                # consume la operación completa, y pct lo divide entre las salidas de
-                # esa operación (100% si la etapa tiene una sola salida). El /qty_salida
-                # lo baja a "por unidad" del ítem para el que se arma este BOM.
-                qty = mat_qty * pct / qty_salida
+                mat_uom[mat.item] = (mat.internal_uom
+                                     or frappe.db.get_value("Item", mat.item, "stock_uom")
+                                     or "Nos")
+                mats_agrupados[mat.item] = mats_agrupados.get(mat.item, 0) + mat_qty * pct / qty_salida
+            for item_code, qty in mats_agrupados.items():
                 items_bom.append({
-                    "item_code": mat.item,
+                    "item_code": item_code,
                     "qty":       qty,
-                    "uom":       uom,
-                    "stock_uom": uom,
+                    "uom":       mat_uom[item_code],
+                    "stock_uom": mat_uom[item_code],
                     "rate":      0,
                 })
 
             if not items_bom:
                 errors.append(
-                    f"{bom_item} (etapa {etapa_num_str}): no tiene materiales ni sub-ensamblaje "
+                    f"{bom_item} ({op.supplier or '?'}): no tiene materiales ni resultado "
                     "de entrada asignados — no se puede armar su BOM."
                 )
                 continue
@@ -2068,7 +2291,7 @@ def crear_boms_spa(costeo: str) -> dict:
                 if frappe.db.has_column("BOM", "costeo"):
                     bom.costeo = costeo
                 if frappe.db.has_column("BOM", "salida_id"):
-                    bom.salida_id = node_key
+                    bom.salida_id = op.op_key
                 for it in items_bom:
                     bom.append("items", it)
                 bom.flags.ignore_permissions = True
@@ -2077,7 +2300,7 @@ def crear_boms_spa(costeo: str) -> dict:
                 bom.submit()
                 created.append(bom.name)
             except Exception as exc:
-                errors.append(f"{bom_item} (etapa {etapa_num_str}): {exc}")
+                errors.append(f"{bom_item} ({op.supplier or '?'}): {exc}")
 
     frappe.db.commit()
     return {"created": created, "errors": errors, "skipped": skipped}
@@ -2204,11 +2427,14 @@ def crear_pos_subcontratacion(costeo: str) -> dict:
 
 @frappe.whitelist()
 def crear_subcontracting_bom(costeo: str) -> dict:
-    """Creates one Subcontracting BOM per stage (etapa), matching the original JS logic:
-    - Non-last stage  → finished_good = subensamblaje of that stage
-    - Last stage      → finished_good = finished_item of the product
-    Skips if a Subcontracting BOM already exists for that finished_good."""
-    from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_stage_graph
+    """Crea un Subcontracting BOM por OPERACIÓN (ver _resolve_production_operations):
+    - Operación no terminal → finished_good = su resultado (sintético si fusiona varias)
+    - Operación terminal     → finished_good = el producto terminado
+    Cuando la operación agrupa varios servicios del mismo proveedor, el Subcontracting
+    BOM se crea con el servicio PRIMARIO y conversion_factor = nº de servicios, para
+    que la OC reparta la pieza entre los k renglones y el total producido sea UNO.
+    Se salta si ya existe un Subcontracting BOM para ese finished_good."""
+    from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_production_operations
 
     doc     = frappe.get_doc("Costeo", costeo)
     created, errors, skipped = [], [], []
@@ -2221,18 +2447,18 @@ def crear_subcontracting_bom(costeo: str) -> dict:
         etapas_prod = [e for e in doc.tabla_etapas_costeo if e.producto_terminado == finished_item]
         if not etapas_prod:
             continue
-        graph_info, etapas = _resolve_stage_graph(etapas_prod, doc.get("tabla_salidas_etapa"))
+        operaciones = _resolve_production_operations(etapas_prod, doc.get("tabla_salidas_etapa"), finished_item)
 
-        for etapa in etapas:
-            node_key      = etapa.get("node_key")
-            servicio      = etapa.servicio
-            subensamblaje = etapa.subensamblaje
-            es_ultima     = graph_info.get(node_key, {}).get("is_terminal", True)
-            finished_good = finished_item if es_ultima else subensamblaje
-            # % de esta salida sobre el precio de servicio de la etapa completa (100
-            # si la etapa no tiene 'salidas' -- sin cambio de comportamiento).
-            pct = (float(etapa.get("pct_participacion") or 100)) / 100.0
-            qty_salida = float(etapa.get("qty_salida") or 1) or 1
+        for op in operaciones:
+            servicios = [s for s in op.servicios if s.get("service_item")]
+            if not servicios:
+                continue
+            node_key      = op.op_key
+            servicio      = servicios[0]["service_item"]
+            k             = len(servicios)
+            finished_good = op.output_item
+            pct = (float(op.pct or 100)) / 100.0
+            qty_salida = float(op.qty_salida or 1) or 1
 
             if not finished_good or not servicio:
                 continue
@@ -2273,27 +2499,32 @@ def crear_subcontracting_bom(costeo: str) -> dict:
                 )
                 continue
 
-            # Si el proveedor cobra por lote (ej. $19 por 25 confecciones, lote_qty=25,
-            # lote_uom="H87 - Pieza" en la etapa del Costeo), el Subcontracting BOM debe
-            # reflejar "1 Lote de servicio produce lote_qty [lote_uom] de producto" -- no
-            # "1 servicio = 1 pieza" como antes, correcto solo si lote_qty=1.
-            lote_qty = flt(etapa.lote_qty) or 1
-            if lote_qty > 1:
-                finished_good_uom = etapa.lote_uom or frappe.db.get_value("Item", finished_good, "stock_uom") or "Nos"
+            lote_qty = flt(servicios[0].get("lote_qty")) or 1
+            if k > 1:
+                # Operación con varios servicios sobre una pieza: el SubBOM se crea con
+                # el servicio primario y conversion_factor = k. En la OC, fg_qty de cada
+                # renglón es 1/k de la pieza y service_qty = fg_qty x k = pieza entera,
+                # así los k renglones producen UNA pieza y cada servicio se factura
+                # completo (ver _create_subcontracting_pos_from_stages).
+                finished_good_uom = frappe.db.get_value("Item", finished_good, "stock_uom") or "Nos"
+                svc_uom = frappe.db.get_value("Item", servicio, "stock_uom") or "Nos"
+                finished_good_qty = 1
+                service_item_qty = k
+            elif lote_qty > 1:
+                # Si el proveedor cobra por lote (ej. $19 por 25 confecciones), el
+                # Subcontracting BOM refleja "1 Lote de servicio produce lote_qty
+                # [lote_uom] de producto" -- no "1 servicio = 1 pieza".
+                finished_good_uom = servicios[0].get("lote_uom") or frappe.db.get_value("Item", finished_good, "stock_uom") or "Nos"
                 svc_uom = LOTE_UOM
                 finished_good_qty = lote_qty
+                service_item_qty = (pct / qty_salida) or 1
             else:
                 finished_good_uom = frappe.db.get_value("Item", finished_good, "stock_uom") or "Nos"
                 svc_uom = frappe.db.get_value("Item", servicio, "stock_uom") or "Nos"
                 finished_good_qty = 1
-            # service_item_qty se escala por la participación de esta salida: si es el
-            # 33% de la operación, 1 unidad física de servicio completo (1 Lote) se
-            # reparte en 0.33 aquí -- así, al sumar el service_qty resultante de las
-            # 3 salidas en la OC de subcontratación, da el total real de la operación,
-            # no el triple (ver _create_subcontracting_pos_from_stages). El /qty_salida
-            # lo deja "por unidad producida", que es la base del Subcontracting BOM:
-            # una salida de 2 piezas cuesta la mitad de servicio por pieza.
-            service_item_qty = (pct / qty_salida) or 1
+                # service_item_qty se escala por la participación de la salida (salidas
+                # múltiples): 1 unidad de servicio repartida entre las salidas hermanas.
+                service_item_qty = (pct / qty_salida) or 1
 
             try:
                 subc = frappe.new_doc("Subcontracting BOM")
@@ -2711,6 +2942,10 @@ def preparar_produccion(costeo: str, sales_order: str = None) -> dict:
     # La automatización llega SOLO hasta el Production Plan. Los demás documentos
     # (solicitud de material, órdenes de trabajo, subcontratación) se generan DESDE
     # el plan, después de validarlo, para que queden asociados a él.
+    # Los sub-ensamblajes (resultado de cada operación intermedia, sintético cuando
+    # fusiona varios servicios) tienen que existir como Item antes de armar sus BOMs.
+    # Es idempotente -- el frontend ya lo llama, esto cubre la llamada directa.
+    run("Sub-ensamblajes", lambda: auto_materializar_subensamblajes(costeo))
     run("BOMs", lambda: crear_boms_spa(costeo))
     run("Subcontracting BOMs", lambda: crear_subcontracting_bom(costeo))
     run(
@@ -3733,21 +3968,18 @@ def _po_for_bom_item(bom_item, sales_order, costeo):
 
 @frappe.whitelist()
 def get_lotes_produccion(plan: str) -> dict:
-    """Vista por LOTE de la subcontratación: agrupa, por producto, las etapas en su
-    orden real (_resolve_stage_graph -- soporta procesos en paralelo que convergen)
-    y correlaciona las Subcontracting Order de cada etapa (cada una en su propia OC)
-    que comparten el mismo `lote_ref` -- así un lote se puede seguir de principio a
-    fin (etapa 1 -> etapa 2 -> ... -> prenda terminada) en vez de tener que saltar
-    entre las OC de cada etapa por separado."""
-    from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_stage_graph
-
-    sales_order = frappe.db.get_value("Production Plan Sales Order", {"parent": plan}, "sales_order")
+    """Vista por LOTE de la subcontratación. Cada lote se descompone en PARADAS (ver
+    _lote_paradas): un paso del flujo en un taller = 1 Subcontracting Order + 1 envío
+    + 1 recibo. Un taller que maquila para varios productos en el mismo punto del
+    flujo tiene UNA parada (con la cantidad de cada uno); uno que hace dos pasos NO
+    adyacentes tiene DOS. Devuelve ``{productos: [...], lotes: [{lote_ref, productos,
+    paradas, material_*}]}``."""
     costeo = frappe.db.get_value("Production Plan", plan, "costeo")
     if not costeo:
-        return {"productos": []}
+        return {"productos": [], "lotes": []}
 
     doc = frappe.get_doc("Costeo", costeo)
-    productos_out = []
+    pts_costeo = _productos_terminados_de_costeo(costeo)
 
     # Materia prima: no está ligada a un producto específico (una Solicitud de
     # Material puede cubrir varios productos del mismo costeo), así que se agrupa
@@ -3819,91 +4051,184 @@ def get_lotes_produccion(plan: str) -> dict:
         ):
             sqs_por_lote.setdefault(r["lote_ref"], []).append({"name": r["name"], "supplier": r["supplier"], "docstatus": r["docstatus"]})
 
-    for producto in doc.costeo_producto:
-        fi = producto.finished_item
-        if not fi:
-            continue
-        etapas_prod = [e for e in doc.tabla_etapas_costeo if e.producto_terminado == fi]
-        if not etapas_prod:
-            continue
-        graph_info, etapas_ord = _resolve_stage_graph(etapas_prod, doc.get("tabla_salidas_etapa"))
+    item_name_cache = {}
 
-        etapas_out = []
-        for etapa in etapas_ord:
-            node_key = etapa.get("node_key")
-            es_ultima = graph_info.get(node_key, {}).get("is_terminal", True)
-            bom_item = fi if es_ultima else (etapa.get("subensamblaje") or "")
-            if not bom_item:
-                continue
-            po = _po_for_bom_item(bom_item, sales_order, costeo)
-            etapas_out.append({
-                "key": node_key,
-                "label": etapa.get("servicio") or f"Etapa {etapa.get('etapa')}",
-                "bom_item": bom_item,
-                "po": po.name if po else None,
-                "po_docstatus": po.docstatus if po else None,
+    def _inm(code):
+        if code not in item_name_cache:
+            item_name_cache[code] = frappe.db.get_value("Item", code, "item_name") or code
+        return item_name_cache[code]
+
+    img_cache = {}
+
+    def _img(code):
+        if code not in img_cache:
+            img_cache[code] = frappe.db.get_value("Item", code, "image") or None
+        return img_cache[code]
+
+    def _bonito(code):
+        """Nombre legible de un servicio: su item_name si difiere del código, si no
+        el código con guiones/underscores como espacios y en formato título."""
+        nombre = _inm(code)
+        if nombre and nombre != code:
+            return nombre
+        return (code or "").replace("_", " ").replace("-", " ").strip().title()
+
+    def _titulo_parada(parada):
+        nombres = [_bonito(s) for s in parada.servicios]
+        if len(nombres) == 1:
+            return nombres[0]
+        if not nombres:
+            return parada.supplier
+        return f"{nombres[0]} +{len(nombres) - 1}"
+
+    # ---- SCO de maquila del costeo, con su estado (envío / recibo) ----
+    maquila_pos = frappe.get_all(
+        "Purchase Order",
+        filters={"costeo": costeo, "is_subcontracted": 1, "docstatus": ["<", 2]},
+        pluck="name",
+    ) if frappe.db.has_column("Purchase Order", "costeo") else []
+    scos_all = frappe.get_all(
+        "Subcontracting Order",
+        filters={"purchase_order": ["in", maquila_pos or [""]], "docstatus": ["<", 2]},
+        fields=["name", "purchase_order", "lote_ref", "docstatus", "schedule_date"],
+        order_by="creation asc",
+    ) if maquila_pos else []
+    for s in scos_all:
+        s["items"] = frappe.get_all(
+            "Subcontracting Order Item", filters={"parent": s["name"]}, fields=["item_code", "qty"]
+        )
+        s["transfer_done"] = bool(frappe.db.exists("Stock Entry", {
+            "subcontracting_order": s["name"], "purpose": "Send to Subcontractor", "docstatus": 1,
+        }))
+        scr_names = frappe.get_all(
+            "Subcontracting Receipt Item", filters={"subcontracting_order": s["name"]}, pluck="parent"
+        )
+        scr = frappe.get_all(
+            "Subcontracting Receipt", filters={"name": ["in", scr_names or [""]]},
+            fields=["name", "docstatus"], order_by="creation desc", limit=1,
+        ) if scr_names else []
+        s["receipt"] = scr[0] if scr else None
+        s["receipt_validated"] = bool(scr and scr[0]["docstatus"] == 1)
+
+    po_ds_cache = {}
+
+    def _po_ds(po):
+        if po not in po_ds_cache:
+            po_ds_cache[po] = frappe.db.get_value("Purchase Order", po, "docstatus")
+        return po_ds_cache[po]
+
+    scos_by_lote = {}
+    for s in scos_all:
+        scos_by_lote.setdefault(s["lote_ref"] or "Sin lote", []).append(s)
+
+    lote_keys = list(dict.fromkeys(
+        list(scos_by_lote.keys())
+        + list(material_pos_by_lote.keys())
+        + list(materiales_por_lote.keys())
+    ))
+
+    todos_pts = [p.finished_item for p in doc.costeo_producto if p.finished_item]
+
+    # Estructura de referencia del costeo (sin lote): para cada producto, la OC de
+    # maquila de su primera parada -- la usa "Nuevo lote" para sugerir cantidades.
+    estructura_ref, _fref = _lote_paradas(doc, {p: 1 for p in todos_pts})
+    root_po_de_prod = {}
+    for parada in estructura_ref:
+        if parada.nivel == 0:
+            for pr in parada.productos:
+                root_po_de_prod.setdefault(pr, parada.po)
+
+    lotes_out = []
+    for lote_ref in lote_keys:
+        scos_lote = scos_by_lote.get(lote_ref, [])
+        materiales = materiales_por_lote.get(lote_ref)
+        material_pos_lote = material_pos_by_lote.get(lote_ref, [])
+
+        # Cantidad real por producto en el lote: la qty de cualquiera de sus piezas
+        # (todas iguales dentro del lote) -- máx entre sus fg para no sumar paradas.
+        qty_por_fg = {}
+        for s in scos_lote:
+            for it in s["items"]:
+                qty_por_fg[it["item_code"]] = qty_por_fg.get(it["item_code"], 0) + flt(it["qty"])
+        qty_por_prod = {}
+        for fg, q in qty_por_fg.items():
+            pr = _producto_de_fg(fg, pts_costeo)
+            if pr:
+                qty_por_prod[pr] = max(qty_por_prod.get(pr, 0), round(q))
+
+        # Estructura de paradas: si aún no hay SCO (lote de material), todos los
+        # productos del costeo (cantidad 0) para mostrar qué talleres hará falta.
+        estructura = qty_por_prod or {p: 0 for p in todos_pts}
+        paradas, _faltan = _lote_paradas(doc, {p: (q or 1) for p, q in estructura.items()})
+
+        paradas_out = []
+        for parada in paradas:
+            fgset = set(parada.fg_items)
+            sco = next((
+                s for s in scos_lote
+                if s["purchase_order"] == parada.po
+                and any(it["item_code"] in fgset for it in s["items"])
+            ), None)
+            productos_parada = []
+            for pr in parada.productos:
+                q = 0
+                if sco:
+                    q = round(sum(
+                        flt(it["qty"]) for it in sco["items"]
+                        if it["item_code"] in fgset and _producto_de_fg(it["item_code"], pts_costeo) == pr
+                    ))
+                productos_parada.append({"finished_item": pr, "item_name": _inm(pr), "qty": q})
+            paradas_out.append({
+                "parada_id": parada.parada_id,
+                "supplier": parada.supplier,
+                "titulo": _titulo_parada(parada),
+                "servicios": parada.servicios,
+                "fg_items": parada.fg_items,
+                "productos": productos_parada,
+                "recibe_de": sorted(parada.recibe_de),
+                "es_terminal": parada.es_terminal,
+                "orden": parada.orden,
+                "nivel": parada.nivel,
+                "po": parada.po,
+                "po_docstatus": _po_ds(parada.po),
+                "sco": sco["name"] if sco else None,
+                "sco_docstatus": sco["docstatus"] if sco else None,
+                "transfer_done": sco["transfer_done"] if sco else False,
+                "receipt": sco["receipt"] if sco else None,
+                "receipt_validated": sco["receipt_validated"] if sco else False,
             })
 
-        if not etapas_out:
-            continue
+        done_maquila = bool(paradas_out) and all(p["receipt_validated"] for p in paradas_out)
+        done_material = all(mp.get("receipt_validated") for mp in material_pos_lote)
+        lotes_out.append({
+            "lote_ref": lote_ref,
+            "schedule_date": (scos_lote[0]["schedule_date"] if scos_lote else None),
+            "done": done_maquila and done_material,
+            "productos": [
+                {"finished_item": p, "item_name": _inm(p), "qty": q, "image": _img(p)}
+                for p, q in sorted(qty_por_prod.items())
+            ],
+            "paradas": paradas_out,
+            "material_pos": material_pos_lote,
+            "material_mr": materiales["mr"] if materiales else None,
+            "material_items": materiales["items"] if materiales else [],
+            "material_rfqs": rfqs_por_lote.get(lote_ref, []),
+            "material_sqs": sqs_por_lote.get(lote_ref, []),
+        })
 
-        po_names = [e["po"] for e in etapas_out if e["po"]]
-        scos = frappe.get_all(
-            "Subcontracting Order",
-            filters={"purchase_order": ["in", po_names or [""]], "docstatus": ["<", 2]},
-            fields=["name", "purchase_order", "lote_ref", "docstatus", "schedule_date"],
-            order_by="creation asc",
-        ) if po_names else []
-        for s in scos:
-            s["qty"] = flt(frappe.db.sql(
-                "select coalesce(sum(qty), 0) from `tabSubcontracting Order Item` where parent = %s",
-                s["name"],
-            )[0][0])
-            s["transfer_done"] = bool(frappe.db.exists("Stock Entry", {
-                "subcontracting_order": s["name"], "purpose": "Send to Subcontractor", "docstatus": 1,
-            }))
-            scr_names = frappe.get_all(
-                "Subcontracting Receipt Item", filters={"subcontracting_order": s["name"]}, pluck="parent",
-            )
-            s["receipt_validated"] = bool(scr_names and frappe.db.exists(
-                "Subcontracting Receipt", {"name": ["in", scr_names], "docstatus": 1}
-            ))
-
-        lote_keys = list(dict.fromkeys(
-            [s["lote_ref"] or "Sin lote" for s in scos]
-            + list(material_pos_by_lote.keys())
-            + list(materiales_por_lote.keys())
-        ))
-        lotes_out = []
-        for lote_ref in lote_keys:
-            scos_lote = [s for s in scos if (s["lote_ref"] or "Sin lote") == lote_ref]
-            by_po = {s["purchase_order"]: s for s in scos_lote}
-            lote_etapas = []
-            for e in etapas_out:
-                s = by_po.get(e["po"])
-                lote_etapas.append({
-                    **e,
-                    "sco": s["name"] if s else None,
-                    "sco_docstatus": s["docstatus"] if s else None,
-                    "transfer_done": s["transfer_done"] if s else False,
-                    "receipt_validated": s["receipt_validated"] if s else False,
-                })
-            materiales = materiales_por_lote.get(lote_ref)
-            lotes_out.append({
-                "lote_ref": lote_ref,
-                "qty": max((s["qty"] for s in scos_lote), default=0),
-                "schedule_date": scos_lote[0]["schedule_date"] if scos_lote else None,
-                "etapas": lote_etapas,
-                "material_pos": material_pos_by_lote.get(lote_ref, []),
-                "material_mr": materiales["mr"] if materiales else None,
-                "material_items": materiales["items"] if materiales else [],
-                "material_rfqs": rfqs_por_lote.get(lote_ref, []),
-                "material_sqs": sqs_por_lote.get(lote_ref, []),
-            })
-
-        productos_out.append({"finished_item": fi, "etapas": etapas_out, "lotes": lotes_out})
-
-    return {"productos": productos_out}
+    return {
+        "productos": [
+            {
+                "finished_item": p.finished_item,
+                "item_name": _inm(p.finished_item),
+                "root_po": root_po_de_prod.get(p.finished_item),
+                "root_po_docstatus": _po_ds(root_po_de_prod[p.finished_item])
+                if root_po_de_prod.get(p.finished_item) else None,
+            }
+            for p in doc.costeo_producto if p.finished_item
+        ],
+        "lotes": lotes_out,
+    }
 
 
 # =============================================================================
@@ -3927,39 +4252,179 @@ def _party_links(doctype, party, link_doctype="Supplier"):
     return out
 
 
+def _producto_de_fg(fg_item, productos_terminados):
+    """Producto terminado al que pertenece un ``fg_item`` de OC/SCO de maquila.
+
+    ``fg_item`` es o el código del producto terminado tal cual (operación terminal)
+    o un sintético ``"<PT> · <slug>"`` (sub-ensamblaje de una operación intermedia,
+    ver _resolve_production_operations). ``productos_terminados`` debe venir
+    ordenado de más largo a más corto para que un PT que sea prefijo de otro no
+    gane primero."""
+    if not fg_item:
+        return None
+    for pt in productos_terminados:
+        if fg_item == pt or fg_item.startswith(pt + " · "):
+            return pt
+    return None
+
+
+def _productos_terminados_de_costeo(costeo):
+    """Códigos de producto terminado de un costeo, ordenados de más largo a más
+    corto (ver _producto_de_fg)."""
+    if not costeo:
+        return []
+    pts = frappe.get_all("Costeo Producto", filters={"parent": costeo}, pluck="finished_item")
+    return sorted({p for p in pts if p}, key=len, reverse=True)
+
+
+def _po_subcontratacion_lineas(po_doc, productos=None) -> list:
+    """Detalle por línea (una por Purchase Order Item) del avance de subcontratación
+    de una OC -- puede agrupar varias etapas del mismo proveedor en renglones
+    separados (ver _create_subcontracting_pos_from_stages -- ej. 3 servicios de
+    bordado distintos, mismo bordador, en una sola OC). qty_subcontratada suma
+    TODAS las Subcontracting Order (borrador + validadas, docstatus<2) vinculadas
+    por 'purchase_order_item' (campo NATIVO de Subcontracting Order Item que
+    apunta a la fila exacta de origen), así que el avance de cada línea nunca se
+    mezcla con el de las demás aunque compartan la misma OC. Con una sola línea
+    (el caso de siempre hasta ahora) esto se comporta idéntico a antes.
+
+    Cada línea trae ``producto`` (el PT al que pertenece su fg_item) -- una OC de un
+    proveedor que maquila para VARIOS productos del costeo tiene líneas de cada uno,
+    y el saldo pendiente / los lotes se calculan por producto, no mezclados.
+    ``productos`` (iterable), si se pasa, filtra a solo las líneas de esos PT."""
+    pts = _productos_terminados_de_costeo(po_doc.get("costeo"))
+    items = po_doc.items or []
+    sco_names = frappe.get_all(
+        "Subcontracting Order",
+        filters={"purchase_order": po_doc.name, "docstatus": ["<", 2]},
+        pluck="name",
+        order_by="creation asc",
+    )
+    qty_por_po_item = {}
+    if sco_names:
+        for r in frappe.get_all(
+            "Subcontracting Order Item",
+            filters={"parent": ["in", sco_names]},
+            fields=["purchase_order_item", "qty"],
+        ):
+            qty_por_po_item[r.purchase_order_item] = qty_por_po_item.get(r.purchase_order_item, 0) + flt(r.qty)
+
+    # Los renglones de OC que comparten fg_item son UNA sola pieza repartida entre
+    # varios servicios del mismo proveedor (ver _resolve_production_operations): se
+    # colapsan sumando sus porciones para que la pieza cuente como una. Renglones con
+    # fg_item DISTINTO son piezas distintas y se dejan por separado (el llamador toma
+    # el mínimo entre ellas -- un lote combinado no puede pasar de la más corta).
+    por_fg = {}
+    orden = []
+    for it in items:
+        # En PIEZAS (fg_item_qty), que es la unidad de Subcontracting Order Item.qty
+        # -- it.qty (de la OC) está en unidades de SERVICIO, no siempre 1:1 con piezas.
+        qty_total_linea = flt(it.get("fg_item_qty")) or flt(it.qty)
+        qty_sub_linea = qty_por_po_item.get(it.name, 0)
+        key = it.get("fg_item") or it.name
+        if key not in por_fg:
+            por_fg[key] = {
+                "purchase_order_item": it.name,
+                "purchase_order_items": [],
+                "fg_item": it.get("fg_item"),
+                "producto": _producto_de_fg(it.get("fg_item") or "", pts),
+                "servicios": [],
+                "qty_total": 0.0,
+                "qty_subcontratada": 0.0,
+            }
+            orden.append(key)
+        d = por_fg[key]
+        d["purchase_order_items"].append(it.name)
+        d["servicios"].append(it.item_code)
+        d["qty_total"] += qty_total_linea
+        d["qty_subcontratada"] += qty_sub_linea
+
+    lineas = []
+    for key in orden:
+        d = por_fg[key]
+        d["servicio"] = " + ".join(dict.fromkeys(d["servicios"]))
+        # Las prendas se subcontratan en piezas enteras -- la suma de porciones
+        # fraccionarias (5000/3 x 3) puede quedar en 5000.001 por redondeo de campo.
+        d["qty_total"] = round(d["qty_total"], 3)
+        if abs(d["qty_total"] - round(d["qty_total"])) < 0.01:
+            d["qty_total"] = float(round(d["qty_total"]))
+        d["qty_subcontratada"] = round(d["qty_subcontratada"], 3)
+        d["qty_pendiente"] = round(d["qty_total"] - d["qty_subcontratada"], 3)
+        # Mismo criterio de pieza entera: un pendiente de ±0.01 es polvo de
+        # redondeo del reparto entre servicios (1000/3 en varias tandas), no un
+        # saldo real -- se aplana a entero para no ofrecer un lote de "0.002 pz".
+        if abs(d["qty_pendiente"] - round(d["qty_pendiente"])) < 0.01:
+            d["qty_pendiente"] = float(round(d["qty_pendiente"]))
+        lineas.append(d)
+
+    if productos is not None:
+        productos = set(productos)
+        lineas = [l for l in lineas if l.get("producto") in productos]
+    return lineas
+
+
+def _po_saldo_por_producto(po_doc) -> dict:
+    """{producto: saldo_pendiente} de una OC de maquila -- el saldo de cada producto
+    es el MÍNIMO entre sus propias líneas (un lote combinado no puede prometer más
+    piezas que el servicio más corto de ese producto), calculado de forma
+    independiente por producto para no mezclar dos prendas del mismo proveedor."""
+    saldos = {}
+    for l in _po_subcontratacion_lineas(po_doc):
+        prod = l.get("producto")
+        if prod is None:
+            continue
+        pend = flt(l["qty_pendiente"])
+        saldos[prod] = pend if prod not in saldos else min(saldos[prod], pend)
+    return saldos
+
+
+def _po_saldo_por_fg(po_doc) -> dict:
+    """{fg_item: saldo_pendiente} de una OC de maquila -- _po_subcontratacion_lineas
+    ya colapsa por fg_item (los k servicios que comparten pieza son una línea), así
+    que hay una entrada por sub-ensamblaje. Sirve para el saldo de UNA parada (un
+    taller que hace varios pasos del flujo tiene un fg_item por paso)."""
+    return {
+        l["fg_item"]: flt(l["qty_pendiente"])
+        for l in _po_subcontratacion_lineas(po_doc)
+        if l.get("fg_item")
+    }
+
+
 @frappe.whitelist()
 def sub_get_flujo(po: str) -> dict:
     """Estado del flujo de subcontratación de una OC: validada → Subcontracting Order(s)
     → transferencia de material (Stock Entry) → Subcontracting Receipt.
 
     Una OC puede tener VARIAS Subcontracting Order parciales (lotes escalonados en
-    fechas distintas); cada una trae su propio avance de transferencia y recibo."""
+    fechas distintas); cada una trae su propio avance de transferencia y recibo.
+
+    'lineas' (ver _po_subcontratacion_lineas) trae el detalle por renglón cuando la
+    OC agrupa varias etapas del mismo proveedor; los escalares
+    qty_total/qty_subcontratada/qty_pendiente siguen existiendo para no romper al
+    llamador, pero ahora son el MÍNIMO entre líneas -- un lote combinado (una sola
+    Subcontracting Order que cubre todas a la vez) nunca puede prometer más piezas
+    que el renglón más corto. Con una sola línea el mínimo es exactamente ese
+    valor, cero cambio de comportamiento."""
     po_doc = frappe.get_doc("Purchase Order", po)
-    po_item = po_doc.items[0] if po_doc.items else None
-    # En PIEZAS (fg_item_qty), que es la unidad de Subcontracting Order Item.qty con la
-    # que se resta abajo -- po_item.qty está en unidades de SERVICIO y en una etapa con
-    # varias salidas viene repartido entre ellas (ver sub_crear_sco).
-    qty_total = (flt(po_item.get("fg_item_qty")) or flt(po_item.qty)) if po_item else 0
-    # ERPNext solo actualiza po_item.subcontracted_quantity al VALIDAR una SCO -- para que
-    # el saldo mostrado (y el candado de "no te pases") sea correcto incluso con lotes en
-    # borrador, se calcula sumando las SCO existentes (borrador + validadas), no ese campo.
-    sco_names = frappe.get_all(
-        "Subcontracting Order",
-        filters={"purchase_order": po, "docstatus": ["<", 2]},
-        pluck="name",
-        order_by="creation asc",
-    )
-    qty_subcontratada = flt(frappe.db.sql(
-        """select coalesce(sum(qty), 0) from `tabSubcontracting Order Item`
-           where parent in %(scos)s""",
-        {"scos": sco_names or [""]},
-    )[0][0]) if sco_names else 0
+    lineas = _po_subcontratacion_lineas(po_doc)
+
+    # OJO: qty_pendiente NO es qty_total - qty_subcontratada (esos dos mínimos
+    # pueden venir de líneas DISTINTAS y restarlos entre sí puede dar un saldo mayor
+    # al real -- ej. línea A 250 total/100 hecho = 150 pendiente, línea B 250/50 =
+    # 200 pendiente; min(total)-min(subcontratada) = 250-50 = 200, pero un lote de
+    # 200 más rebasaría el total de la línea A). Cada escalar es el mínimo de SU
+    # PROPIA columna entre líneas, de forma independiente.
+    qty_total = min((l["qty_total"] for l in lineas), default=0)
+    qty_subcontratada = min((l["qty_subcontratada"] for l in lineas), default=0)
+    qty_pendiente = min((l["qty_pendiente"] for l in lineas), default=0)
+
     out = {
         "po_validated": po_doc.docstatus == 1,
         "supplier": po_doc.supplier,
+        "lineas": lineas,
         "qty_total": qty_total,
         "qty_subcontratada": qty_subcontratada,
-        "qty_pendiente": qty_total - qty_subcontratada,
+        "qty_pendiente": qty_pendiente,
         "scos": [],
         "warehouses": frappe.get_all(
             "Warehouse",
@@ -3970,6 +4435,12 @@ def sub_get_flujo(po: str) -> dict:
         "address_options": _party_links("Address", po_doc.supplier),
         "contact_options": _party_links("Contact", po_doc.supplier),
     }
+    sco_names = frappe.get_all(
+        "Subcontracting Order",
+        filters={"purchase_order": po, "docstatus": ["<", 2]},
+        pluck="name",
+        order_by="creation asc",
+    )
     for sco_name in sco_names:
         sco = frappe.get_doc("Subcontracting Order", sco_name)
         entry = {
@@ -4032,7 +4503,7 @@ def sub_get_flujo(po: str) -> dict:
     return out
 
 
-def _sub_qty_disponible_info(po: str) -> dict:
+def _sub_qty_disponible_info(po: str, producto: str = None) -> dict:
     """Cuántas unidades del servicio se pueden subcontratar YA, según la materia prima
     que hay en stock ahora mismo -- para sugerir (y limitar) la cantidad de un lote de
     subcontratación sin necesidad de crear la SCO a ciegas y descubrir hasta la
@@ -4040,6 +4511,10 @@ def _sub_qty_disponible_info(po: str) -> dict:
     la OC sin fijarse en el stock real). Uso interno -- ver sub_qty_disponible (misma
     info por API) y sub_crear_sco (que la usa para no dejar crear un lote más grande
     de lo que el stock real soporta).
+
+    ``producto``, si se pasa, restringe el cálculo a las líneas de ESE producto
+    terminado -- para una OC de un proveedor que maquila para varios productos del
+    costeo, cada uno con su propio saldo y su propio consumo de materia prima.
 
     'supplied_items' (la explosión de materia prima por BOM) sólo la calcula ERPNext
     en el ciclo completo de validate() de la Subcontracting Order -- reconstruirlo a
@@ -4055,6 +4530,20 @@ def _sub_qty_disponible_info(po: str) -> dict:
 
     sco_draft = make_subcontracting_order(po)
     sco_draft = frappe.get_doc(sco_draft) if isinstance(sco_draft, dict) else sco_draft
+    if producto:
+        # Recorte ANTES de insert() para que la explosión de materia prima
+        # (supplied_items, la calcula el validate() nativo) sea solo la de este producto.
+        pts = _productos_terminados_de_costeo(po_doc.get("costeo"))
+        sco_draft.set("items", [
+            it for it in (sco_draft.get("items") or [])
+            if _producto_de_fg(it.item_code, pts) == producto
+        ])
+        sco_draft.set("service_items", [
+            si for si in (sco_draft.get("service_items") or [])
+            if _producto_de_fg(si.get("fg_item"), pts) == producto
+        ])
+        if not sco_draft.get("items"):
+            return {"saldo_pendiente": 0, "sugerido": 0, "limitado_por_stock": False, "materiales": []}
     sco_draft.flags.ignore_permissions = True
     sco_draft.flags.ignore_mandatory = True
     sco_draft.insert()
@@ -4064,7 +4553,20 @@ def _sub_qty_disponible_info(po: str) -> dict:
     # materia prima está calculado para las piezas, así que dividir entre el servicio
     # daría un consumo por unidad inflado (x3 en una etapa de 3 salidas) y el chequeo
     # de stock rechazaría lotes que sí alcanzan.
-    saldo_pendiente = sum(flt(r.qty) for r in (sco_draft.items or []))
+    #
+    # Las filas de sco_draft.items que comparten item_code (el FG producido) son la
+    # MISMA pieza repartida entre varios servicios del mismo proveedor (ver
+    # _resolve_production_operations): se SUMAN sus porciones para reconstruir la
+    # pieza. El mínimo se toma entre piezas DISTINTAS -- un lote combinado no puede
+    # pasar de la pieza con menos saldo.
+    por_fg = {}
+    for r in (sco_draft.items or []):
+        por_fg[r.item_code] = por_fg.get(r.item_code, 0) + flt(r.qty)
+    saldo_pendiente = min(por_fg.values(), default=0)
+    # ±0.01 = polvo de redondeo del reparto entre servicios (ver
+    # _po_subcontratacion_lineas), no un saldo real -- las prendas son piezas enteras.
+    if abs(saldo_pendiente - round(saldo_pendiente)) < 0.01:
+        saldo_pendiente = float(round(saldo_pendiente))
     mp, wip, semi_terminados = _stage_material_warehouses(po)
 
     materiales = []
@@ -4106,26 +4608,86 @@ def _sub_qty_disponible_info(po: str) -> dict:
 
 
 @frappe.whitelist()
-def sub_qty_disponible(po: str) -> dict:
+def sub_qty_disponible(po: str, producto: str = None) -> dict:
     """Ver _sub_qty_disponible_info -- expuesta tal cual por API para la sugerencia
-    de cantidad que muestra el formulario de "Nuevo lote"."""
-    return _sub_qty_disponible_info(po)
+    de cantidad que muestra el formulario de "Nuevo lote". ``producto`` restringe la
+    sugerencia a ese producto terminado (OC compartida entre varios productos)."""
+    return _sub_qty_disponible_info(po, producto=producto)
+
+
+def _repartir_qty_en_filas(filas, q):
+    """Reparte ``q`` piezas entre ``filas`` que comparten item_code (la misma pieza
+    dividida entre varios servicios del mismo proveedor, ver
+    _resolve_production_operations). ERPNext recalcula service_items.qty =
+    items.qty x conversion_factor al validar, así que cada servicio termina
+    facturando el lote completo. Con una sola fila (el caso normal) queda
+    ``it.qty = min(q, disponible)``.
+
+    Cada fila ya viene con ``it.qty`` = su CUPO restante (fg_item_qty menos lo ya
+    subcontratado en esa fila -- lo pone populate_items_table nativo). El reparto
+    respeta ese cupo fila por fila (para que en lotes sucesivos de un total que no
+    divide exacto -- ej. 1000/3 en 3 tandas -- ninguna fila rebase su fg_item_qty), y
+    garantiza que la SUMA sea exactamente ``min(q, cupo total)``: si al repartir en
+    partes iguales una fila topa con su cupo, el faltante se redistribuye a las filas
+    que aún tengan espacio -- así el lote no pierde ni gana piezas por arrastre de
+    redondeo. Si ``q`` es entero (las prendas no se maquilan "a medias") el reparto es
+    entero -> la explosión de materia prima del BOM también cuadra exacta."""
+    prec = frappe.get_precision("Subcontracting Order Item", "qty") or 3
+    cupos = [flt(it.qty) for it in filas]
+    total = min(flt(q), sum(cupos))
+    k = len(filas)
+    entero = abs(total - round(total)) < 1e-9
+    base = float(int(round(total)) // k) if entero else flt(total / k, prec)
+
+    asign = [0.0] * k
+    restante = total
+    for i in range(k):
+        asign[i] = min(base, cupos[i])
+        restante -= asign[i]
+    for i in range(k):
+        if restante <= 1e-9:
+            break
+        add = min(cupos[i] - asign[i], restante)
+        asign[i] = flt(asign[i] + add, prec)
+        restante -= add
+    for it, a in zip(filas, asign):
+        it.qty = flt(a, prec)
 
 
 @frappe.whitelist()
 def sub_crear_sco(po: str, qty: float = None, schedule_date: str = None, lote_ref: str = None,
-                  validar_stock: bool = True) -> dict:
+                  validar_stock: bool = True, cantidades=None, fg_items=None) -> dict:
     """Crea una Subcontracting Order (borrador) a partir de la OC validada.
 
-    Sin `qty`, mapea todo el saldo pendiente por subcontratar de la OC (comportamiento
-    nativo). Con `qty`/`schedule_date`, crea un LOTE parcial con esa cantidad y fecha de
-    entrega — se puede llamar varias veces mientras quede saldo, para escalonar la
-    producción en tandas (ERPNext ya soporta varias SCO parciales contra una misma OC).
-    Si la OC ya está completamente subcontratada, lanza el error nativo correspondiente.
+    Sin `qty` ni `cantidades`, mapea todo el saldo pendiente por subcontratar de la OC
+    (comportamiento nativo). Con `qty`/`schedule_date`, crea un LOTE parcial con esa
+    cantidad y fecha de entrega — se puede llamar varias veces mientras quede saldo,
+    para escalonar la producción en tandas (ERPNext ya soporta varias SCO parciales
+    contra una misma OC). Si la OC ya está completamente subcontratada, lanza error.
 
-    `lote_ref` correlaciona esta SCO con las de OTRAS etapas (otras OC) que
-    pertenecen al mismo lote de producción -- ver get_lotes_produccion."""
+    `cantidades` = ``{producto: qty}``: para OC de un proveedor que maquila para VARIOS
+    productos del costeo (líneas de servicio de cada uno en la misma OC). La SCO se
+    recorta a solo las líneas de esos productos y la cantidad de cada uno se reparte
+    entre sus propios servicios. Un producto sin saldo pendiente se omite en silencio
+    (así, en el 2º lote de un producto que ya terminó, ese producto simplemente no
+    aparece -- no arrastra un pendiente inexistente). Cuando se pasa `cantidades`, se
+    ignora `qty`.
+
+    `fg_items` (lista de sub-ensamblajes), si se pasa junto con `cantidades`, recorta
+    ADEMÁS a solo esas piezas -- es una PARADA: un paso del flujo en un taller (ver
+    _lote_paradas). Un taller que hace corte al inicio y un acabado al final tiene 2
+    paradas contra la MISMA OC, cada una su propia SCO.
+
+    `lote_ref` correlaciona esta SCO con las de OTRAS paradas (otras OC, u otra parada
+    del mismo taller) que pertenecen al mismo lote de producción -- ver
+    get_lotes_produccion."""
     from erpnext.buying.doctype.purchase_order.purchase_order import make_subcontracting_order
+
+    if isinstance(cantidades, str):
+        cantidades = frappe.parse_json(cantidades) if cantidades else None
+    if isinstance(fg_items, str):
+        fg_items = frappe.parse_json(fg_items) if fg_items else None
+    fg_items = set(fg_items) if fg_items else None
 
     # Siempre en piezas enteras -- una prenda no se subcontrata "a medias", y sin
     # esto una sugerencia o captura con decimales (p. ej. arrastrado de otro cálculo)
@@ -4136,6 +4698,91 @@ def sub_crear_sco(po: str, qty: float = None, schedule_date: str = None, lote_re
     if frappe.db.get_value("Purchase Order", po, "docstatus") != 1:
         frappe.throw(_("Valida la orden de compra primero."))
 
+    po_doc = frappe.get_doc("Purchase Order", po)
+    pts = _productos_terminados_de_costeo(po_doc.get("costeo"))
+
+    # ------------------------------------------------------------------ #
+    # Modo multi-producto: cantidades = {producto: qty}
+    # ------------------------------------------------------------------ #
+    if cantidades is not None:
+        cantidades = {p: round(flt(q)) for p, q in cantidades.items() if flt(q) > 0}
+        if not cantidades:
+            frappe.throw(_("Indica la cantidad de al menos un producto para el lote."))
+
+        if fg_items:
+            # Saldo de la PARADA: por producto, el mínimo pendiente entre SUS piezas
+            # de esta parada (no entre todas las del taller).
+            saldo_fg = _po_saldo_por_fg(po_doc)
+            saldos = {}
+            for fg in fg_items:
+                pr = _producto_de_fg(fg, pts)
+                if pr is None:
+                    continue
+                s = flt(saldo_fg.get(fg, 0))
+                saldos[pr] = s if pr not in saldos else min(saldos[pr], s)
+        else:
+            saldos = _po_saldo_por_producto(po_doc)
+        # Productos que ya no tienen pendiente en esta OC: se omiten sin error (2º
+        # lote de un producto que ya terminó -- ver docstring).
+        cantidades = {p: q for p, q in cantidades.items() if flt(saldos.get(p, 0)) > 0.001}
+        if not cantidades:
+            frappe.throw(_("Los productos indicados ya están completamente subcontratados en esta OC."))
+
+        excesos = [
+            _("{0}: pediste {1}, pendiente {2}").format(p, q, round(flt(saldos.get(p, 0)), 3))
+            for p, q in cantidades.items()
+            if flt(q) > flt(saldos.get(p, 0)) + 0.001
+        ]
+        if excesos:
+            frappe.throw(_(
+                "La cantidad de algún producto excede su saldo pendiente de subcontratar -- {0}."
+            ).format("; ".join(excesos)))
+
+        if validar_stock:
+            for p, q in cantidades.items():
+                info = _sub_qty_disponible_info(po, producto=p)
+                if flt(q) > info["sugerido"] + 0.001:
+                    frappe.throw(_(
+                        "No hay materia prima suficiente en stock para {0} unidades de {1} -- "
+                        "ahora mismo alcanza para {2}."
+                    ).format(q, p, info["sugerido"]))
+
+        sco = make_subcontracting_order(po)
+        sco = frappe.get_doc(sco) if isinstance(sco, dict) else sco
+
+        def _incluir(fg):
+            return _producto_de_fg(fg, pts) in cantidades and (fg_items is None or fg in fg_items)
+
+        # Recorte a solo las líneas de los productos pedidos (y, si es una parada,
+        # solo esas piezas del taller).
+        sco.set("items", [it for it in (sco.get("items") or []) if _incluir(it.item_code)])
+        sco.set("service_items", [si for si in (sco.get("service_items") or []) if _incluir(si.get("fg_item"))])
+        if not sco.get("items"):
+            frappe.throw(_("La OC no tiene líneas de maquila para lo indicado en este lote."))
+        # Reparto por (producto, pieza): la cantidad de cada producto se divide entre
+        # sus servicios para producir 1 pieza, no k (ver _repartir_qty_en_filas).
+        grupos = {}
+        for it in sco.get("items") or []:
+            prod = _producto_de_fg(it.item_code, pts)
+            grupos.setdefault((prod, it.item_code), []).append(it)
+        for (prod, _ic), filas in grupos.items():
+            _repartir_qty_en_filas(filas, cantidades[prod])
+
+        if schedule_date:
+            sco.schedule_date = schedule_date
+            for it in sco.get("items") or []:
+                it.schedule_date = schedule_date
+        if lote_ref and sco.meta.get_field("lote_ref"):
+            sco.lote_ref = lote_ref
+        sco.flags.ignore_permissions = True
+        sco.flags.ignore_mandatory = True
+        sco.insert()
+        return {"ok": True, "sco": sco.name, "cantidades": cantidades,
+                "fg_items": sorted(fg_items) if fg_items else None}
+
+    # ------------------------------------------------------------------ #
+    # Modo clásico: qty único (OC de un solo producto) -- comportamiento previo
+    # ------------------------------------------------------------------ #
     existing_scos = frappe.get_all(
         "Subcontracting Order", filters={"purchase_order": po, "docstatus": ["<", 2]}, pluck="name"
     )
@@ -4145,24 +4792,13 @@ def sub_crear_sco(po: str, qty: float = None, schedule_date: str = None, lote_re
         # porque subcontracted_quantity solo se actualiza al VALIDAR, no con drafts.
         frappe.throw(_("Ya existe una orden de subcontratación para esta OC. Indica la cantidad del nuevo lote."))
 
-    # Suma lo ya comprometido en SCO existentes (borrador + validadas) -- no basta con
-    # subcontracted_quantity porque ERPNext solo la actualiza al VALIDAR una SCO, y
-    # aquí puede haber lotes en borrador todavía sin validar.
-    # En PIEZAS del producto de la etapa (fg_item_qty), NO en unidades de servicio
-    # (qty): en una etapa con varias salidas el servicio viene repartido entre ellas
-    # (un corte que produce 3 piezas cobra 1/3 por cada una), así que qty vale una
-    # fracción de las piezas y comparar contra ella capaba el lote a ese tercio.
-    # Subcontracting Order Item.qty -- con lo que se compara abajo -- sí está en piezas.
-    po_item = frappe.db.get_value(
-        "Purchase Order Item", {"parent": po}, ["qty", "fg_item_qty"], as_dict=True
-    ) or {}
-    po_item_qty = flt(po_item.get("fg_item_qty")) or flt(po_item.get("qty"))
-    comprometido = flt(frappe.db.sql(
-        """select coalesce(sum(qty), 0) from `tabSubcontracting Order Item`
-           where parent in %(scos)s""",
-        {"scos": existing_scos or [""]},
-    )[0][0]) if existing_scos else 0
-    saldo_pendiente = po_item_qty - comprometido
+    # Saldo pendiente REAL de la OC completa -- si agrupa varias etapas del mismo
+    # proveedor (ver _create_subcontracting_pos_from_stages), un lote combinado no
+    # puede prometer más piezas que el renglón más corto (ver
+    # _po_subcontratacion_lineas / sub_get_flujo, mismo criterio ahí). Con una sola
+    # línea (el caso de siempre) esto da exactamente lo mismo que antes.
+    lineas = _po_subcontratacion_lineas(po_doc)
+    saldo_pendiente = min((l["qty_pendiente"] for l in lineas), default=0)
     # Cantidad que de verdad se va a mapear: la indicada, o -- si no se indicó -- todo
     # el saldo pendiente (comportamiento nativo de ERPNext sin `qty`). OJO: `qty=0` NO
     # cuenta como "indicada" (es lo que llega cuando un lote nace del lado de materia
@@ -4207,8 +4843,14 @@ def sub_crear_sco(po: str, qty: float = None, schedule_date: str = None, lote_re
 
     sco = make_subcontracting_order(po)
     if qty:
+        # Las filas que comparten item_code (el FG producido) son una sola pieza
+        # repartida entre varios servicios del mismo proveedor -- el qty del lote se
+        # reparte entre ellas para que produzcan UNA pieza, no k.
+        grupos_fg = {}
         for it in sco.get("items") or []:
-            it.qty = flt(qty)
+            grupos_fg.setdefault(it.item_code, []).append(it)
+        for filas in grupos_fg.values():
+            _repartir_qty_en_filas(filas, qty)
     if schedule_date:
         sco.schedule_date = schedule_date
         for it in sco.get("items") or []:
@@ -4320,65 +4962,67 @@ def sub_validar_sco(sco: str) -> dict:
     return {"ok": True}
 
 
-def _etapa_row_for_po(po: str):
-    """Etapa (fila de tabla_etapas_costeo) que corresponde a esta OC de
-    subcontratación -- inversa de _po_for_bom_item: usa el mismo fg_item con el que
-    _create_subcontracting_pos_from_stages etiquetó la línea de servicio al crearla.
-    Regresa {"row": etapa, "is_root": bool} -- is_root=True si la etapa NO recibe
-    material de ninguna otra (consume materia prima directa); False si depende del
-    semi-terminado de otra etapa (vía 'recibe_de')."""
-    from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_stage_graph
+def _etapas_rows_for_po(po: str):
+    """Operaciones que corresponden a esta OC de subcontratación -- inversa de
+    _create_subcontracting_pos_from_stages: usa los mismos fg_item (op.output_item)
+    con los que se etiquetó cada línea de servicio. Una OC agrupa TODAS las etapas
+    del mismo proveedor y varios servicios pueden compartir un fg_item, así que
+    regresa una entrada por fg_item ÚNICO de la OC:
+    [{"op": op, "is_root": bool, "fg_item": str}, ...]. is_root=True si la operación
+    NO recibe de ninguna otra (consume materia prima directa)."""
+    from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_production_operations
 
     costeo = frappe.db.get_value("Purchase Order", po, "costeo")
     if not costeo:
-        return None
-    fg_item = frappe.db.get_value("Purchase Order Item", {"parent": po}, "fg_item")
-    if not fg_item:
-        return None
+        return []
+    fg_items = frappe.get_all("Purchase Order Item", filters={"parent": po}, pluck="fg_item")
+    fg_items = [f for f in dict.fromkeys(fg_items) if f]
+    if not fg_items:
+        return []
     doc = frappe.get_doc("Costeo", costeo)
     etapas_por_producto = {}
     for row in doc.tabla_etapas_costeo:
         etapas_por_producto.setdefault(row.producto_terminado, []).append(row)
+
+    op_por_fg = {}
     for producto, etapas in etapas_por_producto.items():
-        graph_info, ordered = _resolve_stage_graph(etapas, doc.get("tabla_salidas_etapa"))
-        for node in ordered:
-            node_key = node.get("node_key")
-            es_ultima = graph_info.get(node_key, {}).get("is_terminal", True)
-            finished_good = producto if es_ultima else (node.get("subensamblaje") or producto)
-            if finished_good == fg_item:
-                return {"row": node, "is_root": not graph_info.get(node_key, {}).get("upstream")}
-    return None
+        for op in _resolve_production_operations(etapas, doc.get("tabla_salidas_etapa"), producto):
+            if op.output_item and op.output_item not in op_por_fg:
+                op_por_fg[op.output_item] = {
+                    "op": op, "is_root": not op.upstream_keys, "fg_item": op.output_item,
+                }
+
+    return [op_por_fg[f] for f in fg_items if f in op_por_fg]
 
 
 def _stage_material_warehouses(po: str):
-    """Devuelve (mp, wip, semi_terminados) para la etapa de esta OC de subcontratación.
-    'semi_terminados' es el conjunto de item codes que son la SALIDA de alguna etapa de
-    este mismo producto (subensamblaje o producto terminado) -- son los únicos
-    materiales que de verdad llegan vía SCO/Recibo de una etapa anterior y por lo tanto
-    viven en 'wip'. Cualquier OTRO material del BOM de la etapa (telas, hilos,
-    botones…) es materia prima genuina comprada directo y vive en 'mp', SIN IMPORTAR
-    si la etapa en sí es raíz o no -- una etapa "no raíz" (que recibe el semiterminado
-    de otra) puede perfectamente seguir necesitando avíos propios (ej. botones que se
-    cosen hasta la etapa de Confección, no antes)."""
-    from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_stage_graph
+    """Devuelve (mp, wip, semi_terminados) para las etapas de esta OC de
+    subcontratación -- puede ser más de una (ver _etapas_rows_for_po: una OC agrupa
+    todas las etapas del mismo proveedor). 'semi_terminados' es la UNIÓN, sobre
+    TODOS los productos representados en la OC, de los item codes que son la SALIDA
+    de alguna etapa de su propio producto (subensamblaje o producto terminado) --
+    son los únicos materiales que de verdad llegan vía SCO/Recibo de una etapa
+    anterior y por lo tanto viven en 'wip'. Cualquier OTRO material del BOM de la
+    etapa (telas, hilos, botones…) es materia prima genuina comprada directo y vive
+    en 'mp', SIN IMPORTAR si la etapa en sí es raíz o no -- una etapa "no raíz" (que
+    recibe el semiterminado de otra) puede perfectamente seguir necesitando avíos
+    propios (ej. botones que se cosen hasta la etapa de Confección, no antes)."""
+    from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_production_operations
 
     costeo = frappe.db.get_value("Purchase Order", po, "costeo")
     if not costeo:
         return None, None, set()
     mp, wip = frappe.db.get_value("Costeo", costeo, ["almacen_materias_primas", "almacen_trabajo_en_proceso"]) or (None, None)
-    etapa_info = _etapa_row_for_po(po)
+    etapas_info = _etapas_rows_for_po(po)
     semi_terminados = set()
-    if etapa_info is not None:
-        producto = etapa_info["row"].producto_terminado
+    if etapas_info:
+        productos = {info["op"].producto_terminado for info in etapas_info}
         doc = frappe.get_doc("Costeo", costeo)
-        etapas_prod = [e for e in doc.tabla_etapas_costeo if e.producto_terminado == producto]
-        graph_info, ordered = _resolve_stage_graph(etapas_prod, doc.get("tabla_salidas_etapa"))
-        for node in ordered:
-            node_key = node.get("node_key")
-            es_ultima = graph_info.get(node_key, {}).get("is_terminal", True)
-            bom_item = producto if es_ultima else (node.get("subensamblaje") or producto)
-            if bom_item:
-                semi_terminados.add(bom_item)
+        for producto in productos:
+            etapas_prod = [e for e in doc.tabla_etapas_costeo if e.producto_terminado == producto]
+            for op in _resolve_production_operations(etapas_prod, doc.get("tabla_salidas_etapa"), producto):
+                if op.output_item:
+                    semi_terminados.add(op.output_item)
     return mp, wip, semi_terminados
 
 
@@ -4392,16 +5036,23 @@ def _stage_source_warehouse_for_po(po: str):
     dependen del semi-terminado de otra etapa usan el de trabajo en proceso. Antes
     esto se decidía por "¿es la OC de subcontratación creada primero?", que sólo es
     correcto en cadenas lineales -- con ramas en paralelo, la segunda raíz caía mal
-    clasificada como "depende de otra etapa" sólo por haberse creado después."""
+    clasificada como "depende de otra etapa" sólo por haberse creado después.
+
+    Una OC puede agrupar varias etapas del mismo proveedor (ver
+    _etapas_rows_for_po) que no necesariamente son todas raíz o todas no-raíz --
+    aquí solo se decide el default del botón/cabecera (por mayoría); el detalle
+    correcto por renglón lo sigue poniendo _aplicar_almacenes_origen_por_material."""
     if not po:
         return None
     costeo = frappe.db.get_value("Purchase Order", po, "costeo")
     if not costeo:
         return None
     mp, wip = frappe.db.get_value("Costeo", costeo, ["almacen_materias_primas", "almacen_trabajo_en_proceso"]) or (None, None)
-    etapa_info = _etapa_row_for_po(po)
-    if etapa_info is not None:
-        return (mp if etapa_info["is_root"] else wip) or mp or wip
+    etapas_info = _etapas_rows_for_po(po)
+    if etapas_info:
+        raices = sum(1 for info in etapas_info if info["is_root"])
+        es_mayoria_raiz = raices * 2 >= len(etapas_info)
+        return (mp if es_mayoria_raiz else wip) or mp or wip
     # No se pudo resolver la etapa (dato viejo/incompleto) -- cae al criterio anterior.
     sub_pos = frappe.get_all(
         "Purchase Order",
@@ -4624,72 +5275,230 @@ def sub_crear_recibo(sco: str) -> dict:
     return {"ok": True, "scr": scr.name}
 
 
+def _transitive_upstream(ops_by_key):
+    """{op_key: set(TODOS los op_key aguas arriba, transitivos)} sobre el grafo de
+    operaciones completo (varios productos)."""
+    memo = {}
+
+    def up(k, visitando):
+        if k in memo:
+            return memo[k]
+        if k in visitando:
+            return set()
+        visitando.add(k)
+        acc = set()
+        for u in ops_by_key[k].upstream_keys:
+            if u in ops_by_key:
+                acc.add(u)
+                acc |= up(u, visitando)
+        visitando.discard(k)
+        memo[k] = acc
+        return acc
+
+    return {k: up(k, set()) for k in ops_by_key}
+
+
+def _lote_paradas(doc, cantidades):
+    """Descompone el trabajo de maquila de un lote (``cantidades`` = {producto: qty})
+    en PARADAS. Una parada es un paso del flujo en un taller que se encarga de un
+    jalón -- se traduce en 1 Subcontracting Order + 1 envío + 1 recibo.
+
+    - Operaciones del MISMO taller sin relación de ancestro entre sí (paralelas,
+      aunque sean de productos distintos) -> MISMA parada.
+    - Operaciones del mismo taller donde una es ancestro (transitivo) de otra ->
+      paradas DISTINTAS, en secuencia (2 SCO contra la misma OC).
+    - Talleres distintos -> paradas distintas.
+
+    Devuelve ``(paradas, faltan_oc)`` donde cada parada es un ``frappe._dict`` con
+    parada_id, supplier, po, fg_items (ordenado), op_keys (set), productos
+    ({producto: qty}), servicios (lista de service_item), es_terminal, recibe_de
+    (set de parada_id), orden (int topológico). ``faltan_oc`` = sub-ensamblajes sin
+    OC de maquila validada."""
+    from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_production_operations
+
+    costeo = doc.name
+    salidas = doc.get("tabla_salidas_etapa")
+
+    ops_by_key = {}
+    for prod in cantidades:
+        etapas = [e for e in doc.tabla_etapas_costeo if e.producto_terminado == prod]
+        for op in _resolve_production_operations(etapas, salidas, prod):
+            if not op.output_item or not op.supplier or not op.servicios:
+                continue
+            op.producto = prod
+            ops_by_key[op.op_key] = op
+
+    trans_up = _transitive_upstream(ops_by_key)
+
+    po_de_key, faltan = {}, []
+    for k, op in ops_by_key.items():
+        po = frappe.db.get_value("Purchase Order Item", {"fg_item": op.output_item, "docstatus": 1}, "parent")
+        if not po or frappe.db.get_value("Purchase Order", po, "costeo") != costeo:
+            faltan.append(op.output_item)
+            continue
+        po_de_key[k] = po
+
+    por_supplier = {}
+    for k, op in ops_by_key.items():
+        if k in po_de_key:
+            por_supplier.setdefault(op.supplier, []).append(k)
+
+    paradas, parada_de_op = [], {}
+    for supplier, keys in por_supplier.items():
+        keyset = set(keys)
+        nivel = {}
+
+        def _niv(k, _keyset=keyset):
+            if k in nivel:
+                return nivel[k]
+            ancestros = trans_up[k] & _keyset
+            nivel[k] = 1 + max((_niv(a, _keyset) for a in ancestros), default=-1)
+            return nivel[k]
+
+        olas = {}
+        for k in keys:
+            olas.setdefault(_niv(k), []).append(k)
+
+        for niv in sorted(olas):
+            op_keys = olas[niv]
+            fg_items = sorted({ops_by_key[k].output_item for k in op_keys})
+            productos = {ops_by_key[k].producto: round(flt(cantidades[ops_by_key[k].producto]))
+                        for k in op_keys}
+            servicios = []
+            for k in op_keys:
+                for s in ops_by_key[k].servicios:
+                    si = s.get("service_item")
+                    if si and si not in servicios:
+                        servicios.append(si)
+            pid = hashlib.md5((supplier + "|" + "|".join(fg_items)).encode()).hexdigest()[:12]
+            paradas.append(frappe._dict(
+                parada_id=pid,
+                supplier=supplier,
+                po=po_de_key[op_keys[0]],
+                op_keys=set(op_keys),
+                fg_items=fg_items,
+                productos=productos,
+                servicios=servicios,
+                es_terminal=any(ops_by_key[k].is_terminal for k in op_keys),
+                recibe_de=set(),
+            ))
+            for k in op_keys:
+                parada_de_op[k] = pid
+
+    by_pid = {p.parada_id: p for p in paradas}
+    for parada in paradas:
+        for k in parada.op_keys:
+            for u in ops_by_key[k].upstream_keys:
+                upid = parada_de_op.get(u)
+                if upid and upid != parada.parada_id:
+                    parada.recibe_de.add(upid)
+
+    # Orden topológico (Kahn) sobre recibe_de.
+    indeg = {p.parada_id: len(p.recibe_de) for p in paradas}
+    cola = sorted([pid for pid, d in indeg.items() if d == 0])
+    orden, i = {}, 0
+    hijos = {p.parada_id: [] for p in paradas}
+    for p in paradas:
+        for up in p.recibe_de:
+            hijos.setdefault(up, []).append(p.parada_id)
+    while cola:
+        pid = cola.pop(0)
+        i += 1
+        orden[pid] = i
+        for h in sorted(hijos.get(pid, [])):
+            indeg[h] -= 1
+            if indeg[h] == 0:
+                cola.append(h)
+        cola.sort()
+
+    # nivel = distancia más larga desde una parada raíz -- las paradas del mismo
+    # nivel corren en paralelo (columna en la UI); niveles crecientes = secuencia.
+    nivel = {}
+
+    def _pnivel(pid):
+        if pid in nivel:
+            return nivel[pid]
+        nivel[pid] = 0
+        nivel[pid] = 1 + max((_pnivel(u) for u in by_pid[pid].recibe_de), default=-1)
+        return nivel[pid]
+
+    for p in paradas:
+        p.orden = orden.get(p.parada_id, 999)
+        p.nivel = _pnivel(p.parada_id)
+    paradas.sort(key=lambda p: (p.nivel, p.orden, p.supplier))
+
+    return paradas, list(dict.fromkeys(faltan))
+
+
 @frappe.whitelist()
-def lote_abrir(plan: str, lote_ref: str, qty: float, schedule_date: str = None,
-               producto: str = None) -> dict:
-    """Abre un lote de producción de un jalón: crea y valida la orden de
-    subcontratación de TODAS las etapas del producto, con la misma cantidad y
-    referencia de lote.
+def lote_abrir(plan: str, lote_ref: str, cantidades=None, schedule_date: str = None,
+               qty: float = None, producto: str = None) -> dict:
+    """Abre un lote de producción de un jalón: crea y valida la Subcontracting Order
+    de CADA PARADA del lote (ver _lote_paradas) -- un paso del flujo en un taller,
+    con la cantidad de cada producto que entra en el lote.
 
-    Es el compromiso completo del lote -- lo que se le encarga a cada taller -- y se
-    decide una sola vez (cantidad + fecha), así que no tiene sentido volver a
-    capturarlo etapa por etapa. Antes esto eran 2 acciones por etapa (crear + validar);
-    con 10 etapas, 20 pasos que no aportaban ningún dato nuevo.
+    ``cantidades`` = ``{producto: qty}``. Un taller que maquila para VARIOS productos
+    en el mismo punto del flujo recibe UNA sola SCO (con la cantidad de cada uno). Un
+    taller que hace dos pasos NO adyacentes del flujo recibe DOS SCO (una por parada).
+    Un producto sin saldo pendiente se omite en silencio.
 
-    NO exige materia prima en stock (validar_stock=False): las etapas 2+ reciben su
-    insumo de la etapa anterior, que todavía no ha producido nada. El candado de
-    existencias vive en la TRANSFERENCIA, donde sí corresponde -- ahí ERPNext bloquea
-    solo si el almacén se iría a negativo.
+    Compat: `qty` (+ `producto`) -- firma anterior -- se traduce a ``cantidades``.
 
-    Las etapas que ya tengan SCO de este lote se saltan, así que es seguro volver a
-    llamarlo (por ejemplo si una etapa falló y se corrigió el dato)."""
-    from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_stage_graph
+    NO exige materia prima en stock (validar_stock=False): las paradas 2+ reciben su
+    insumo de la anterior, que todavía no ha producido nada. El candado de existencias
+    vive en la TRANSFERENCIA.
 
-    qty = flt(qty)
-    if qty <= 0:
-        frappe.throw(_("Indica la cantidad del lote."))
+    Las paradas que ya tengan su SCO en este lote se saltan -- seguro reintentar."""
     if not lote_ref:
         frappe.throw(_("Indica la referencia del lote."))
+    if isinstance(cantidades, str):
+        cantidades = frappe.parse_json(cantidades) if cantidades else None
 
     costeo = frappe.db.get_value("Production Plan", plan, "costeo")
     if not costeo:
         frappe.throw(_("El plan no está ligado a ningún costeo."))
     doc = frappe.get_doc("Costeo", costeo)
+    pts_costeo = [p.finished_item for p in doc.costeo_producto if p.finished_item]
 
-    productos = [producto] if producto else [p.finished_item for p in doc.costeo_producto if p.finished_item]
-    creadas, saltadas, errores = [], [], []
+    if cantidades is None:
+        if not qty or flt(qty) <= 0:
+            frappe.throw(_("Indica la cantidad del lote."))
+        objetivo = [producto] if producto else pts_costeo
+        cantidades = {p: flt(qty) for p in objetivo}
 
-    for prod in productos:
-        etapas = [e for e in doc.tabla_etapas_costeo if e.producto_terminado == prod]
-        if not etapas:
+    cantidades = {p: round(flt(q)) for p, q in cantidades.items() if p in pts_costeo and flt(q) > 0}
+    if not cantidades:
+        frappe.throw(_("Indica la cantidad de al menos un producto para el lote."))
+
+    paradas, faltan = _lote_paradas(doc, cantidades)
+    creadas, saltadas = [], []
+    errores = [_("{0}: su orden de compra de maquila no está validada.").format(fg) for fg in faltan]
+
+    for parada in paradas:
+        # ¿Ya hay una SCO de este lote que cubra las piezas de esta parada?
+        scos_lote = frappe.get_all(
+            "Subcontracting Order",
+            filters={"purchase_order": parada.po, "lote_ref": lote_ref, "docstatus": ["<", 2]},
+            pluck="name",
+        )
+        cubierto = set()
+        for s in scos_lote:
+            cubierto |= set(frappe.get_all(
+                "Subcontracting Order Item", filters={"parent": s}, pluck="item_code"
+            ))
+        if set(parada.fg_items) <= cubierto:
+            saltadas.append(parada.parada_id)
             continue
-        info, ordenadas = _resolve_stage_graph(etapas, doc.get("tabla_salidas_etapa"))
-        for nodo in ordenadas:
-            es_ultima = info[nodo["node_key"]]["is_terminal"]
-            fg = prod if es_ultima else (nodo.get("subensamblaje") or "")
-            if not fg:
-                continue
-            # La OC de maquila de esta etapa: se identifica por el fg_item con el que
-            # _create_subcontracting_pos_from_stages etiquetó su línea de servicio.
-            po = frappe.db.get_value(
-                "Purchase Order Item",
-                {"fg_item": fg, "docstatus": 1},
-                "parent",
+        try:
+            r = sub_crear_sco(
+                parada.po, cantidades=parada.productos, fg_items=parada.fg_items,
+                schedule_date=schedule_date, lote_ref=lote_ref, validar_stock=False,
             )
-            if not po or frappe.db.get_value("Purchase Order", po, "costeo") != costeo:
-                errores.append(_("{0}: su orden de compra de maquila no está validada.").format(fg))
-                continue
-            if frappe.db.exists("Subcontracting Order",
-                                {"purchase_order": po, "lote_ref": lote_ref, "docstatus": ["<", 2]}):
-                saltadas.append(fg)
-                continue
-            try:
-                r = sub_crear_sco(po, qty=qty, schedule_date=schedule_date, lote_ref=lote_ref,
-                                  validar_stock=False)
-                sub_validar_sco(r["sco"])
-                creadas.append({"etapa": fg, "sco": r["sco"]})
-            except Exception as exc:
-                errores.append(f"{fg}: {exc}")
+            sub_validar_sco(r["sco"])
+            creadas.append({"parada_id": parada.parada_id, "supplier": parada.supplier,
+                            "sco": r["sco"], "cantidades": r.get("cantidades")})
+        except Exception as exc:
+            errores.append(f"{parada.supplier}: {exc}")
 
     frappe.db.commit()
     return {"ok": not errores, "creadas": creadas, "saltadas": saltadas, "errores": errores}

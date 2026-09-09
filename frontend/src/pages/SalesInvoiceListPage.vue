@@ -65,10 +65,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, defineComponent, h } from "vue";
+import { ref, computed, onMounted, watch, defineComponent, h } from "vue";
 import { useRouter } from "vue-router";
 import DocumentListPage from "@/components/DocumentListPage.vue";
 import { call } from "@/utils/frappe.js";
+import { useCompany } from "@/composables/useCompany.js";
+
+const { state: companyState } = useCompany();
 
 const router = useRouter();
 const loading = ref(true);
@@ -138,17 +141,21 @@ function isDueOverdue(inv) { if (!inv.due_date || inv.docstatus !== 1) return fa
 
 function openRow(inv) {
   if (inv.costeo) {
-    router.push({ name: "CosteoDetail", params: { name: inv.costeo }, query: { step: "6", highlight: inv.name, doctype: "Sales Invoice" } });
+    router.push({ name: "CosteoDetail", params: { name: inv.costeo }, query: { step: "7", highlight: inv.name, doctype: "Sales Invoice" } });
   } else {
     router.push(`/facturas/${encodeURIComponent(inv.name)}`);
   }
 }
 
-onMounted(async () => {
+async function load() {
+  loading.value = true;
   try {
-    const rows = await call("costeo_yelke.api.sales_invoice_api.get_sales_invoices", { limit: 100 });
+    const rows = await call("costeo_yelke.api.sales_invoice_api.get_sales_invoices", { limit: 100, company: companyState.selected || undefined });
     invoices.value = rows || [];
   } catch (e) { console.error(e); }
   finally { loading.value = false; }
-});
+}
+
+onMounted(load);
+watch(() => companyState.selected, load);
 </script>

@@ -72,12 +72,14 @@ def get_purchase_order_form_defaults():
 
 
 @frappe.whitelist()
-def get_purchase_orders(status=None, supplier=None, limit=50):
+def get_purchase_orders(status=None, supplier=None, company=None, limit=50):
     filters = {}
     if status:
         filters["status"] = status
     if supplier:
         filters["supplier"] = supplier
+    if company:
+        filters["company"] = company
 
     fields = [
         "name", "status", "supplier", "supplier_name",

@@ -109,10 +109,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import { call, db } from "@/utils/frappe";
 import PageHeader from "@/components/PageHeader.vue";
+import { useCompany } from "@/composables/useCompany.js";
+
+const { state: companyState } = useCompany();
 
 const router = useRouter();
 
@@ -131,7 +134,7 @@ const delModal  = ref({ open: false, name: "", nombre: "", loading: false });
 async function load() {
   loading.value = true;
   try {
-    templates.value = await call("costeo_yelke.api.costeo_template_api.get_costeo_templates");
+    templates.value = await call("costeo_yelke.api.costeo_template_api.get_costeo_templates", { company: companyState.selected || undefined });
   } finally {
     loading.value = false;
   }
@@ -190,4 +193,5 @@ async function doDelete() {
 }
 
 onMounted(load);
+watch(() => companyState.selected, load);
 </script>

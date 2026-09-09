@@ -15,15 +15,22 @@
     <!-- ── Right: actions + user ───────────────────────────── -->
     <div class="flex items-center gap-1">
 
-      <!-- Company badge -->
+      <!-- Selector de compañía: filtra toda la app a una sola compañía a la vez -->
       <div
-        v-if="data.company"
-        class="hidden md:flex items-center gap-1.5 px-2.5 h-7 bg-gray-50 border border-gray-200 text-gray-600 text-xs font-medium rounded-lg"
+        v-if="companyState.companies.length > 0"
+        class="flex items-center gap-1.5 px-2 h-7 bg-gray-50 border border-gray-200 rounded-lg"
+        title="Compañía activa -- filtra lo que se muestra en toda la app"
       >
-        <svg class="w-3 h-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <svg class="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
         </svg>
-        {{ data.company }}
+        <select
+          :value="companyState.selected"
+          @change="setCompany($event.target.value)"
+          class="bg-transparent text-gray-600 text-xs font-medium border-0 focus:outline-none focus:ring-0 py-0 pr-5 cursor-pointer"
+        >
+          <option v-for="c in companyState.companies" :key="c.name" :value="c.name">{{ c.name }}</option>
+        </select>
       </div>
 
       <!-- Divider -->
@@ -251,6 +258,9 @@
 import { ref, reactive, computed, onMounted, onUnmounted, defineComponent, h } from "vue";
 import { useRoute } from "vue-router";
 import { call } from "@/utils/frappe.js";
+import { useCompany } from "@/composables/useCompany.js";
+
+const { state: companyState, setCompany } = useCompany();
 
 const route    = useRoute();
 const menuRef  = ref(null);
@@ -284,6 +294,7 @@ const ROUTE_MAP = {
   ProductoNuevo:  { group: "Catálogo",  page: "Nuevo Producto" },
   ProductoDetail: { group: "Catálogo",  page: "Detalle" },
   Precios:        { group: "Catálogo",  page: "Reglas de Precio" },
+  RecordatoriosList: { group: "Ventas", page: "Recordatorios de Precio" },
 };
 
 const section = computed(() => ROUTE_MAP[route.name] || { group: "Costeo Yelke", page: "" });

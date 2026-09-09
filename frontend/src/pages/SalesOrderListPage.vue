@@ -61,10 +61,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, defineComponent, h } from "vue";
+import { ref, computed, onMounted, watch, defineComponent, h } from "vue";
 import { useRouter } from "vue-router";
 import DocumentListPage from "@/components/DocumentListPage.vue";
 import { call } from "@/utils/frappe.js";
+import { useCompany } from "@/composables/useCompany.js";
+
+const { state: companyState } = useCompany();
 
 const router = useRouter();
 const loading = ref(true);
@@ -147,14 +150,18 @@ function openRow(so) {
   }
 }
 
-onMounted(async () => {
+async function load() {
+  loading.value = true;
   try {
-    const rows = await call("costeo_yelke.api.sales_order_api.get_sales_orders", { limit: 100 });
+    const rows = await call("costeo_yelke.api.sales_order_api.get_sales_orders", { limit: 100, company: companyState.selected || undefined });
     orders.value = rows || [];
   } catch (e) {
     console.error(e);
   } finally {
     loading.value = false;
   }
-});
+}
+
+onMounted(load);
+watch(() => companyState.selected, load);
 </script>

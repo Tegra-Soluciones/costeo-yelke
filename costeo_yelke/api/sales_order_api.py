@@ -72,12 +72,14 @@ def get_sales_order_form_defaults():
 
 
 @frappe.whitelist()
-def get_sales_orders(status=None, customer=None, limit=50):
+def get_sales_orders(status=None, customer=None, company=None, limit=50):
     filters = {}
     if status:
         filters["status"] = status
     if customer:
         filters["customer"] = customer
+    if company:
+        filters["company"] = company
 
     fields = [
         "name", "status", "customer", "customer_name",
