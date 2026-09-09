@@ -1079,9 +1079,13 @@
                   {{ op.supplier || 'sin taller' }}<template v-if="op.n_servicios > 1"> · {{ op.n_servicios }} servicios</template>
                 </p>
 
-                <p v-if="op.servicios.length > 1" class="mt-1 text-[11px] text-ink-xlight leading-relaxed">
-                  <template v-for="(s, i) in op.servicios" :key="s.item">{{ s.item }} <span class="text-ink-light">{{ fmtC(s.precio) }}</span><span v-if="i < op.servicios.length - 1"> &nbsp;·&nbsp; </span></template>
-                </p>
+                <ul v-if="op.servicios.length > 1" class="mt-1 space-y-px">
+                  <li v-for="s in op.servicios" :key="s.item" class="flex items-baseline gap-2 text-[11px] leading-snug">
+                    <span class="text-ink-xlight flex-shrink-0">–</span>
+                    <span class="text-ink-xlight truncate flex-1">{{ s.item }}</span>
+                    <span class="text-ink-light flex-shrink-0 tabular-nums">{{ fmtC(s.precio) }}</span>
+                  </li>
+                </ul>
 
                 <div class="mt-2 space-y-1">
                   <div class="flex items-center gap-1.5 text-[12px] text-ink-muted">
