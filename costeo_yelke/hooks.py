@@ -164,6 +164,18 @@ doc_events = {
 	},
 }
 
+# Homologación a MAYÚSCULAS de los campos de nombre/código de los datos maestros
+# (ver costeo_yelke/overrides/uppercase_master.py). before_insert corre antes del
+# autoname para que el nombre del documento también quede en mayúsculas.
+for _dt in (
+	"Customer", "Supplier", "Item", "Address", "Contact", "Lead",
+	"Warehouse", "Brand", "Item Group", "Customer Group", "Supplier Group", "Territory",
+):
+	doc_events[_dt] = {
+		"before_insert": "costeo_yelke.overrides.uppercase_master.upper",
+		"before_validate": "costeo_yelke.overrides.uppercase_master.upper",
+	}
+
 # Scheduled Tasks
 # ---------------
 
