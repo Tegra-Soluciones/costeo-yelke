@@ -44,3 +44,4 @@ costeo_yelke.patches.v0_2_19.add_material_etapa_split
 costeo_yelke.patches.v0_2_20.add_qty_salida
 costeo_yelke.patches.v0_2_21.crear_roles_yelke
 costeo_yelke.patches.v0_2_22.homologar_maestros_mayusculas
+costeo_yelke.patches.v0_2_23.rehomologar_item_brand

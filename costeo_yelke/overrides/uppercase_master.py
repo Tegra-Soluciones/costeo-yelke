@@ -40,3 +40,56 @@ def upper(doc, method=None):
             upper_value = value.upper()
             if upper_value != value:
                 doc.set(fieldname, upper_value)
+
+
+# Doctypes cuyo nombre del documento sale del campo (o de él + abreviatura): homologar
+# los existentes implicaría renombrar taxonomía base de ERPNext -- referenciada por
+# asientos de inventario, defaults de compañía, reportes. Los NUEVOS sí nacen en
+# mayúsculas por el hook; los existentes se dejan (salvo Item/Brand, que son seguros).
+_SKIP_EXISTENTES = {"Item Group", "Customer Group", "Supplier Group", "Territory", "Warehouse"}
+
+
+def homologar_existentes():
+    """Corrida única: pasa a MAYÚSCULAS los maestros ya cargados. Idempotente."""
+    for doctype, fields in UPPER_FIELDS.items():
+        if doctype in _SKIP_EXISTENTES:
+            continue
+
+        autoname = frappe.get_meta(doctype).autoname
+        name_from_field = (
+            autoname[len("field:"):]
+            if isinstance(autoname, str) and autoname.startswith("field:")
+            else None
+        )
+
+        for row in frappe.get_all(doctype, fields=["name"] + list(fields)):
+            updates = {}
+            for f in fields:
+                v = row.get(f)
+                if isinstance(v, str) and v and v != v.upper():
+                    updates[f] = v.upper()
+            if not updates:
+                continue
+
+            if name_from_field and name_from_field in updates and updates[name_from_field] != row["name"]:
+                nuevo = updates.pop(name_from_field)
+                # MariaDB compara sin distinguir caja (collation _ci): db.exists(nuevo)
+                # da True aunque el único match sea ESTE mismo doc. Solo es colisión real
+                # si el nombre difiere en algo más que mayúsculas/minúsculas.
+                if nuevo.casefold() != row["name"].casefold() and frappe.db.exists(doctype, nuevo):
+                    frappe.log_error(
+                        title="homologar mayúsculas: destino ya existe",
+                        message=f"{doctype}: {row['name']} -> {nuevo}",
+                    )
+                    continue
+                try:
+                    frappe.rename_doc(doctype, row["name"], nuevo, force=True)
+                except Exception:
+                    frappe.log_error(title=f"homologar mayúsculas: rename falló ({doctype})")
+                    continue
+                if updates:
+                    frappe.db.set_value(doctype, nuevo, updates, update_modified=False)
+            else:
+                frappe.db.set_value(doctype, row["name"], updates, update_modified=False)
+
+    frappe.db.commit()
