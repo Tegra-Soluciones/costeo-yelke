@@ -791,7 +791,13 @@ def _resolve_production_operations(etapas, salidas=None, producto=None):
         if op.is_terminal:
             op.output_item = op.producto_terminado
         else:
-            base = f"{op.producto_terminado} · {_op_slug(op.servicios, op.supplier)}"
+            # En MAYÚSCULAS: este nombre sintético se usa como item_code de un Item
+            # real (sub-ensamblaje) en cuanto se materializa, y el hook de
+            # homologación (costeo_yelke.overrides.uppercase_master) fuerza
+            # item_code a mayúsculas al crearlo -- si aquí se generara en minúsculas,
+            # la próxima vez que se recalcule este mismo nombre (para buscar la OC/
+            # Item ya creados) ya no haría match contra lo que quedó guardado.
+            base = f"{op.producto_terminado} · {_op_slug(op.servicios, op.supplier)}".upper()
             name, i = base, 2
             while name in taken:
                 name, i = f"{base} {i}", i + 1
