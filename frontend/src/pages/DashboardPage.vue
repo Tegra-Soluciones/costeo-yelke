@@ -78,9 +78,10 @@
               </div>
             </div>
           </div>
-          <div class="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-surface-border">
+          <div class="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-surface-border">
             <div class="text-center"><p class="text-lg font-bold text-ink">{{ fmtN(pct(d.valor_vendido, d.valor_cotizado) * prog) }}%</p><p class="text-[11px] text-ink-muted">Cotización → Venta</p></div>
             <div class="text-center"><p class="text-lg font-bold text-ink">{{ fmtN(pct(d.valor_facturado, d.valor_vendido) * prog) }}%</p><p class="text-[11px] text-ink-muted">Venta → Factura</p></div>
+            <div class="text-center"><p class="text-lg font-bold text-ink">{{ fmtN(pct(d.valor_cobrado, d.valor_facturado) * prog) }}%</p><p class="text-[11px] text-ink-muted">Factura → Cobro</p></div>
           </div>
         </div>
       </div>
@@ -223,6 +224,7 @@ const embudo = computed(() => [
   { label: "Cotizado", val: d.value?.valor_cotizado || 0, bar: "bg-brand-300" },
   { label: "Vendido", val: d.value?.valor_vendido || 0, bar: "bg-gray-900" },
   { label: "Facturado", val: d.value?.valor_facturado || 0, bar: "bg-gray-900" },
+  { label: "Cobrado", val: d.value?.valor_cobrado || 0, bar: "bg-brand-600" },
 ]);
 
 const maxCliente = computed(() => Math.max(1, ...(d.value?.top_clientes || []).map(c => c.monto || 0)));

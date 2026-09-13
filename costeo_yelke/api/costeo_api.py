@@ -1763,6 +1763,22 @@ def dashboard_metrics(company=None) -> dict:
     compras_mp = suma("Purchase Order", filters={"is_subcontracted": 0})
     gasto_maquila = suma("Purchase Order", filters={"is_subcontracted": 1})
 
+    # Cobrado: no existe un campo neto de "pagado" en Sales Invoice (paid_amount
+    # ya trae IVA mezclado), así que se prorratea -- de lo neto facturado
+    # (base_net_total), solo la proporción que ya está saldada según
+    # (base_grand_total - outstanding_amount) / base_grand_total.
+    valor_cobrado = frappe.db.sql(
+        f"""SELECT SUM(
+                CASE WHEN base_grand_total > 0
+                    THEN base_net_total * (base_grand_total - outstanding_amount) / base_grand_total
+                    ELSE 0
+                END
+            ) FROM `tabSales Invoice`
+            WHERE docstatus = 1 {"AND company = %s" if company else ""}""",
+        (company,) if company else (),
+    )
+    valor_cobrado = flt(valor_cobrado[0][0]) if valor_cobrado and valor_cobrado[0][0] else 0.0
+
     # ── Prendas ──────────────────────────────────────────────────────────────
     prendas_vendidas = suma("Sales Order", field="total_qty")
 
@@ -1833,6 +1849,7 @@ def dashboard_metrics(company=None) -> dict:
         "valor_cotizado": valor_cotizado,
         "valor_vendido": valor_vendido,
         "valor_facturado": valor_facturado,
+        "valor_cobrado": valor_cobrado,
         "compras_mp": compras_mp,
         "gasto_maquila": gasto_maquila,
         "prendas_vendidas": prendas_vendidas,
