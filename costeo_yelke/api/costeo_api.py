@@ -666,13 +666,28 @@ def get_flujo_operaciones(costeo: str) -> dict:
         es_terminal   produce el producto terminado
         editable_nombre / stage_ids   -- para persistir un rename
         candidatos_recibe  [{op_key, titulo}]  -- opciones válidas de upstream
-    """
+
+    También regresa, por producto, "materiales": la materia prima de ese producto
+    con el op_key de la operación a la que está asignada ("" = automática, se
+    atribuye sola al/los paso(s) sin 'recibe de' -- ver crear_boms_spa). Asignar un
+    material a una operación es lo único que le da a un paso, además de lo que
+    reciba de un paso anterior, su propio insumo directo (ej. botones que le
+    llegan al taller de confección aparte de la pieza ya bordada que recibe)."""
     from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_production_operations
 
     doc = frappe.get_doc("Costeo", costeo)
     salidas = doc.get("tabla_salidas_etapa")
     stage_a_op = {}          # stage_id -> op_key (para escribir recibe_de)
     productos_out = []
+
+    # material_id -> stage_id asignado explícitamente (ver tabla_materiales_etapa).
+    # Sin fila aquí = "automática": se atribuye sola al/los paso(s) que arrancan de
+    # materia prima directa (ver _split_materials_by_stage/crear_boms_spa) -- no
+    # hace falta elegir nada a propósito en el caso normal de un solo arranque.
+    stage_por_material = {
+        r.get("material_id"): r.get("stage_id")
+        for r in (doc.get("tabla_materiales_etapa") or []) if r.get("material_id") and r.get("stage_id")
+    }
 
     for producto in doc.costeo_producto:
         fi = producto.finished_item
@@ -734,21 +749,38 @@ def get_flujo_operaciones(costeo: str) -> dict:
                 "stage_ids": sorted(op.member_stage_keys),
                 "candidatos_recibe": candidatos,
             })
+        # Materiales directos: qué materia prima se le manda a cada paso, además de
+        # lo que reciba de un paso anterior (ver crear_boms_spa -- una operación
+        # puede tener las dos cosas en el mismo BOM). "op_key": "" = automática
+        # (arranca sola en el/los paso(s) sin 'recibe de').
+        materiales_out = []
+        for d in doc.costeo_producto_detalle:
+            if d.finished_item != fi or d.concept_type != "Materia Prima" or not d.item:
+                continue
+            sid = stage_por_material.get(d.material_id)
+            materiales_out.append({
+                "material_id": d.material_id,
+                "item": d.item,
+                "op_key": stage_a_op.get(sid, "") if sid else "",
+            })
+
         productos_out.append({
             "finished_item": fi,
             "qty": flt(producto.qty),
             "image": producto.get("image") or "",
             "operaciones": ops_out,
+            "materiales": materiales_out,
         })
 
     return {"productos": productos_out}
 
 
 @frappe.whitelist()
-def guardar_flujo_operaciones(costeo: str, cambios) -> dict:
+def guardar_flujo_operaciones(costeo: str, cambios, materiales=None) -> dict:
     """Persiste los (pocos) cambios que permite el paso "Flujo de Producción":
-    el ORDEN de los pasos y de qué operación(es) recibe cada uno. El nombre de la
-    pieza intermedia ya NO se edita -- se genera solo. ``cambios`` es una lista de:
+    el ORDEN de los pasos, de qué operación(es) recibe cada uno, y a qué operación
+    se le manda cada materia prima. El nombre de la pieza intermedia ya NO se
+    edita -- se genera solo. ``cambios`` es una lista de:
         {op_key: "...", orden: 1..N, recibe_op_keys: [op_key,...] | None}
 
     - orden -> nueva posición (1..N) de la operación; se renumera 'etapa' en sus
@@ -757,11 +789,17 @@ def guardar_flujo_operaciones(costeo: str, cambios) -> dict:
                  se escribe como 'recibe_de' (CSV) en cada etapa de esta operación
                  -- así las operaciones fusionadas siguen siendo consumidas por
                  completo. None = no tocar; [] = pasa a arrancar de materia prima.
-    """
+
+    ``materiales`` (opcional) es una lista de {material_id: "...", op_key: "..."} --
+    a qué operación se le manda cada materia prima además de lo que reciba de un
+    paso anterior. op_key = "" quita la asignación (vuelve a automática: se
+    atribuye sola al/los paso(s) que arrancan de materia prima directa)."""
     from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_production_operations
 
     if isinstance(cambios, str):
         cambios = json.loads(cambios)
+    if isinstance(materiales, str):
+        materiales = json.loads(materiales) if materiales else None
     doc = frappe.get_doc("Costeo", costeo)
     por_stage = {e.get("stage_id"): e for e in doc.tabla_etapas_costeo if e.get("stage_id")}
 
@@ -802,6 +840,34 @@ def guardar_flujo_operaciones(costeo: str, cambios) -> dict:
             if recibe_expandido is not None and (e.recibe_de or "") != recibe_expandido:
                 e.recibe_de = recibe_expandido
                 tocado = True
+
+    if materiales is not None:
+        mat_qty = {d.material_id: flt(d.internal_qty) for d in doc.costeo_producto_detalle if d.material_id}
+        existentes = {r.material_id: r for r in doc.tabla_materiales_etapa if r.material_id}
+        for m in materiales:
+            mid = m.get("material_id")
+            if not mid:
+                continue
+            op_key = m.get("op_key") or None
+            # Cualquier etapa miembro de la operación sirve -- _split_materials_by_stage
+            # solo necesita que el stage_id caiga dentro de member_stage_keys de esa
+            # operación para que crear_boms_spa la incluya en su BOM.
+            sids = op_stages.get(op_key, []) if op_key else []
+            target_sid = sids[0] if sids else None
+            row = existentes.get(mid)
+            if not target_sid:
+                if row:
+                    doc.tabla_materiales_etapa.remove(row)
+                    tocado = True
+            elif row:
+                if row.stage_id != target_sid or flt(row.qty) != mat_qty.get(mid, 0):
+                    row.stage_id = target_sid
+                    row.qty = mat_qty.get(mid, 0)
+                    tocado = True
+            else:
+                doc.append("tabla_materiales_etapa", {"material_id": mid, "stage_id": target_sid, "qty": mat_qty.get(mid, 0)})
+                tocado = True
+
     if tocado:
         doc.flags.ignore_permissions = True
         doc.save()
@@ -2145,6 +2211,39 @@ def _split_materials_by_stage(mats, etapas_of_product, splits_all):
     return por_etapa, sin_etapa
 
 
+def _repair_stale_bom_no(bom_name, company):
+    """Si este BOM ya existía de un intento anterior que falló A MEDIAS (ej. el BOM
+    de la pieza que recibe como insumo no se había podido crear todavía), su fila
+    de esa pieza quedó con 'bom_no' vacío -- crear_boms_spa solo lo llena al
+    momento de armar el BOM, y si esa pieza aún no existía, se queda así para
+    siempre aunque su BOM se termine creando después en un reintento posterior.
+
+    Consecuencia real (no cosmética): la explosión multinivel de materiales del
+    Production Plan (y por lo tanto la Solicitud de Materiales) se corta justo en
+    esa fila -- cualquier materia prima que esté MÁS ARRIBA en la cadena nunca se
+    cuenta, sin ningún aviso.
+
+    Esta función se llama cada vez que crear_boms_spa encuentra un BOM que YA
+    existe (se iba a saltar sin más): completa la(s) fila(s) que ahora sí tienen
+    su BOM disponible y recalcula la explosión. Como las operaciones se procesan
+    en orden topológico (raíz primero), una sola corrida repara toda la cadena de
+    abajo hacia arriba."""
+    bom = frappe.get_doc("BOM", bom_name)
+    tocado = False
+    for row in bom.items:
+        if row.bom_no or not row.item_code:
+            continue
+        up_bom = frappe.db.get_value(
+            "BOM", {"item": row.item_code, "is_active": 1, "docstatus": 1, "company": company}, "name",
+        )
+        if up_bom:
+            row.db_set("bom_no", up_bom, update_modified=False)
+            tocado = True
+    if tocado:
+        bom.update_exploded_items(save=True)
+        frappe.db.commit()
+
+
 @frappe.whitelist()
 def crear_boms_spa(costeo: str) -> dict:
     """Crea BOMs siguiendo exactamente la lógica del botón del doctype antiguo:
@@ -2291,6 +2390,7 @@ def crear_boms_spa(costeo: str) -> dict:
                 "name",
             )
             if existing:
+                _repair_stale_bom_no(existing, company)
                 skipped.append(f"{bom_item}: BOM ya existe ({existing})")
                 continue
 

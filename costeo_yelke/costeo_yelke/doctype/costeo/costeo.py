@@ -850,7 +850,7 @@ def _get_supplier_warehouse(company, supplier):
     if not frappe.db.has_column("Warehouse", "proveedor_asociado"):
         return None
 
-    return frappe.db.get_value(
+    existing = frappe.db.get_value(
         "Warehouse",
         {
             "company": company,
@@ -860,6 +860,38 @@ def _get_supplier_warehouse(company, supplier):
         },
         "name",
     )
+    if existing:
+        return existing
+
+    # Nadie dio de alta un almacén para este proveedor todavía (pasa siempre la
+    # PRIMERA vez que se subcontrata con él) -- antes esto se quedaba en None sin
+    # avisar, y la Orden de Subcontratación tronaba más adelante con un error crudo
+    # de "supplier_warehouse" obligatorio que no explicaba nada. Se crea aquí mismo,
+    # como el resto de los almacenes que la app ya arma solos (materia prima,
+    # trabajo en proceso, producto terminado).
+    return _crear_almacen_proveedor(company, supplier)
+
+
+def _crear_almacen_proveedor(company, supplier):
+    root = frappe.db.get_value(
+        "Warehouse",
+        {"company": company, "is_group": 1, "parent_warehouse": ["is", "not set"]},
+        "name",
+    )
+    nombre = frappe.db.get_value("Supplier", supplier, "supplier_name") or supplier
+    try:
+        wh = frappe.new_doc("Warehouse")
+        wh.warehouse_name = nombre
+        wh.company = company
+        if root:
+            wh.parent_warehouse = root
+        wh.proveedor_asociado = supplier
+        wh.flags.ignore_permissions = True
+        wh.insert()
+        return wh.name
+    except Exception:
+        frappe.log_error(title="No se pudo crear el almacén del proveedor", message=frappe.get_traceback())
+        return None
 
 
 def _get_purchase_tax_template(company):

@@ -244,14 +244,14 @@
               </div>
 
               <div v-if="expandedTid === prod._tid" class="bg-surface-raised/40 border-t border-surface-border px-5 pt-4 pb-14 space-y-4">
-                <div class="flex gap-4">
-                  <div class="w-20 h-20 flex-shrink-0 rounded-lg border border-surface-border overflow-hidden bg-white relative group/img" :class="canEditCosteo ? 'cursor-pointer' : 'cursor-default'" @click="pickImage(prod)" title="Subir imagen del producto">
+                <div class="flex gap-4 items-start">
+                  <div class="w-36 h-36 flex-shrink-0 rounded-lg border border-surface-border overflow-hidden bg-white relative group/img" :class="canEditCosteo ? 'cursor-pointer' : 'cursor-default'" @click="pickImage(prod)" title="Subir imagen del producto">
                     <img v-if="prod.image" :src="prod.image" class="w-full h-full object-cover" alt="" />
                     <div v-else class="w-full h-full flex items-center justify-center text-ink-xlight">
-                      <svg class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.4"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                      <svg class="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.4"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
                     </div>
                     <div class="absolute inset-0 bg-black/50 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
-                      <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                      <svg class="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                     </div>
                   </div>
                   <div class="flex-1 grid grid-cols-3 gap-3">
@@ -343,140 +343,188 @@
                 </div>
 
                 <div class="bg-white rounded-lg border border-surface-border p-4">
-                  <div class="flex items-center gap-2 mb-3">
-                      <svg class="w-4 h-4 text-ink-light flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
-                      <h4 class="text-[13px] font-semibold text-ink">Materias primas</h4>
-                      <span v-if="materialesDe(prod.finished_item).length" class="px-1.5 py-0.5 rounded-full text-xs bg-surface-raised text-ink-muted">{{ materialesDe(prod.finished_item).length }}</span>
-                      <svg class="w-3.5 h-3.5 text-ink-xlight hover:text-ink-light cursor-help flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" title="Elige primero el Tipo de material: filtra las UDM válidas y, si compras avíos por Mazo o Gruesa, calcula la equivalencia en piezas."><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                    </div>
-                    <table class="w-full table-fixed text-sm mb-3">
-                      <thead><tr class="border-b border-surface-border text-left text-xs font-semibold text-ink-light"><th class="py-2 w-1/6">Artículo</th><th class="py-2 w-1/6">Proveedor</th><th class="py-2 w-20">Tipo</th><th class="py-2 w-32">UDM</th><th class="py-2 w-36">Rendimiento / Consumo</th><th class="py-2 w-28 text-right">Precio / UDM</th><th class="py-2 w-24 text-right">Total</th><th class="w-7"></th></tr></thead>
-                      <tbody>
-                        <tr v-for="d in materialesDe(prod.finished_item)" :key="d._tid" class="border-b border-surface-border/60">
-                          <td class="py-1.5 pr-2"><input v-model="d.item" class="field-input" placeholder="Materia prima…" @change="onDetalleItemChange(d, prod)" /></td>
-                          <td class="py-1.5 pr-2">
-                            <select v-model="d.supplier" @change="onSupplierChange(d, prod)" :disabled="!d.item" class="field-input">
-                              <option value="">{{ !d.item ? 'Elige artículo' : '— Proveedor —' }}</option>
-                              <option v-for="o in allSuppliers" :key="o.name" :value="o.name">{{ o.supplier_name || o.name }}</option>
-                            </select>
-                          </td>
-                          <td class="py-1.5 pr-2">
-                            <select v-model="d.tipo_material" class="field-input" @change="onTipoMaterialChange(d, prod)">
-                              <option value="">— Tipo —</option>
-                              <option value="Tela">Tela</option>
-                              <option value="Avío">Avío</option>
-                            </select>
-                          </td>
-                          <td class="py-1.5 pr-2">
-                            <select v-model="d.internal_uom" class="field-input" :disabled="!d.tipo_material" @change="onUdmSelectChange(d, prod)">
-                              <option value="">{{ d.tipo_material ? '— UDM —' : 'Elige tipo' }}</option>
-                              <option v-for="o in udmOptionsFor(d)" :key="o.value" :value="o.value">{{ o.label }}</option>
-                            </select>
-                          </td>
-                          <td class="py-1.5 pr-2">
-                            <div class="flex items-center gap-1 mb-1">
-                              <template v-if="qtyModeLocked(d)">
-                                <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-brand-100 text-brand-700 font-semibold">{{ QTY_MODE_LABEL[qtyModeFor(d)] }}</span>
-                              </template>
-                              <template v-else>
-                                <button type="button" class="text-[10px] px-1.5 py-0.5 rounded-full" :class="qtyModeFor(d) === 'rendimiento' ? 'bg-brand-100 text-brand-700 font-semibold' : 'text-ink-light hover:bg-surface-raised'" @click="d._qtyMode = 'rendimiento'">Rendimiento</button>
-                                <button type="button" class="text-[10px] px-1.5 py-0.5 rounded-full" :class="qtyModeFor(d) === 'consumo' ? 'bg-brand-100 text-brand-700 font-semibold' : 'text-ink-light hover:bg-surface-raised'" @click="d._qtyMode = 'consumo'">Consumo</button>
-                              </template>
-                            </div>
-                            <input v-if="qtyModeFor(d) === 'consumo'" v-model.number="d.internal_qty" type="number" min="0" step="0.0001" class="field-input text-right" placeholder="UDM por pza" @input="onConsumoInput(d, prod)" />
-                            <input v-else-if="qtyModeFor(d) === 'piezas'" :value="piezasPorPrenda(d)" type="number" min="0" step="0.0001" class="field-input text-right" placeholder="pzas por prenda" @input="onPiezasInput(d, prod, $event.target.value)" />
-                            <input v-else v-model.number="d.rendimiento" type="number" min="0" step="0.0001" class="field-input text-right" placeholder="pzas por UDM" @input="onRendimientoInput(d, prod)" />
-                            <p class="text-[10.5px] text-ink-light mt-1 truncate">
-                              <template v-if="qtyModeFor(d) === 'consumo'">≈ {{ fmtQty(d.rendimiento) }} pzas/{{ d.internal_uom || 'UDM' }}</template>
-                              <template v-else-if="qtyModeFor(d) === 'piezas'">1 {{ d.internal_uom }} = {{ fmtQty(piezasPorUdm(d)) }} pzas</template>
-                              <template v-else>≈ {{ fmtQty(d.internal_qty) }} {{ d.internal_uom || 'UDM' }}/pza</template>
-                              · total: {{ fmtQty(d.supplier_qty) }} {{ d.internal_uom || 'UDM' }}
-                            </p>
-                          </td>
-                          <td class="py-1.5 pr-2">
-                            <div class="relative">
-                              <span class="prefix text-xs">$</span>
-                              <input v-model.number="d.unit_price" type="number" min="0" step="0.01" class="field-input text-right pl-5" :class="d.tipo_material === 'Tela' ? 'pr-6' : ''" @input="recalcDetalle(d, prod)" />
-                              <button v-if="d.tipo_material === 'Tela'" type="button" class="absolute right-1 top-1/2 -translate-y-1/2 text-ink-light hover:text-brand-600" title="Convertir precio de $/kg a $/m" @click="openTelaConvert(d, prod)">
-                                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><rect x="5" y="3" width="14" height="18" rx="2"/><path stroke-linecap="round" d="M8 7h8M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01"/></svg>
-                              </button>
-                              <template v-if="telaConvertModal.open && telaConvertModal.d === d">
-                                <div class="fixed inset-0 z-40" @click="closeTelaConvert()"></div>
-                                <div class="absolute z-50 right-0 top-full mt-1 w-64 bg-white border border-surface-border rounded-lg shadow-lg p-3 text-left">
-                                  <p class="text-xs font-semibold text-ink mb-2">Convertir $/kg → $/m</p>
-                                  <label class="field-label mb-0.5">Precio por kilo (el que te dio el proveedor)</label>
-                                  <div class="relative mb-2"><span class="prefix text-xs">$</span><input v-model.number="telaConvertModal.precio_kg" type="number" min="0" step="0.01" class="field-input text-right pl-5 py-1" /></div>
-                                  <label class="field-label mb-0.5">Metros que salen de 1 kilo</label>
-                                  <input v-model.number="telaConvertModal.metros_por_kilo" type="number" min="0" step="0.01" placeholder="ej. 5.2" class="field-input text-right py-1" />
-                                  <p class="text-[11px] text-ink-muted mt-2">Precio por metro: <span class="font-semibold text-brand-600">{{ fmtC(telaConvertPrecioM) }}</span></p>
-                                  <p v-if="telaConvertModal.itemExists" class="text-[10px] text-ink-xlight mt-1">Se guarda en el artículo para no repetirlo la próxima vez.</p>
-                                  <p v-else class="text-[10px] text-ink-xlight mt-1">Este artículo aún no existe como Item -- no se podrá guardar para después.</p>
-                                  <p class="text-[10px] text-ink-xlight mt-1">Al usar este precio la UDM del renglón cambia a Metro -- ahí capturas tú el consumo por prenda.</p>
-                                  <div class="flex items-center justify-end gap-3 mt-3">
-                                    <button type="button" class="text-xs text-ink-light hover:text-ink" @click="closeTelaConvert()">Cancelar</button>
-                                    <button type="button" class="text-xs font-semibold text-white bg-brand-500 hover:bg-brand-600 rounded-lg px-3 py-1.5" @click="aplicarTelaConvert()">Usar este precio</button>
-                                  </div>
-                                </div>
-                              </template>
-                            </div>
-                          </td>
-                          <td class="py-1.5 pr-2 text-right font-medium text-ink">{{ fmtC(d.total) }}</td>
-                          <td class="py-1.5"><button class="del-btn" @click="removeDetalle(d, prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button></td>
-                        </tr>
-                      </tbody>
-                      <tfoot v-if="materialesDe(prod.finished_item).length">
-                        <tr class="border-t-2 border-surface-border">
-                          <td colspan="5" class="py-2 text-xs font-semibold text-ink-muted uppercase tracking-wide">Total materias primas</td>
-                          <td class="py-2 pr-2 text-right text-[11px] text-ink-light">por pieza</td>
-                          <td class="py-2 pr-2 text-right font-semibold text-ink">{{ fmtC(totalMaterias(prod)) }}</td>
-                          <td></td>
-                        </tr>
-                        <tr>
-                          <td colspan="5"></td>
-                          <td class="py-1 pr-2 text-right text-[11px] text-ink-light">× {{ prod.qty || 0 }} pzas</td>
-                          <td class="py-1 pr-2 text-right font-semibold text-ink">{{ fmtC(totalMaterias(prod) * (prod.qty || 0)) }}</td>
-                          <td></td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  <button class="add-link" @click="addDetalle(prod, 'Materia Prima')"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Agregar material</button>
-                </div>
+                    <div v-for="(punto, pi) in puntosDe(prod.finished_item)" :key="punto.grupo_id" class="rounded-lg border border-surface-border mb-3 overflow-visible">
+                      <!-- Encabezado del punto: solo el proveedor. El orden real del flujo
+                           (quién recibe de quién) se ajusta en Flujo de Producción, no aquí --
+                           para que Costear no se infle con una decisión que todavía no toca. -->
+                      <div class="bg-surface-raised/60 px-3 py-2 flex items-center gap-2 flex-wrap">
+                        <span class="w-5 h-5 rounded-full bg-white ring-1 ring-surface-border flex items-center justify-center text-[10px] font-semibold text-ink-muted flex-shrink-0">{{ pi + 1 }}</span>
+                        <LinkInput :model-value="punto.servicios[0].proveedor" @update:model-value="v => setPuntoProveedor(punto, v)" doctype="Supplier" placeholder="Taller / proveedor…" class="w-96 max-w-full" />
+                        <button class="del-btn ml-auto" title="Eliminar este punto completo" @click="removePunto(punto, prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
+                      </div>
 
-                <div class="bg-white rounded-lg border border-surface-border p-4">
-                  <div class="flex items-center gap-2 mb-3">
-                      <svg class="w-4 h-4 text-ink-light flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                      <h4 class="text-[13px] font-semibold text-ink">Etapas de manufactura</h4>
-                      <span v-if="etapasDe(prod.finished_item).length" class="px-1.5 py-0.5 rounded-full text-xs bg-surface-raised text-ink-muted">{{ etapasDe(prod.finished_item).length }}</span>
+                      <!-- Servicios de este punto -->
+                      <table class="w-full table-fixed text-sm mt-2">
+                        <thead><tr class="text-left text-xs font-semibold text-ink-light"><th class="py-1.5 pl-3">Servicio</th><th class="py-1.5 w-28">UDM</th><th class="py-1.5 w-20 text-right">Cantidad</th><th class="py-1.5 w-24 text-right">Costo</th><th class="py-1.5 w-24 text-right pr-3">Total</th><th class="w-7"></th></tr></thead>
+                        <tbody>
+                          <tr v-for="e in punto.servicios" :key="e._tid" class="align-top">
+                            <td class="py-1 pl-3 pr-2"><LinkInput v-model="e.servicio" doctype="Item" :filters="ITEM_FILTERS.servicio" placeholder="Servicio…" @update:model-value="onEtapaServicioChange(e, prod)" /></td>
+                            <td class="py-1 pr-2"><LinkInput v-model="e.lote_uom" doctype="UOM" placeholder="UDM" class="min-w-0" /></td>
+                            <td class="py-1 pr-2"><input v-model.number="e.operaciones_por_pieza" type="number" min="0" step="1" placeholder="1" class="field-input text-right" title="Cuántas veces se aplica esta operación en CADA pieza -- ej. 4 segmentos de cinta reflejante por prenda" @input="recalcPrecioOperacion(e, prod)" /></td>
+                            <td class="py-1 pr-2"><div class="relative"><span class="prefix text-xs">$</span><input v-model.number="e.precio_por_operacion" type="number" min="0" step="0.01" class="field-input text-right pl-4" title="Precio de cada una" @input="recalcPrecioOperacion(e, prod)" /></div></td>
+                            <td class="py-1 pr-3 text-right font-medium text-ink pt-2.5">{{ fmtC(precioPorPiezaEtapa(e)) }}</td>
+                            <td class="py-1"><button class="del-btn" @click="removeServicioDePunto(e, punto, prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      <button class="add-link ml-3 mb-2" @click="addServicioAPunto(punto, prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Agregar servicio a este punto</button>
+
+                      <!-- Materias primas de este punto -->
+                      <div class="border-t border-surface-border bg-surface-raised/30 px-3 py-2">
+                        <p class="text-[11px] font-semibold text-ink-muted uppercase tracking-wide mb-1.5">Materias primas de este punto</p>
+                        <table v-if="materialesDelPunto(punto).length" class="w-full text-sm mb-2" style="table-layout: auto;">
+                          <colgroup>
+                            <col style="width: 22%">
+                            <col style="width: 20%">
+                            <col style="width: 9%">
+                            <col style="width: 12%">
+                            <col style="width: 17%">
+                            <col style="width: 11%">
+                            <col style="width: 9%">
+                            <col style="width: 28px">
+                          </colgroup>
+                          <thead><tr class="text-left text-[11px] font-semibold text-ink-light"><th class="py-1">Artículo</th><th class="py-1">Proveedor</th><th class="py-1">Tipo</th><th class="py-1">UDM</th><th class="py-1">Rendimiento / Consumo</th><th class="py-1 text-right">Precio / UDM</th><th class="py-1 text-right">Total</th><th></th></tr></thead>
+                          <tbody>
+                            <tr v-for="d in materialesDelPunto(punto)" :key="d._tid" class="align-top">
+                              <td class="py-1 pr-2">
+                                <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
+                                <input v-model="d.item" class="field-input" placeholder="Materia prima…" @change="onDetalleItemChange(d, prod)" />
+                              </td>
+                              <td class="py-1 pr-2">
+                                <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
+                                <select v-model="d.supplier" @change="onSupplierChange(d, prod)" :disabled="!d.item" class="field-input">
+                                  <option value="">{{ !d.item ? 'Elige artículo' : '— Proveedor —' }}</option>
+                                  <option v-for="o in allSuppliers" :key="o.name" :value="o.name">{{ o.supplier_name || o.name }}</option>
+                                </select>
+                              </td>
+                              <td class="py-1 pr-2">
+                                <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
+                                <select v-model="d.tipo_material" class="field-input" @change="onTipoMaterialChange(d, prod)">
+                                  <option value="">— Tipo —</option>
+                                  <option value="Tela">Tela</option>
+                                  <option value="Avío">Avío</option>
+                                </select>
+                              </td>
+                              <td class="py-1 pr-2">
+                                <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
+                                <select v-model="d.internal_uom" class="field-input" :disabled="!d.tipo_material" @change="onUdmSelectChange(d, prod)">
+                                  <option value="">{{ d.tipo_material ? '— UDM —' : 'Elige tipo' }}</option>
+                                  <option v-for="o in udmOptionsFor(d)" :key="o.value" :value="o.value">{{ o.label }}</option>
+                                </select>
+                              </td>
+                              <td class="py-1 pr-2">
+                                <div class="flex items-center gap-1 mb-1">
+                                  <template v-if="qtyModeLocked(d)">
+                                    <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-brand-100 text-brand-700 font-semibold">{{ QTY_MODE_LABEL[qtyModeFor(d)] }}</span>
+                                  </template>
+                                  <template v-else>
+                                    <button type="button" class="text-[10px] px-1.5 py-0.5 rounded-full" :class="qtyModeFor(d) === 'rendimiento' ? 'bg-brand-100 text-brand-700 font-semibold' : 'text-ink-light hover:bg-surface-raised'" @click="d._qtyMode = 'rendimiento'">Rendimiento</button>
+                                    <button type="button" class="text-[10px] px-1.5 py-0.5 rounded-full" :class="qtyModeFor(d) === 'consumo' ? 'bg-brand-100 text-brand-700 font-semibold' : 'text-ink-light hover:bg-surface-raised'" @click="d._qtyMode = 'consumo'">Consumo</button>
+                                  </template>
+                                </div>
+                                <input v-if="qtyModeFor(d) === 'consumo'" v-model.number="d.internal_qty" type="number" min="0" step="0.0001" class="field-input text-right" placeholder="UDM por pza" @input="onConsumoInput(d, prod)" />
+                                <input v-else-if="qtyModeFor(d) === 'piezas'" :value="piezasPorPrenda(d)" type="number" min="0" step="0.0001" class="field-input text-right" placeholder="pzas por prenda" @input="onPiezasInput(d, prod, $event.target.value)" />
+                                <input v-else v-model.number="d.rendimiento" type="number" min="0" step="0.0001" class="field-input text-right" placeholder="pzas por UDM" @input="onRendimientoInput(d, prod)" />
+                                <p class="text-[10.5px] text-ink-light mt-1 truncate">
+                                  <template v-if="qtyModeFor(d) === 'consumo'">≈ {{ fmtQty(d.rendimiento) }} pzas/{{ d.internal_uom || 'UDM' }}</template>
+                                  <template v-else-if="qtyModeFor(d) === 'piezas'">1 {{ d.internal_uom }} = {{ fmtQty(piezasPorUdm(d)) }} pzas</template>
+                                  <template v-else>≈ {{ fmtQty(d.internal_qty) }} {{ d.internal_uom || 'UDM' }}/pza</template>
+                                  · total: {{ fmtQty(d.supplier_qty) }} {{ d.internal_uom || 'UDM' }}
+                                </p>
+                              </td>
+                              <td class="py-1 pr-2">
+                                <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
+                                <div class="relative">
+                                  <span class="prefix text-xs">$</span>
+                                  <input v-model.number="d.unit_price" type="number" min="0" step="0.01" class="field-input text-right pl-5" :class="d.tipo_material === 'Tela' ? 'pr-6' : ''" @input="recalcDetalle(d, prod)" />
+                                  <button v-if="d.tipo_material === 'Tela'" type="button" class="absolute right-1 top-1/2 -translate-y-1/2 text-ink-light hover:text-brand-600" title="Convertir precio de $/kg a $/m" @click="openTelaConvert(d, prod)">
+                                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><rect x="5" y="3" width="14" height="18" rx="2"/><path stroke-linecap="round" d="M8 7h8M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01"/></svg>
+                                  </button>
+                                  <template v-if="telaConvertModal.open && telaConvertModal.d === d">
+                                    <div class="fixed inset-0 z-40" @click="closeTelaConvert()"></div>
+                                    <div class="absolute z-50 right-0 top-full mt-1 w-64 bg-white border border-surface-border rounded-lg shadow-lg p-3 text-left">
+                                      <p class="text-xs font-semibold text-ink mb-2">Convertir $/kg → $/m</p>
+                                      <label class="field-label mb-0.5">Precio por kilo (el que te dio el proveedor)</label>
+                                      <div class="relative mb-2"><span class="prefix text-xs">$</span><input v-model.number="telaConvertModal.precio_kg" type="number" min="0" step="0.01" class="field-input text-right pl-5 py-1" /></div>
+                                      <label class="field-label mb-0.5">Metros que salen de 1 kilo</label>
+                                      <input v-model.number="telaConvertModal.metros_por_kilo" type="number" min="0" step="0.01" placeholder="ej. 5.2" class="field-input text-right py-1" />
+                                      <p class="text-[11px] text-ink-muted mt-2">Precio por metro: <span class="font-semibold text-brand-600">{{ fmtC(telaConvertPrecioM) }}</span></p>
+                                      <p v-if="telaConvertModal.itemExists" class="text-[10px] text-ink-xlight mt-1">Se guarda en el artículo para no repetirlo la próxima vez.</p>
+                                      <p v-else class="text-[10px] text-ink-xlight mt-1">Este artículo aún no existe como Item -- no se podrá guardar para después.</p>
+                                      <p class="text-[10px] text-ink-xlight mt-1">Al usar este precio la UDM del renglón cambia a Metro -- ahí capturas tú el consumo por prenda.</p>
+                                      <div class="flex items-center justify-end gap-3 mt-3">
+                                        <button type="button" class="text-xs text-ink-light hover:text-ink" @click="closeTelaConvert()">Cancelar</button>
+                                        <button type="button" class="text-xs font-semibold text-white bg-brand-500 hover:bg-brand-600 rounded-lg px-3 py-1.5" @click="aplicarTelaConvert()">Usar este precio</button>
+                                      </div>
+                                    </div>
+                                  </template>
+                                </div>
+                              </td>
+                              <td class="py-1 pr-2 text-right font-medium text-ink">
+                                <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
+                                {{ fmtC(d.total) }}
+                              </td>
+                              <td class="py-1">
+                                <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
+                                <button class="del-btn" @click="removeDetalle(d, prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                        <p v-else class="text-[11.5px] text-ink-xlight mb-2">Ninguna todavía.</p>
+                        <button class="add-link" @click="addMaterialAPunto(punto, prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Agregar material</button>
+                      </div>
                     </div>
-                    <table class="w-full table-fixed text-sm mb-3">
-                      <thead><tr class="border-b border-surface-border text-left text-xs font-semibold text-ink-light"><th class="py-2">Servicio</th><th class="py-2 w-1/5">Proveedor</th><th class="py-2 w-28">UDM</th><th class="py-2 w-20 text-right">Cantidad</th><th class="py-2 w-24 text-right">Costo</th><th class="py-2 w-24 text-right">Total</th><th class="w-7"></th></tr></thead>
-                      <tbody>
-                        <tr v-for="e in etapasDe(prod.finished_item)" :key="e._tid" class="border-b border-surface-border/60 align-top">
-                          <td class="py-1.5 pr-2"><LinkInput v-model="e.servicio" doctype="Item" :filters="ITEM_FILTERS.servicio" placeholder="Servicio…" @update:model-value="onEtapaServicioChange(e, prod)" /></td>
-                          <td class="py-1.5 pr-2"><LinkInput v-model="e.proveedor" doctype="Supplier" placeholder="Taller…" /></td>
-                          <td class="py-1.5 pr-2"><LinkInput v-model="e.lote_uom" doctype="UOM" placeholder="UDM" class="min-w-0" /></td>
-                          <td class="py-1.5 pr-2"><input v-model.number="e.operaciones_por_pieza" type="number" min="0" step="1" placeholder="1" class="field-input text-right" title="Cuántas veces se aplica esta operación en CADA pieza -- ej. 4 segmentos de cinta reflejante por prenda" @input="recalcPrecioOperacion(e, prod)" /></td>
-                          <td class="py-1.5 pr-2"><div class="relative"><span class="prefix text-xs">$</span><input v-model.number="e.precio_por_operacion" type="number" min="0" step="0.01" class="field-input text-right pl-4" title="Precio de cada una" @input="recalcPrecioOperacion(e, prod)" /></div></td>
-                          <td class="py-1.5 pr-2 text-right font-medium text-ink pt-3.5">{{ fmtC(precioPorPiezaEtapa(e)) }}</td>
-                          <td class="py-1.5"><button class="del-btn" @click="removeEtapa(e, prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button></td>
-                        </tr>
-                      </tbody>
-                      <tfoot v-if="etapasDe(prod.finished_item).length">
-                        <tr class="border-t-2 border-surface-border">
-                          <td colspan="4" class="py-2 text-xs font-semibold text-ink-muted uppercase tracking-wide">Total etapas de manufactura</td>
-                          <td class="py-2 pr-2 text-right text-[11px] text-ink-light">por pieza</td>
-                          <td class="py-2 pr-2 text-right font-semibold text-ink">{{ fmtC(totalEtapas(prod)) }}</td>
-                          <td></td>
-                        </tr>
-                        <tr>
-                          <td colspan="4"></td>
-                          <td class="py-1 pr-2 text-right text-[11px] text-ink-light">× {{ prod.qty || 0 }} pzas</td>
-                          <td class="py-1 pr-2 text-right font-semibold text-ink">{{ fmtC(totalEtapas(prod) * (prod.qty || 0)) }}</td>
-                          <td></td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  <button class="add-link" @click="addEtapa(prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Agregar etapa</button>
+
+                    <button type="button" class="w-full py-4 rounded-lg border-2 border-dashed border-surface-border hover:border-brand-300 hover:bg-brand-50/40 text-ink-muted hover:text-brand-600 flex items-center justify-center gap-2 text-[13px] font-medium transition-colors" @click="addPunto(prod)">
+                      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                      Agregar paso
+                    </button>
+
+                    <!-- Materiales pendientes de asignar a un punto -- NO es un estado normal:
+                         todo material siempre se usa en algún punto concreto de verdad, así que
+                         esto solo debería aparecer con costeos capturados antes de este árbol.
+                         Por eso ya no hay botón para crear materiales sueltos a propósito --
+                         solo un aviso con una forma rápida de resolver los que ya existían. -->
+                    <div v-if="materialesSinPunto(prod.finished_item).length" class="mt-3 pt-3 border-t border-amber-200">
+                      <p class="text-[11px] font-semibold text-amber-700 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+                        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.71-3l-6.93-12a2 2 0 00-3.42 0l-6.93 12a2 2 0 001.71 3z"/></svg>
+                        Pendientes de asignar a un punto <span class="font-normal normal-case text-amber-600">— sin esto, el sistema los atribuye solos al arranque del flujo, lo cual puede ser incorrecto</span>
+                      </p>
+                      <table class="w-full table-fixed text-sm">
+                        <tbody>
+                          <tr v-for="d in materialesSinPunto(prod.finished_item)" :key="d._tid" class="border-b border-surface-border/60 align-top">
+                            <td class="py-1.5 pr-2 w-1/5"><input v-model="d.item" class="field-input" placeholder="Materia prima…" @change="onDetalleItemChange(d, prod)" /></td>
+                            <td class="py-1.5 pr-2 w-1/5">
+                              <select v-model="d.supplier" @change="onSupplierChange(d, prod)" :disabled="!d.item" class="field-input">
+                                <option value="">{{ !d.item ? 'Elige artículo' : '— Proveedor —' }}</option>
+                                <option v-for="o in allSuppliers" :key="o.name" :value="o.name">{{ o.supplier_name || o.name }}</option>
+                              </select>
+                            </td>
+                            <td class="py-1.5 pr-2 w-20">
+                              <select v-model="d.tipo_material" class="field-input" @change="onTipoMaterialChange(d, prod)">
+                                <option value="">— Tipo —</option>
+                                <option value="Tela">Tela</option>
+                                <option value="Avío">Avío</option>
+                              </select>
+                            </td>
+                            <td class="py-1.5 pr-2 w-24"><div class="relative"><span class="prefix text-xs">$</span><input v-model.number="d.unit_price" type="number" min="0" step="0.01" class="field-input text-right pl-5" @input="recalcDetalle(d, prod)" /></div></td>
+                            <td class="py-1.5 pr-2 w-44">
+                              <select :value="''" :disabled="!puntosDe(prod.finished_item).length" class="field-input" :class="!puntosDe(prod.finished_item).length ? '' : 'ring-1 ring-amber-300'" @change="asignarMaterialAPunto(d, prod, $event.target.value)">
+                                <option value="" disabled>{{ puntosDe(prod.finished_item).length ? 'Asignar a un punto…' : 'Agrega un punto primero' }}</option>
+                                <option v-for="(pt, pti) in puntosDe(prod.finished_item)" :key="pt.grupo_id" :value="pt.grupo_id">Punto {{ pti + 1 }} · {{ pt.servicios[0].proveedor || 'sin proveedor' }}</option>
+                              </select>
+                            </td>
+                            <td class="py-1.5 w-7"><button class="del-btn" @click="removeDetalle(d, prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div class="flex items-center justify-between mt-3 pt-3 border-t border-surface-border text-[12px]">
+                      <span class="text-ink-muted">Total materias primas + etapas <span class="text-ink-xlight">por pieza</span></span>
+                      <span class="font-semibold text-ink">{{ fmtC(totalMaterias(prod) + totalEtapas(prod)) }}</span>
+                    </div>
                 </div>
 
                 <div class="bg-white rounded-lg border border-surface-border p-4">
@@ -1032,6 +1080,11 @@
         Ya viene armado desde el costeo. Arrastra un paso para reordenarlo y ajusta <span class="text-ink-muted">"recibe de"</span> solo si el material sale de otro paso.
       </p>
 
+      <div v-if="ORDER.indexOf(docStatus) >= 3" class="mt-3 text-[11.5px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 flex items-start gap-2">
+        <svg class="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
+        <span>Ya se generaron documentos de producción con esta configuración. Si cambias "recibe de" aquí, revisa que el sub-ensamblaje resultante siga coincidiendo con lo que ya se creó.</span>
+      </div>
+
       <div v-if="flujoLoading" class="flex justify-center py-16 text-ink-xlight">
         <svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
       </div>
@@ -1044,93 +1097,118 @@
 
         <p v-if="!prod.operaciones.length" class="text-[12px] text-ink-light py-2">Sin servicios de manufactura en el costeo.</p>
 
-        <div v-else class="space-y-2">
-          <template v-for="(op, idx) in prod.operaciones" :key="op.op_key">
-            <div v-if="flujoDrag.over === idx && flujoDrag.from !== null && flujoDrag.over !== flujoDrag.from && flujoDrag.over !== flujoDrag.from + 1" class="h-px bg-brand-400 mx-2 -my-1"></div>
-
+        <div v-else>
+          <TransitionGroup tag="div" name="flujo-card" class="space-y-2">
             <div
+              v-for="(op, idx) in prod.operaciones" :key="op.op_key"
               class="group relative flex gap-3 bg-white border rounded-lg px-3 py-3 transition-shadow"
-              :class="[
-                flujoDrag.from === idx ? 'opacity-30' : '',
-                flujoDrag.from !== null && flujoDrag.from === idx ? 'shadow-card-hover' : '',
-                flujoEdit[op.op_key] ? 'border-brand-200 ring-1 ring-brand-100' : 'border-surface-border hover:shadow-card',
-              ]"
-              draggable="true"
-              @dragstart="onFlujoDragStart(idx, $event)"
-              @dragover.prevent="onFlujoDragOver(idx, $event)"
-              @drop.prevent="onFlujoDrop(prod)"
-              @dragend="onFlujoDragEnd"
+              :class="flujoEdit[op.op_key] ? 'border-brand-200 ring-1 ring-brand-100' : 'border-surface-border hover:shadow-card'"
             >
-              <!-- Marcador -->
-              <div class="relative flex-shrink-0 pt-px">
+              <!-- Marcador + subir/bajar -->
+              <div class="relative flex-shrink-0 pt-px flex flex-col items-center gap-1">
+                <button type="button" class="mini-icon-btn" :disabled="idx === 0" title="Subir un paso" @click="moverOperacion(prod, idx, -1)">
+                  <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/></svg>
+                </button>
                 <span
                   class="w-[26px] h-[26px] rounded-full flex items-center justify-center text-[11px] font-semibold"
-                  :class="op.es_terminal ? 'bg-green-500 text-white' : 'bg-surface-raised text-ink-muted'"
+                  :class="terminalKeysVivo(prod).includes(op.op_key) ? 'bg-green-500 text-white' : 'bg-surface-raised text-ink-muted'"
                 >{{ idx + 1 }}</span>
+                <button type="button" class="mini-icon-btn" :disabled="idx === prod.operaciones.length - 1" title="Bajar un paso" @click="moverOperacion(prod, idx, 1)">
+                  <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                </button>
               </div>
 
               <!-- Contenido -->
-              <div class="flex-1 min-w-0 cursor-grab active:cursor-grabbing select-none">
+              <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-1.5">
-                  <span class="text-[13px] font-medium text-ink truncate">{{ op.titulo }}</span>
-                  <svg class="w-3.5 h-3.5 text-ink-xlight flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" fill="currentColor" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>
+                  <span class="text-[13px] font-medium text-ink truncate">{{ supplierLabel(prod, op) }}</span>
+                  <span v-if="opIncompleta(op)" class="relative flex-shrink-0">
+                    <svg class="w-3.5 h-3.5 text-amber-500 cursor-pointer" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" @click="toggleWarn(op, 'incompleto')"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+                    <div v-if="isWarnOpen(op, 'incompleto')" class="absolute z-20 left-0 top-full mt-1 w-56 bg-white border border-amber-200 rounded-lg shadow-lg p-2 text-[11px] leading-snug text-amber-800">Faltan datos en este paso (proveedor o servicio) -- revísalo en Costear.</div>
+                  </span>
+                  <span v-if="esHuerfano(prod, op)" class="relative flex-shrink-0">
+                    <svg class="w-3.5 h-3.5 text-amber-500 cursor-pointer" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" @click="toggleWarn(op, 'huerfano')"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
+                    <div v-if="isWarnOpen(op, 'huerfano')" class="absolute z-20 left-0 top-full mt-1 w-56 bg-white border border-amber-200 rounded-lg shadow-lg p-2 text-[11px] leading-snug text-amber-800">Este paso no alimenta a ningún otro -- revisa si al siguiente paso le falta indicar que recibe de aquí, o si en realidad debería conectarse a otro.</div>
+                  </span>
                 </div>
-                <p class="text-[11.5px] text-ink-light truncate">
-                  {{ op.supplier || 'sin taller' }}<template v-if="op.n_servicios > 1"> · {{ op.n_servicios }} servicios</template>
-                </p>
-
-                <ul v-if="op.servicios.length > 1" class="mt-1 space-y-px">
-                  <li v-for="s in op.servicios" :key="s.item" class="flex items-baseline gap-2 text-[11px] leading-snug">
-                    <span class="text-ink-xlight flex-shrink-0">–</span>
-                    <span class="text-ink-xlight truncate flex-1">{{ s.item }}</span>
-                    <span class="text-ink-light flex-shrink-0 tabular-nums">{{ fmtC(s.precio) }}</span>
-                  </li>
-                </ul>
-
-                <div class="mt-2 space-y-1">
-                  <div class="flex items-center gap-1.5 text-[12px] text-ink-muted">
-                    <span class="text-ink-xlight w-3 text-center flex-shrink-0">↳</span>
-                    <span>recibe de</span>
-                    <span class="text-ink font-medium">{{ trabajaSobreTexto(prod, op, idx) }}</span>
-                    <button v-if="idx > 0" type="button" class="text-[11px] text-brand-600 hover:text-brand-700 ml-0.5 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity" :class="flujoEdit[op.op_key] ? 'opacity-100 font-medium' : ''" @click="flujoEdit[op.op_key] = !flujoEdit[op.op_key]">{{ flujoEdit[op.op_key] ? 'listo' : 'editar' }}</button>
+                <!-- Árbol: Servicios / Recibe de / Materia Prima / Entrega -->
+                <div class="mt-1.5 text-[12px]">
+                  <!-- Servicios (solo lectura) -->
+                  <div v-if="op.servicios.length" class="flex items-center gap-1">
+                    <button type="button" class="w-3.5 h-3.5 flex-shrink-0 flex items-center justify-center rounded text-ink-xlight hover:text-ink-muted hover:bg-surface-raised leading-none" @click="toggleTree(op, 'servicios')">{{ isTreeOpen(op, 'servicios') ? '−' : '+' }}</button>
+                    <span class="text-ink-muted">Servicios</span>
                   </div>
-                  <div class="flex items-center gap-1.5 text-[12px] text-ink-muted">
-                    <span class="text-ink-xlight w-3 text-center flex-shrink-0">→</span>
-                    <span>entrega</span>
-                    <span v-if="op.es_terminal" class="text-green-700 font-medium">el producto terminado</span>
-                    <span v-else class="text-ink-light truncate">{{ op.produce }}</span>
-                  </div>
-                </div>
+                  <ul v-if="op.servicios.length && isTreeOpen(op, 'servicios')" class="ml-[18px] mt-0.5 mb-1 space-y-px border-l border-surface-border pl-2.5">
+                    <li v-for="s in op.servicios" :key="s.item" class="flex items-baseline gap-2 text-[11px] leading-snug">
+                      <span class="text-ink-xlight truncate flex-1">{{ s.item }}</span>
+                      <span class="text-ink-light flex-shrink-0 tabular-nums">{{ fmtC(s.precio) }}</span>
+                    </li>
+                  </ul>
 
-                <!-- Editor "recibe de" -->
-                <div v-if="flujoEdit[op.op_key]" class="mt-2 rounded-lg bg-white ring-1 ring-surface-border p-1 max-w-xs">
-                  <button
-                    type="button"
-                    class="w-full text-left text-[12px] px-2 py-1.5 rounded-md flex items-center gap-2 hover:bg-surface-raised/70 transition-colors"
-                    @click="setTrabajaMateriaPrima(op)"
-                  >
-                    <span class="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0" :class="!op.recibe_de.length ? 'bg-brand-500 text-white' : 'ring-1 ring-inset ring-ink-xlight'">
-                      <svg v-if="!op.recibe_de.length" class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-                    </span>
-                    <span :class="!op.recibe_de.length ? 'text-ink font-medium' : 'text-ink-muted'">Materia prima</span>
-                  </button>
-                  <button
-                    v-for="(prev, pi) in prod.operaciones.slice(0, idx)" :key="prev.op_key"
-                    type="button"
-                    class="w-full text-left text-[12px] px-2 py-1.5 rounded-md flex items-center gap-2 hover:bg-surface-raised/70 transition-colors"
-                    @click="toggleTrabajaSobre(op, prev.op_key)"
-                  >
-                    <span class="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0" :class="op.recibe_de.includes(prev.op_key) ? 'bg-brand-500 text-white' : 'ring-1 ring-inset ring-ink-xlight'">
-                      <svg v-if="op.recibe_de.includes(prev.op_key)" class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-                    </span>
-                    <span :class="op.recibe_de.includes(prev.op_key) ? 'text-ink font-medium' : 'text-ink-muted'">Paso {{ pi + 1 }} · {{ prev.titulo }}</span>
-                  </button>
+                  <!-- Recibe de (editable) -->
+                  <div class="group/recibe flex items-center gap-1 mt-0.5">
+                    <button type="button" class="w-3.5 h-3.5 flex-shrink-0 flex items-center justify-center rounded text-ink-xlight hover:text-ink-muted hover:bg-surface-raised leading-none" @click="toggleTree(op, 'recibe')">{{ isTreeOpen(op, 'recibe') || flujoEdit[op.op_key] ? '−' : '+' }}</button>
+                    <span class="text-ink-muted">Recibe de</span>
+                    <button v-if="idx > 0" type="button" class="text-[11px] text-brand-600 hover:text-brand-700 ml-0.5" :class="flujoEdit[op.op_key] ? 'font-medium' : ''" @click="flujoEdit[op.op_key] = !flujoEdit[op.op_key]">{{ flujoEdit[op.op_key] ? 'listo' : 'editar' }}</button>
+                  </div>
+                  <ul v-if="!flujoEdit[op.op_key] && isTreeOpen(op, 'recibe')" class="ml-[18px] mt-0.5 mb-1 space-y-px border-l border-surface-border pl-2.5">
+                    <li v-for="nombre in recibeDeLista(prod, op)" :key="nombre" class="text-[11px] text-ink-xlight truncate">{{ nombre }}</li>
+                  </ul>
+                  <div v-if="flujoEdit[op.op_key]" class="ml-[18px] mt-0.5 mb-1 rounded-lg bg-white ring-1 ring-surface-border p-1 max-w-xs">
+                    <button
+                      type="button"
+                      class="w-full text-left text-[12px] px-2 py-1.5 rounded-md flex items-center gap-2 hover:bg-surface-raised/70 transition-colors"
+                      @click="setTrabajaMateriaPrima(op)"
+                    >
+                      <span class="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0" :class="!op.recibe_de.length ? 'bg-brand-500 text-white' : 'ring-1 ring-inset ring-ink-xlight'">
+                        <svg v-if="!op.recibe_de.length" class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                      </span>
+                      <span :class="!op.recibe_de.length ? 'text-ink font-medium' : 'text-ink-muted'">Materia prima</span>
+                    </button>
+                    <button
+                      v-for="prev in prod.operaciones.slice(0, idx)" :key="prev.op_key"
+                      type="button"
+                      class="w-full text-left text-[12px] px-2 py-1.5 rounded-md flex items-center gap-2 hover:bg-surface-raised/70 transition-colors"
+                      @click="toggleTrabajaSobre(op, prev.op_key)"
+                    >
+                      <span class="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0" :class="op.recibe_de.includes(prev.op_key) ? 'bg-brand-500 text-white' : 'ring-1 ring-inset ring-ink-xlight'">
+                        <svg v-if="op.recibe_de.includes(prev.op_key)" class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                      </span>
+                      <span class="truncate" :class="op.recibe_de.includes(prev.op_key) ? 'text-ink font-medium' : 'text-ink-muted'">{{ supplierLabel(prod, prev) }}</span>
+                      <span v-if="opIncompleta(prev)" class="ml-auto flex-shrink-0 text-[10px] text-amber-600" title="Este paso todavía tiene datos incompletos (proveedor o servicio vacío) -- revísalo en Costear antes de encadenarlo">incompleto</span>
+                    </button>
+                  </div>
+
+                  <!-- Materia Prima (editable) -->
+                  <div v-if="prod.materiales && prod.materiales.length" class="group/mat flex items-center gap-1 mt-0.5">
+                    <button type="button" class="w-3.5 h-3.5 flex-shrink-0 flex items-center justify-center rounded text-ink-xlight hover:text-ink-muted hover:bg-surface-raised leading-none" @click="toggleTree(op, 'materiales')">{{ isTreeOpen(op, 'materiales') || matEdit[op.op_key] ? '−' : '+' }}</button>
+                    <span class="text-ink-muted">Materia Prima</span>
+                    <button type="button" class="text-[11px] text-brand-600 hover:text-brand-700 ml-0.5" :class="matEdit[op.op_key] ? 'font-medium' : ''" @click="matEdit[op.op_key] = !matEdit[op.op_key]">{{ matEdit[op.op_key] ? 'listo' : 'editar' }}</button>
+                  </div>
+                  <ul v-if="prod.materiales && prod.materiales.length && !matEdit[op.op_key] && isTreeOpen(op, 'materiales')" class="ml-[18px] mt-0.5 mb-1 space-y-px border-l border-surface-border pl-2.5">
+                    <li v-if="!materialesDirectosDe(prod, op).length" class="text-[11px] text-ink-light">ninguno</li>
+                    <li v-for="mat in materialesDirectosDe(prod, op)" :key="mat.material_id" class="text-[11px] text-ink-xlight truncate">{{ mat.item }}</li>
+                  </ul>
+                  <div v-if="prod.materiales && prod.materiales.length && matEdit[op.op_key]" class="ml-[18px] mt-0.5 mb-1 rounded-lg bg-white ring-1 ring-surface-border p-1 max-w-xs">
+                    <button
+                      v-for="mat in prod.materiales" :key="mat.material_id"
+                      type="button"
+                      class="w-full text-left text-[12px] px-2 py-1.5 rounded-md flex items-center gap-2 hover:bg-surface-raised/70 transition-colors"
+                      @click="toggleMaterialOp(mat, op.op_key)"
+                    >
+                      <span class="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0" :class="mat.op_key === op.op_key ? 'bg-brand-500 text-white' : 'ring-1 ring-inset ring-ink-xlight'">
+                        <svg v-if="mat.op_key === op.op_key" class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                      </span>
+                      <span class="truncate" :class="mat.op_key === op.op_key ? 'text-ink font-medium' : 'text-ink-muted'">{{ mat.item }}</span>
+                    </button>
+                  </div>
+
                 </div>
               </div>
             </div>
-          </template>
-          <div v-if="flujoDrag.over === prod.operaciones.length && flujoDrag.from !== null && flujoDrag.from !== prod.operaciones.length - 1" class="h-px bg-brand-400 mx-2 -mt-1"></div>
+          </TransitionGroup>
         </div>
+
       </div>
 
       <div class="flex justify-end items-center gap-3 mt-8">
@@ -3013,6 +3091,131 @@ const lotesParaStepper = computed(() =>
 function materialesDe(fi) { return detalles.value.filter(d => d.finished_item === fi && d.concept_type === "Materia Prima"); }
 function etapasDe(fi) { return etapas.value.filter(e => e.producto_terminado === fi); }
 
+// ═══════════════════════════════════════════════════════════════════════
+// "Puntos" del proceso -- agrupa en Costear las etapas que comparten taller,
+// para capturar en un solo lugar los servicios Y la materia prima de cada
+// punto (en vez de dos tablas sueltas). Es puramente de PRESENTACIÓN: por
+// debajo se sigue guardando exactamente lo mismo que antes -- un renglón de
+// `tabla_etapas_costeo` por servicio (con su propio proveedor/precio/recibe_de,
+// idénticos entre sí dentro de un mismo punto) y `tabla_materiales_etapa` para
+// la materia prima asignada -- así Flujo de Producción (que arma BOMs y todo
+// lo demás) no necesita saber que este agrupador existe: sigue leyendo los
+// mismos campos de siempre, capturados aquí de otra forma.
+//
+// `_grupo_id` es un campo SOLO del cliente (nunca se manda al backend --
+// stripLocal() ya quita todo lo que empieza con "_"), así que un costeo viejo
+// que se vuelva a abrir en otra sesión no pierde nada: se re-calcula solo al
+// cargar (ver asignarGruposEtapas).
+function puntosDe(fi) {
+  const grupos = [];
+  const porId = new Map();
+  for (const e of etapasDe(fi)) {
+    let g = porId.get(e._grupo_id);
+    if (!g) { g = { grupo_id: e._grupo_id, servicios: [] }; porId.set(e._grupo_id, g); grupos.push(g); }
+    g.servicios.push(e);
+  }
+  return grupos;
+}
+// Costeos ya guardados no traen _grupo_id -- se reconstruye agrupando etapas
+// CONSECUTIVAS del mismo producto que comparten proveedor y "recibe de"
+// (exactamente el criterio con el que el backend ya las fusiona en una sola
+// tarjeta en Flujo de Producción), así el árbol nuevo muestra de entrada lo
+// mismo que ya se veía fusionado allá.
+function asignarGruposEtapas() {
+  const porProducto = {};
+  for (const e of etapas.value) { (porProducto[e.producto_terminado] ||= []).push(e); }
+  for (const fi in porProducto) {
+    let prevKey = null, grupoId = null;
+    for (const e of porProducto[fi]) {
+      const key = `${e.proveedor || ""}||${e.recibe_de || ""}`;
+      if (key !== prevKey) { grupoId = uid(); prevKey = key; }
+      e._grupo_id = grupoId;
+    }
+  }
+}
+// El "recibe de" NO se toca aquí -- se deja siempre vacío. Con todas las
+// etapas de un producto en blanco, el backend usa su propio "modo lineal"
+// (una cadena recta en el orden en que se capturaron) como default -- Costear
+// no necesita calcular ni repetir esa lógica. Ajustar el orden real del flujo
+// (arranques en paralelo, uniones) es trabajo de Flujo de Producción.
+function addPunto(prod) {
+  const fi = prod.finished_item;
+  const next = etapasDe(fi).length + 1;
+  etapas.value.push({
+    _tid: uid(), _grupo_id: uid(), producto_terminado: fi, etapa: String(next), stage_id: genStageId(),
+    recibe_de: "", servicio: "", proveedor: "", precio_servicio: 0,
+    lote_qty: 1, lote_uom: "H87 - Pieza", modo_precio: "Por operación", operaciones_por_pieza: 1,
+    precio_por_operacion: 0, subensamblaje: "",
+  });
+  manufacturaGuardada.value = false;
+}
+// Un servicio más DENTRO del mismo punto: mismo proveedor, mismo "recibe de"
+// -- es justo la combinación que el backend fusiona en una sola tarjeta.
+function addServicioAPunto(punto, prod) {
+  const anchor = punto.servicios[0];
+  const next = etapasDe(prod.finished_item).length + 1;
+  etapas.value.push({
+    _tid: uid(), _grupo_id: punto.grupo_id, producto_terminado: prod.finished_item, etapa: String(next),
+    stage_id: genStageId(), recibe_de: anchor.recibe_de, servicio: "", proveedor: anchor.proveedor,
+    precio_servicio: 0, lote_qty: 1, lote_uom: "H87 - Pieza", modo_precio: "Por operación",
+    operaciones_por_pieza: 1, precio_por_operacion: 0, subensamblaje: "",
+  });
+  manufacturaGuardada.value = false;
+}
+// El proveedor se edita una sola vez, arriba del punto -- se propaga a todos
+// los servicios del grupo (todos deben compartirlo; es lo que los mantiene
+// fusionados como un solo punto).
+function setPuntoProveedor(punto, valor) {
+  punto.servicios.forEach(e => { e.proveedor = valor; });
+}
+function removeServicioDePunto(e, punto, prod) {
+  // Si se borra el ANCLA de un punto con más de un servicio, primero hay que
+  // migrarle sus referencias (materia prima asignada, y quién "recibe de" él)
+  // al que va a quedar como nueva ancla -- si no, se pierden colgadas.
+  if (punto.servicios.length > 1 && punto.servicios[0]._tid === e._tid) {
+    const nuevaAncla = punto.servicios[1];
+    materialesEtapa.value.forEach(r => { if (r.stage_id === e.stage_id) r.stage_id = nuevaAncla.stage_id; });
+    etapas.value.forEach(et => {
+      const ids = (et.recibe_de || "").split(",").map(s => s.trim()).filter(Boolean);
+      if (ids.includes(e.stage_id)) et.recibe_de = ids.map(id => id === e.stage_id ? nuevaAncla.stage_id : id).join(",");
+    });
+  }
+  removeEtapa(e, prod);
+}
+function removePunto(punto, prod) {
+  [...punto.servicios].forEach(e => removeServicioDePunto(e, punto, prod));
+}
+// Materia prima asignada a este punto (vive en materialesEtapa, igual que en
+// Flujo de Producción -- solo que aquí se captura desde que se arma el costeo).
+function materialesDelPunto(punto) {
+  const stageId = punto.servicios[0]?.stage_id;
+  if (!stageId) return [];
+  return materialesEtapa.value
+    .filter(r => r.stage_id === stageId)
+    .map(r => detalles.value.find(d => d.material_id === r.material_id))
+    .filter(Boolean);
+}
+// Materiales del producto que todavía no se asignaron a ningún punto -- siguen
+// funcionando "automático" (se atribuyen solos al arranque del flujo), igual
+// que si nunca se hubiera tocado nada.
+function materialesSinPunto(fi) {
+  const asignados = new Set(materialesEtapa.value.map(r => r.material_id));
+  return materialesDe(fi).filter(d => !asignados.has(d.material_id));
+}
+function addMaterialAPunto(punto, prod) {
+  addDetalle(prod, "Materia Prima");
+  const nuevo = detalles.value[detalles.value.length - 1];
+  materialesEtapa.value.push({ _tid: uid(), material_id: nuevo.material_id, stage_id: punto.servicios[0].stage_id, qty: 0 });
+}
+// Resuelve un material "pendiente" (de un costeo capturado antes de este árbol)
+// asignándolo a un punto ya existente -- misma mecánica que addMaterialAPunto,
+// sin crear un material nuevo.
+function asignarMaterialAPunto(d, prod, grupoId) {
+  const punto = puntosDe(prod.finished_item).find(p => p.grupo_id === grupoId);
+  if (!punto) return;
+  materialesEtapa.value.push({ _tid: uid(), material_id: d.material_id, stage_id: punto.servicios[0].stage_id, qty: d.internal_qty || 0 });
+}
+
 // Salidas de una etapa (tabla hermana Costeo.tabla_salidas_etapa) -- se conserva
 // para limpiar referencias colgantes al eliminar una etapa en Costear.
 function salidasDe(e) { return salidasEtapa.value.filter(s => s.stage_id === e.stage_id); }
@@ -3165,7 +3368,7 @@ function onUdmSelectChange(d, prod) {
   if (!esUdmPorPiezas(d)) d._piezas_input = undefined;
   recalcDetalle(d, prod);
 }
-function removeDetalle(d, prod) { const i = detalles.value.findIndex(x => x._tid === d._tid); if (i !== -1) detalles.value.splice(i, 1); recalcProducto(prod); }
+function removeDetalle(d, prod) { const i = detalles.value.findIndex(x => x._tid === d._tid); if (i !== -1) detalles.value.splice(i, 1); materialesEtapa.value = materialesEtapa.value.filter(r => r.material_id !== d.material_id); recalcProducto(prod); }
 function round2(n) { return Math.round((n || 0) * 100) / 100; }
 function round4(n) { return Math.round((n || 0) * 10000) / 10000; }
 function fmtQty(n) { return round4(n).toString(); }
@@ -3181,6 +3384,12 @@ function recalcDetalle(d, prod) {
   // cantidad total a comprar, pero es solo informativo, no entra en el costo.
   d.supplier_qty = round2((d.internal_qty || 0) * (prod?.qty || 0));
   d.total = round2((d.internal_qty || 0) * (d.unit_price || 0));
+  // Si este material ya está asignado a una etapa (se hace en "Flujo de Producción",
+  // no aquí -- Costear se mantiene simple porque el pedido todavía podría no
+  // concretarse), mantiene su cantidad sincronizada para que no se quede con el
+  // consumo viejo aunque aquí se corrija.
+  const asignada = materialesEtapa.value.find(r => r.material_id === d.material_id);
+  if (asignada) asignada.qty = d.internal_qty || 0;
   recalcProducto(prod);
 }
 function onProdQtyChange(prod) {
@@ -3555,6 +3764,7 @@ async function fillFromDoc(data) {
     }
     return e;
   });
+  asignarGruposEtapas();
   salidasEtapa.value = (data.tabla_salidas_etapa || []).map(r => ({ _tid: uid(), ...r, salida_id: r.salida_id || genStageId(), qty_salida: r.qty_salida || 1, pct_participacion: r.pct_participacion ?? 100 }));
   materialesEtapa.value = (data.tabla_materiales_etapa || []).map(r => ({ _tid: uid(), ...r }));
   migrarMaterialesEtapaLegado();
@@ -3835,9 +4045,22 @@ const flujoOps = ref([]);
 const flujoLoading = ref(false);
 const flujoDirty = ref(false);
 const flujoEdit = reactive({});
-// Arrastrar para reordenar: from = índice de la tarjeta que se arrastra, over =
-// índice sobre el que se soltaría (o length para "al final").
-const flujoDrag = reactive({ from: null, over: null });
+// Igual que flujoEdit, pero para el editor de "materiales directos" de cada
+// tarjeta -- se abren independientes, cada uno con su propio op_key.
+const matEdit = reactive({});
+// Árbol de cada tarjeta (Servicios / Recibe de / Materia Prima / Entrega),
+// contraído por default -- key "op_key::seccion". Windows-style: "+" despliega,
+// "−" contrae; editar (recibe de / materia prima) fuerza la sección abierta.
+const treeOpen = reactive({});
+// "Recibe de" y "Materia Prima" arrancan desplegados (se ve el detalle sin tocar
+// nada); "Servicios" y "Entrega" arrancan contraídos. Solo importa mientras el
+// usuario no lo haya tocado a mano -- ahí manda lo que haya elegido.
+function isTreeOpen(op, section) {
+  const k = `${op.op_key}::${section}`;
+  if (!(k in treeOpen)) return section === "recibe" || section === "materiales";
+  return !!treeOpen[k];
+}
+function toggleTree(op, section) { const k = `${op.op_key}::${section}`; treeOpen[k] = !treeOpen[k]; }
 // Marca si el flujo de manufactura ya se revisó/guardó -- lo lee el stepper
 // (flujo-produccion-listo) y el botón principal. En Costear se pone en false al
 // tocar etapas/materiales; al confirmar el Flujo de Producción pasa a true.
@@ -3854,6 +4077,8 @@ async function loadFlujoOps() {
   flujoLoading.value = true;
   flujoDirty.value = false;
   Object.keys(flujoEdit).forEach(k => delete flujoEdit[k]);
+  Object.keys(matEdit).forEach(k => delete matEdit[k]);
+  Object.keys(treeOpen).forEach(k => delete treeOpen[k]);
   try {
     const r = await call("costeo_yelke.api.costeo_api.get_flujo_operaciones", { costeo: docName.value });
     flujoOps.value = (r?.productos || []).map(p => {
@@ -3873,27 +4098,18 @@ function relinkLineal(prod) {
     o.recibe_de = i === 0 ? [] : [prod.operaciones[i - 1].op_key];
   });
 }
-function onFlujoDragStart(idx, e) {
-  flujoDrag.from = idx;
-  if (e.dataTransfer) { e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", String(idx)); } catch { /* algunos navegadores */ } }
-}
-// La línea de drop va ARRIBA de la tarjeta si el cursor está en su mitad superior,
-// ABAJO (over = idx+1) si está en la inferior.
-function onFlujoDragOver(idx, e) {
-  const r = e.currentTarget.getBoundingClientRect();
-  flujoDrag.over = e.clientY < r.top + r.height / 2 ? idx : idx + 1;
-}
-function onFlujoDragEnd() { flujoDrag.from = null; flujoDrag.over = null; }
-function onFlujoDrop(prod) {
-  const from = flujoDrag.from;
-  let to = flujoDrag.over;
-  flujoDrag.from = null; flujoDrag.over = null;
-  if (from == null || to == null) return;
-  if (to > from) to -= 1;                 // el hueco que deja el que se movió
-  if (to === from) return;
+// Sube o baja UN paso a la vez (intercambio simple con el vecino inmediato) --
+// reemplaza al arrastrar-y-soltar anterior: con la posición calculada a partir
+// de coordenadas del mouse, un solo gesto podía interpretarse como un salto de
+// varias posiciones y "mover todo" en vez de solo el paso tocado. Con botones
+// subir/bajar el resultado es siempre exactamente ese: un intercambio con el
+// vecino, nada más -- y el <TransitionGroup> de la plantilla anima el
+// deslizamiento de ambas tarjetas a su nueva posición.
+function moverOperacion(prod, idx, delta) {
+  const to = idx + delta;
+  if (to < 0 || to >= prod.operaciones.length) return;
   const arr = prod.operaciones;
-  const [moved] = arr.splice(from, 1);
-  arr.splice(to, 0, moved);
+  [arr[idx], arr[to]] = [arr[to], arr[idx]];
   // Una referencia "fijada" a un paso que ahora quedó DESPUÉS ya no es válida
   // (un paso no puede trabajar sobre algo que todavía no existe) -- se limpia.
   arr.forEach((o, i) => {
@@ -3904,16 +4120,61 @@ function onFlujoDrop(prod) {
   relinkLineal(prod);
   flujoDirty.value = true;
 }
-function trabajaSobreTexto(prod, op, idx) {
-  if (!op.recibe_de.length) return "materia prima directa";
-  const refs = op.recibe_de
-    .map(k => prod.operaciones.findIndex(o => o.op_key === k))
-    .filter(i => i >= 0).sort((a, b) => a - b);
-  if (refs.length === 1) {
-    const i = refs[0];
-    return i === idx - 1 ? "el paso anterior" : `el paso ${i + 1} · ${prod.operaciones[i].titulo}`;
-  }
-  return "los pasos " + refs.map(i => i + 1).join(" + ");
+// Lista de nombres reales (no "el paso anterior" ni números) de dónde recibe
+// esta operación -- "Materia prima" si no recibe de ningún paso.
+function recibeDeLista(prod, op) {
+  if (!op.recibe_de.length) return ["Materia prima"];
+  return op.recibe_de
+    .map(k => prod.operaciones.find(o => o.op_key === k))
+    .filter(Boolean)
+    .map(o => supplierLabel(prod, o));
+}
+// Nombre de una tarjeta: el proveedor solo, salvo que ese MISMO proveedor haga
+// más de un paso no fusionado de este producto -- ahí se le agrega "(paso N)"
+// para poder distinguirlos (ej. un taller que corta al inicio y también
+// confecciona al final, con otros talleres en medio).
+function supplierLabel(prod, op) {
+  const nombre = op.supplier || "sin taller";
+  const mismos = prod.operaciones.filter(o => (o.supplier || "sin taller") === nombre);
+  if (mismos.length <= 1) return nombre;
+  const n = mismos.findIndex(o => o.op_key === op.op_key) + 1;
+  return `${nombre} (${n})`;
+}
+// ¿esta operación tiene datos incompletos (sin proveedor o sin ningún servicio)?
+// Pasa con etapas capturadas a medias en Costear -- avisa antes de que alguien
+// "reciba de" un paso que en realidad todavía no tiene nada armado, sin bloquear
+// nada (la referencia se puede guardar igual; el motor la tolera).
+function opIncompleta(op) {
+  return !op.supplier || !(op.servicios && op.servicios.length);
+}
+// Operaciones "terminales" EN VIVO -- las que nadie referencia en su recibe_de,
+// recalculado sobre el estado actual en memoria (no el que vino del servidor) para
+// que el aviso reaccione al instante mientras se edita/reordena. Debería haber
+// exactamente una (la que entrega el producto terminado); más de una casi
+// siempre significa que a alguna le falta indicar de cuál recibe.
+function terminalKeysVivo(prod) {
+  const referenciados = new Set();
+  prod.operaciones.forEach(o => o.recibe_de.forEach(k => referenciados.add(k)));
+  return prod.operaciones.filter(o => !referenciados.has(o.op_key)).map(o => o.op_key);
+}
+// ¿esta operación es una "terminal" sobrante (nadie la consume) cuando hay más de
+// una? El ÚLTIMO paso de la lista NUNCA se marca -- ese sabemos que es el final
+// real; el aviso es solo para el/los que quedaron sueltos ANTES de él.
+function esHuerfano(prod, op) {
+  const term = terminalKeysVivo(prod);
+  if (term.length <= 1) return false;
+  const esUltimo = prod.operaciones[prod.operaciones.length - 1]?.op_key === op.op_key;
+  return term.includes(op.op_key) && !esUltimo;
+}
+// Advertencias por tarjeta: solo un ícono chico: un click lo abre/cierra --
+// nada de banners genéricos, el aviso vive en el paso exacto que hay que revisar.
+const warnOpen = reactive({});
+function toggleWarn(op, tipo) {
+  const k = `${op.op_key}::${tipo}`;
+  warnOpen[k] = !warnOpen[k];
+}
+function isWarnOpen(op, tipo) {
+  return !!warnOpen[`${op.op_key}::${tipo}`];
 }
 function toggleTrabajaSobre(op, key) {
   const i = op.recibe_de.indexOf(key);
@@ -3926,11 +4187,23 @@ function setTrabajaMateriaPrima(op) {
   op.recibe_custom = true;
   flujoDirty.value = true;
 }
+// A qué paso se le manda un material directo -- "" = automática (se atribuye
+// sola al/los paso(s) que arrancan de materia prima directa). Un material solo
+// puede estar asignado a UN paso a la vez: elegirlo en éste lo quita de
+// cualquier otro donde estuviera.
+function toggleMaterialOp(mat, opKey) {
+  mat.op_key = mat.op_key === opKey ? "" : opKey;
+  flujoDirty.value = true;
+}
+function materialesDirectosDe(prod, op) {
+  return prod.materiales.filter(m => m.op_key === op.op_key);
+}
 async function confirmarFlujo() {
   if (isNew.value) { showToast("Guarda el costeo primero", "error"); return; }
   advancing.value = true;
   try {
     const cambios = [];
+    const materiales = [];
     for (const prod of flujoOps.value) {
       prod.operaciones.forEach((op, idx) => {
         cambios.push({
@@ -3939,9 +4212,12 @@ async function confirmarFlujo() {
           recibe_op_keys: op.recibe_de,
         });
       });
+      (prod.materiales || []).forEach((mat) => {
+        materiales.push({ material_id: mat.material_id, op_key: mat.op_key || "" });
+      });
     }
     await call("costeo_yelke.api.costeo_api.guardar_flujo_operaciones", {
-      costeo: docName.value, cambios: JSON.stringify(cambios),
+      costeo: docName.value, cambios: JSON.stringify(cambios), materiales: JSON.stringify(materiales),
     });
     flujoDirty.value = false;
     manufacturaGuardada.value = true;
@@ -4595,6 +4871,12 @@ onUnmounted(() => document.removeEventListener("click", onDocClick, true));
 .metric-val { @apply text-lg font-semibold text-ink mt-0.5; }
 .panel-enter-active { transition: opacity 0.12s ease, transform 0.12s ease; }
 .panel-leave-active { transition: opacity 0.08s ease, transform 0.08s ease; }
+
+/* "Flujo de Producción" (lista de pasos): al subir/bajar un paso con los botones,
+   la tarjeta movida Y la que le cede el lugar se deslizan juntas a su nueva
+   posición en vez de saltar de golpe -- así se ve claramente que solo se
+   intercambiaron esas dos, nada más. */
+.flujo-card-move { transition: transform 0.25s ease; }
 
 /* "Flujo de Producción" (lista de pasos) -- botones e interruptor chicos a propósito,
    para que no compitan con los campos del paso (servicio/proveedor/precio). */
