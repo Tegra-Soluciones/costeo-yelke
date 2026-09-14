@@ -1043,7 +1043,16 @@
                 </button>
                 <button class="text-ink-muted hover:text-ink flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-lg hover:bg-surface-raised" title="Buscar otro" @click="g._suggestedDismissed = true">✕</button>
               </div>
-              <LinkInput v-else :model-value="''" doctype="Item" :filters="ROW_TYPE_ITEM_FILTERS[g.row_type] || []" placeholder="Vincular existente…" @update:model-value="(v) => v && resolverArticuloExistente(g, v)" />
+              <div v-else class="flex items-center gap-1.5">
+                <LinkInput v-model="g._vincularValor" doctype="Item" :filters="ROW_TYPE_ITEM_FILTERS[g.row_type] || []" placeholder="Vincular existente…" class="flex-1 min-w-0" />
+                <button
+                  v-if="g._vincularValor"
+                  type="button"
+                  class="flex-shrink-0 text-[11px] font-semibold text-white bg-brand-500 hover:bg-brand-600 rounded-lg px-2.5 py-2"
+                  title="Confirmar vinculación"
+                  @click="confirmarVincularExistente(g)"
+                >Vincular</button>
+              </div>
             </div>
             <button class="doc-action justify-center flex-shrink-0" @click="openArticuloModal(g)">+ Crear</button>
           </div>
@@ -4651,11 +4660,25 @@ async function resolverArticuloExistente(g, itemCode) {
   try {
     await call("costeo_yelke.api.costeo_api.materializar_articulo", {
       costeo: docName.value, row_type: g.row_type, texto: g.texto, item_code: itemCode,
+      solo_vincular: true,
     });
     applyMaterializacionLocal(g.row_type, g.texto, itemCode);
     await loadPendientesArticulos();
     showToast(`"${g.texto}" vinculado a ${itemCode}`);
   } catch (e) { showToast(e.message || "No se pudo vincular el artículo", "error"); }
+}
+// El campo de búsqueda de "Vincular existente" es solo un BORRADOR (g._vincularValor)
+// -- nunca dispara la vinculación por sí solo. Antes, como LinkInput emite
+// update:model-value en cada tecla (no solo al elegir de la lista), escribir un
+// par de letras ya alcanzaba a llamar a resolverArticuloExistente con ese texto a
+// medias, reescribiendo el renglón del costeo (y, si no existía, hasta creando un
+// Item nuevo con ese código truncado). Ahora hace falta un clic explícito en
+// "Vincular" para confirmar -- ver confirmarVincularExistente.
+function confirmarVincularExistente(g) {
+  const v = (g._vincularValor || "").trim();
+  if (!v) return;
+  resolverArticuloExistente(g, v);
+  g._vincularValor = "";
 }
 function openArticuloModal(g) { articuloModal.group = g; articuloModal.open = true; }
 function cancelArticuloModal() { articuloModal.open = false; articuloModal.group = null; }

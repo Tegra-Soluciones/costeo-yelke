@@ -534,7 +534,7 @@ def get_articulos_pendientes(costeo: str) -> dict:
 
 
 @frappe.whitelist()
-def materializar_articulo(costeo: str, row_type: str, texto: str, item_code: str, prefill=None, supplier: str = None, precio: float = None) -> dict:
+def materializar_articulo(costeo: str, row_type: str, texto: str, item_code: str, prefill=None, supplier: str = None, precio: float = None, solo_vincular: bool = False) -> dict:
     """Resuelve un grupo de renglones de material/servicio/subensamblaje en texto
     libre: si item_code ya existe, solo vincula (reescribe el texto libre por el
     item_code en todos los renglones que comparten ese mismo texto); si es nuevo,
@@ -543,10 +543,25 @@ def materializar_articulo(costeo: str, row_type: str, texto: str, item_code: str
     conocido del renglón en supplier_items antes de crear. Si el prefill no trae
     item_defaults/item_prices, se completan automáticamente con la compañía,
     almacén y precio de compra ya conocidos del costeo -- para no obligar al
-    usuario a repetir configuración que ya existe en el renglón."""
+    usuario a repetir configuración que ya existe en el renglón.
+
+    ``solo_vincular=True`` -- usado por "Vincular existente" del checklist de Alta
+    de Productos, que NUNCA debe crear un artículo nuevo (eso es lo que hace el
+    botón separado "+ Crear", con su propio modal y datos completos). Si
+    ``item_code`` no existe todavía, truena en vez de crear un Item a medias con
+    lo que sea que el usuario llevaba escrito -- antes, buscar "vincular existente"
+    podía crear (y de una vez vincular) un artículo real con un código truncado
+    apenas tecleado, con solo un par de letras."""
     if isinstance(prefill, str):
         prefill = json.loads(prefill) if prefill else {}
     prefill = dict(prefill or {})
+    if isinstance(solo_vincular, str):
+        solo_vincular = solo_vincular.lower() in ("1", "true", "yes")
+
+    if solo_vincular and not frappe.db.exists("Item", item_code):
+        frappe.throw(_(
+            'El artículo "{0}" todavía no existe -- créalo primero con el botón "+ Crear".'
+        ).format(item_code))
 
     field_map = {
         "material": ("Costeo Producto Detalle", "item", {"concept_type": "Materia Prima"}),
