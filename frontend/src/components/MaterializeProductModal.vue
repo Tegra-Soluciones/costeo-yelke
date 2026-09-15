@@ -220,7 +220,6 @@ function onConfirm() {
       image: existingPreview.value?.image || null,
       precio_venta: form.precio_venta || 0,
       pricing_rules: [],
-      mx_product_service_key: null,
     });
     return;
   }
@@ -244,7 +243,6 @@ function onConfirm() {
     image: form.image || null,
     precio_venta: form.precio_venta || 0,
     pricing_rules,
-    mx_product_service_key: null,
   });
 }
 </script>

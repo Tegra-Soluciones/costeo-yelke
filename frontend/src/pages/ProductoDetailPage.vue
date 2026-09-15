@@ -54,7 +54,7 @@
           >
             {{ tab.label }}
             <span
-              v-if="(tab.key === 'general' || tab.key === 'manufactura' || tab.key === 'cfdi') && generalDirty"
+              v-if="(tab.key === 'general' || tab.key === 'manufactura' || tab.key === 'exterior') && generalDirty"
               class="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0"
               title="Cambios sin guardar"
             />
@@ -546,8 +546,8 @@
             </div>
           </div>
 
-          <!-- ── CFDI ── -->
-          <div v-if="activeTab === 'cfdi'" class="space-y-5">
+          <!-- ── Comercio Exterior ── -->
+          <div v-if="activeTab === 'exterior'" class="space-y-5">
 
             <!-- Save toolbar -->
             <div v-if="generalDirty" class="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
@@ -562,10 +562,6 @@
               >{{ savingGeneral ? 'Guardando…' : 'Guardar cambios' }}</button>
             </div>
 
-            <div>
-              <label class="text-xs font-medium text-gray-500 block mb-1">Clave SAT (mx_product_service_key)</label>
-              <input v-model="itemForm.mx_product_service_key" type="text" class="field-input" placeholder="ej. 43211508" />
-            </div>
             <InfoRow v-if="item.country_of_origin"     label="País de Origen"  :value="item.country_of_origin" />
             <InfoRow v-if="item.customs_tariff_number" label="Arancel Aduanero" :value="item.customs_tariff_number" />
           </div>
@@ -641,16 +637,6 @@
           <p class="text-xs text-brand-600 font-medium mt-2">{{ activeTab === 'precios' ? 'Editando ↑' : 'Ver y editar →' }}</p>
         </div>
 
-        <!-- CFDI status -->
-        <div v-if="item.mx_product_service_key !== undefined" class="bg-white rounded-xl border border-gray-200 p-4">
-          <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">CFDI</p>
-          <div class="flex items-center gap-2">
-            <div class="w-2 h-2 rounded-full flex-shrink-0" :class="item.mx_product_service_key ? 'bg-green-400' : 'bg-yellow-400'" />
-            <span class="text-xs text-gray-600">
-              {{ item.mx_product_service_key ? `Clave: ${item.mx_product_service_key}` : 'Sin clave SAT' }}
-            </span>
-          </div>
-        </div>
 
         <!-- Timestamps -->
         <div class="bg-white rounded-xl border border-gray-200 p-4 space-y-2 text-xs text-gray-400">
@@ -732,7 +718,6 @@ const itemForm = reactive({
   is_stock_item: false, is_sales_item: false, is_purchase_item: false,
   include_item_in_manufacturing: false, is_sub_contracted_item: false, disabled: false,
   has_batch_no: false, batch_number_series: "", has_serial_no: false, serial_no_series: "",
-  mx_product_service_key: "",
 });
 const itemFormOriginal = ref({});
 
@@ -751,15 +736,10 @@ const TABS_BASE = [
   { key: "manufactura", label: "Manufactura" },
   { key: "proveedores", label: "Proveedores" },
   { key: "empresa",     label: "Por Empresa" },
+  { key: "exterior",    label: "Com. Exterior" },
 ];
 
-const visibleTabs = computed(() => {
-  const tabs = [...TABS_BASE];
-  if (item.value?.mx_product_service_key !== undefined) {
-    tabs.push({ key: "cfdi", label: "CFDI" });
-  }
-  return tabs;
-});
+const visibleTabs = computed(() => TABS_BASE);
 
 const pricesDirty = computed(() =>
   itemPrices.value.some(r => r._dirty) || itemRules.value.some(r => r._dirty)

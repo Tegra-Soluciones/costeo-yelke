@@ -144,6 +144,32 @@ export async function searchLink(doctype, query, filters = []) {
   }
 }
 
+// Doctypes que tienen un campo "de vitrina" -- distinto de su nombre/ID real --
+// que se debe mostrar en vez del nombre en cualquier LinkInput ya resuelto (no
+// mientras se busca/edita, ahí se sigue viendo/escribiendo el nombre real). Hoy
+// solo Proveedor: "Nombre Comercial" (ver patch v0_2_25) es opcional -- un
+// proveedor sin ese campo capturado sigue mostrando su nombre de siempre.
+const LINK_DISPLAY_FIELD = { Supplier: "nombre_comercial" };
+
+// name real -> etiqueta de vitrina ya resuelta (o null si no aplica/no tiene). Es
+// un cache a nivel de módulo (no por instancia de componente) -- todos los
+// LinkInput de la página comparten el mismo, así que un proveedor que ya se
+// resolvió en un campo no se vuelve a pedir en el siguiente.
+const linkDisplayCache = new Map();
+export async function getLinkDisplayLabel(doctype, name) {
+  const field = LINK_DISPLAY_FIELD[doctype];
+  if (!field || !name) return null;
+  const key = `${doctype}::${name}`;
+  if (linkDisplayCache.has(key)) return linkDisplayCache.get(key);
+  const promise = call("frappe.client.get_value", { doctype, filters: name, fieldname: field })
+    .then((r) => r?.[field] || null)
+    .catch(() => null);
+  linkDisplayCache.set(key, promise);
+  const label = await promise;
+  linkDisplayCache.set(key, label); // reemplaza la promesa por el valor ya resuelto
+  return label;
+}
+
 function slugify(str) {
   return str.toLowerCase().replace(/\s+/g, "-");
 }

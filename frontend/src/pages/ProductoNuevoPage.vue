@@ -535,34 +535,6 @@
               </div>
             </div>
 
-            <!-- ── CFDI (Mexico Compliance) ── -->
-            <div v-if="activeTab === 'cfdi'">
-              <SectionTitle>Información CFDI — SAT</SectionTitle>
-              <p class="text-xs text-gray-400 mb-4">
-                Campos requeridos por el SAT para la emisión de Comprobantes Fiscales Digitales por Internet (CFDI).
-              </p>
-              <div class="space-y-4">
-                <div>
-                  <FieldLabel>Clave de Producto o Servicio SAT <Req /></FieldLabel>
-                  <LinkInput
-                    v-model="form.mx_product_service_key"
-                    doctype="SAT Product or Service Key"
-                    placeholder="Buscar clave SAT…"
-                    :error="!!errors.mx_product_service_key"
-                  />
-                  <p class="mt-1.5 text-xs text-gray-400">
-                    Ejemplo: <code class="bg-gray-100 px-1 rounded">43211500</code> — Tejidos /
-                    <code class="bg-gray-100 px-1 rounded">84111500</code> — Manufactura
-                  </p>
-                  <ErrMsg :v="errors.mx_product_service_key" />
-                </div>
-              </div>
-              <div class="mt-5 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 leading-relaxed">
-                <strong class="font-semibold">Clave SAT de UOM:</strong> Se configura en el catálogo de UOM del sistema.
-                Desk → Unidades de Medida → edita y asigna <code>mx_uom_key</code>.
-              </div>
-            </div>
-
           </div>
         </div>
 
@@ -612,20 +584,6 @@
                 <p class="font-medium text-gray-700">{{ form.supplier_items.length }}</p>
               </div>
             </div>
-          </div>
-
-          <!-- CFDI status -->
-          <div v-if="defaults.has_mexico_compliance" class="bg-white rounded-lg border border-gray-200 p-4">
-            <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">CFDI</h3>
-            <div class="flex items-center gap-2">
-              <div class="w-2 h-2 rounded-full flex-shrink-0" :class="form.mx_product_service_key ? 'bg-green-400' : 'bg-yellow-400'" />
-              <span class="text-xs text-gray-600">
-                {{ form.mx_product_service_key ? 'Clave SAT asignada' : 'Pendiente clave SAT' }}
-              </span>
-            </div>
-            <button v-if="!form.mx_product_service_key" class="mt-2 text-xs text-brand-600 hover:text-brand-700 font-medium" @click="activeTab = 'cfdi'">
-              Asignar clave →
-            </button>
           </div>
 
           <!-- Quick tab shortcuts -->
@@ -767,7 +725,7 @@ const activeTab    = ref("general");
 const defaults     = reactive({
   companies: [], item_groups: [], uoms: [], brands: [],
   warehouses: [], cost_centers: [], price_lists: [], currencies: [],
-  default_company: "", has_mexico_compliance: false,
+  default_company: "",
 });
 const errors = reactive({});
 const toast  = reactive({ show: false, msg: "", type: "success" });
@@ -784,7 +742,6 @@ function blankForm() {
     default_bom: "", is_sub_contracted_item: false, include_item_in_manufacturing: false,
     has_batch_no: false, batch_number_series: "", has_serial_no: false, serial_no_series: "",
     country_of_origin: "", customs_tariff_number: "",
-    mx_product_service_key: "",
     item_defaults: [],
     uom_conversions: [],
     item_prices: [],
@@ -795,10 +752,7 @@ function blankForm() {
 
 const form = reactive(blankForm());
 
-const visibleTabs = computed(() => {
-  if (defaults.has_mexico_compliance) return [...TABS_BASE, { key: "cfdi", label: "CFDI" }];
-  return TABS_BASE;
-});
+const visibleTabs = computed(() => TABS_BASE);
 
 
 // ── Type selection ────────────────────────────────────────────────────────────
@@ -856,10 +810,6 @@ function validate() {
   if (!form.item_code.trim()) { errors.item_code  = "Requerido"; ok = false; }
   if (!form.item_group)       { errors.item_group = "Requerido"; ok = false; }
   if (!form.stock_uom)        { errors.stock_uom  = "Requerido"; ok = false; }
-  if (defaults.has_mexico_compliance && !form.mx_product_service_key) {
-    errors.mx_product_service_key = "Requerido para facturación CFDI";
-    ok = false;
-  }
   return ok;
 }
 

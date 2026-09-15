@@ -45,3 +45,5 @@ costeo_yelke.patches.v0_2_20.add_qty_salida
 costeo_yelke.patches.v0_2_21.crear_roles_yelke
 costeo_yelke.patches.v0_2_22.homologar_maestros_mayusculas
 costeo_yelke.patches.v0_2_23.rehomologar_item_brand
+costeo_yelke.patches.v0_2_24.remove_etapa_salidas
+costeo_yelke.patches.v0_2_25.add_supplier_nombre_comercial

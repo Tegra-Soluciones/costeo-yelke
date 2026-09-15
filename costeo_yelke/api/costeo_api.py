@@ -256,7 +256,6 @@ def materializar_producto_terminado(
     precio_venta=None,
     item_group: str = None,
     pricing_rules=None,
-    mx_product_service_key: str = None,
     uom_conversions=None,
     description: str = None,
     image: str = None,
@@ -305,8 +304,6 @@ def materializar_producto_terminado(
             payload["description"] = description
         if image:
             payload["image"] = image
-        if mx_product_service_key:
-            payload["mx_product_service_key"] = mx_product_service_key
         if uom_conversions:
             payload["uom_conversions"] = uom_conversions
         if precio_venta:
@@ -447,7 +444,7 @@ def get_articulos_pendientes(costeo: str) -> dict:
         if not fi:
             continue
         etapas_prod = [e for e in doc.tabla_etapas_costeo if e.producto_terminado == fi]
-        ops_por_producto[fi] = _resolve_production_operations(etapas_prod, doc.get("tabla_salidas_etapa"), fi)
+        ops_por_producto[fi] = _resolve_production_operations(etapas_prod, fi)
 
     candidatos = set()
     for d in doc.costeo_producto_detalle:
@@ -613,16 +610,6 @@ def materializar_articulo(costeo: str, row_type: str, texto: str, item_code: str
     filters.update(extra_filters)
     frappe.db.set_value(child_doctype, filters, fieldname, item_code)
 
-    if row_type == "subensamblaje_etapa":
-        # El mismo texto libre también puede vivir en tabla_salidas_etapa (etapas
-        # con más de una salida) -- vive como tabla HERMANA de Etapas Costeo en
-        # Costeo (parent = el costeo, igual que arriba), no anidada dentro de la
-        # etapa. Actualiza ambos lugares para que el checklist no vuelva a
-        # detectar la misma salida como pendiente.
-        frappe.db.set_value(
-            "Etapa Costeo Salida", {"parent": costeo, "subensamblaje": texto}, "subensamblaje", item_code
-        )
-
     frappe.db.commit()
     return {"item_code": item_code}
 
@@ -674,9 +661,20 @@ def get_flujo_operaciones(costeo: str) -> dict:
         op_key        id estable
         titulo        nombre corto (servicio, o "N servicios")
         supplier
-        servicios     [{item, precio}]  -- cada uno se factura por separado
-        recibe_de     [op_key, ...]     -- operaciones upstream
+        servicios     [{item, precio, stage_id, no_agrupar}]  -- cada uno se factura
+                      por separado; stage_id/no_agrupar son para el control de
+                      "separar este servicio" (ver toggle_no_agrupar)
+        recibe_de     [op_key, ...]     -- operaciones upstream, TAL CUAL se
+                      capturó (sin reducción transitiva -- ver
+                      _resolve_production_operations: un paso puede recibir la
+                      pieza completa de varios caminos en paralelo que además se
+                      alimentan entre sí, ej. un corte que reparte piezas a bordado
+                      y a colocación de cinta, y el paso final recibe de AMBOS más
+                      una pieza directa del corte).
         recibe_texto  resumen legible ("Materia prima" / "Corte + Tejido")
+        recibe_redundantes  subconjunto de recibe_de que también es alcanzable vía
+                      otro de los mismos recibe_de -- informativo, para que la UI
+                      pueda avisar ("ya te llega indirecto vía X") sin borrar nada
         produce       item que produce (editable si NO es terminal)
         es_terminal   produce el producto terminado
         editable_nombre / stage_ids   -- para persistir un rename
@@ -691,7 +689,6 @@ def get_flujo_operaciones(costeo: str) -> dict:
     from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_production_operations
 
     doc = frappe.get_doc("Costeo", costeo)
-    salidas = doc.get("tabla_salidas_etapa")
     stage_a_op = {}          # stage_id -> op_key (para escribir recibe_de)
     productos_out = []
 
@@ -713,7 +710,7 @@ def get_flujo_operaciones(costeo: str) -> dict:
             continue
         from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _op_slug
 
-        ops = _resolve_production_operations(etapas_prod, salidas, fi)
+        ops = _resolve_production_operations(etapas_prod, fi)
         titulo_por_key = {}
         for op in ops:
             svcs = [s["service_item"] for s in op.servicios if s.get("service_item")]
@@ -733,6 +730,12 @@ def get_flujo_operaciones(costeo: str) -> dict:
         for op in ops:
             recibe = sorted(op.upstream_keys)
             recibe_texto = "Materia prima" if not recibe else " + ".join(titulo_por_key.get(k, "?") for k in recibe)
+            # op_key de los upstream elegidos que TAMBIÉN son alcanzables vía otro
+            # de los mismos upstream (ver _resolve_production_operations) -- ya no
+            # se quitan solos, solo se señalan para que la tarjeta pueda avisar y la
+            # persona decida si de verdad quiere las dos entradas completas (un
+            # camino que se une aparte) o si fue una selección de más.
+            redundantes = sorted(getattr(op, "upstream_redundantes", None) or [])
             # candidatos: cualquier otra operación que NO sea descendiente de ésta
             def _es_descendiente(cand_key, de_key, visto=None):
                 visto = visto or set()
@@ -756,9 +759,14 @@ def get_flujo_operaciones(costeo: str) -> dict:
                 "titulo": titulo_por_key[op.op_key],
                 "n_servicios": len([s for s in op.servicios if s.get("service_item")]),
                 "supplier": op.supplier,
-                "servicios": [{"item": s["service_item"], "precio": flt(s["price"])} for s in op.servicios if s.get("service_item")],
+                "servicios": [
+                    {"item": s["service_item"], "precio": flt(s["price"]),
+                     "stage_id": s.get("stage_id"), "no_agrupar": bool(s.get("no_agrupar"))}
+                    for s in op.servicios if s.get("service_item")
+                ],
                 "recibe_de": recibe,
                 "recibe_texto": recibe_texto,
+                "recibe_redundantes": redundantes,
                 "produce": op.output_item,
                 "es_terminal": bool(op.is_terminal),
                 "stage_ids": sorted(op.member_stage_keys),
@@ -824,7 +832,7 @@ def guardar_flujo_operaciones(costeo: str, cambios, materiales=None) -> dict:
         if not producto.finished_item:
             continue
         etapas_prod = [e for e in doc.tabla_etapas_costeo if e.producto_terminado == producto.finished_item]
-        for op in _resolve_production_operations(etapas_prod, doc.get("tabla_salidas_etapa"), producto.finished_item):
+        for op in _resolve_production_operations(etapas_prod, producto.finished_item):
             op_stages[op.op_key] = sorted(op.member_stage_keys)
 
     tocado = False
@@ -888,6 +896,32 @@ def guardar_flujo_operaciones(costeo: str, cambios, materiales=None) -> dict:
         doc.save()
         frappe.db.commit()
     return {"ok": True, "guardado": tocado}
+
+
+@frappe.whitelist()
+def toggle_no_agrupar(costeo: str, stage_id: str, no_agrupar) -> dict:
+    """Marca/desmarca 'no_agrupar' (ver doctype Etapas Costeo) en UNA etapa
+    específica, identificada por su stage_id -- y regresa el flujo ya recalculado
+    para que el SPA solo tenga que reemplazar lo que tenía en pantalla.
+
+    Por default, dos servicios del mismo proveedor que reciben exactamente del
+    mismo origen se fusionan solos en un único bloque (ver
+    _resolve_production_operations, "paralelas: mismo proveedor + mismo origen").
+    Esto le da a la persona una salida directa desde Flujo de Producción para
+    decidir, caso por caso, que UN servicio en particular no se fusione con sus
+    hermanos -- por ejemplo, si al planear el costeo no se sabía todavía que ese
+    servicio en la práctica se entrega por separado. Los demás servicios del
+    mismo proveedor, si siguen sin marcar, se acomodan solos entre ellos como
+    siempre -- esto no apaga la fusión automática en general, solo saca a este
+    servicio de ella."""
+    if not frappe.db.exists("Etapas Costeo", {"parent": costeo, "stage_id": stage_id}):
+        frappe.throw(_("No se encontró esa etapa en el costeo."))
+    frappe.db.set_value(
+        "Etapas Costeo", {"parent": costeo, "stage_id": stage_id},
+        "no_agrupar", 1 if cint(no_agrupar) else 0, update_modified=False,
+    )
+    frappe.db.commit()
+    return get_flujo_operaciones(costeo)
 
 
 @frappe.whitelist()
@@ -2226,7 +2260,7 @@ def _split_materials_by_stage(mats, etapas_of_product, splits_all):
     return por_etapa, sin_etapa
 
 
-def _repair_stale_bom_no(bom_name, company):
+def _repair_stale_bom_no(bom_name, company, mantener_vacio=None):
     """Si este BOM ya existía de un intento anterior que falló A MEDIAS (ej. el BOM
     de la pieza que recibe como insumo no se había podido crear todavía), su fila
     de esa pieza quedó con 'bom_no' vacío -- crear_boms_spa solo lo llena al
@@ -2242,11 +2276,20 @@ def _repair_stale_bom_no(bom_name, company):
     existe (se iba a saltar sin más): completa la(s) fila(s) que ahora sí tienen
     su BOM disponible y recalcula la explosión. Como las operaciones se procesan
     en orden topológico (raíz primero), una sola corrida repara toda la cadena de
-    abajo hacia arriba."""
+    abajo hacia arriba.
+
+    ``mantener_vacio`` (set de item_code, opcional): filas que NO hay que tocar
+    aunque su BOM ya exista -- son las que crear_boms_spa dejó sin bom_no A
+    PROPÓSITO por ser un vínculo "recibe de" redundante (ver
+    _resolve_production_operations, upstream_redundantes): si esta función las
+    "reparara", volvería a contar de más la materia prima compartida entre varios
+    caminos en paralelo, justo lo que ese diseño evita."""
     bom = frappe.get_doc("BOM", bom_name)
     tocado = False
     for row in bom.items:
-        if row.bom_no or not row.item_code:
+        if row.bom_no or not row.item_code or row.do_not_explode:
+            continue
+        if mantener_vacio and row.item_code in mantener_vacio:
             continue
         up_bom = frappe.db.get_value(
             "BOM", {"item": row.item_code, "is_active": 1, "docstatus": 1, "company": company}, "name",
@@ -2311,7 +2354,7 @@ def crear_boms_spa(costeo: str) -> dict:
         # están en el mismo punto del flujo en UNA operación con varios servicios y
         # UN resultado; si nada se fusiona hay una operación por nodo, idéntico al
         # comportamiento lineal de siempre.
-        operaciones = _resolve_production_operations(etapas, doc.get("tabla_salidas_etapa"), finished_item)
+        operaciones = _resolve_production_operations(etapas, finished_item)
         op_por_key = {op.op_key: op for op in operaciones}
         # Cada entrada es (fila_de_material, qty_por_pieza): la cantidad ya viene
         # repartida por etapa cuando el costeo declaró el reparto explícito (ver
@@ -2322,11 +2365,6 @@ def crear_boms_spa(costeo: str) -> dict:
         )
 
         for op in operaciones:
-            # Fracción del costo de la etapa (100 % salvo salidas múltiples) y
-            # unidades producidas por prenda -- 100/1 en operaciones fusionadas.
-            pct = (float(op.pct or 100)) / 100.0
-            qty_salida = float(op.qty_salida or 1) or 1
-
             bom_item = op.output_item
             if not bom_item:
                 errors.append(
@@ -2338,26 +2376,49 @@ def crear_boms_spa(costeo: str) -> dict:
             # ── Ítems del BOM ────────────────────────────────────────────────
             items_bom = []
 
-            # Resultados de las operaciones de las que ESTA recibe -- puede ser
-            # más de una (procesos en paralelo que convergen).
+            # Resultados de las operaciones de las que ESTA recibe -- puede ser más
+            # de una (procesos en paralelo que convergen), cada una aportando la
+            # pieza COMPLETA (qty 1) -- ver _resolve_production_operations, "sin
+            # reducción transitiva".
             for up_key in op.upstream_keys:
                 up = op_por_key.get(up_key)
                 up_sub = up.output_item if up else None
                 if not up_sub:
                     continue
                 up_uom = frappe.db.get_value("Item", up_sub, "stock_uom") or "Nos"
+                es_redundante = up_key in (op.upstream_redundantes or set())
                 # Referencia explícita al BOM previo, para que la explosión
-                # multinivel del Production Plan recurra correctamente.
-                up_bom = frappe.db.get_value(
-                    "BOM", {"item": up_sub, "is_active": 1, "docstatus": ["in", [0, 1]], "company": company}, "name"
-                ) or ""
+                # multinivel del Production Plan recurra correctamente -- SALVO en
+                # un vínculo redundante (ya alcanzable vía otro upstream de esta
+                # misma operación, ver upstream_redundantes): ahí se marca
+                # do_not_explode. La pieza se sigue listando (así se refleja que el
+                # taller la recibe), pero NO se re-explora su receta -- si se
+                # explorara por las dos rutas, la materia prima compartida (ej. la
+                # tela de un corte que reparte piezas a bordado Y a colocación de
+                # cinta, y el paso final recibe de ambos MÁS una pieza directa del
+                # corte) se contaría de más en el desglose multinivel del BOM/Plan
+                # de Producción -- aunque físicamente se cortó una sola vez.
+                #
+                # OJO: dejar bom_no vacío NO BASTA -- BOM.set_bom_material_details()
+                # (ERPNext nativo, corre en cada validate()) rellena cualquier
+                # bom_no vacío con el default_bom del ítem si lo tiene, así que un
+                # vínculo "en blanco a propósito" se re-conectaba solo en cuanto se
+                # guardaba/enviaba el BOM. do_not_explode es el único mecanismo
+                # nativo que de verdad evita ese refill (ver get_bom_material_detail:
+                # "if args.get('do_not_explode'): ret_item['bom_no'] = ''").
+                up_bom = "" if es_redundante else (
+                    frappe.db.get_value(
+                        "BOM", {"item": up_sub, "is_active": 1, "docstatus": ["in", [0, 1]], "company": company}, "name"
+                    ) or ""
+                )
                 items_bom.append({
                     "item_code": up_sub,
-                    "qty":       float(up.qty_salida or 1) or 1,
+                    "qty":       1,
                     "uom":       up_uom,
                     "stock_uom": up_uom,
                     "rate":      0,
                     "bom_no":    up_bom,
+                    "do_not_explode": 1 if es_redundante else 0,
                 })
 
             # Materias primas de TODAS las etapas fusionadas en esta operación. Las
@@ -2377,7 +2438,7 @@ def crear_boms_spa(costeo: str) -> dict:
                 mat_uom[mat.item] = (mat.internal_uom
                                      or frappe.db.get_value("Item", mat.item, "stock_uom")
                                      or "Nos")
-                mats_agrupados[mat.item] = mats_agrupados.get(mat.item, 0) + mat_qty * pct / qty_salida
+                mats_agrupados[mat.item] = mats_agrupados.get(mat.item, 0) + mat_qty
             for item_code, qty in mats_agrupados.items():
                 items_bom.append({
                     "item_code": item_code,
@@ -2405,7 +2466,12 @@ def crear_boms_spa(costeo: str) -> dict:
                 "name",
             )
             if existing:
-                _repair_stale_bom_no(existing, company)
+                redundantes_items = {
+                    op_por_key[uk].output_item
+                    for uk in (op.upstream_redundantes or set())
+                    if uk in op_por_key and op_por_key[uk].output_item
+                }
+                _repair_stale_bom_no(existing, company, mantener_vacio=redundantes_items)
                 skipped.append(f"{bom_item}: BOM ya existe ({existing})")
                 continue
 
@@ -2422,8 +2488,6 @@ def crear_boms_spa(costeo: str) -> dict:
                 bom.buying_price_list  = "Compra estandar"
                 if frappe.db.has_column("BOM", "costeo"):
                     bom.costeo = costeo
-                if frappe.db.has_column("BOM", "salida_id"):
-                    bom.salida_id = op.op_key
                 for it in items_bom:
                     bom.append("items", it)
                 bom.flags.ignore_permissions = True
@@ -2579,18 +2643,15 @@ def crear_subcontracting_bom(costeo: str) -> dict:
         etapas_prod = [e for e in doc.tabla_etapas_costeo if e.producto_terminado == finished_item]
         if not etapas_prod:
             continue
-        operaciones = _resolve_production_operations(etapas_prod, doc.get("tabla_salidas_etapa"), finished_item)
+        operaciones = _resolve_production_operations(etapas_prod, finished_item)
 
         for op in operaciones:
             servicios = [s for s in op.servicios if s.get("service_item")]
             if not servicios:
                 continue
-            node_key      = op.op_key
             servicio      = servicios[0]["service_item"]
             k             = len(servicios)
             finished_good = op.output_item
-            pct = (float(op.pct or 100)) / 100.0
-            qty_salida = float(op.qty_salida or 1) or 1
 
             if not finished_good or not servicio:
                 continue
@@ -2649,14 +2710,12 @@ def crear_subcontracting_bom(costeo: str) -> dict:
                 finished_good_uom = servicios[0].get("lote_uom") or frappe.db.get_value("Item", finished_good, "stock_uom") or "Nos"
                 svc_uom = LOTE_UOM
                 finished_good_qty = lote_qty
-                service_item_qty = (pct / qty_salida) or 1
+                service_item_qty = 1
             else:
                 finished_good_uom = frappe.db.get_value("Item", finished_good, "stock_uom") or "Nos"
                 svc_uom = frappe.db.get_value("Item", servicio, "stock_uom") or "Nos"
                 finished_good_qty = 1
-                # service_item_qty se escala por la participación de la salida (salidas
-                # múltiples): 1 unidad de servicio repartida entre las salidas hermanas.
-                service_item_qty = (pct / qty_salida) or 1
+                service_item_qty = 1
 
             try:
                 subc = frappe.new_doc("Subcontracting BOM")
@@ -2674,8 +2733,6 @@ def crear_subcontracting_bom(costeo: str) -> dict:
                 subc.flags.ignore_mandatory   = True
                 if frappe.db.has_column("Subcontracting BOM", "costeo"):
                     subc.costeo = costeo
-                if frappe.db.has_column("Subcontracting BOM", "salida_id"):
-                    subc.salida_id = node_key
                 subc.insert()
                 subc.submit()
                 created.append(subc.name)
@@ -5118,7 +5175,7 @@ def _etapas_rows_for_po(po: str):
 
     op_por_fg = {}
     for producto, etapas in etapas_por_producto.items():
-        for op in _resolve_production_operations(etapas, doc.get("tabla_salidas_etapa"), producto):
+        for op in _resolve_production_operations(etapas, producto):
             if op.output_item and op.output_item not in op_por_fg:
                 op_por_fg[op.output_item] = {
                     "op": op, "is_root": not op.upstream_keys, "fg_item": op.output_item,
@@ -5152,7 +5209,7 @@ def _stage_material_warehouses(po: str):
         doc = frappe.get_doc("Costeo", costeo)
         for producto in productos:
             etapas_prod = [e for e in doc.tabla_etapas_costeo if e.producto_terminado == producto]
-            for op in _resolve_production_operations(etapas_prod, doc.get("tabla_salidas_etapa"), producto):
+            for op in _resolve_production_operations(etapas_prod, producto):
                 if op.output_item:
                     semi_terminados.add(op.output_item)
     return mp, wip, semi_terminados
@@ -5449,12 +5506,11 @@ def _lote_paradas(doc, cantidades):
     from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_production_operations
 
     costeo = doc.name
-    salidas = doc.get("tabla_salidas_etapa")
 
     ops_by_key = {}
     for prod in cantidades:
         etapas = [e for e in doc.tabla_etapas_costeo if e.producto_terminado == prod]
-        for op in _resolve_production_operations(etapas, salidas, prod):
+        for op in _resolve_production_operations(etapas, prod):
             if not op.output_item or not op.supplier or not op.servicios:
                 continue
             op.producto = prod

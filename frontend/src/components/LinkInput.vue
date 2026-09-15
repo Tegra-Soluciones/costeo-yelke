@@ -2,7 +2,7 @@
   <div class="relative" ref="wrapper">
     <input
       ref="inputEl"
-      :value="modelValue"
+      :value="focused ? modelValue : (displayLabel || modelValue)"
       :placeholder="placeholder"
       :readonly="readonly"
       :class="[
@@ -93,8 +93,8 @@
 </template>
 
 <script setup>
-import { ref, onBeforeUnmount } from "vue";
-import { searchLink } from "@/utils/frappe.js";
+import { ref, watch, onBeforeUnmount } from "vue";
+import { searchLink, getLinkDisplayLabel } from "@/utils/frappe.js";
 
 const props = defineProps({
   modelValue: { type: String, default: "" },
@@ -116,6 +116,21 @@ const lastQuery  = ref("");
 const dropStyle  = ref({});
 let timer = null;
 let currentReq  = 0; // for cancelling stale requests
+
+// ── Etiqueta de vitrina (ej. Nombre Comercial de un Proveedor) ───────────────
+// Mientras NO se está editando, el input muestra esto en vez del nombre real (si
+// el doctype tiene uno configurado en getLinkDisplayLabel y este registro lo
+// tiene capturado) -- en cuanto se enfoca para buscar/cambiar, se ve el nombre
+// real de siempre, igual que antes de que existiera esto.
+const focused = ref(false);
+const displayLabel = ref(null);
+let labelReq = 0;
+async function refreshDisplayLabel() {
+  const req = ++labelReq;
+  const label = await getLinkDisplayLabel(props.doctype, props.modelValue);
+  if (req === labelReq) displayLabel.value = label;
+}
+watch(() => [props.doctype, props.modelValue], refreshDisplayLabel, { immediate: true });
 
 // ── Posición del dropdown (Teleport a body, position:fixed) ──────────────────
 // Se recalcula al abrir y mientras esté abierto, en cualquier scroll de la
@@ -171,6 +186,7 @@ function onInput(e) {
 }
 
 function onFocus() {
+  focused.value = true;
   // Always show dropdown on focus, even if field is empty
   if (showDrop.value) return; // already open
   doSearch(props.modelValue ?? "");
@@ -181,6 +197,7 @@ function onBlur() {
   setTimeout(() => {
     showDrop.value    = false;
     highlighted.value = -1;
+    focused.value     = false;
   }, 180);
 }
 

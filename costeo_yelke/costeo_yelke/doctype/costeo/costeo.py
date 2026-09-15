@@ -409,36 +409,21 @@ def _stage_sort_key(row):
         return (1, str(value or ""))
 
 
-def _explode_stage_nodes(etapas, salidas_all):
-    """Expande cada fila de etapa en 1+ 'nodos' -- uno por cada fila de
-    ``salidas_all`` (Costeo.tabla_salidas_etapa) cuyo 'stage_id' apunte a esa
-    etapa (una etapa que produce varios resultados nombrados, ej. un corte que
-    produce manga izquierda / manga derecha / frente por separado), o uno solo
-    implícito si esa etapa no tiene ninguna (el caso normal, una etapa = un
-    resultado). ``tabla_salidas_etapa`` vive como tabla HERMANA de
-    tabla_etapas_costeo en Costeo -- no anidada dentro de Etapas Costeo, porque
-    Frappe no cascada el guardado de una tabla dentro de OTRA tabla hija (ver
-    docstring del patch v0_2_18).
+def _explode_stage_nodes(etapas):
+    """Envuelve cada fila de etapa en un 'nodo' del grafo -- un frappe._dict con
+    TODOS los campos de la etapa, más:
+    - node_key: identifica a este nodo en el grafo (upstream/is_terminal/bom_item).
+      Es el stage_id de la etapa.
+    - parent_stage_key: igual al node_key -- se conserva como campo separado porque
+      el resto del motor (member_stage_keys, atribución de materia prima) lo
+      referencia por su propio nombre, no porque hoy pueda diferir de node_key.
 
-    Cada nodo es un frappe._dict con TODOS los campos de la etapa dueña, más:
-    - node_key: identifica a ESTE nodo en el grafo (upstream/is_terminal/bom_item).
-      Es el stage_id de la etapa si no tiene salidas propias (igual que antes de
-      que existiera este concepto); es el salida_id de esa fila si sí las tiene.
-    - parent_stage_key: stage_id de la etapa dueña -- para atribuir materia prima
-      (_match_material_stage sigue siendo por ETAPA física, no por salida
-      individual: el material lo consume la operación completa, no una salida).
-    - qty_salida: cuántas unidades de este resultado produce la operación por pieza
-      de producto terminado (1 si la etapa no tiene salidas propias). Es el dato que
-      se captura.
-    - pct_participacion: qué fracción del costo de la etapa (precio de servicio +
-      materia prima) toca a este nodo -- se DERIVA de qty_salida repartido entre las
-      salidas hermanas, y es 100 si la etapa no tiene salidas propias. Existe porque
-      la operación se cobra y consume material UNA sola vez aunque produzca varios
-      resultados: sin repartir, cada BOM pediría el material completo y cada OC de
-      subcontratación pagaría el servicio completo. Si las salidas no traen
-      qty_salida (dato viejo), se respeta el pct que tuvieran guardado.
-    - subensamblaje: el de esta salida específica si aplica; si no, el escalar de
-      la etapa, como siempre."""
+    (Este módulo tuvo, hasta 2026-09, un concepto de "salidas múltiples" -- una
+    etapa podía declarar varios resultados nombrados con reparto de costo/material
+    por porcentaje. Se retiró: nunca tuvo UI de captura y no representaba bien el
+    caso real -- una operación que reparte piezas a varios talleres en paralelo no
+    es "un resultado dividido en fracciones", sino "el mismo resultado, entero,
+    alimentando más de un camino siguiente". Ver _resolve_production_operations.)"""
     def as_plain_dict(row):
         # doc.tabla_etapas_costeo trae instancias reales de Document (no iterables
         # con dict(...)) cuando viene de frappe.get_doc; los callers que arman la
@@ -449,54 +434,31 @@ def _explode_stage_nodes(etapas, salidas_all):
         as_dict_fn = getattr(row, "as_dict", None)
         return dict(as_dict_fn()) if callable(as_dict_fn) else dict(row)
 
-    salidas_by_stage = {}
-    for s in salidas_all or []:
-        sid = s.get("stage_id")
-        if sid:
-            salidas_by_stage.setdefault(sid, []).append(s)
-
     nodes = []
     for e in etapas:
         parent_key = e.get("stage_id") or e.get("name") or e.get("etapa")
-        own_salidas = salidas_by_stage.get(parent_key) or []
-        if not own_salidas:
-            node = as_plain_dict(e)
-            node["node_key"] = parent_key
-            node["parent_stage_key"] = parent_key
-            node["pct_participacion"] = 100.0
-            node["qty_salida"] = 1.0
-            nodes.append(frappe._dict(node))
-            continue
-        # El reparto sale de las cantidades: una salida que produce 2 unidades pesa
-        # el doble que una que produce 1. Si ninguna trae cantidad (costeos guardados
-        # antes de que existiera el campo), se respeta el pct guardado tal cual.
-        total_qty = sum(float(s.get("qty_salida") or 0) for s in own_salidas)
-        for s in own_salidas:
-            node = as_plain_dict(e)
-            node["node_key"] = s.get("salida_id") or parent_key
-            node["parent_stage_key"] = parent_key
-            qty_salida = float(s.get("qty_salida") or 0)
-            if total_qty > 0:
-                node["qty_salida"] = qty_salida
-                node["pct_participacion"] = 100.0 * qty_salida / total_qty
-            else:
-                node["qty_salida"] = 1.0
-                node["pct_participacion"] = float(s.get("pct_participacion") or 0)
-            node["subensamblaje"] = s.get("subensamblaje") or ""
-            nodes.append(frappe._dict(node))
+        node = as_plain_dict(e)
+        node["node_key"] = parent_key
+        node["parent_stage_key"] = parent_key
+        nodes.append(frappe._dict(node))
     return nodes
 
 
-def _resolve_stage_graph(etapas, salidas=None):
+def _resolve_stage_graph(etapas):
     """Resuelve las dependencias entre etapas de UN producto (lista de dicts/
-    frappe._dict de Etapas Costeo). ``salidas``, si se manda, es la tabla
-    completa (o ya pre-filtrada) de Costeo.tabla_salidas_etapa -- filas cuyo
-    stage_id no corresponda a ninguna de ``etapas`` simplemente se ignoran, así
-    que es seguro mandar la tabla completa del Costeo sin filtrar por producto.
-    Regresa (info, ordered):
+    frappe._dict de Etapas Costeo). Regresa (info, ordered):
 
     - info: {node_key: {"row": node, "upstream": [nodes], "is_terminal": bool}}
-      upstream = nodos de los que ESTE recibe material (vía 'recibe_de').
+      upstream = nodos de los que ESTE recibe material (vía 'recibe_de'). Se
+      respeta EXACTAMENTE lo que 'recibe_de' traiga capturado -- sin reducción
+      transitiva: si un paso marca que recibe de A y de B, y B a su vez recibe de
+      A, las DOS referencias se conservan. No es una duplicación del mismo
+      material -- es el caso real de un taller que reparte piezas de UNA misma
+      pieza cortada a varios caminos en paralelo (una va a bordado, otra a
+      colocación de cinta, otra se une directo), y el paso final necesita las
+      piezas de AMBOS caminos MÁS la que le llega directo, cada una en la
+      cantidad plena de la prenda -- no una fracción repartida entre ellas (ver
+      _resolve_production_operations, "sin reducción transitiva").
       is_terminal = True si ningún otro nodo lo referencia como entrada -- ese es
       el que produce el PRODUCTO TERMINADO (puede haber procesos en paralelo que
       convergen en él, no solo una cadena de uno).
@@ -504,22 +466,14 @@ def _resolve_stage_graph(etapas, salidas=None):
       de nada), para que crear_boms_spa arme primero los BOM que otros van a
       referenciar.
 
-    Cada "nodo" es, normalmente, una etapa completa -- salvo que esa etapa tenga
-    filas propias en ``salidas`` (ver _explode_stage_nodes), en cuyo caso cada
-    salida es su propio nodo independiente, referenciable por separado desde
-    'recibe_de' de otras etapas (por su salida_id) además de por el stage_id de
-    la etapa (que, en ese caso, apunta ambiguamente a la primera salida -- caso
-    legado tolerado, se espera que el usuario reasigne la referencia exacta
-    desde el selector).
-
     Modo lineal (fallback): si NINGUNA etapa del producto tiene 'recibe_de'
     capturado, se comporta EXACTAMENTE como antes de que existiera esta función --
     cadena estricta por número de etapa/nodo, cada uno recibe solo del inmediato
     anterior, el último es el terminal. Así los costeos ya existentes (todos,
-    hasta que alguien empiece a usar ramas paralelas o salidas múltiples) no
-    cambian de comportamiento."""
+    hasta que alguien empiece a usar ramas paralelas) no cambian de
+    comportamiento."""
     etapas = list(etapas)
-    nodes = _explode_stage_nodes(etapas, salidas)
+    nodes = _explode_stage_nodes(etapas)
 
     any_wired = any(str(e.get("recibe_de") or "").strip() for e in etapas)
 
@@ -540,9 +494,6 @@ def _resolve_stage_graph(etapas, salidas=None):
         by_parent_key.setdefault(n["parent_stage_key"], []).append(n)
 
     def resolve_token(token):
-        # Match directo (salida_id, o stage_id de una etapa sin 'salidas') primero
-        # -- solo si no matchea nada se cae al legado ambiguo (stage_id de una
-        # etapa que ahora tiene varias salidas: se toma la primera).
         if token in by_node_key:
             return by_node_key[token]
         siblings = by_parent_key.get(token)
@@ -622,36 +573,47 @@ def _op_slug(servicios, supplier):
     return (supplier or "operación").strip().lower()
 
 
-def _resolve_production_operations(etapas, salidas=None, producto=None):
+def _resolve_production_operations(etapas, producto=None):
     """Envuelve ``_resolve_stage_graph`` fusionando las etapas del MISMO proveedor
     que ocupan el mismo punto del flujo -- en paralelo con el mismo origen, o en
     cadena A->B -- en UNA operación con varios servicios y UN resultado. Es lo que
     permite que "3 bordados del mismo taller" salgan como 3 renglones de servicio en
     una sola OC contra una sola pieza, sin 3 sub-ensamblajes intermedios.
 
+    IMPORTANTE -- sin reducción transitiva: si una operación recibe de A y de B, y
+    B a su vez recibe de A, las DOS entradas de upstream_keys se conservan tal
+    cual se capturaron, cada una aportando la pieza COMPLETA (no una fracción).
+    Antes (hasta 2026-09) este motor podaba automáticamente el vínculo "redundante"
+    (A), asumiendo que ya llegaba de sobra vía B -- eso rompía el caso real de un
+    corte que reparte piezas de una prenda a varios talleres en paralelo (una va a
+    bordado, otra a colocación de cinta, otra se une directo en el paso final): las
+    1,494 prendas completas pasan por los tres caminos, nada se divide entre ellos.
+    ``upstream_redundantes`` (ver más abajo) señala esos casos para que la UI de
+    Flujo de Producción pueda avisar -- sin borrar nada solo.
+
     Regresa una lista de ``frappe._dict`` en orden topológico, cada uno:
-        op_key            id estable (node_key del nodo ancla)
+        op_key              id estable (node_key del nodo ancla)
         producto_terminado
         supplier
-        is_terminal       produce el producto terminado
-        output_item       item que produce (sintético si fusiona 2+; el
-                          subensamblaje del nodo si es 1; el producto si es terminal)
-        servicios         [ {service_item, price, lote_qty, lote_uom, modo_precio,
-                             operaciones_por_pieza, precio_por_operacion} ]
-                          -- servicios con el MISMO service_item se colapsan en uno
-                          con el precio sumado (ej. dos cortes "SERVICO-DE-CORTE" a
-                          $3 -> un renglón a $6).
-        upstream_keys     set de op_key de las operaciones de las que recibe
-        member_stage_keys set de stage_id de las etapas fusionadas (materia prima /
-                          almacenes se leen por aquí)
-        pct, qty_salida   de la salida cuando la op es un único nodo-salida; 100/1
-                          en cualquier otro caso (los nodos con salidas propias NO
-                          se fusionan)
+        is_terminal         produce el producto terminado
+        output_item         item que produce (sintético si fusiona 2+; el
+                            subensamblaje del nodo si es 1; el producto si es terminal)
+        servicios           [ {service_item, price, lote_qty, lote_uom, modo_precio,
+                               operaciones_por_pieza, precio_por_operacion} ]
+                            -- servicios con el MISMO service_item se colapsan en uno
+                            con el precio sumado (ej. dos cortes "SERVICO-DE-CORTE" a
+                            $3 -> un renglón a $6).
+        upstream_keys       set de op_key de las operaciones de las que recibe, TAL
+                            CUAL se capturó (sin podar)
+        upstream_redundantes subconjunto de upstream_keys que también es alcanzable
+                            vía OTRO de los mismos upstream_keys -- informativo, no
+                            se usa para excluir nada de ningún BOM/OC
+        member_stage_keys   set de stage_id de las etapas fusionadas (materia prima /
+                            almacenes se leen por aquí)
 
     Si nada se fusiona -> exactamente una operación por nodo, con un solo servicio,
     comportamiento idéntico al de ``_resolve_stage_graph`` recorrido a mano."""
-    info, ordered = _resolve_stage_graph(etapas, salidas)
-    salida_parents = {s.get("stage_id") for s in (salidas or []) if s.get("stage_id")}
+    info, ordered = _resolve_stage_graph(etapas)
 
     def _svc(node):
         return {
@@ -662,6 +624,11 @@ def _resolve_production_operations(etapas, salidas=None, producto=None):
             "modo_precio": node.get("modo_precio"),
             "operaciones_por_pieza": flt(node.get("operaciones_por_pieza")) or 1,
             "precio_por_operacion": flt(node.get("precio_por_operacion")),
+            # stage_id propio -- para que la UI de Flujo de Producción pueda ofrecer
+            # "separar este servicio" apuntando exactamente a ESTA fila, aunque haya
+            # quedado fusionado con otras del mismo proveedor.
+            "stage_id": node.get("stage_id"),
+            "no_agrupar": bool(node.get("no_agrupar")),
         }
 
     ops = {}
@@ -679,9 +646,15 @@ def _resolve_production_operations(etapas, salidas=None, producto=None):
             member_stage_keys={n.get("parent_stage_key") or nk},
             stage_subensamblajes=[n.get("subensamblaje") or ""],
             anchor_node=n,
-            pct=flt(n.get("pct_participacion") or 100),
-            qty_salida=flt(n.get("qty_salida") or 1) or 1,
-            _has_salidas=(n.get("parent_stage_key") in salida_parents),
+            # "No agrupar" (ver doctype Etapas Costeo): la persona lo marca desde
+            # Flujo de Producción para sacar ESTE servicio de la fusión automática
+            # con otros del mismo proveedor+origen -- sin esto, dos servicios que
+            # comparten proveedor y de dónde reciben SIEMPRE se fusionan en un solo
+            # bloque, sin importar si en la vida real se pueden entregar por
+            # separado. Un nodo marcado nunca absorbe ni es absorbido (ver el ciclo
+            # de fusión más abajo); los demás siguen fusionándose entre sí como
+            # siempre.
+            no_agrupar=bool(n.get("no_agrupar")),
             output_item=None,
         )
         order.append(nk)
@@ -712,10 +685,10 @@ def _resolve_production_operations(etapas, salidas=None, producto=None):
         # cadena A -> B (mismo proveedor, B recibe sólo de A, A alimenta sólo a B)
         for k in list(ops):
             b = ops.get(k)
-            if not b or b._has_salidas or not b.supplier or len(b.upstream_keys) != 1:
+            if not b or not b.supplier or len(b.upstream_keys) != 1 or b.no_agrupar:
                 continue
             a = ops.get(next(iter(b.upstream_keys)))
-            if not a or a._has_salidas or a.is_terminal or a.supplier != b.supplier:
+            if not a or a.is_terminal or a.supplier != b.supplier or a.no_agrupar:
                 continue
             if a.producto_terminado != b.producto_terminado or _downstream(a.op_key) != {k}:
                 continue
@@ -729,7 +702,7 @@ def _resolve_production_operations(etapas, salidas=None, producto=None):
         # paralelas: mismo proveedor + mismo origen
         groups = {}
         for k, op in ops.items():
-            if op._has_salidas or not op.supplier:
+            if not op.supplier or op.no_agrupar:
                 continue
             groups.setdefault((op.producto_terminado, op.supplier, frozenset(op.upstream_keys)), []).append(k)
         for members in groups.values():
@@ -743,9 +716,12 @@ def _resolve_production_operations(etapas, salidas=None, producto=None):
             changed = True
             break
 
-    # Reducción transitiva: si una operación recibe de A y de B, y B ya recibe
-    # (directa o transitivamente) de A, el vínculo A es redundante -- lo quita para
-    # que el BOM no liste dos veces la misma pieza (una directa y otra dentro de B).
+    # upstream_redundantes: SOLO informativo -- señala, para cada operación, cuáles
+    # de sus upstream_keys directos también son alcanzables vía OTRO de sus propios
+    # upstream_keys (ej. recibe de A y de B, y B también recibe de A). Ya NO se
+    # quita nada de upstream_keys por esto -- ver docstring de la función. La UI de
+    # Flujo de Producción usa esto para avisar ("¿seguro? ya te llega indirecto
+    # vía...") y dejar que la persona decida, en vez de que el motor borre solo.
     def _upstream_de(key, visto=None):
         visto = visto if visto is not None else set()
         for u in ops.get(key, frappe._dict(upstream_keys=set())).upstream_keys:
@@ -761,7 +737,7 @@ def _resolve_production_operations(etapas, salidas=None, producto=None):
             for b in directos:
                 if a != b and a in _upstream_de(b):
                     redundantes.add(a)
-        op.upstream_keys -= redundantes
+        op.upstream_redundantes = redundantes
 
     # re-orden topológico
     remaining = list(ops.values())
@@ -784,7 +760,6 @@ def _resolve_production_operations(etapas, salidas=None, producto=None):
 
     taken = set()
     for op in resolved:
-        merged = len(op.member_stage_keys) > 1 or len(op.servicios) > 1
         # Nombre SIEMPRE automático: "{producto} · {palabra del servicio}" -- el
         # usuario ya no lo edita, se generó tedio sin valor. El campo 'subensamblaje'
         # de las etapas se ignora aquí (puede traer restos de capturas viejas).
@@ -802,8 +777,6 @@ def _resolve_production_operations(etapas, salidas=None, producto=None):
             while name in taken:
                 name, i = f"{base} {i}", i + 1
             op.output_item = name
-        if merged:
-            op.pct, op.qty_salida = 100.0, 1.0
         taken.add(op.output_item)
     return resolved
 
@@ -1029,7 +1002,7 @@ def _build_stage_subcontracting_rows(source, qty_map_override=None):
             # default de 1, que generaría una OC de subcontratación fantasma.
             continue
         fg_qty = qty_map.get(producto_terminado) or 1
-        operaciones = _resolve_production_operations(etapas, source.get("tabla_salidas_etapa"), producto_terminado)
+        operaciones = _resolve_production_operations(etapas, producto_terminado)
 
         for op in operaciones:
             servicios = [s for s in op.servicios if s.get("service_item")]
@@ -1056,7 +1029,7 @@ def _build_stage_subcontracting_rows(source, qty_map_override=None):
             # servicio entero). Con un solo servicio esto es exactamente el valor de
             # antes.
             k = len(servicios)
-            total_fg = fg_qty * (flt(op.qty_salida) or 1)
+            total_fg = fg_qty
             # Reparto EXACTO: las k porciones suman total_fg sin drift (la última
             # absorbe el residuo), para que la pieza producida y su facturación
             # cuadren. Una porción puede quedar fraccionaria (5000/3) -- es una pieza
@@ -1212,11 +1185,6 @@ def _create_subcontracting_pos_from_stages(source, stage_rows, sales_order=None)
                 "uom": service_uom,
                 "warehouse": row.target_warehouse,
                 "schedule_date": row.schedule_date or nowdate(),
-                # precio_servicio SIN escalar por pct_participacion a propósito: el
-                # reparto entre salidas ya vive en service_qty (vía el conversion_factor
-                # ya escalado del Subcontracting BOM de esta salida, ver
-                # crear_subcontracting_bom) -- escalar aquí TAMBIÉN duplicaría el
-                # descuento y subfacturaría al proveedor.
                 "rate": row.service_price or 0,
             }
             if bom_data and bom_data.finished_good_bom:

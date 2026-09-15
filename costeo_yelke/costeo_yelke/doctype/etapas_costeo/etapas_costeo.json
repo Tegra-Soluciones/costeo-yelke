@@ -18,7 +18,8 @@
   "modo_precio",
   "operaciones_por_pieza",
   "precio_por_operacion",
-  "subensamblaje"
+  "subensamblaje",
+  "no_agrupar"
  ],
  "fields": [
   {
@@ -121,6 +122,14 @@
    "fieldname": "producto_terminado",
    "fieldtype": "Data",
    "label": "Producto Terminado"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "0",
+   "description": "Se marca desde Flujo de Producción. Por default, dos servicios del mismo proveedor que reciben de exactamente el mismo origen se fusionan solos en un único bloque (una sola pieza, un solo taller). Márcalo para sacar ESTE servicio de esa fusión automática -- por ejemplo, si en la práctica sí se puede entregar por separado, aunque venga del mismo taller y del mismo paso anterior. Los demás servicios del proveedor, si siguen sin marcar, se siguen fusionando entre sí como siempre.",
+   "fieldname": "no_agrupar",
+   "fieldtype": "Check",
+   "label": "No agrupar con otros servicios de este proveedor"
   }
  ],
  "grid_page_length": 50,

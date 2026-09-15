@@ -394,7 +394,7 @@
                                 <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
                                 <select v-model="d.supplier" @change="onSupplierChange(d, prod)" :disabled="!d.item" class="field-input">
                                   <option value="">{{ !d.item ? 'Elige artículo' : '— Proveedor —' }}</option>
-                                  <option v-for="o in allSuppliers" :key="o.name" :value="o.name">{{ o.supplier_name || o.name }}</option>
+                                  <option v-for="o in allSuppliers" :key="o.name" :value="o.name">{{ o.nombre_comercial || o.supplier_name || o.name }}</option>
                                 </select>
                               </td>
                               <td class="py-1 pr-2">
@@ -512,7 +512,7 @@
                             <td class="py-1.5 pr-2 w-44">
                               <select :value="''" :disabled="!puntosDe(prod.finished_item).length" class="field-input" :class="!puntosDe(prod.finished_item).length ? '' : 'ring-1 ring-amber-300'" @change="asignarMaterialAPunto(d, prod, $event.target.value)">
                                 <option value="" disabled>{{ puntosDe(prod.finished_item).length ? 'Asignar a un punto…' : 'Agrega un punto primero' }}</option>
-                                <option v-for="(pt, pti) in puntosDe(prod.finished_item)" :key="pt.grupo_id" :value="pt.grupo_id">Punto {{ pti + 1 }} · {{ pt.servicios[0].proveedor || 'sin proveedor' }}</option>
+                                <option v-for="(pt, pti) in puntosDe(prod.finished_item)" :key="pt.grupo_id" :value="pt.grupo_id">Punto {{ pti + 1 }} · {{ nombreProveedor(pt.servicios[0].proveedor) || 'sin proveedor' }}</option>
                               </select>
                             </td>
                             <td class="py-1.5 w-7"><button class="del-btn" @click="removeDetalle(d, prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button></td>
@@ -1151,6 +1151,14 @@
                     <li v-for="s in op.servicios" :key="s.item" class="flex items-baseline gap-2 text-[11px] leading-snug">
                       <span class="text-ink-xlight truncate flex-1">{{ s.item }}</span>
                       <span class="text-ink-light flex-shrink-0 tabular-nums">{{ fmtC(s.precio) }}</span>
+                      <button
+                        v-if="op.servicios.length > 1 || s.no_agrupar"
+                        type="button"
+                        class="flex-shrink-0 text-brand-600 hover:text-brand-700"
+                        :disabled="agrupandoTid === s.stage_id"
+                        :title="s.no_agrupar ? 'Este servicio quedó separado -- únelo de nuevo con los demás de este proveedor' : 'Sacar este servicio del bloque y darle su propio paso'"
+                        @click="alternarNoAgrupar(s)"
+                      >{{ s.no_agrupar ? 'unir' : 'separar' }}</button>
                     </li>
                   </ul>
 
@@ -1159,6 +1167,10 @@
                     <button type="button" class="w-3.5 h-3.5 flex-shrink-0 flex items-center justify-center rounded text-ink-xlight hover:text-ink-muted hover:bg-surface-raised leading-none" @click="toggleTree(op, 'recibe')">{{ isTreeOpen(op, 'recibe') || flujoEdit[op.op_key] ? '−' : '+' }}</button>
                     <span class="text-ink-muted">Recibe de</span>
                     <button v-if="idx > 0" type="button" class="text-[11px] text-brand-600 hover:text-brand-700 ml-0.5" :class="flujoEdit[op.op_key] ? 'font-medium' : ''" @click="flujoEdit[op.op_key] = !flujoEdit[op.op_key]">{{ flujoEdit[op.op_key] ? 'listo' : 'editar' }}</button>
+                    <span v-if="recibeRedundantesVivo(prod, op).size" class="relative flex-shrink-0">
+                      <svg class="w-3.5 h-3.5 text-amber-500 cursor-pointer" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" @click="toggleWarn(op, 'redundante')"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+                      <div v-if="isWarnOpen(op, 'redundante')" class="absolute z-20 left-0 top-full mt-1 w-64 bg-white border border-amber-200 rounded-lg shadow-lg p-2 text-[11px] leading-snug text-amber-800">Ya recibes de {{ recibeRedundanteTexto(prod, op) }} de forma indirecta, a través de otro de tus pasos seleccionados. Si es una pieza que se une aparte (un camino en paralelo que también llega completo hasta aquí), déjalo así; si fue una selección de más, quítala.</div>
+                    </span>
                   </div>
                   <ul v-if="!flujoEdit[op.op_key] && isTreeOpen(op, 'recibe')" class="ml-[18px] mt-0.5 mb-1 space-y-px border-l border-surface-border pl-2.5">
                     <li v-for="nombre in recibeDeLista(prod, op)" :key="nombre" class="text-[11px] text-ink-xlight truncate">{{ nombre }}</li>
@@ -2711,16 +2723,9 @@ const errors = reactive({});
 const productos = ref([]);
 const detalles = ref([]);
 const etapas = ref([]);
-// Salidas de etapas con más de un resultado nombrado (ej. un corte que produce
-// manga izquierda / manga derecha / frente por separado). Vive como lista PLANA
-// hermana de 'etapas' (igual que 'detalles'/'tallas'), relacionada por stage_id --
-// no anidada dentro de cada fila de 'etapas': Frappe no guarda una tabla dentro
-// de otra tabla hija (ver patch v0_2_18), así que el modelo del SPA espeja
-// exactamente cómo vive en el backend.
-const salidasEtapa = ref([]);
 // Reparto de un material entre varias etapas, con cantidad explícita por etapa
-// (ej. 4 de cinta reflejante = 2 en la manga + 2 en el frente). Misma forma que
-// 'salidasEtapa': lista PLANA hermana de 'detalles', relacionada por material_id +
+// (ej. 4 de cinta reflejante = 2 en la manga + 2 en el frente). Lista PLANA
+// hermana de 'detalles' (igual que 'tallas'), relacionada por material_id +
 // stage_id, espejo de Costeo.tabla_materiales_etapa (patch v0_2_19).
 const materialesEtapa = ref([]);
 const tallas = ref([]);
@@ -3225,11 +3230,6 @@ function asignarMaterialAPunto(d, prod, grupoId) {
   materialesEtapa.value.push({ _tid: uid(), material_id: d.material_id, stage_id: punto.servicios[0].stage_id, qty: d.internal_qty || 0 });
 }
 
-// Salidas de una etapa (tabla hermana Costeo.tabla_salidas_etapa) -- se conserva
-// para limpiar referencias colgantes al eliminar una etapa en Costear.
-function salidasDe(e) { return salidasEtapa.value.filter(s => s.stage_id === e.stage_id); }
-
-
 // ── Reparto de un material entre varias etapas ──
 // El consumo capturado en el costeo (internal_qty, "Consumo por pieza") es el total
 // que lleva UNA pieza de producto terminado. Cuando ese insumo lo aplican dos
@@ -3286,7 +3286,7 @@ function totalEtapas(prod) {
   return round2(etapasDe(prod.finished_item).reduce((s, e) => s + precioPorPiezaEtapa(e), 0));
 }
 function expectedProfit(prod) { return (prod.unit_sales_price || 0) - (prod.total_unit_cost || 0); }
-function removeProducto(idx) { const prod = productos.value[idx]; if (!prod) return; const stageIdsDeProd = new Set(etapas.value.filter(e => e.producto_terminado === prod.finished_item).map(e => e.stage_id)); const materialIdsDeProd = new Set(detalles.value.filter(d => d.finished_item === prod.finished_item).map(d => d.material_id)); detalles.value = detalles.value.filter(d => d.finished_item !== prod.finished_item); etapas.value = etapas.value.filter(e => e.producto_terminado !== prod.finished_item); salidasEtapa.value = salidasEtapa.value.filter(s => !stageIdsDeProd.has(s.stage_id)); materialesEtapa.value = materialesEtapa.value.filter(r => !materialIdsDeProd.has(r.material_id) && !stageIdsDeProd.has(r.stage_id)); tallas.value = tallas.value.filter(t => t.finished_item !== prod.finished_item); productos.value.splice(idx, 1); if (expandedTid.value === prod._tid) expandedTid.value = null; }
+function removeProducto(idx) { const prod = productos.value[idx]; if (!prod) return; const stageIdsDeProd = new Set(etapas.value.filter(e => e.producto_terminado === prod.finished_item).map(e => e.stage_id)); const materialIdsDeProd = new Set(detalles.value.filter(d => d.finished_item === prod.finished_item).map(d => d.material_id)); detalles.value = detalles.value.filter(d => d.finished_item !== prod.finished_item); etapas.value = etapas.value.filter(e => e.producto_terminado !== prod.finished_item); materialesEtapa.value = materialesEtapa.value.filter(r => !materialIdsDeProd.has(r.material_id) && !stageIdsDeProd.has(r.stage_id)); tallas.value = tallas.value.filter(t => t.finished_item !== prod.finished_item); productos.value.splice(idx, 1); if (expandedTid.value === prod._tid) expandedTid.value = null; }
 function toggleProduct(tid) { expandedTid.value = expandedTid.value === tid ? null : tid; }
 async function onProductoItemChange(prod) { recalcProducto(prod); const fetched = await fetchItemImage(prod.finished_item); if (fetched) prod.image = fetched; }
 // La imagen se sube desde aquí (aunque el producto todavía sea texto libre) para que
@@ -3428,21 +3428,18 @@ function recalcPrecioOperacion(e, prod) {
 function removeEtapa(e, prod) {
   const i = etapas.value.findIndex(x => x._tid === e._tid);
   if (i !== -1) etapas.value.splice(i, 1);
-  // Referencias posibles a esta etapa desde 'recibe_de' de otras: su propio
-  // stage_id (etapa sin salidas) o el salida_id de cualquiera de sus salidas.
-  const ownKeys = [e.stage_id, ...salidasDe(e).map(s => s.salida_id)].filter(Boolean);
-  salidasEtapa.value = salidasEtapa.value.filter(s => s.stage_id !== e.stage_id);
+  const ownKey = e.stage_id;
   if (prod) {
     // Renumerar para que la secuencia 1..N nunca tenga huecos -- el número de etapa
     // ya no es editable a mano, así que debe mantenerse consistente solo. stage_id NO
     // se toca (es estable a propósito) -- pero si alguien más "recibía de" la etapa
-    // eliminada (o alguna de sus salidas), esa referencia queda colgante y hay que
-    // limpiarla, si no el grafo apuntaría a un nodo que ya no existe.
+    // eliminada, esa referencia queda colgante y hay que limpiarla, si no el grafo
+    // apuntaría a un nodo que ya no existe.
     etapasDe(prod.finished_item).forEach((et, idx) => { et.etapa = String(idx + 1); });
-    if (ownKeys.length) {
+    if (ownKey) {
       etapasDe(prod.finished_item).forEach(et => {
         const ids = (et.recibe_de || "").split(",").map(s => s.trim()).filter(Boolean);
-        if (ids.some(id => ownKeys.includes(id))) et.recibe_de = ids.filter(id => !ownKeys.includes(id)).join(",");
+        if (ids.includes(ownKey)) et.recibe_de = ids.filter(id => id !== ownKey).join(",");
       });
     }
     materialesEtapa.value = materialesEtapa.value.filter(r => r.stage_id !== e.stage_id);
@@ -3666,10 +3663,19 @@ async function loadAllSuppliers() {
   if (allSuppliers.value.length) return;
   try {
     allSuppliers.value = await call("frappe.client.get_list", {
-      doctype: "Supplier", fields: ["name", "supplier_name"],
+      doctype: "Supplier", fields: ["name", "supplier_name", "nombre_comercial"],
       filters: [["disabled", "=", 0]], limit_page_length: 500, order_by: "supplier_name asc",
     }) || [];
   } catch { /* ignore */ }
+}
+// Nombre Comercial del proveedor (si lo capturó) en vez de su nombre real -- para
+// cualquier texto plano que no pase por LinkInput (LinkInput ya lo resuelve solo,
+// ver getLinkDisplayLabel). Cae al nombre real si no tiene Nombre Comercial
+// capturado, o si `name` no matchea ningún proveedor cargado todavía.
+function nombreProveedor(name) {
+  if (!name) return name;
+  const s = allSuppliers.value.find(o => o.name === name);
+  return (s && (s.nombre_comercial || s.supplier_name)) || name;
 }
 // Catálogo completo de Talla (~110 registros) cargado una sola vez -- de ahí se arman
 // en el cliente los 3 selects encadenados (Género → Tipo de prenda → Talla) sin ir
@@ -3740,7 +3746,6 @@ function buildPayload() {
     costeo_producto: productos.value.map(stripLocal),
     costeo_producto_detalle: detalles.value.map(stripLocal),
     tabla_etapas_costeo: etapas.value.map(stripLocal),
-    tabla_salidas_etapa: salidasEtapa.value.map(stripLocal),
     tabla_materiales_etapa: materialesEtapa.value.map(stripLocal),
     tabla_tallas_costeo: tallas.value.map(stripLocal),
   };
@@ -3774,7 +3779,6 @@ async function fillFromDoc(data) {
     return e;
   });
   asignarGruposEtapas();
-  salidasEtapa.value = (data.tabla_salidas_etapa || []).map(r => ({ _tid: uid(), ...r, salida_id: r.salida_id || genStageId(), qty_salida: r.qty_salida || 1, pct_participacion: r.pct_participacion ?? 100 }));
   materialesEtapa.value = (data.tabla_materiales_etapa || []).map(r => ({ _tid: uid(), ...r }));
   migrarMaterialesEtapaLegado();
   tallas.value = (data.tabla_tallas_costeo || []).map(r => ({ _tid: uid(), sobrecosto_tipo: "Ninguno", ...r }));
@@ -4100,6 +4104,25 @@ async function loadFlujoOps() {
   } catch (e) { showToast(e.message || "No se pudo cargar el flujo", "error"); }
   finally { flujoLoading.value = false; }
 }
+// "Separar"/"unir" un servicio puntual de la fusión automática por proveedor+origen
+// (ver toggle_no_agrupar) -- se guarda de inmediato en el servidor (no espera al
+// botón "Confirmar"), porque cambia la forma misma del flujo (cuántos bloques hay),
+// no solo un enlace de "recibe de" dentro de la forma ya calculada. Si había
+// reacomodos sin guardar (flujoDirty), se pierden al recargar -- se avisa antes.
+const agrupandoTid = ref("");
+async function alternarNoAgrupar(servicio) {
+  if (!servicio.stage_id || agrupandoTid.value) return;
+  if (flujoDirty.value && !confirm("Tienes cambios de orden sin guardar en este paso -- se perderán al aplicar esto. ¿Continuar?")) return;
+  agrupandoTid.value = servicio.stage_id;
+  try {
+    await call("costeo_yelke.api.costeo_api.toggle_no_agrupar", {
+      costeo: docName.value, stage_id: servicio.stage_id, no_agrupar: servicio.no_agrupar ? 0 : 1,
+    });
+    await loadFlujoOps();
+    showToast(servicio.no_agrupar ? "Servicio unido de nuevo con los demás" : "Servicio separado en su propio paso");
+  } catch (e) { showToast(e.message || "No se pudo cambiar la agrupación", "error"); }
+  finally { agrupandoTid.value = ""; }
+}
 // Reengancha los pasos NO fijados al paso inmediato anterior (según el orden actual).
 function relinkLineal(prod) {
   prod.operaciones.forEach((o, i) => {
@@ -4144,10 +4167,11 @@ function recibeDeLista(prod, op) {
 // confecciona al final, con otros talleres en medio).
 function supplierLabel(prod, op) {
   const nombre = op.supplier || "sin taller";
+  const etiqueta = op.supplier ? nombreProveedor(op.supplier) : nombre;
   const mismos = prod.operaciones.filter(o => (o.supplier || "sin taller") === nombre);
-  if (mismos.length <= 1) return nombre;
+  if (mismos.length <= 1) return etiqueta;
   const n = mismos.findIndex(o => o.op_key === op.op_key) + 1;
-  return `${nombre} (${n})`;
+  return `${etiqueta} (${n})`;
 }
 // ¿esta operación tiene datos incompletos (sin proveedor o sin ningún servicio)?
 // Pasa con etapas capturadas a medias en Costear -- avisa antes de que alguien
@@ -4174,6 +4198,41 @@ function esHuerfano(prod, op) {
   if (term.length <= 1) return false;
   const esUltimo = prod.operaciones[prod.operaciones.length - 1]?.op_key === op.op_key;
   return term.includes(op.op_key) && !esUltimo;
+}
+// Cierre transitivo de "recibe_de" EN VIVO (mismo cálculo que _upstream_de en el
+// backend, ver _resolve_production_operations) -- sobre el estado actual en
+// memoria, no el que vino del servidor, para que el aviso reaccione al instante
+// mientras se editan los checkboxes de "Recibe de".
+function upstreamDeVivo(prod, key, visto) {
+  visto = visto || new Set();
+  const op = prod.operaciones.find(o => o.op_key === key);
+  if (!op) return visto;
+  for (const u of op.recibe_de) {
+    if (!visto.has(u)) { visto.add(u); upstreamDeVivo(prod, u, visto); }
+  }
+  return visto;
+}
+// De los "recibe de" elegidos en ESTE paso, ¿cuáles también son alcanzables vía
+// OTRO de los mismos elegidos? Ya no se quita nada por esto -- solo se avisa (ver
+// _resolve_production_operations, "sin reducción transitiva"): puede ser
+// exactamente lo que se quiere (una pieza que se une aparte, en paralelo a otro
+// camino que también llega hasta aquí) o una selección de más -- la persona
+// decide, el motor ya no borra solo.
+function recibeRedundantesVivo(prod, op) {
+  const directos = op.recibe_de;
+  const redundantes = new Set();
+  for (const a of directos) {
+    for (const b of directos) {
+      if (a !== b && upstreamDeVivo(prod, b).has(a)) redundantes.add(a);
+    }
+  }
+  return redundantes;
+}
+function recibeRedundanteTexto(prod, op) {
+  return [...recibeRedundantesVivo(prod, op)].map(k => {
+    const o = prod.operaciones.find(x => x.op_key === k);
+    return o ? supplierLabel(prod, o) : "?";
+  }).join(", ");
 }
 // Advertencias por tarjeta: solo un ícono chico: un click lo abre/cierra --
 // nada de banners genéricos, el aviso vive en el paso exacto que hay que revisar.
@@ -4583,7 +4642,6 @@ async function confirmMaterialize(payload) {
       stock_uom: payload.stock_uom,
       precio_venta: payload.precio_venta,
       pricing_rules: JSON.stringify(payload.pricing_rules || []),
-      mx_product_service_key: payload.mx_product_service_key || null,
       description: payload.description || null,
       image: payload.image || null,
     });
@@ -4653,7 +4711,6 @@ function applyMaterializacionLocal(rowType, texto, itemCode) {
     etapas.value.forEach(e => { if (e.servicio === texto) e.servicio = itemCode; });
   } else if (rowType === "subensamblaje_etapa") {
     etapas.value.forEach(e => { if (e.subensamblaje === texto) e.subensamblaje = itemCode; });
-    salidasEtapa.value.forEach(s => { if (s.subensamblaje === texto) s.subensamblaje = itemCode; });
   }
 }
 async function resolverArticuloExistente(g, itemCode) {

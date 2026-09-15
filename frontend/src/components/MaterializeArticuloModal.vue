@@ -82,11 +82,6 @@
         <button v-if="form.uomConversions.length" class="text-[11px] font-medium text-brand-600 hover:text-brand-700" @click="addConversion">+ Otra conversión</button>
       </div>
 
-      <div class="mb-3">
-        <label class="field-label">Clave de producto/servicio SAT <span class="text-ink-light font-normal">(opcional)</span></label>
-        <input v-model="form.mx_product_service_key" class="field-input" placeholder="Ej: 53101800" />
-      </div>
-
       <p class="text-[11px] text-ink-light bg-surface-raised rounded-lg px-3 py-2 mb-1">
         Se asignará automáticamente a <strong>{{ company || '—' }}</strong>
         <span v-if="defaultWarehouse"> · Almacén: <strong>{{ defaultWarehouse }}</strong></span>
@@ -145,7 +140,7 @@ const tipoInfo = computed(() => TIPOS[props.rowType] || TIPOS.material);
 
 const form = reactive({
   item_code: "", item_name: "", stock_uom: "", description: "", supplier: "", precio: 0,
-  uomConversions: [], mx_product_service_key: "",
+  uomConversions: [],
 });
 const errors = reactive({ item_code: false, item_name: false, stock_uom: false });
 const supplierPrefilled = computed(() => !!props.suggestedSupplier);
@@ -192,7 +187,6 @@ watch(() => props.open, (isOpen) => {
   form.supplier = props.suggestedSupplier || "";
   form.precio = props.suggestedPrice || 0;
   form.description = "";
-  form.mx_product_service_key = "";
   form.uomConversions = (props.suggestedSupplierUom && props.suggestedConversionFactor)
     ? [{ uom: props.suggestedSupplierUom, conversion_factor: props.suggestedConversionFactor }]
     : [];
@@ -213,7 +207,6 @@ function onConfirm() {
     ...info.flags,
   };
   if (form.description) prefill.description = form.description;
-  if (form.mx_product_service_key) prefill.mx_product_service_key = form.mx_product_service_key;
   const uomConversions = form.uomConversions.filter(r => r.uom && r.conversion_factor > 0);
   if (uomConversions.length) prefill.uom_conversions = uomConversions;
 
