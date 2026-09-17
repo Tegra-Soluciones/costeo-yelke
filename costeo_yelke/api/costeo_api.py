@@ -7,6 +7,7 @@ from frappe import _
 from frappe.utils import add_days, cint, flt, formatdate, getdate, nowdate
 
 from costeo_yelke.api import item_api
+from costeo_yelke.utils import resolver_terminos
 
 # UOM usada en Subcontracting BOM / Purchase Order cuando un servicio de maquila se
 # cobra por lote (ej. $19 por 25 confecciones) en vez de por pieza -- creada por el
@@ -218,6 +219,7 @@ def crear_cotizacion(
         quot.payment_terms_template = payment_terms_template
     if tc_name:
         quot.tc_name = tc_name
+        quot.terms = resolver_terminos(tc_name)
     if currency:
         quot.currency = currency
     if selling_price_list:
@@ -390,6 +392,7 @@ def actualizar_cotizacion(
     doc.valid_till = valid_till or None
     doc.payment_terms_template = payment_terms_template or None
     doc.tc_name = tc_name or None
+    doc.terms = resolver_terminos(tc_name)
     doc.currency = currency or doc.currency
     doc.selling_price_list = selling_price_list or doc.selling_price_list
     _aplicar_impuestos_venta(doc, taxes_and_charges or None)
@@ -1101,6 +1104,7 @@ def crear_orden_venta(
         so.payment_terms_template = payment_terms_template
     if tc_name:
         so.tc_name = tc_name
+        so.terms = resolver_terminos(tc_name)
     if po_no:
         so.po_no = po_no
     if currency:
@@ -1149,6 +1153,7 @@ def actualizar_orden_venta(
             it.delivery_date = delivery_date
     doc.payment_terms_template = payment_terms_template or None
     doc.tc_name = tc_name or None
+    doc.terms = resolver_terminos(tc_name)
     doc.po_no = po_no or None
     doc.currency = currency or doc.currency
     doc.selling_price_list = selling_price_list or doc.selling_price_list
@@ -1320,6 +1325,7 @@ def crear_factura_venta(costeo: str, posting_date=None, payment_terms_template=N
         si.payment_terms_template = payment_terms_template
     if tc_name:
         si.tc_name = tc_name
+        si.terms = resolver_terminos(tc_name)
     if frappe.db.has_column("Sales Invoice", "costeo"):
         si.costeo = costeo
     si.flags.ignore_permissions = True
@@ -1342,6 +1348,7 @@ def actualizar_factura_venta(name: str, posting_date=None, payment_terms_templat
         doc.due_date = due_date
     doc.payment_terms_template = payment_terms_template or None
     doc.tc_name = tc_name or None
+    doc.terms = resolver_terminos(tc_name)
     doc.flags.ignore_permissions = True
     doc.save()
     return {"name": doc.name}
@@ -1837,6 +1844,7 @@ def actualizar_factura_compra(name: str, posting_date=None, due_date=None, bill_
         doc.bill_date = bill_date
     doc.payment_terms_template = payment_terms_template or None
     doc.tc_name = tc_name or None
+    doc.terms = resolver_terminos(tc_name)
     doc.flags.ignore_permissions = True
     doc.save()
     return {"name": doc.name}
@@ -6027,6 +6035,8 @@ def guardar_documento_compra(doctype: str, name: str, schedule_date=None, valid_
         doc.payment_terms_template = payment_terms_template or None
     if meta.get_field("tc_name"):
         doc.tc_name = tc_name or None
+        if meta.get_field("terms"):
+            doc.terms = resolver_terminos(tc_name)
 
     if items:
         rows = json.loads(items) if isinstance(items, str) else items
