@@ -1,6 +1,8 @@
 import frappe
 from frappe.utils import nowdate
 
+from costeo_yelke.utils import nombres_comerciales
+
 
 @frappe.whitelist()
 def get_quotation_form_defaults():
@@ -9,7 +11,7 @@ def get_quotation_form_defaults():
 
     customers = frappe.get_all(
         "Customer",
-        fields=["name", "customer_name", "customer_group", "territory"],
+        fields=["name", "customer_name", "nombre_comercial", "customer_group", "territory"],
         filters={"disabled": 0},
         order_by="customer_name asc",
         limit=200,
@@ -98,6 +100,16 @@ def get_quotations(status=None, customer=None, company=None, limit=50):
         order_by="transaction_date desc, creation desc",
         limit=int(limit),
     )
+    # Nombre Comercial del cliente en vez de su razón social (ver utils.py) -- solo
+    # aplica cuando el party es un Customer; una Quotation a un Lead no tiene esto.
+    nombres = nombres_comerciales(
+        "Customer",
+        [r.party_name for r in rows if r.quotation_to == "Customer"],
+        "customer_name",
+    )
+    for r in rows:
+        if r.quotation_to == "Customer":
+            r["customer_name"] = nombres.get(r.party_name, r.customer_name)
     return rows
 
 
@@ -149,7 +161,10 @@ def get_quotation(name):
         "order_lost_reason": doc.get("order_lost_reason") or "",
         "quotation_to": doc.quotation_to,
         "party_name": doc.party_name,
-        "customer_name": doc.customer_name or "",
+        "customer_name": (
+            frappe.db.get_value("Customer", doc.party_name, "nombre_comercial")
+            if doc.quotation_to == "Customer" else None
+        ) or doc.customer_name or "",
         "company": doc.company,
         "transaction_date": str(doc.transaction_date) if doc.transaction_date else "",
         "valid_till": str(doc.valid_till) if doc.valid_till else "",

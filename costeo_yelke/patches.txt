@@ -48,3 +48,8 @@ costeo_yelke.patches.v0_2_23.rehomologar_item_brand
 costeo_yelke.patches.v0_2_24.remove_etapa_salidas
 costeo_yelke.patches.v0_2_25.add_supplier_nombre_comercial
 costeo_yelke.patches.v0_2_26.remove_etapa_salidas_doctype
+costeo_yelke.patches.v0_2_27.add_plantilla_origen_fields
+costeo_yelke.patches.v0_2_28.add_guardar_como_plantilla_field
+costeo_yelke.patches.v0_2_29.crear_roles_flujo_documentos
+costeo_yelke.patches.v0_2_30.add_doble_validacion_purchase_order
+costeo_yelke.patches.v0_2_31.add_customer_nombre_comercial

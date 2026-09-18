@@ -181,7 +181,7 @@
                 <label class="field-label">{{ form.quotation_to === 'Lead' ? 'Prospecto' : 'Cliente' }} <span class="text-red-400">*</span></label>
                 <select v-if="form.quotation_to === 'Customer'" v-model="form.party_name" :disabled="!canEdit" class="field-input">
                   <option value="">— Seleccionar cliente —</option>
-                  <option v-for="c in defaults.customers" :key="c.name" :value="c.name">{{ c.customer_name }}</option>
+                  <option v-for="c in defaults.customers" :key="c.name" :value="c.name">{{ c.nombre_comercial || c.customer_name }}</option>
                 </select>
                 <input v-else v-model="form.party_name" type="text" :disabled="!canEdit" class="field-input" placeholder="Nombre del prospecto" />
               </div>
@@ -968,7 +968,8 @@ const isDirty = computed(() => {
 
 const customerDisplayName = computed(() => {
   if (form.quotation_to === "Customer") {
-    return defaults.customers.find(c => c.name === form.party_name)?.customer_name || form.party_name;
+    const c = defaults.customers.find(c => c.name === form.party_name);
+    return c?.nombre_comercial || c?.customer_name || form.party_name;
   }
   return form.party_name;
 });

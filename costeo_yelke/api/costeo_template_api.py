@@ -2,9 +2,16 @@
 """API de Plantillas de Costeo y refresco de precios.
 
 Una "Plantilla de Costeo" es un Costeo marcado con ``es_plantilla = 1`` que guarda
-la estructura reutilizable de una familia de prenda (productos, materiales y etapas)
-SIN cliente y SIN precios envejecidos. Al crear un costeo nuevo desde la plantilla se
-clona la estructura y se refrescan los precios desde las listas de compra vigentes.
+la estructura reutilizable de UN SOLO producto (materiales y etapas), SIN cliente y
+SIN precios envejecidos. Es deliberadamente "un producto por plantilla" -- no "un
+costeo completo por plantilla" -- para poder combinar plantillas de distintos
+productos al armar un costeo nuevo (ver create_costeo_from_templates): un costeo con
+3 artículos guarda 3 plantillas independientes, cada una reutilizable por separado
+o junto con cualquier otra, como si se agregaran al carrito.
+
+Al crear un costeo nuevo se seleccionan una o más plantillas, se combinan sus
+productos/materiales/etapas en un solo Costeo nuevo, y se refrescan los precios
+desde las listas de compra vigentes.
 
 El refresco replica la agregación del formulario (modules/90_calculations.js):
   - Total de fila T2 = (consumo / factor_conversion) * precio_unitario
@@ -15,23 +22,12 @@ El refresco replica la agregación del formulario (modules/90_calculations.js):
   - total_unit_cost = base + overhead; precio_venta = total / (1 - margen)
 """
 
+import json
 import math
 
 import frappe
 from frappe import _
 from frappe.utils import cint, flt, nowdate
-
-# Tablas del Plan de Produccion embebido que NO deben viajar con la plantilla/copia.
-PP_TABLES = [
-    "sales_orders",
-    "material_requests",
-    "po_items",
-    "prod_plan_references",
-    "sub_assembly_items",
-    "mr_items",
-    "warehouses",
-]
-
 
 # ---------------------------------------------------------------------------
 # Precios
@@ -147,40 +143,60 @@ def _refresh_costeo_prices(doc, only_missing=False):
     return updated
 
 
-def _reset_production_plan(doc):
-    for fieldname in PP_TABLES:
-        doc.set(fieldname, [])
-    doc.pp_tab_unlocked = 0
-
-
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 @frappe.whitelist()
 def get_costeo_templates(company=None):
-    """Lista de plantillas de costeo con conteo de productos."""
+    """Lista de plantillas de costeo -- cada una es UN producto (ver docstring del
+    módulo), así que se trae de una vez el renglón de costeo_producto para mostrar
+    directo el artículo, su imagen y su costo unitario -- sin esto el SPA tendría
+    que pedir cada plantilla completa solo para saber qué producto es. También trae
+    el proyecto/cliente de origen (capturados una vez al crear la plantilla, ver
+    save_as_template) para que 'Mis Plantillas' pueda mostrarlos y filtrar por ellos."""
     filters = {"es_plantilla": 1}
     if company:
         filters["compañia"] = company
     templates = frappe.get_all(
         "Costeo",
         filters=filters,
-        fields=["name", "nombre_plantilla", "familia_prenda", "compañia", "modified"],
+        fields=[
+            "name", "nombre_plantilla", "familia_prenda", "compañia", "modified",
+            "plantilla_origen_costeo", "plantilla_origen_titulo", "plantilla_origen_cliente",
+        ],
         order_by="modified desc",
     )
-    for tpl in templates:
-        tpl["productos"] = frappe.db.count("Costeo Producto", {"parent": tpl["name"]})
-    return templates
+    if not templates:
+        return templates
 
-
-@frappe.whitelist()
-def get_familias():
-    """Familias de prenda ya usadas (catálogo auto-organizado para autocompletar)."""
-    rows = frappe.db.sql(
-        "SELECT DISTINCT familia_prenda FROM `tabCosteo` "
-        "WHERE familia_prenda IS NOT NULL AND familia_prenda != '' ORDER BY familia_prenda"
+    names = [t["name"] for t in templates]
+    productos = frappe.get_all(
+        "Costeo Producto",
+        filters={"parent": ["in", names]},
+        fields=["parent", "finished_item", "image", "description", "total_unit_cost"],
     )
-    return [r[0] for r in rows]
+    producto_por_costeo = {}
+    for p in productos:
+        producto_por_costeo.setdefault(p.parent, p)  # una plantilla = un producto; el primero basta
+
+    clientes = {c for c in (t["plantilla_origen_cliente"] for t in templates) if c}
+    nombre_por_cliente = {}
+    if clientes:
+        filas = frappe.get_all(
+            "Customer", filters={"name": ["in", list(clientes)]},
+            fields=["name", "customer_name", "nombre_comercial"],
+        )
+        nombre_por_cliente = {f.name: (f.nombre_comercial or f.customer_name) for f in filas}
+
+    for tpl in templates:
+        p = producto_por_costeo.get(tpl["name"])
+        tpl["finished_item"] = p.finished_item if p else None
+        tpl["image"] = p.image if p else None
+        tpl["description"] = p.description if p else None
+        tpl["total_unit_cost"] = p.total_unit_cost if p else 0
+        cliente = tpl.get("plantilla_origen_cliente")
+        tpl["origen_cliente_nombre"] = nombre_por_cliente.get(cliente, cliente) if cliente else None
+    return templates
 
 
 @frappe.whitelist()
@@ -192,54 +208,159 @@ def delete_template(name):
     return {"ok": True}
 
 
-@frappe.whitelist()
-def create_costeo_from_template(template, cliente, compania=None, fecha=None):
-    """Crea un Costeo nuevo desde una plantilla, con precios frescos."""
-    tpl = frappe.get_doc("Costeo", template)
-    if not cint(tpl.get("es_plantilla")):
-        frappe.throw(_("El documento {0} no es una plantilla.").format(template))
+def _child_row_dict(row):
+    """Copia los datos de una fila hija (frappe._dict/Document) para pegarla en OTRO
+    documento -- quita identidad (name/parent/parentfield/parenttype/idx/docstatus/
+    creation/modified/owner/modified_by) para que Frappe la trate como una fila
+    nueva propia, no como si todavía perteneciera al documento de origen."""
+    IDENTITY = {"name", "parent", "parentfield", "parenttype", "idx", "docstatus",
+                "creation", "modified", "owner", "modified_by", "doctype"}
+    as_dict_fn = getattr(row, "as_dict", None)
+    data = dict(as_dict_fn()) if callable(as_dict_fn) else dict(row)
+    return {k: v for k, v in data.items() if k not in IDENTITY}
 
-    new_doc = frappe.copy_doc(tpl)
+
+@frappe.whitelist()
+def create_costeo_from_templates(templates, cliente, compania=None, fecha=None):
+    """Crea UN Costeo nuevo combinando una o más plantillas (cada una es un solo
+    producto, ver docstring del módulo) -- como armar un carrito: cada plantilla
+    seleccionada aporta su propio producto, sus materiales y sus etapas al costeo
+    nuevo, sin pisar lo que aportan las demás. Los precios se refrescan al final
+    contra las listas de compra vigentes."""
+    if isinstance(templates, str):
+        templates = json.loads(templates)
+    if not templates:
+        frappe.throw(_("Selecciona al menos una plantilla."))
+
+    new_doc = frappe.new_doc("Costeo")
     new_doc.es_plantilla = 0
-    new_doc.nombre_plantilla = None
-    # La plantilla no trae cantidad; se arranca en 1 para que el usuario la ajuste.
-    for p in new_doc.get("costeo_producto") or []:
-        if not flt(p.qty):
-            p.qty = 1
     new_doc.cliente = cliente
-    if compania:
-        new_doc.set("compañia", compania)
+    new_doc.compañia = compania or ""
     new_doc.fecha = fecha or nowdate()
     new_doc.costeo_status = "Borrador"
-    _reset_production_plan(new_doc)
+
+    for name in templates:
+        tpl = frappe.get_doc("Costeo", name)
+        if not cint(tpl.get("es_plantilla")):
+            frappe.throw(_("El documento {0} no es una plantilla.").format(name))
+        if not compania and tpl.get("compañia"):
+            new_doc.compañia = tpl.get("compañia")
+
+        for p in tpl.get("costeo_producto") or []:
+            row = _child_row_dict(p)
+            row["qty"] = row.get("qty") or 1  # la plantilla guarda 0; se arranca en 1
+            new_doc.append("costeo_producto", row)
+        for d in tpl.get("costeo_producto_detalle") or []:
+            new_doc.append("costeo_producto_detalle", _child_row_dict(d))
+        for e in tpl.get("tabla_etapas_costeo") or []:
+            new_doc.append("tabla_etapas_costeo", _child_row_dict(e))
+        for m in tpl.get("tabla_materiales_etapa") or []:
+            new_doc.append("tabla_materiales_etapa", _child_row_dict(m))
+        for t in tpl.get("tabla_tallas_costeo") or []:
+            new_doc.append("tabla_tallas_costeo", _child_row_dict(t))
+
     _refresh_costeo_prices(new_doc)
 
     new_doc.flags.ignore_permissions = True
+    new_doc.flags.ignore_mandatory = True
     new_doc.insert()
     return {"name": new_doc.name, "cliente": cliente}
 
 
-@frappe.whitelist()
-def save_as_template(costeo, nombre=None, familia_prenda=None):
-    """Guarda un Costeo existente como plantilla reutilizable (sin cliente)."""
-    src = frappe.get_doc("Costeo", costeo)
-    tpl = frappe.copy_doc(src)
-    tpl.es_plantilla = 1
-    tpl.nombre_plantilla = (nombre or src.get("nombre_plantilla") or src.get("familia_prenda")
-                            or _("Plantilla de {0}").format(src.name))
-    if familia_prenda:
-        tpl.familia_prenda = familia_prenda
-    tpl.cliente = None
-    tpl.costeo_status = "Borrador"
-    # La cantidad es específica de cada pedido; no se guarda en la plantilla.
-    for p in tpl.get("costeo_producto") or []:
-        p.qty = 0
-    _reset_production_plan(tpl)
+def _sync_templates_from_costeo(doc):
+    """Crea o ACTUALIZA (upsert) una plantilla por cada producto de `doc` -- si ya
+    existe una plantilla de un producto para este mismo costeo de origen, se
+    actualiza en su lugar en vez de duplicarla. Esto es lo que permite que el
+    guardado automático (ver Costeo.on_update, casilla 'guardar_como_plantilla')
+    corra en CADA guardado del Costeo sin ir generando plantillas repetidas; el
+    botón manual 'Guardar como Plantilla' (save_as_template) usa el mismo mecanismo."""
+    productos = doc.get("costeo_producto") or []
+    if not productos:
+        return []
 
-    tpl.flags.ignore_permissions = True
-    tpl.flags.ignore_mandatory = True
-    tpl.insert()
-    return {"name": tpl.name, "nombre": tpl.nombre_plantilla}
+    etapas_por_producto = {}
+    for e in doc.get("tabla_etapas_costeo") or []:
+        etapas_por_producto.setdefault(e.producto_terminado, []).append(e)
+
+    # Plantillas que YA existen para este mismo costeo de origen -- se actualizan
+    # en vez de duplicarse. Indexadas por el producto que contienen (una plantilla
+    # = un producto, así que un solo Costeo Producto por plantilla basta).
+    existentes = frappe.get_all(
+        "Costeo", filters={"es_plantilla": 1, "plantilla_origen_costeo": doc.name}, pluck="name",
+    )
+    tpl_por_producto = {}
+    if existentes:
+        filas = frappe.get_all(
+            "Costeo Producto", filters={"parent": ["in", existentes]}, fields=["parent", "finished_item"],
+        )
+        tpl_por_producto = {f.finished_item: f.parent for f in filas}
+
+    resultado = []
+    for prod in productos:
+        finished = prod.finished_item
+        if not finished:
+            continue
+
+        etapas = etapas_por_producto.get(finished, [])
+        stage_keys = {e.get("stage_id") for e in etapas if e.get("stage_id")}
+
+        existing_name = tpl_por_producto.get(finished)
+        tpl = frappe.get_doc("Costeo", existing_name) if existing_name else frappe.new_doc("Costeo")
+        tpl.es_plantilla = 1
+        tpl.nombre_plantilla = finished
+        tpl.cliente = None
+        tpl.compañia = doc.get("compañia")
+        tpl.costeo_status = "Borrador"
+        # De dónde salió -- se captura/refresca aquí para que "Mis Plantillas"
+        # pueda mostrar en qué proyecto se usó y filtrar por cliente/proyecto.
+        tpl.plantilla_origen_costeo = doc.name
+        tpl.plantilla_origen_titulo = doc.get("titulo") or doc.name
+        tpl.plantilla_origen_cliente = doc.get("cliente")
+
+        tpl.set("costeo_producto", [])
+        prod_row = _child_row_dict(prod)
+        prod_row["qty"] = 0  # la cantidad es de cada pedido, no de la plantilla
+        tpl.append("costeo_producto", prod_row)
+
+        tpl.set("costeo_producto_detalle", [])
+        for d in doc.get("costeo_producto_detalle") or []:
+            if d.finished_item == finished:
+                tpl.append("costeo_producto_detalle", _child_row_dict(d))
+
+        tpl.set("tabla_etapas_costeo", [])
+        for e in etapas:
+            tpl.append("tabla_etapas_costeo", _child_row_dict(e))
+
+        tpl.set("tabla_materiales_etapa", [])
+        for m in doc.get("tabla_materiales_etapa") or []:
+            if m.get("stage_id") in stage_keys:
+                tpl.append("tabla_materiales_etapa", _child_row_dict(m))
+
+        tpl.set("tabla_tallas_costeo", [])
+        for t in doc.get("tabla_tallas_costeo") or []:
+            if t.finished_item == finished:
+                tpl.append("tabla_tallas_costeo", _child_row_dict(t))
+
+        tpl.flags.ignore_permissions = True
+        tpl.flags.ignore_mandatory = True
+        tpl.save() if existing_name else tpl.insert()
+        resultado.append({"name": tpl.name, "nombre": tpl.nombre_plantilla})
+
+    return resultado
+
+
+@frappe.whitelist()
+def save_as_template(costeo):
+    """Guarda (o actualiza) cada producto del Costeo como su PROPIA plantilla
+    independiente (ver docstring del módulo) -- un costeo con 3 artículos genera 3
+    plantillas, cada una reutilizable sola o combinada con cualquier otra. El
+    nombre de cada plantilla es el propio artículo; no hace falta capturar nada
+    aparte. Es el botón manual del mismo mecanismo que corre solo al guardar un
+    Costeo con la casilla 'guardar_como_plantilla' marcada (ver Costeo.on_update)."""
+    src = frappe.get_doc("Costeo", costeo)
+    if not src.get("costeo_producto"):
+        frappe.throw(_("Este costeo no tiene productos que guardar como plantilla."))
+    return {"creadas": _sync_templates_from_costeo(src)}
 
 
 @frappe.whitelist()

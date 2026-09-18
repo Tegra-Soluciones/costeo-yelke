@@ -5,6 +5,9 @@
         <div class="flex items-center gap-2.5">
           <span class="text-sm font-semibold text-ink">{{ doc.name }}</span>
           <DocStatusPill :docstatus="doc.docstatus" :label="validLabel" />
+          <span v-if="requiresReview && reviewed" class="text-[11px] font-medium text-brand-700 bg-brand-50 rounded-full px-2 py-0.5 flex items-center gap-1" :title="reviewedAt ? `Revisado el ${reviewedAt}` : ''">
+            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>Revisado{{ reviewedBy ? ` · ${reviewedBy}` : "" }}
+          </span>
         </div>
         <a v-if="deskRoute" class="doc-action" :href="`/app/${deskRoute}/${doc.name}`" target="_blank"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>ERPNext</a>
       </div>
@@ -70,7 +73,23 @@
         <div class="flex-1"></div>
         <template v-if="!isValidated">
           <button :disabled="advancing" class="doc-action" @click="emit('save')">Guardar</button>
-          <button :disabled="advancing" class="h-8 px-3.5 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex items-center gap-1.5" @click="onValidateClick"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>{{ validateLabel }}</button>
+          <button
+            v-if="requiresReview && !reviewed"
+            :disabled="advancing || !puedeRevisar"
+            class="h-8 px-3.5 text-[13px] font-semibold text-brand-700 bg-brand-50 rounded-lg hover:bg-brand-100 disabled:opacity-50 flex items-center gap-1.5"
+            :title="puedeRevisar ? 'Marca la revisión intermedia -- requisito antes de Validar' : `Necesitas el rol 'Revisor de Documentos Yelke' para revisar`"
+            @click="emit('review')"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Revisar
+          </button>
+          <button
+            :disabled="advancing || validateBlocked"
+            class="h-8 px-3.5 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex items-center gap-1.5"
+            :title="validateDisabledReason"
+            @click="onValidateClick"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>{{ validateLabel }}
+          </button>
         </template>
         <span v-else-if="validatedText" class="text-[13px] text-green-700 font-medium flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>{{ validatedText }}</span>
       </div>
@@ -114,13 +133,31 @@ const props = defineProps({
   // puede dejar vacío -- 0 es válido (significa "no hubo"), pero null/"" bloquea el
   // click de Validar antes de siquiera llamar al backend (que también lo bloquea).
   shippingRequired: { type: Boolean, default: false },
+  // Doble validación (Enviar -> Revisor -> Aprobador) -- hoy solo la Orden de Compra
+  // (materia prima y subcontratada) trae requiresReview=true; para el resto de
+  // documentos que usan este mismo panel (RFQ, Presupuesto, Recibo...) estas props
+  // se quedan en su default y el botón Validar se comporta exactamente como antes.
+  requiresReview: { type: Boolean, default: false },
+  reviewed: { type: Boolean, default: false },
+  reviewedBy: { type: String, default: "" },
+  reviewedAt: { type: String, default: "" },
+  puedeRevisar: { type: Boolean, default: true },
+  puedeAprobar: { type: Boolean, default: true },
 });
-const emit = defineEmits(["save", "validate", "pull-prices", "send", "preview", "shipping-missing"]);
+const emit = defineEmits(["save", "validate", "review", "pull-prices", "send", "preview", "shipping-missing"]);
 
 const isValidated = computed(() => Number(props.doc.docstatus) === 1);
 const hasRate = computed(() => props.items.some((i) => i.has_rate));
 const shippingCaptured = computed(() => props.form.shipping_cost !== null && props.form.shipping_cost !== "" && props.form.shipping_cost !== undefined);
+const validateDisabledReason = computed(() => {
+  if (!props.requiresReview) return "";
+  if (!props.reviewed) return "Esta orden necesita revisión antes de poder validarse";
+  if (!props.puedeAprobar) return "Necesitas el rol 'Aprobador de Documentos Yelke' para validar";
+  return "";
+});
+const validateBlocked = computed(() => !!validateDisabledReason.value);
 function onValidateClick() {
+  if (validateBlocked.value) return;
   if (props.shippingRequired && !shippingCaptured.value) {
     emit("shipping-missing");
     return;

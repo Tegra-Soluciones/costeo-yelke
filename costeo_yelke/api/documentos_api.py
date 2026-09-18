@@ -1,5 +1,7 @@
 import frappe
 
+from costeo_yelke.utils import nombres_comerciales
+
 # Listas para las páginas /solicitudes-material, /recibos-compra, /remisiones y
 # /facturas-compra del sidebar "Documentos" -- doctypes que, a diferencia de Cotización/
 # Orden de Venta/Orden de Compra/Factura de venta, no tenían su propia página ni ruta en
@@ -64,6 +66,9 @@ def get_purchase_receipts(status=None, company=None, limit=100):
         for r in rows:
             po = po_by_pr.get(r["name"])
             r["costeo"] = costeo_by_po.get(po) if po else None
+    nombres = nombres_comerciales("Supplier", [r["supplier"] for r in rows], "supplier_name")
+    for r in rows:
+        r["supplier_name"] = nombres.get(r["supplier"], r["supplier_name"])
     return rows
 
 
@@ -76,7 +81,7 @@ def get_delivery_notes(status=None, company=None, limit=100):
         filters["status"] = status
     if company:
         filters["company"] = company
-    return frappe.get_all(
+    rows = frappe.get_all(
         "Delivery Note",
         fields=[
             "name", "status", "customer", "customer_name",
@@ -86,6 +91,10 @@ def get_delivery_notes(status=None, company=None, limit=100):
         order_by="posting_date desc, creation desc",
         limit=int(limit),
     )
+    nombres = nombres_comerciales("Customer", [r["customer"] for r in rows], "customer_name")
+    for r in rows:
+        r["customer_name"] = nombres.get(r["customer"], r["customer_name"])
+    return rows
 
 
 @frappe.whitelist()
@@ -142,4 +151,7 @@ def get_purchase_invoices(status=None, company=None, limit=100):
                 pr = pr_by_pi.get(r["name"])
                 po = po_by_pr.get(pr) if pr else None
             r["costeo"] = costeo_by_po.get(po) if po else None
+    nombres = nombres_comerciales("Supplier", [r["supplier"] for r in rows], "supplier_name")
+    for r in rows:
+        r["supplier_name"] = nombres.get(r["supplier"], r["supplier_name"])
     return rows

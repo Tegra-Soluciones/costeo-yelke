@@ -146,10 +146,10 @@ export async function searchLink(doctype, query, filters = []) {
 
 // Doctypes que tienen un campo "de vitrina" -- distinto de su nombre/ID real --
 // que se debe mostrar en vez del nombre en cualquier LinkInput ya resuelto (no
-// mientras se busca/edita, ahí se sigue viendo/escribiendo el nombre real). Hoy
-// solo Proveedor: "Nombre Comercial" (ver patch v0_2_25) es opcional -- un
-// proveedor sin ese campo capturado sigue mostrando su nombre de siempre.
-const LINK_DISPLAY_FIELD = { Supplier: "nombre_comercial" };
+// mientras se busca/edita, ahí se sigue viendo/escribiendo el nombre real).
+// Proveedor y Cliente: "Nombre Comercial" (ver patches v0_2_25 y v0_2_31) es
+// opcional -- uno sin ese campo capturado sigue mostrando su nombre de siempre.
+const LINK_DISPLAY_FIELD = { Supplier: "nombre_comercial", Customer: "nombre_comercial" };
 
 // name real -> etiqueta de vitrina ya resuelta (o null si no aplica/no tiene). Es
 // un cache a nivel de módulo (no por instancia de componente) -- todos los

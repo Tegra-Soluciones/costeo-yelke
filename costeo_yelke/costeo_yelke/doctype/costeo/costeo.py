@@ -71,11 +71,14 @@ def _build_costeo_customer_token(customer):
 class Costeo(Document):
     def autoname(self):
         if cint(self.get("es_plantilla")):
-            familia = "".join(
-                ch for ch in unicodedata.normalize("NFD", (self.get("familia_prenda") or "").upper())
-                if unicodedata.category(ch) != "Mn"
+            # Cada plantilla es UN producto (ver costeo_template_api.py) -- se nombra
+            # por su propio artículo (nombre_plantilla); familia_prenda queda solo
+            # como respaldo por si alguna plantilla vieja no tuviera nombre_plantilla.
+            base = self.get("nombre_plantilla") or self.get("familia_prenda") or ""
+            token = "".join(
+                ch for ch in unicodedata.normalize("NFD", base.upper()) if unicodedata.category(ch) != "Mn"
             )
-            token = re.sub(r"[^A-Za-z0-9]+", "-", familia).strip("-") or "GENERAL"
+            token = re.sub(r"[^A-Za-z0-9]+", "-", token).strip("-") or "GENERAL"
             self.name = make_autoname(f"PLANTILLA-{token[:16]}-.####", doc=self)
             return
 
@@ -83,8 +86,57 @@ class Costeo(Document):
         self.name = make_autoname(f"CST-{customer_token}-.YYYY.-.#####", doc=self)
 
     def validate(self):
-        self.validate_at_least_one_product_to_produce()
+        # Ningún campo obligatorio se checa aquí -- validate() corre en CADA guardado
+        # (borrador incluido) y un Costeo a medio capturar debe poderse guardar tal
+        # cual. Lo obligatorio se exige solo al validar (enviar), ver before_submit.
         self.cleanup_orphan_children()
+
+    def before_submit(self):
+        """Aquí sí se exige todo lo obligatorio -- 'antes solo lo checaba el SPA
+        (CosteoDetailPage.vue validate()), así que Validar desde Desk o por API
+        directa no pedía nada. Guardar un borrador incompleto sigue permitido
+        (validate() ya no lo bloquea); solo pasar a Validado lo exige."""
+        faltantes = []
+        if not self.get("cliente"):
+            faltantes.append(_("Cliente"))
+        if not self.get("fecha"):
+            faltantes.append(_("Fecha"))
+        if not self.get("compañia"):
+            faltantes.append(_("Compañía"))
+        if not self.get("centro_de_costos"):
+            faltantes.append(_("Centro de costos"))
+        if not self.get("almacen_materias_primas"):
+            faltantes.append(_("Almacén de materias primas"))
+        if not self.get("almacen_trabajo_en_proceso"):
+            faltantes.append(_("Almacén de trabajo en proceso"))
+        if faltantes:
+            frappe.throw(
+                _("Faltan datos obligatorios para validar el Costeo: {0}.").format(", ".join(faltantes))
+            )
+        self.validate_at_least_one_product_to_produce()
+
+    def on_update(self):
+        # Costeo en borrador (docstatus 0): Frappe llama on_update en cada guardado.
+        self.sync_templates_if_enabled()
+
+    def on_update_after_submit(self):
+        # Costeo ya validado (docstatus 1): un guardado ahí no dispara on_update,
+        # sino este método -- sin este segundo gancho, editar un Costeo ya
+        # enviado nunca actualizaría sus plantillas.
+        self.sync_templates_if_enabled()
+
+    def sync_templates_if_enabled(self):
+        """Si esto es un Costeo real (no una plantilla) y trae marcada la casilla
+        'guardar_como_plantilla', cada uno de sus productos se guarda/actualiza como
+        su propia plantilla en automático, cada vez que se guarda este Costeo (ver
+        costeo_template_api._sync_templates_from_costeo -- upsert por producto, así
+        que guardar varias veces no genera plantillas duplicadas). Desmarcar la
+        casilla desactiva esto sin afectar el botón manual 'Guardar como Plantilla'."""
+        if self.get("es_plantilla") or not cint(self.get("guardar_como_plantilla")):
+            return
+        from costeo_yelke.api.costeo_template_api import _sync_templates_from_costeo
+
+        _sync_templates_from_costeo(self)
 
     def validate_at_least_one_product_to_produce(self):
         # Las plantillas no llevan cantidad (es específica de cada pedido).

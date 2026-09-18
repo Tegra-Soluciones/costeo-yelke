@@ -4,7 +4,7 @@
 
 const TEMPLATE_API = {
     LIST: 'costeo_yelke.api.costeo_template_api.get_costeo_templates',
-    CREATE_FROM: 'costeo_yelke.api.costeo_template_api.create_costeo_from_template',
+    CREATE_FROM: 'costeo_yelke.api.costeo_template_api.create_costeo_from_templates',
     SAVE_AS: 'costeo_yelke.api.costeo_template_api.save_as_template',
     REFRESH_PRICES: 'costeo_yelke.api.costeo_template_api.refresh_costeo_prices'
 };
@@ -47,31 +47,27 @@ function save_costeo_as_template(frm) {
         show_error('Guarda el Costeo antes de convertirlo en plantilla');
         return;
     }
-    frappe.prompt(
-        [{
-            fieldname: 'familia_prenda',
-            fieldtype: 'Data',
-            label: __('Familia de Prenda'),
-            default: frm.doc.familia_prenda || '',
-            reqd: 1,
-            description: __('Ej: Camisola Industrial, Pantalón de Trabajo, Overol')
-        }],
-        (values) => {
+    frappe.confirm(
+        __('Se guardará cada producto de este Costeo como su propia plantilla independiente (reutilizable sola o combinada con otras). ¿Continuar?'),
+        () => {
             frappe.call({
                 method: TEMPLATE_API.SAVE_AS,
-                args: { costeo: frm.doc.name, familia_prenda: values.familia_prenda },
+                args: { costeo: frm.doc.name },
                 freeze: true,
-                freeze_message: __('Creando plantilla…'),
+                freeze_message: __('Creando plantillas…'),
                 callback: (r) => {
-                    if (r.message && r.message.name) {
-                        frappe.show_alert({ message: __('Plantilla creada: {0}', [r.message.name]), indicator: 'green' });
-                        frappe.set_route('Form', 'Costeo', r.message.name);
+                    const creadas = (r.message && r.message.creadas) || [];
+                    if (creadas.length) {
+                        frappe.show_alert({
+                            message: __('{0} plantilla(s) creada(s): {1}', [creadas.length, creadas.map(c => c.nombre).join(', ')]),
+                            indicator: 'green'
+                        });
+                    } else {
+                        show_error('No se creó ninguna plantilla (el costeo no tiene productos).');
                     }
                 }
             });
-        },
-        __('Guardar como Plantilla'),
-        __('Crear Plantilla')
+        }
     );
 }
 
@@ -105,7 +101,7 @@ function create_costeo_from_this_template(frm) {
             { fieldname: 'compania', fieldtype: 'Link', options: 'Company', label: __('Compañía'),
               default: frm.doc.compañia || frappe.defaults.get_user_default('company') }
         ],
-        (values) => run_create_from_template(frm.doc.name, values.cliente, values.compania),
+        (values) => run_create_from_templates([frm.doc.name], values.cliente, values.compania),
         __('Crear Costeo desde Plantilla'),
         __('Crear')
     );
@@ -121,30 +117,40 @@ function new_costeo_from_template_dialog(frm) {
                 show_error('No hay plantillas todavía. Crea una desde un Costeo con "Guardar como Plantilla".');
                 return;
             }
-            const options = templates.map(t =>
-                `${t.name} — ${t.familia_prenda || 'Sin familia'} (${t.productos} prod.)`);
-            const by_label = {};
-            templates.forEach((t, i) => { by_label[options[i]] = t.name; });
+            // Como un carrito de compras: selecciona una o varias plantillas (cada
+            // una es un solo producto) y se combinan en un costeo nuevo.
+            const check_options = templates.map(t => ({
+                label: `${t.nombre_plantilla || t.finished_item || t.name}${t.finished_item ? ' — ' + t.finished_item : ''}`,
+                value: t.name,
+                checked: 0
+            }));
 
             frappe.prompt(
                 [
-                    { fieldname: 'plantilla', fieldtype: 'Select', label: __('Plantilla'), options: options.join('\n'), reqd: 1 },
+                    { fieldname: 'plantillas', fieldtype: 'MultiCheck', label: __('Plantillas'),
+                      options: check_options, reqd: 1, columns: 1 },
                     { fieldname: 'cliente', fieldtype: 'Link', options: 'Customer', label: __('Cliente'), reqd: 1 },
                     { fieldname: 'compania', fieldtype: 'Link', options: 'Company', label: __('Compañía'),
                       default: frm.doc.compañia || frappe.defaults.get_user_default('company') }
                 ],
-                (values) => run_create_from_template(by_label[values.plantilla], values.cliente, values.compania),
-                __('Nuevo Costeo desde Plantilla'),
+                (values) => {
+                    if (!values.plantillas || !values.plantillas.length) {
+                        show_error('Selecciona al menos una plantilla.');
+                        return;
+                    }
+                    run_create_from_templates(values.plantillas, values.cliente, values.compania);
+                },
+                __('Nuevo Costeo desde Plantillas'),
                 __('Crear')
             );
         }
     });
 }
 
-function run_create_from_template(template, cliente, compania) {
+function run_create_from_templates(templates, cliente, compania) {
     frappe.call({
         method: TEMPLATE_API.CREATE_FROM,
-        args: { template, cliente, compania },
+        args: { templates, cliente, compania },
         freeze: true,
         freeze_message: __('Creando costeo con precios frescos…'),
         callback: (r) => {

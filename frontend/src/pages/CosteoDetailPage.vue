@@ -33,16 +33,44 @@
     <div v-if="tplModal.open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" @click.self="tplModal.open = false">
       <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
         <p class="text-sm font-semibold text-ink">Guardar como plantilla</p>
-        <p class="text-[12px] text-ink-muted mt-0.5 mb-4">Crea una plantilla reutilizable a partir de este costeo (materiales, etapas y márgenes), sin cliente.</p>
-        <label class="field-label">Nombre de la plantilla</label>
-        <input v-model="tplModal.nombre" class="field-input mb-3" placeholder="Ej: Chamarra industrial base" />
-        <label class="field-label">Familia de prenda</label>
-        <input v-model="tplModal.familia" list="familias-list" class="field-input mb-4" placeholder="Ej: Chamarra" />
+        <p class="text-[12px] text-ink-muted mt-0.5 mb-4">
+          Cada producto de este costeo se guarda como su propia plantilla independiente (materiales, etapas y márgenes), sin cliente. Se crearán {{ productosConNombre.length }} plantilla{{ productosConNombre.length === 1 ? "" : "s" }}:
+        </p>
+        <ul class="text-[13px] text-ink mb-4 list-disc pl-5 space-y-0.5">
+          <li v-for="p in productosConNombre" :key="p">{{ p }}</li>
+        </ul>
         <div class="flex gap-2 justify-end">
           <button class="px-3 py-1.5 text-[13px] text-ink-muted hover:bg-surface-raised rounded-lg" @click="tplModal.open = false">Cancelar</button>
-          <button :disabled="!tplModal.nombre || tplModal.saving" class="px-4 py-1.5 text-[13px] font-medium text-white bg-brand-500 hover:bg-brand-600 disabled:opacity-50 rounded-lg flex items-center gap-2" @click="guardarComoPlantilla">
+          <button :disabled="!productosConNombre.length || tplModal.saving" class="px-4 py-1.5 text-[13px] font-medium text-white bg-brand-500 hover:bg-brand-600 disabled:opacity-50 rounded-lg flex items-center gap-2" @click="guardarComoPlantilla">
             <svg v-if="tplModal.saving" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-            {{ tplModal.saving ? "Guardando…" : "Guardar plantilla" }}
+            {{ tplModal.saving ? "Guardando…" : "Guardar plantillas" }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: actualizar cantidades por talla (cuando el cliente ya confirmó) -->
+    <div v-if="actualizarTallasModal.open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" @click.self="actualizarTallasModal.open = false">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-5">
+        <p class="text-sm font-semibold text-ink">Actualizar cantidades por talla</p>
+        <p class="text-[12px] text-ink-muted mt-0.5 mb-4">
+          Captura la cantidad real que ya confirmó el cliente para cada talla pendiente. Si hay una Cotización u Orden de Venta en borrador ligada a este costeo, sus líneas se actualizan solas.
+        </p>
+        <div class="space-y-2 max-h-[50vh] overflow-y-auto mb-4">
+          <div v-for="f in actualizarTallasModal.filas" :key="f.talla_row" class="flex items-center gap-2 border border-surface-border rounded-lg p-2.5">
+            <div class="flex-1 min-w-0">
+              <p class="text-[13px] font-medium text-ink truncate">{{ f.finished_item }}</p>
+              <p class="text-[12px] text-ink-muted truncate">{{ f.label }}</p>
+            </div>
+            <input v-model.number="f.qtyNueva" type="number" min="0" class="field-input w-24 text-right" placeholder="Cantidad" />
+          </div>
+        </div>
+        <p v-if="actualizarTallasModal.error" class="text-[12px] text-red-600 mb-3">{{ actualizarTallasModal.error }}</p>
+        <div class="flex gap-2 justify-end">
+          <button class="px-3 py-1.5 text-[13px] text-ink-muted hover:bg-surface-raised rounded-lg" @click="actualizarTallasModal.open = false">Cancelar</button>
+          <button :disabled="actualizarTallasModal.saving" class="px-4 py-1.5 text-[13px] font-medium text-white bg-brand-500 hover:bg-brand-600 disabled:opacity-50 rounded-lg flex items-center gap-2" @click="confirmarActualizarTallas">
+            <svg v-if="actualizarTallasModal.saving" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+            {{ actualizarTallasModal.saving ? "Guardando…" : "Confirmar cantidades" }}
           </button>
         </div>
       </div>
@@ -91,6 +119,10 @@
               <template v-if="headerDoc.isCosteo">
                 <button class="action-item" @click="duplicateDoc">Duplicar</button>
                 <button class="action-item" @click="openTplModal">Guardar como plantilla</button>
+                <button v-if="tallasPendientes.length" class="action-item text-amber-700" @click="openActualizarTallasModal">
+                  Actualizar cantidades por talla
+                  <span class="ml-auto text-[10px] font-semibold bg-amber-100 text-amber-700 rounded-full px-1.5 py-0.5">{{ tallasPendientes.length }}</span>
+                </button>
                 <button class="action-item" @click="actionsOpen = false; showHistorialModal = true">Ver historial</button>
               </template>
               <button class="action-item" @click="printDoc">Imprimir / PDF</button>
@@ -116,10 +148,16 @@
 
       <button v-if="docState === 0" :disabled="saving" class="h-8 px-3.5 text-[13px] font-medium text-ink border border-surface-border rounded-lg hover:bg-surface-raised transition-colors disabled:opacity-50 flex items-center gap-2" @click="saveDoc">
         <svg v-if="saving" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-        {{ saving ? "Guardando…" : (isNew ? "Crear Costeo" : "Guardar") }}
+        {{ saving ? "Guardando…" : (isNew ? "Guardar Costeo" : "Guardar") }}
       </button>
 
-      <button v-if="!isNew && docState === 0" :disabled="advancing" class="h-8 px-3.5 text-[13px] font-semibold text-brand-700 bg-brand-50 rounded-lg hover:bg-brand-100 transition-colors disabled:opacity-50 flex items-center gap-1.5" @click="validarCosteo" title="Guarda y valida el costeo para poder avanzar">
+      <button
+        v-if="!isNew && docState === 0"
+        :disabled="advancing || !puedeValidarCosteo"
+        class="h-8 px-3.5 text-[13px] font-semibold text-brand-700 bg-brand-50 rounded-lg hover:bg-brand-100 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+        @click="validarCosteo"
+        :title="puedeValidarCosteo ? 'Guarda y valida el costeo para poder avanzar' : 'Necesitas el rol \'Aprobador de Documentos Yelke\' para validar'"
+      >
         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
         Validar
       </button>
@@ -160,6 +198,21 @@
       </div>
     </div>
 
+    <!-- Borrador recuperado de este navegador (localStorage) -- por si se recarga o
+         se cierra la pestaña sin haber apretado "Guardar Costeo". -->
+    <div v-if="draftBanner.show" class="mx-5 mt-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-2.5">
+        <svg class="w-4 h-4 text-amber-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.71-3l-6.93-12a2 2 0 00-3.42 0l-6.93 12a2 2 0 001.71 3z"/></svg>
+        <p class="text-[13px] text-ink-muted">
+          Se encontró un <span class="font-medium text-ink">borrador sin guardar</span> de {{ draftAgeLabel() }} en este navegador.
+        </p>
+      </div>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <button class="text-[12.5px] text-ink-muted hover:text-ink px-2 py-1" @click="discardDraft">Descartar</button>
+        <button class="text-[12.5px] font-semibold text-amber-700 hover:text-amber-800 px-2 py-1" @click="restoreDraft">Recuperar</button>
+      </div>
+    </div>
+
     <div v-if="loading" class="flex-1 flex items-center justify-center text-ink-light">
       <svg class="w-7 h-7 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
     </div>
@@ -179,10 +232,11 @@
             <div><label class="field-label">Cliente <span class="text-red-400">*</span></label><LinkInput v-model="form.cliente" doctype="Customer" placeholder="Buscar cliente…" :error="!!errors.cliente" /></div>
             <div><label class="field-label">Fecha <span class="text-red-400">*</span></label><input v-model="form.fecha" type="date" class="field-input" :class="errors.fecha ? 'border-red-400' : ''" /></div>
             <div><label class="field-label">Compañía <span class="text-red-400">*</span></label><LinkInput v-model="form.compania" doctype="Company" placeholder="Compañía…" :error="!!errors.compania" /></div>
-            <div>
-              <label class="field-label">Familia de prenda</label>
-              <input v-model="form.familia_prenda" list="familias-list" type="text" class="field-input" placeholder="Ej: Camisola industrial" />
-              <datalist id="familias-list"><option v-for="f in familias" :key="f" :value="f" /></datalist>
+            <div class="flex items-end pb-1.5">
+              <label class="flex items-center gap-2 text-[13px] text-ink cursor-pointer select-none">
+                <input v-model="form.guardar_como_plantilla" type="checkbox" class="w-4 h-4 rounded border-surface-border" />
+                Guardar productos como plantilla al guardar
+              </label>
             </div>
           </div>
           <!-- Almacenes y centro de costos: se rellenan solos al elegir la compañía.
@@ -388,7 +442,7 @@
                             <tr v-for="d in materialesDelPunto(punto)" :key="d._tid" class="align-top">
                               <td class="py-1 pr-2">
                                 <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
-                                <input v-model="d.item" class="field-input" placeholder="Materia prima…" @change="onDetalleItemChange(d, prod)" />
+                                <LinkInput v-model="d.item" doctype="Item" :filters="ITEM_FILTERS.mp" placeholder="Materia prima…" @update:model-value="onDetalleItemChange(d, prod)" />
                               </td>
                               <td class="py-1 pr-2">
                                 <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
@@ -494,7 +548,7 @@
                       <table class="w-full table-fixed text-sm">
                         <tbody>
                           <tr v-for="d in materialesSinPunto(prod.finished_item)" :key="d._tid" class="border-b border-surface-border/60 align-top">
-                            <td class="py-1.5 pr-2 w-1/5"><input v-model="d.item" class="field-input" placeholder="Materia prima…" @change="onDetalleItemChange(d, prod)" /></td>
+                            <td class="py-1.5 pr-2 w-1/5"><LinkInput v-model="d.item" doctype="Item" :filters="ITEM_FILTERS.mp" placeholder="Materia prima…" @update:model-value="onDetalleItemChange(d, prod)" /></td>
                             <td class="py-1.5 pr-2 w-1/5">
                               <select v-model="d.supplier" @change="onSupplierChange(d, prod)" :disabled="!d.item" class="field-input">
                                 <option value="">{{ !d.item ? 'Elige artículo' : '— Proveedor —' }}</option>
@@ -536,9 +590,10 @@
                     <span v-if="tallasDe(prod.finished_item).length" class="ml-auto text-[11.5px]" :class="tallasAsignadas(prod) === (prod.qty || 0) ? 'text-green-600' : 'text-amber-600'">Asignadas: {{ tallasAsignadas(prod) }} / {{ prod.qty || 0 }}</span>
                   </div>
                   <table v-if="tallasDe(prod.finished_item).length" class="w-full text-sm mb-3">
-                    <thead><tr class="border-b border-surface-border text-left text-xs font-semibold text-ink-light"><th class="py-2 w-2/5">Género / Tipo de prenda / Talla</th><th class="py-2 w-20 text-right">Cantidad</th><th class="py-2 w-28">Sobrecosto</th><th class="py-2 w-24 text-right">Valor</th><th class="py-2 w-24 text-right">Precio venta</th><th class="py-2 w-24 text-right">Venta total</th><th class="w-7"></th></tr></thead>
+                    <thead><tr class="border-b border-surface-border text-left text-xs font-semibold text-ink-light"><th class="py-2 w-2/5">Género / Tipo de prenda / Talla</th><th class="py-2 w-24 text-right">Cantidad</th><th class="py-2 w-32">Sobrecosto</th><th class="py-2 w-24 text-right">Valor</th><th class="py-2 w-24 text-right">Precio venta</th><th class="py-2 w-24 text-right">Venta total</th><th class="w-7"></th></tr></thead>
                     <tbody>
-                      <tr v-for="t in tallasDe(prod.finished_item)" :key="t._tid" class="border-b border-surface-border/60">
+                      <template v-for="t in tallasDe(prod.finished_item)" :key="t._tid">
+                      <tr class="border-b border-surface-border/60" :class="esTallaPendiente(t) ? 'bg-amber-50/50' : ''">
                         <td class="py-1.5 pr-2">
                           <div class="flex items-center gap-1">
                             <select v-model="t.genero" class="field-input" style="flex: 0 0 92px;" @change="onTallaGeneroChange(t)">
@@ -550,28 +605,64 @@
                               <option value="">{{ t.genero ? 'Tipo de prenda…' : '— elige género —' }}</option>
                               <option v-for="g in gruposDeGenero(t.genero)" :key="g.name" :value="g.name">{{ g.talla }}</option>
                             </select>
-                            <select v-model="t.talla" class="field-input" style="flex: 0 0 84px;" :disabled="!t.grupo_talla" @change="recalcTalla(t, prod)">
-                              <option value="">{{ t.grupo_talla ? 'Talla…' : '—' }}</option>
-                              <option v-for="s in tallasDeGrupo(t.grupo_talla)" :key="s.name" :value="s.name">{{ s.talla }}</option>
-                            </select>
                           </div>
+                          <div v-if="t.grupo_talla" class="flex flex-wrap gap-1 mt-1">
+                            <button
+                              v-for="s in tallasDeGrupo(t.grupo_talla)" :key="s.name" type="button"
+                              :disabled="tallaUsadaEnOtraFila(t, prod, s.name)"
+                              class="px-1.5 py-0.5 rounded text-[10.5px] border transition-colors"
+                              :class="tallaSeleccionada(t, s.name)
+                                ? 'bg-brand-500 text-white border-brand-500'
+                                : tallaUsadaEnOtraFila(t, prod, s.name)
+                                  ? 'bg-surface-raised text-ink-xlight border-surface-border cursor-not-allowed'
+                                  : 'bg-white text-ink-muted border-surface-border hover:border-brand-300'"
+                              :title="tallaUsadaEnOtraFila(t, prod, s.name) ? 'Ya asignada a otra fila' : ''"
+                              @click="toggleTallaEnGrupo(t, s.name, prod)"
+                            >{{ s.talla }}</button>
+                          </div>
+                          <p v-else class="text-[10.5px] text-ink-xlight mt-1">Elige género y tipo de prenda para ver las tallas</p>
                         </td>
-                        <td class="py-1.5 pr-2"><input v-model.number="t.qty" type="number" min="0" :max="tallaMaxQty(t, prod)" class="field-input text-right" @input="onTallaQtyInput(t, prod)" /></td>
+                        <td class="py-1.5 pr-2">
+                          <input v-model.number="t.qty" type="number" min="0" :max="tallaMaxQty(t, prod)" :disabled="esTallaPendiente(t)" class="field-input text-right" @input="onTallaQtyInput(t, prod)" />
+                          <label class="flex items-center gap-1 mt-1 text-[10px] cursor-pointer select-none" :class="esTallaPendiente(t) ? 'text-amber-700 font-medium' : 'text-ink-light'">
+                            <input type="checkbox" :checked="esTallaPendiente(t)" class="w-3 h-3" @change="toggleTallaPendiente(t, prod, $event.target.checked)" />
+                            Pendiente
+                          </label>
+                        </td>
                         <td class="py-1.5 pr-2">
                           <select v-model="t.sobrecosto_tipo" class="field-input" @change="recalcTalla(t, prod)">
                             <option value="Ninguno">Ninguno</option>
                             <option value="Fijo">Fijo ($)</option>
                             <option value="Porcentaje">Porcentaje (%)</option>
+                            <option value="Material">Material</option>
                           </select>
                         </td>
                         <td class="py-1.5 pr-2">
-                          <input v-if="t.sobrecosto_tipo !== 'Ninguno'" v-model.number="t.sobrecosto_valor" type="number" min="0" step="0.01" class="field-input text-right" @input="recalcTalla(t, prod)" />
+                          <input v-if="t.sobrecosto_tipo === 'Fijo' || t.sobrecosto_tipo === 'Porcentaje'" v-model.number="t.sobrecosto_valor" type="number" min="0" step="0.01" class="field-input text-right" @input="recalcTalla(t, prod)" />
+                          <div v-else-if="t.sobrecosto_tipo === 'Material'" class="field-input bg-surface-raised/60 text-ink-muted text-right" title="Se calcula solo: diferencia de precio entre el material original y el alterno">{{ fmtC(t.sobrecosto_valor) }}</div>
                           <div v-else class="field-input bg-surface-raised/60 text-ink-xlight text-right">—</div>
                         </td>
                         <td class="py-1.5 pr-2 text-right font-medium text-brand-600">{{ fmtC(t.precio_venta) }}</td>
                         <td class="py-1.5 pr-2 text-right font-medium text-ink">{{ fmtC((t.precio_venta || 0) * (t.qty || 0)) }}</td>
                         <td class="py-1.5"><button class="del-btn" @click="removeTalla(t, prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button></td>
                       </tr>
+                      <tr v-if="t.sobrecosto_tipo === 'Material'" class="border-b border-surface-border/60 bg-surface-raised/40">
+                        <td colspan="7" class="py-2 px-2">
+                          <div class="flex items-center gap-2 text-[12px]">
+                            <span class="text-ink-muted flex-shrink-0">Cambia el material</span>
+                            <select v-model="t.sobrecosto_material_original" class="field-input flex-1 min-w-0" @change="onTallaMaterialAlternoChange(t, prod)">
+                              <option value="">— elige cuál —</option>
+                              <option v-for="m in materialesDe(prod.finished_item)" :key="m._tid" :value="m.item">{{ m.item }}</option>
+                            </select>
+                            <span class="text-ink-light flex-shrink-0">por</span>
+                            <div class="flex-1 min-w-0">
+                              <LinkInput v-model="t.sobrecosto_material_alterno" doctype="Item" :filters="ITEM_FILTERS.mp" placeholder="Artículo alterno…" @update:model-value="onTallaMaterialAlternoChange(t, prod)" />
+                            </div>
+                          </div>
+                          <p v-if="t.lote_ref" class="text-[11px] text-ink-light mt-1">Ya asignado al lote "{{ t.lote_ref }}" -- ese envío de material usará el artículo alterno.</p>
+                        </td>
+                      </tr>
+                      </template>
                     </tbody>
                   </table>
                   <p v-if="tallasDe(prod.finished_item).length" class="text-[12px] text-ink-muted mb-3">Total de venta con sobrecostos por talla: <span class="font-semibold text-ink">{{ fmtC(tallasVentaTotal(prod)) }}</span></p>
@@ -718,6 +809,9 @@
 
               <!-- Derecha: vista previa del PDF (zoom reducido) -->
               <div class="flex-1 min-w-0 bg-white rounded-xl border border-surface-border overflow-hidden">
+                <div class="flex items-center justify-end px-2 py-1.5 border-b border-surface-border">
+                  <button class="doc-action" @click="openPdf('Quotation', q.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5h-4m4 0v-4m0 4l-5-5"/></svg>Ampliar</button>
+                </div>
                 <div style="height: 70vh; overflow: auto;">
                   <iframe :key="previewKey" :src="printUrl('Quotation', q.name)" style="width: 143%; height: 143%; transform: scale(0.7); transform-origin: top left; border: 0;" title="Vista previa de la cotización"></iframe>
                 </div>
@@ -887,6 +981,9 @@
 
               <!-- Derecha: vista previa del PDF -->
               <div class="flex-1 min-w-0 bg-white rounded-xl border border-surface-border overflow-hidden">
+                <div class="flex items-center justify-end px-2 py-1.5 border-b border-surface-border">
+                  <button class="doc-action" @click="openPdf('Sales Order', so.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5h-4m4 0v-4m0 4l-5-5"/></svg>Ampliar</button>
+                </div>
                 <div style="height: 70vh; overflow: auto;">
                   <iframe :key="previewKey" :src="printUrl('Sales Order', so.name)" style="width: 143%; height: 143%; transform: scale(0.7); transform-origin: top left; border: 0;" title="Vista previa de la orden de venta"></iframe>
                 </div>
@@ -1384,7 +1481,18 @@
                   <tr v-for="it in mrItems" :key="it.name" class="border-b border-surface-border/60">
                     <td class="py-1.5 pr-2 font-mono text-[12px]">{{ it.item_code }}</td>
                     <td class="py-1.5 pr-2"><input v-if="!mrValidated" v-model.number="it.qty" type="number" :min="Math.round((it.qty_original || it.qty) * 0.95 * 100) / 100" :max="Math.round((it.qty_original || it.qty) * 1.05 * 100) / 100" class="field-input text-right" :class="(it.qty > (it.qty_original || it.qty) * 1.05 + 0.001 || it.qty < (it.qty_original || it.qty) * 0.95 - 0.001) ? 'border-red-400' : ''" /><span v-else class="text-right block">{{ it.qty }}</span></td>
-                    <td class="py-1.5 pr-2 text-ink-muted text-xs">{{ it.uom }}</td>
+                    <td class="py-1.5 pr-2">
+                      <select
+                        v-if="!mrValidated"
+                        :value="it.uom" @change="onMrUomChange(it, $event.target.value)"
+                        class="field-input text-xs py-1"
+                        title="Solo UDM ya dadas de alta para este artículo (Alta de Productos)"
+                      >
+                        <option v-if="!(itemUomOptions[it.item_code] || []).some((o) => o.uom === it.uom)" :value="it.uom">{{ it.uom }}</option>
+                        <option v-for="o in itemUomOptions[it.item_code] || []" :key="o.uom" :value="o.uom">{{ o.uom }}</option>
+                      </select>
+                      <span v-else class="text-ink-muted text-xs">{{ it.uom }}</span>
+                    </td>
                     <td class="py-1.5 pr-2"><LinkInput v-if="!mrValidated" v-model="it.supplier" doctype="Supplier" placeholder="Proveedor…" /><span v-else>{{ it.supplier || '—' }}</span></td>
                     <td class="py-1.5 pr-2">
                       <div v-if="!mrValidated" class="relative"><span class="prefix text-xs">$</span><input v-model.number="it.rate" type="number" min="0" step="0.01" class="field-input text-right pl-5" placeholder="Auto" /></div>
@@ -1457,7 +1565,10 @@
                 :doc="subPo" :items="subItems" :form="subForm" desk-route="purchase-order"
                 :payment-terms-options="cotDefaults.payment_terms_templates" :terms-options="cotDefaults.terms"
                 show-preview-button :advancing="advancing"
-                @save="guardarSub" @validate="validarSub" @preview="openPdf('Purchase Order', subPo.name)"
+                :requires-review="subPo.requiere_doble_validacion" :reviewed="subPo.revisado_yelke"
+                :reviewed-by="subPo.revisado_por_yelke" :reviewed-at="subPo.revisado_en_yelke"
+                :puede-revisar="permisosValidacion.puede_revisar" :puede-aprobar="permisosValidacion.puede_aprobar"
+                @save="guardarSub" @validate="validarSub" @review="revisarSub" @preview="openPdf('Purchase Order', subPo.name)"
                 @send="openSend('Purchase Order', subPo.name, subPo.contact_email, subPo.contact_mobile)"
               />
               <p v-if="!omEsMaestra" class="text-[11.5px] text-ink-light mt-2">Esta ficha técnica se heredó de otra etapa del proyecto — solo se edita desde la primera.</p>
@@ -1479,11 +1590,22 @@
               <div v-for="fila in nuevoLoteForm.porProducto" :key="fila.finished_item" class="flex items-center gap-2">
                 <span class="text-[12.5px] text-ink flex-1 truncate" :title="fila.item_name">{{ fila.item_name }}</span>
                 <template v-if="fila.po_docstatus === 1">
+                  <select
+                    v-if="tallasSinLoteDe(fila.finished_item).length"
+                    v-model="fila.talla_row" class="field-input w-40 text-[11.5px]" :disabled="nuevoLoteForm.loading"
+                    @change="onTallaLoteSelect(fila)"
+                  >
+                    <option value="">Producción estándar</option>
+                    <option v-for="t in tallasSinLoteDe(fila.finished_item)" :key="t.name" :value="t.name">{{ t.talla_label }} · {{ t.qty }} pza(s) · {{ t.material_label }}</option>
+                  </select>
                   <input v-model.number="fila.qty" type="number" min="0" step="1" :disabled="nuevoLoteForm.loading" class="field-input w-28" />
                   <span class="text-[11px] text-ink-light w-24 tabular-nums">pendiente {{ fila.saldo }}</span>
                 </template>
                 <span v-else class="text-[11.5px] text-amber-700 w-56">Valida antes la 1ª OC de este producto</span>
               </div>
+              <p v-if="nuevoLoteForm.porProducto.some((f) => tallasSinLoteDe(f.finished_item).length)" class="text-[11px] text-ink-light">
+                Si este lote es para una talla con material distinto (ej. cierre más grande), selecciónala arriba -- el envío de material a ese taller usará el artículo alterno correcto en vez del estándar.
+              </p>
             </div>
             <div class="flex items-center gap-2">
               <input v-model="nuevoLoteForm.schedule_date" type="date" class="field-input w-40" />
@@ -1572,7 +1694,10 @@
                   :show-pull-prices="loteDocOpen.tab === 'oc'"
                   :advancing="advancing"
                   :inline-preview-url="printUrl(docCompra.doctype, docCompra.name)" :preview-key="previewKey"
-                  @save="guardarDocCompra" @validate="validarDocCompra" @pull-prices="jalarPreciosOC"
+                  :requires-review="docCompra.requiere_doble_validacion" :reviewed="docCompra.revisado_yelke"
+                  :reviewed-by="docCompra.revisado_por_yelke" :reviewed-at="docCompra.revisado_en_yelke"
+                  :puede-revisar="permisosValidacion.puede_revisar" :puede-aprobar="permisosValidacion.puede_aprobar"
+                  @save="guardarDocCompra" @validate="validarDocCompra" @review="revisarDocCompra" @pull-prices="jalarPreciosOC"
                   @send="openSend(docCompra.doctype, docCompra.name, docCompra.contact_email, docCompra.contact_mobile)"
                 />
               </div>
@@ -1685,7 +1810,10 @@
                       :doc="subPo" :items="subItems" :form="subForm" desk-route="purchase-order"
                       :payment-terms-options="cotDefaults.payment_terms_templates" :terms-options="cotDefaults.terms"
                       show-preview-button :advancing="advancing"
-                      @save="guardarSub" @validate="validarSub" @preview="openPdf('Purchase Order', subPo.name)"
+                      :requires-review="subPo.requiere_doble_validacion" :reviewed="subPo.revisado_yelke"
+                      :reviewed-by="subPo.revisado_por_yelke" :reviewed-at="subPo.revisado_en_yelke"
+                      :puede-revisar="permisosValidacion.puede_revisar" :puede-aprobar="permisosValidacion.puede_aprobar"
+                      @save="guardarSub" @validate="validarSub" @review="revisarSub" @preview="openPdf('Purchase Order', subPo.name)"
                       @send="openSend('Purchase Order', subPo.name, subPo.contact_email, subPo.contact_mobile)"
                     />
                   </div>
@@ -2066,8 +2194,13 @@
             <svg class="w-10 h-10 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.2"><path stroke-linecap="round" stroke-linejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0l-2 5H6l-2-5m16 0H4m5 5v.01M15 18v.01"/></svg>
             <p class="text-[13px]">La vista previa aparecerá al crear la remisión</p>
           </div>
-          <div v-else style="height: 78vh; overflow: auto;">
-            <iframe :key="previewKey" :src="printUrl('Delivery Note', dnDoc.name)" style="width: 143%; height: 143%; transform: scale(0.7); transform-origin: top left; border: 0;" title="Vista previa de la remisión"></iframe>
+          <div v-else>
+            <div class="flex items-center justify-end px-2 py-1.5 border-b border-surface-border">
+              <button class="doc-action" @click="openPdf('Delivery Note', dnDoc.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5h-4m4 0v-4m0 4l-5-5"/></svg>Ampliar</button>
+            </div>
+            <div style="height: 78vh; overflow: auto;">
+              <iframe :key="previewKey" :src="printUrl('Delivery Note', dnDoc.name)" style="width: 143%; height: 143%; transform: scale(0.7); transform-origin: top left; border: 0;" title="Vista previa de la remisión"></iframe>
+            </div>
           </div>
         </div>
       </div>
@@ -2154,8 +2287,13 @@
             <svg class="w-10 h-10 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 14l2 2 4-4m4 9V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z"/></svg>
             <p class="text-[13px]">La vista previa aparecerá al generar la factura</p>
           </div>
-          <div v-else style="height: 78vh; overflow: auto;">
-            <iframe :key="previewKey" :src="printUrl('Sales Invoice', related.sales_invoice.name)" style="width: 143%; height: 143%; transform: scale(0.7); transform-origin: top left; border: 0;" title="Vista previa de la factura de venta"></iframe>
+          <div v-else>
+            <div class="flex items-center justify-end px-2 py-1.5 border-b border-surface-border">
+              <button class="doc-action" @click="openPdf('Sales Invoice', related.sales_invoice.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5h-4m4 0v-4m0 4l-5-5"/></svg>Ampliar</button>
+            </div>
+            <div style="height: 78vh; overflow: auto;">
+              <iframe :key="previewKey" :src="printUrl('Sales Invoice', related.sales_invoice.name)" style="width: 143%; height: 143%; transform: scale(0.7); transform-origin: top left; border: 0;" title="Vista previa de la factura de venta"></iframe>
+            </div>
           </div>
         </div>
       </div>
@@ -2220,9 +2358,10 @@
                   <button :disabled="advancing" class="w-full h-9 text-sm font-medium text-ink border border-surface-border rounded-lg hover:bg-surface-raised disabled:opacity-50" @click="guardarPinv">Guardar cambios</button>
                   <button :disabled="advancing" class="w-full h-9 text-sm font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex items-center justify-center gap-1.5" @click="validarPinv"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Validar factura</button>
                 </template>
-                <div class="grid grid-cols-2 gap-2 pt-1">
+                <div class="grid grid-cols-3 gap-2 pt-1">
                   <button class="doc-action justify-center" @click="downloadPdf('Purchase Invoice', pinvDoc.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>Descargar</button>
                   <button class="doc-action justify-center" @click="printDocView('Purchase Invoice', pinvDoc.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>Imprimir</button>
+                  <button class="doc-action justify-center" @click="openPdf('Purchase Invoice', pinvDoc.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5h-4m4 0v-4m0 4l-5-5"/></svg>Ampliar</button>
                 </div>
                 <a class="doc-action justify-center w-full" :href="`/app/purchase-invoice/${pinvDoc.name}`" target="_blank"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>Abrir en ERPNext</a>
               </div>
@@ -2340,7 +2479,7 @@ import PurchaseDocPanel from "@/components/PurchaseDocPanel.vue";
 import ReporteFinalPanel from "@/components/ReporteFinalPanel.vue";
 import OrdenManufacturaForm from "@/components/OrdenManufacturaForm.vue";
 import ActiveSOSelector from "@/components/ActiveSOSelector.vue";
-import { db, call, openDesk as deskOpen, uploadFile, searchLink, fuzzyQuery } from "@/utils/frappe.js";
+import { db, call, openDesk as deskOpen, uploadFile, searchLink, fuzzyQuery, getLinkDisplayLabel } from "@/utils/frappe.js";
 import { useToast } from "@/composables/useToast.js";
 import { useDocumentActions } from "@/composables/useDocumentActions.js";
 import { useCompany } from "@/composables/useCompany.js";
@@ -2449,8 +2588,47 @@ async function confirmarGenerarReplica() {
   finally { replicaModal.generating = false; }
 }
 const confirmCancel = reactive({ open: false, loading: false });
-const familias = ref([]);
-const tplModal = reactive({ open: false, nombre: "", familia: "", saving: false });
+const tplModal = reactive({ open: false, saving: false });
+// Tallas "Pendiente por cliente" en TODO el costeo (no solo el producto abierto)
+// -- para el badge del kebab y el modal de "Actualizar cantidades por talla".
+const tallasPendientes = computed(() => tallas.value.filter(esTallaPendiente));
+const actualizarTallasModal = reactive({ open: false, saving: false, error: "", filas: [] });
+function openActualizarTallasModal() {
+  actionsOpen.value = false;
+  actualizarTallasModal.error = "";
+  actualizarTallasModal.filas = tallasPendientes.value.map(t => ({
+    talla_row: t.name, finished_item: t.finished_item, label: tallaEtiqueta(t), qtyNueva: 0,
+  }));
+  actualizarTallasModal.open = true;
+}
+function tallaEtiqueta(t) {
+  const codes = tallasSeleccionadasDe(t);
+  const labels = codes.map(c => allTallas.value.find(x => x.name === c)?.talla || c);
+  return [t.genero, labels.join("/")].filter(Boolean).join(" ") || "(sin talla capturada)";
+}
+async function confirmarActualizarTallas() {
+  const filas = actualizarTallasModal.filas.filter(f => (f.qtyNueva || 0) > 0);
+  if (!filas.length) { actualizarTallasModal.error = "Captura al menos una cantidad."; return; }
+  actualizarTallasModal.saving = true;
+  actualizarTallasModal.error = "";
+  try {
+    let sincronizados = 0;
+    for (const f of filas) {
+      const r = await call("costeo_yelke.api.costeo_api.actualizar_talla_cantidad", {
+        costeo: docName.value, talla_row: f.talla_row, qty: f.qtyNueva, estado_cantidad: "Definida",
+      });
+      sincronizados += (r.actualizados || []).length;
+    }
+    await fillFromDoc(await db.get("Costeo", docName.value));
+    actualizarTallasModal.open = false;
+    showToast(sincronizados ? `Cantidades confirmadas · ${sincronizados} documento(s) actualizado(s)` : "Cantidades confirmadas");
+  } catch (e) {
+    actualizarTallasModal.error = e.message || "No se pudieron actualizar las cantidades";
+  } finally {
+    actualizarTallasModal.saving = false;
+  }
+}
+const productosConNombre = computed(() => productos.value.filter(p => p.finished_item).map(p => p.finished_item));
 const materializeModal = reactive({ open: false, saving: false, text: "", suggestedPrice: 0, suggestedDescription: "", suggestedImage: "" });
 const pendientesArticulos = ref([]);
 const pendientesContext = reactive({ company: "", almacen_materias_primas: "", almacen_trabajo_en_proceso: "" });
@@ -2680,7 +2858,7 @@ const pinvForm = reactive({ posting_date: "", due_date: "", bill_no: "", bill_da
 const cotDefaults = reactive({ payment_terms_templates: [], terms: [], users: [], price_lists: [], currencies: [], tax_templates: [] });
 const prepSteps = ref([]);
 
-const form = reactive({ titulo: "", cliente: "", fecha: today(), compania: "", proyecto: "", familia_prenda: "", centro_de_costos: "", almacen_materias_primas: "", almacen_trabajo_en_proceso: "" });
+const form = reactive({ titulo: "", cliente: "", fecha: today(), compania: "", proyecto: "", guardar_como_plantilla: true, centro_de_costos: "", almacen_materias_primas: "", almacen_trabajo_en_proceso: "" });
 // Centro de costos y almacenes ya no se capturan a mano -- se derivan solos de
 // la compañía (mismo criterio en costeo_api.get_company_defaults), para no
 // pedirle al usuario que repita en cada costeo algo que siempre es igual.
@@ -2720,6 +2898,16 @@ watch(() => form.compania, (val, prev) => {
   applyCompanyDefaults(val);
 });
 const errors = reactive({});
+// Rol 'Aprobador de Documentos Yelke' (o System Manager) -- ver costeo_api.py
+// puede_validar_costeo/validar_documento. Empieza en true (optimista) para no
+// parpadear el botón deshabilitado mientras carga; el backend igual lo exige.
+const puedeValidarCosteo = ref(true);
+async function loadPuedeValidarCosteo() {
+  try { puedeValidarCosteo.value = !!(await call("costeo_yelke.api.costeo_api.puede_validar_costeo")).puede; }
+  catch { /* si falla, se deja en true -- el backend igual bloquea si no toca */ }
+}
+const draftBanner = reactive({ show: false, savedAt: null });
+const pendingDraft = ref(null);
 const productos = ref([]);
 const detalles = ref([]);
 const etapas = ref([]);
@@ -2745,14 +2933,16 @@ const {
   planDetail, planWh, hasPlan, planValidated, downstream,
   loadPlan, obtenerMateriasPrimas, guardarPlan, validarPlan, crearOrdenesTrabajo,
   mrDetail, mrItems, mrSchedule, mrResults, mrDocTab, mrValidated,
+  itemUomOptions, onMrUomChange,
   docCompra, docCompraItems, docCompraForm, docCompraValidated, ocSelected,
   mrLotes, addMrLote, removeMrLote, repartirMrLotesIgual, mrLotePendiente,
   loadSolicitud, crearSolicitud, guardarSolicitud, validarSolicitud,
-  selectOC, selectOcLote, selectRfq, selectSq, guardarDocCompra, validarDocCompra, jalarPreciosOC,
+  selectOC, selectOcLote, selectRfq, selectSq, guardarDocCompra, validarDocCompra, revisarDocCompra, jalarPreciosOC,
+  permisosValidacion, loadPermisosValidacion,
   reciboPr, reciboItems, reciboForm,
   selectReciboLote, guardarRecibo, validarRecibo,
   subOcs, subPo, subItems, subForm, subValidated,
-  loadSubcontratos, crearSubcontratos, selectSub, guardarSub, validarSub,
+  loadSubcontratos, crearSubcontratos, selectSub, guardarSub, validarSub, revisarSub,
   flujo, scoSel, scoValidated, scoForm, scoCostos,
   guardarSco, validarSco, addCosto, removeCosto,
   transDoc, transForm, transCostos, transValidated, transferDone, transferirMaterial, guardarTrans, validarTransferencia, enviarMaterialTaller,
@@ -2763,6 +2953,7 @@ const {
   loteActivo, paradaActiva, tracksLote, paradaEstado,
   loadLotesProduccion, seleccionarLote, seleccionarParada, verParadaPo,
   abrirNuevoLote, cerrarNuevoLote, crearNuevoLote, abrirParada, siguienteParadaPendiente, generarOcLote,
+  tallasSinLoteDe, onTallaLoteSelect,
   primeraEtapaQty, primeraEtapaLoading, primeraEtapaLimitado, sugerirPrimeraEtapaQty,
   crearRfqLote, crearSqLote,
   omGeneral, omCab, omDama, omProc, omTablas, omArchivos, omUploading, omEsMaestra,
@@ -2937,7 +3128,14 @@ async function loadRevisionInfo() {
 }
 
 // ── Computed ──
-const headerSubtitle = computed(() => isNew.value ? "Completa los datos del costeo" : [form.titulo && docName.value, form.cliente, form.familia_prenda].filter(Boolean).join(" · "));
+// Nombre Comercial del cliente en el subtítulo del encabezado (form.cliente es el
+// Link crudo -- LinkInput ya resuelve esto para su propio campo, pero el
+// subtítulo es texto aparte, ver getLinkDisplayLabel).
+const clienteDisplayName = ref("");
+watch(() => form.cliente, async (val) => {
+  clienteDisplayName.value = val ? ((await getLinkDisplayLabel("Customer", val)) || val) : "";
+}, { immediate: true });
+const headerSubtitle = computed(() => isNew.value ? "Completa los datos del costeo" : [form.titulo && docName.value, clienteDisplayName.value].filter(Boolean).join(" · "));
 const totalVenta = computed(() => productos.value.reduce((s, p) => s + (p.total_sales_price || 0), 0));
 
 // El menú de acciones (⋮) y la insignia de estado del header deben corresponder al
@@ -3264,7 +3462,7 @@ function genStageId() { return Math.random().toString(36).slice(2, 10) + Date.no
 
 
 // ── Product / detail / stage ──
-function addProducto() { const p = { _tid: uid(), image: "", description: "", finished_item: "", qty: 1, shipping_cost: 0, labeling_cost: 0, packaging_cost: 0, overhead_pct: 0, margin_pct: 0, material_cost: 0, services_cost: 0, overhead_amt: 0, total_unit_cost: 0, unit_sales_price: 0, precio_manual: 0, total_sales_price: 0 }; productos.value.push(p); expandedTid.value = p._tid; }
+function addProducto() { const p = { _tid: uid(), _lastFinishedItem: "", image: "", description: "", finished_item: "", qty: 1, shipping_cost: 0, labeling_cost: 0, packaging_cost: 0, overhead_pct: 0, margin_pct: 0, material_cost: 0, services_cost: 0, overhead_amt: 0, total_unit_cost: 0, unit_sales_price: 0, precio_manual: 0, total_sales_price: 0 }; productos.value.push(p); expandedTid.value = p._tid; }
 function directCost(prod) { return (prod.material_cost || 0) + (prod.services_cost || 0) + (prod.shipping_cost || 0) + (prod.labeling_cost || 0) + (prod.packaging_cost || 0); }
 // Desglose informativo de directCost por grupo -- telas y avíos son subconjuntos
 // de material_cost (según tipo_material de cada renglón), servicios agrupa todo
@@ -3288,7 +3486,29 @@ function totalEtapas(prod) {
 function expectedProfit(prod) { return (prod.unit_sales_price || 0) - (prod.total_unit_cost || 0); }
 function removeProducto(idx) { const prod = productos.value[idx]; if (!prod) return; const stageIdsDeProd = new Set(etapas.value.filter(e => e.producto_terminado === prod.finished_item).map(e => e.stage_id)); const materialIdsDeProd = new Set(detalles.value.filter(d => d.finished_item === prod.finished_item).map(d => d.material_id)); detalles.value = detalles.value.filter(d => d.finished_item !== prod.finished_item); etapas.value = etapas.value.filter(e => e.producto_terminado !== prod.finished_item); materialesEtapa.value = materialesEtapa.value.filter(r => !materialIdsDeProd.has(r.material_id) && !stageIdsDeProd.has(r.stage_id)); tallas.value = tallas.value.filter(t => t.finished_item !== prod.finished_item); productos.value.splice(idx, 1); if (expandedTid.value === prod._tid) expandedTid.value = null; }
 function toggleProduct(tid) { expandedTid.value = expandedTid.value === tid ? null : tid; }
-async function onProductoItemChange(prod) { recalcProducto(prod); const fetched = await fetchItemImage(prod.finished_item); if (fetched) prod.image = fetched; }
+// Materiales, etapas y tallas se vinculan al producto por el VALOR de finished_item
+// (son tablas hermanas, no anidadas -- Frappe no guarda tablas dentro de tablas), no
+// por la fila del producto en sí. Si aquí solo se actualizara prod.finished_item,
+// esas filas se quedarían apuntando al valor viejo: se desconectan de la vista de
+// inmediato (los filtros de esta página buscan por el valor ACTUAL) y, peor, se
+// BORRAN al guardar (cleanup_orphan_children las trata como huérfanas de un
+// producto eliminado). Por eso hay que reescribirlas en cascada al mismo valor
+// nuevo -- es un cambio de nombre del mismo producto, no borrar uno y crear otro.
+async function onProductoItemChange(prod) {
+  const anterior = prod._lastFinishedItem;
+  const nuevo = prod.finished_item;
+  if (anterior && nuevo && anterior !== nuevo) {
+    detalles.value.forEach(d => { if (d.finished_item === anterior) d.finished_item = nuevo; });
+    etapas.value.forEach(e => { if (e.producto_terminado === anterior) e.producto_terminado = nuevo; });
+    tallas.value.forEach(t => { if (t.finished_item === anterior) t.finished_item = nuevo; });
+    // tabla_materiales_etapa se vincula por stage_id (de las etapas), no directo
+    // por finished_item, así que no necesita reescritura aquí.
+  }
+  prod._lastFinishedItem = nuevo;
+  recalcProducto(prod);
+  const fetched = await fetchItemImage(prod.finished_item);
+  if (fetched) prod.image = fetched;
+}
 // La imagen se sube desde aquí (aunque el producto todavía sea texto libre) para que
 // ya esté lista cuando se materialice el Item real al pasar a cotización.
 function pickImage(prod) {
@@ -3449,9 +3669,11 @@ function removeEtapa(e, prod) {
   }
 }
 function tallasDe(fi) { return tallas.value.filter(t => t.finished_item === fi); }
-function tallaLabel(nameRef) {
-  const t = allTallas.value.find(x => x.name === nameRef);
-  return t ? t.talla : (nameRef || "");
+// `talla` puede traer varias agrupadas separadas por coma (ej. "2XL,3XL") -- se
+// juntan con "/" para mostrarlas juntas donde antes solo se esperaba una.
+function tallaLabel(tallaField) {
+  const codes = (tallaField || "").split(",").filter(Boolean);
+  return codes.map(code => allTallas.value.find(x => x.name === code)?.talla || code).join("/");
 }
 // Arma un bloque de texto con las tallas atípicas del producto (si las tiene) para
 // anexarlo a la descripción al materializar -- así el maquilero/almacén ve de un
@@ -3463,7 +3685,7 @@ function buildTallaDescriptionSuffix(prod) {
   const lines = rows.map(t => `- Talla ${tallaLabel(t.talla)}: ${t.qty} pza(s)`);
   return `\n\nTallas especiales:\n${lines.join("\n")}`;
 }
-function addTalla(prod) { loadAllTallas(); tallas.value.push({ _tid: uid(), finished_item: prod.finished_item, genero: "", grupo_talla: "", talla: "", qty: 0, sobrecosto_tipo: "Ninguno", sobrecosto_valor: 0, costo_unitario: 0, precio_venta: 0, costo_total: 0 }); }
+function addTalla(prod) { loadAllTallas(); tallas.value.push({ _tid: uid(), finished_item: prod.finished_item, genero: "", grupo_talla: "", talla: "", estado_cantidad: "Definida", qty: 0, sobrecosto_tipo: "Ninguno", sobrecosto_valor: 0, sobrecosto_material_original: "", sobrecosto_material_alterno: "", lote_ref: "", costo_unitario: 0, precio_venta: 0, costo_total: 0 }); }
 function removeTalla(t, prod) { const i = tallas.value.findIndex(x => x._tid === t._tid); if (i !== -1) tallas.value.splice(i, 1); recalcProducto(prod); }
 // No se puede repartir entre tallas más piezas de las que se van a producir en total.
 function tallaMaxQty(t, prod) {
@@ -3482,7 +3704,10 @@ function onTallaQtyInput(t, prod) {
 // precio de venta "sin sobrecosto" (idénticos para todas las tallas de un mismo
 // producto), calculados una sola vez en recalcProducto.
 function computeTallaCost(t, costoFlat, pvFlat) {
-  const sobrecosto = t.sobrecosto_tipo === "Fijo" ? (t.sobrecosto_valor || 0)
+  // "Material": el sobrecosto es la diferencia de precio entre el material
+  // original y el alterno -- ya viene calculada en t.sobrecosto_valor (ver
+  // onTallaMaterialAlternoChange), así que se suma igual que "Fijo".
+  const sobrecosto = (t.sobrecosto_tipo === "Fijo" || t.sobrecosto_tipo === "Material") ? (t.sobrecosto_valor || 0)
     : t.sobrecosto_tipo === "Porcentaje" ? pvFlat * ((t.sobrecosto_valor || 0) / 100)
     : 0;
   t.precio_venta = round2(pvFlat + sobrecosto);
@@ -3492,6 +3717,52 @@ function computeTallaCost(t, costoFlat, pvFlat) {
 function recalcTalla(t, prod) { recalcProducto(prod); }
 function tallasAsignadas(prod) { return tallasDe(prod.finished_item).reduce((s, t) => s + (t.qty || 0), 0); }
 function tallasVentaTotal(prod) { return tallasDe(prod.finished_item).reduce((s, t) => s + (t.precio_venta || 0) * (t.qty || 0), 0); }
+// "Pendiente por cliente": todavía no se sabe cuántas piezas de esta talla se
+// van a producir -- qty se bloquea en 0 y se avisa en la cotización como línea
+// aparte (ver costeo_api._venta_items_para_producto) para que el cliente diga
+// cuántas quiere. "Actualizar cantidades por talla" es donde se confirma.
+// "Talla" agrupa una o varias tallas del mismo Tipo de prenda que comparten
+// cantidad y sobrecosto (ej. "2XL,3XL" con el mismo sobrecosto de material) --
+// se guarda como texto separado por coma (ver doctype Costeo Producto Talla).
+function tallasSeleccionadasDe(t) { return (t.talla || "").split(",").filter(Boolean); }
+function tallaSeleccionada(t, code) { return tallasSeleccionadasDe(t).includes(code); }
+// Evita que la misma talla quede asignada en dos filas del mismo producto a la
+// vez (se contaría/facturaría dos veces) -- se ve deshabilitada en la otra fila.
+function tallaUsadaEnOtraFila(t, prod, code) {
+  return tallasDe(prod.finished_item).some(x => x._tid !== t._tid && tallasSeleccionadasDe(x).includes(code));
+}
+function toggleTallaEnGrupo(t, code, prod) {
+  if (tallaUsadaEnOtraFila(t, prod, code)) return;
+  const actuales = tallasSeleccionadasDe(t);
+  const idx = actuales.indexOf(code);
+  if (idx === -1) actuales.push(code); else actuales.splice(idx, 1);
+  t.talla = actuales.join(",");
+  recalcTalla(t, prod);
+}
+function esTallaPendiente(t) { return t.estado_cantidad === "Pendiente por cliente"; }
+function toggleTallaPendiente(t, prod, checked) {
+  t.estado_cantidad = checked ? "Pendiente por cliente" : "Definida";
+  if (checked) t.qty = 0;
+  recalcTalla(t, prod);
+}
+// Al elegir cuál material se reemplaza y por cuál artículo (ver sobrecosto_tipo
+// "Material"), el sobrecosto se calcula solo: la diferencia de precio de compra
+// entre uno y otro -- no se escribe a mano como en Fijo/Porcentaje.
+async function onTallaMaterialAlternoChange(t, prod) {
+  if (!t.sobrecosto_material_original || !t.sobrecosto_material_alterno) {
+    t.sobrecosto_valor = 0;
+    recalcTalla(t, prod);
+    return;
+  }
+  try {
+    const [original, alterno] = await Promise.all([
+      call("costeo_yelke.api.costeo_api.get_item_price", { item_code: t.sobrecosto_material_original, price_list: "Compra estandar" }),
+      call("costeo_yelke.api.costeo_api.get_item_price", { item_code: t.sobrecosto_material_alterno, price_list: "Compra estandar" }),
+    ]);
+    t.sobrecosto_valor = Math.max(0, (alterno?.price || 0) - (original?.price || 0));
+  } catch { /* ignore */ }
+  recalcTalla(t, prod);
+}
 async function onEtapaServicioChange(e, prod) {
   if (e.servicio && !e.precio_servicio) {
     try {
@@ -3635,6 +3906,14 @@ async function aplicarTelaConvert() {
   closeTelaConvert();
 }
 async function fetchItemImage(code) { if (!code) return ""; try { const rows = await db.getList("Item", { fields: ["image"], filters: [["name", "=", code]], limit: 1 }); return rows?.[0]?.image || ""; } catch { return ""; } }
+// Al elegir la materia prima (ahora buscable contra el catálogo real de Artículos,
+// no texto libre -- ver ITEM_FILTERS.mp), se le cargan de una vez los datos que ya
+// se conocen de ese artículo: proveedor + precio de compra (si ya tiene alguno
+// capturado), y si es una tela ya identificada como tal (ver metros_por_kilo,
+// patch v0_2_5) se marca sola como "Tela" para no tener que elegirlo a mano.
+// Si se escribe un nombre que no coincide con ningún artículo existente, se deja
+// tal cual -- sigue funcionando como antes, y se resuelve más adelante en "Pasar a
+// Producción" (materializeArticulosIfNeeded).
 async function onDetalleItemChange(d, prod) {
   d._supplierOptions = [];
   d.supplier = "";
@@ -3650,6 +3929,10 @@ async function onDetalleItemChange(d, prod) {
       // Precio de referencia de la lista de compra estándar mientras se elige proveedor
       const res = await call("costeo_yelke.api.costeo_api.get_item_price", { item_code: d.item, price_list: "Compra estandar" });
       if (res?.price) d.unit_price = res.price;
+    }
+    if (!d.tipo_material) {
+      const item = await call("frappe.client.get_value", { doctype: "Item", filters: d.item, fieldname: "metros_por_kilo" });
+      if (item?.metros_por_kilo) d.tipo_material = "Tela";
     }
     recalcDetalle(d, prod);
   } catch { /* ignore */ }
@@ -3740,7 +4023,7 @@ function stripLocal(obj) { const out = {}; for (const k in obj) { if (!k.startsW
 function buildPayload() {
   return {
     doctype: "Costeo", titulo: form.titulo || "", cliente: form.cliente, fecha: form.fecha, "compañia": form.compania,
-    proyecto: form.proyecto || "", familia_prenda: form.familia_prenda || "", centro_de_costos: form.centro_de_costos,
+    proyecto: form.proyecto || "", guardar_como_plantilla: form.guardar_como_plantilla ? 1 : 0, centro_de_costos: form.centro_de_costos,
     almacen_materias_primas: form.almacen_materias_primas, almacen_trabajo_en_proceso: form.almacen_trabajo_en_proceso,
     costeo_status: docStatus.value || "Borrador",
     costeo_producto: productos.value.map(stripLocal),
@@ -3759,9 +4042,11 @@ async function fillFromDoc(data) {
   docState.value = data.docstatus || 0;
   form.titulo = data.titulo || "";
   form.cliente = data.cliente || ""; form.fecha = data.fecha || today(); form.compania = data["compañia"] || "";
-  form.proyecto = data.proyecto || ""; form.familia_prenda = data.familia_prenda || "";
+  form.proyecto = data.proyecto || "";
+  form.guardar_como_plantilla = (data.guardar_como_plantilla === undefined || data.guardar_como_plantilla === null)
+    ? true : !!Number(data.guardar_como_plantilla);
   form.centro_de_costos = data.centro_de_costos || ""; form.almacen_materias_primas = data.almacen_materias_primas || ""; form.almacen_trabajo_en_proceso = data.almacen_trabajo_en_proceso || "";
-  productos.value = (data.costeo_producto || []).map(r => ({ _tid: uid(), image: "", description: "", precio_manual: 0, ...r }));
+  productos.value = (data.costeo_producto || []).map(r => ({ _tid: uid(), image: "", description: "", precio_manual: 0, ...r, _lastFinishedItem: r.finished_item || "" }));
   detalles.value = (data.costeo_producto_detalle || []).map(r => ({ _tid: uid(), _supplierOptions: [], _qtyMode: "rendimiento", ...r, material_id: r.material_id || genStageId() }));
   // La etapa se captura SIEMPRE como cantidad x costo (multiplicación). Los costeos
   // viejos que usaban precio por lote (precio ÷ lote_qty) se convierten al abrirlos:
@@ -3781,7 +4066,7 @@ async function fillFromDoc(data) {
   asignarGruposEtapas();
   materialesEtapa.value = (data.tabla_materiales_etapa || []).map(r => ({ _tid: uid(), ...r }));
   migrarMaterialesEtapaLegado();
-  tallas.value = (data.tabla_tallas_costeo || []).map(r => ({ _tid: uid(), sobrecosto_tipo: "Ninguno", ...r }));
+  tallas.value = (data.tabla_tallas_costeo || []).map(r => ({ _tid: uid(), sobrecosto_tipo: "Ninguno", estado_cantidad: "Definida", ...r }));
   for (const p of productos.value) { if (p.finished_item) { const fetched = await fetchItemImage(p.finished_item); if (fetched) p.image = fetched; } }
   // Recalcular siempre al cargar (no confiar en la foto guardada la última vez) --
   // así los KPIs reflejan la fórmula actual (con tallas) aunque el costeo se haya
@@ -4322,13 +4607,105 @@ async function prepararProduccion() {
   finally { advancing.value = false; }
 }
 
+// ── Borrador local (localStorage) ──────────────────────────────────────────
+// Evita perder el avance si se recarga o se cierra la pestaña sin guardar (se
+// vio en capacitación). Vive SOLO en este navegador -- no es un guardado real,
+// nunca sustituye a "Guardar Costeo".
+function draftStorageKey(id) { return `costeo-draft:${id || "new"}`; }
+
+function hasMeaningfulDraftContent() {
+  return !!(
+    form.titulo || form.cliente || form.proyecto ||
+    productos.value.length || detalles.value.length || etapas.value.length || tallas.value.length
+  );
+}
+
+function saveDraftToLocalStorage() {
+  if (!hasMeaningfulDraftContent()) return;
+  try {
+    localStorage.setItem(draftStorageKey(docName.value || route.params.name), JSON.stringify({
+      savedAt: Date.now(),
+      data: {
+        form: { ...form },
+        productos: productos.value,
+        detalles: detalles.value,
+        etapas: etapas.value,
+        materialesEtapa: materialesEtapa.value,
+        tallas: tallas.value,
+      },
+    }));
+  } catch { /* localStorage lleno o bloqueado (modo privado) -- no es crítico */ }
+}
+function loadDraftFromLocalStorage(id) {
+  try {
+    const raw = localStorage.getItem(draftStorageKey(id));
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+function clearDraft(id) {
+  try { localStorage.removeItem(draftStorageKey(id)); } catch { /* ignore */ }
+}
+
+let draftTimer = null;
+function scheduleDraftSave() {
+  // No guardar borrador mientras se está cargando desde el servidor (fillFromDoc)
+  // ni mientras hay un borrador pendiente de decisión -- si no, se pisaría solo.
+  if (loading.value || cargandoDoc || draftBanner.show) return;
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(saveDraftToLocalStorage, 800);
+}
+watch([form, productos, detalles, etapas, materialesEtapa, tallas], scheduleDraftSave, { deep: true });
+
+function checkForDraft() {
+  const raw = loadDraftFromLocalStorage(docName.value || route.params.name);
+  if (!raw || !raw.data) return;
+  const UNA_SEMANA = 7 * 24 * 60 * 60 * 1000;
+  if (!raw.savedAt || Date.now() - raw.savedAt > UNA_SEMANA) {
+    clearDraft(docName.value || route.params.name);
+    return;
+  }
+  pendingDraft.value = raw.data;
+  draftBanner.savedAt = raw.savedAt;
+  draftBanner.show = true;
+}
+function restoreDraft() {
+  const d = pendingDraft.value;
+  if (!d) return;
+  Object.assign(form, d.form || {});
+  productos.value = d.productos || [];
+  detalles.value = d.detalles || [];
+  etapas.value = d.etapas || [];
+  materialesEtapa.value = d.materialesEtapa || [];
+  tallas.value = d.tallas || [];
+  draftBanner.show = false;
+  pendingDraft.value = null;
+  showToast("Borrador recuperado");
+}
+function discardDraft() {
+  clearDraft(docName.value || route.params.name);
+  draftBanner.show = false;
+  pendingDraft.value = null;
+}
+function draftAgeLabel() {
+  if (!draftBanner.savedAt) return "";
+  const mins = Math.round((Date.now() - draftBanner.savedAt) / 60000);
+  if (mins < 1) return "hace un momento";
+  if (mins < 60) return `hace ${mins} minuto${mins === 1 ? "" : "s"}`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `hace ${hrs} hora${hrs === 1 ? "" : "s"}`;
+  const dias = Math.round(hrs / 24);
+  return `hace ${dias} día${dias === 1 ? "" : "s"}`;
+}
+
 async function saveDoc() {
-  if (!validate()) return false;
+  // "Guardar Costeo" guarda tal cual está, falten o no datos -- ya no bloquea con
+  // validate() (eso quedó solo para "Validar", ver validarCosteo). Un borrador a
+  // medio capturar debe poderse guardar para no perder el avance.
   saving.value = true;
   try {
     const payload = buildPayload();
-    if (isNew.value) { const created = await db.create("Costeo", payload); router.replace({ name: "CosteoDetail", params: { name: created.name } }); await fillFromDoc(created); showToast("Costeo creado"); }
-    else { const updated = await db.update("Costeo", docName.value, payload); await fillFromDoc(updated); showToast("Cambios guardados"); }
+    if (isNew.value) { const created = await db.create("Costeo", payload); clearDraft("new"); router.replace({ name: "CosteoDetail", params: { name: created.name } }); await fillFromDoc(created); showToast("Costeo guardado"); }
+    else { const updated = await db.update("Costeo", docName.value, payload); clearDraft(docName.value); await fillFromDoc(updated); showToast("Cambios guardados"); }
     return true;
   } catch (e) { showToast(e.message || "Error al guardar", "error"); return false; }
   finally { saving.value = false; }
@@ -4646,6 +5023,7 @@ async function confirmMaterialize(payload) {
       image: payload.image || null,
     });
     prod.finished_item = r.item_code;
+    prod._lastFinishedItem = r.item_code;
     detalles.value.forEach(d => { if (d.finished_item === oldText) d.finished_item = r.item_code; });
     etapas.value.forEach(e => { if (e.producto_terminado === oldText) e.producto_terminado = r.item_code; });
     tallas.value.forEach(t => { if (t.finished_item === oldText) t.finished_item = r.item_code; });
@@ -4783,27 +5161,31 @@ async function materializeArticulosIfNeeded() {
 
 // ── Kebab ──
 function onDocClick(e) { if (actionsRef.value && !actionsRef.value.contains(e.target)) actionsOpen.value = false; }
-async function loadFamilias() {
-  try { familias.value = await call("costeo_yelke.api.costeo_template_api.get_familias") || []; }
-  catch { /* ignore */ }
+
+// Campos numéricos (cantidad, precio, %...) casi siempre arrancan en 0 -- sin
+// esto, escribir encima significa primero borrar ese 0 a mano. Al enfocar
+// cualquier <input type="number"> de esta página, se selecciona todo su
+// contenido: el siguiente caracter que se teclee lo reemplaza de una vez: si
+// solo se pasa de largo (tab/click afuera) sin escribir nada, el valor
+// original se queda intacto -- no se vacía el campo por accidente.
+function onNumberFocus(e) {
+  if (e.target?.tagName === "INPUT" && e.target.type === "number") e.target.select();
 }
 function openTplModal() {
   actionsOpen.value = false;
   if (isNew.value) { showToast("Guarda el costeo primero", "error"); return; }
-  tplModal.nombre = form.familia_prenda || form.cliente || "";
-  tplModal.familia = form.familia_prenda || "";
   tplModal.open = true;
 }
 async function guardarComoPlantilla() {
   tplModal.saving = true;
   try {
     if (docState.value === 0) await saveDoc();
-    await call("costeo_yelke.api.costeo_template_api.save_as_template", {
-      costeo: docName.value, nombre: tplModal.nombre, familia_prenda: tplModal.familia || null,
+    const res = await call("costeo_yelke.api.costeo_template_api.save_as_template", {
+      costeo: docName.value,
     });
     tplModal.open = false;
-    showToast("Plantilla guardada · disponible en Plantillas");
-    loadFamilias();
+    const n = (res?.creadas || []).length;
+    showToast(n ? `${n} plantilla${n === 1 ? "" : "s"} guardada${n === 1 ? "" : "s"} · disponibles en Plantillas` : "No se creó ninguna plantilla");
   } catch (e) { showToast(e.message || "No se pudo guardar la plantilla", "error"); }
   finally { tplModal.saving = false; }
 }
@@ -4888,12 +5270,14 @@ async function loadCosteoData() {
   loading.value = true;
   if (isNew.value) {
     if (!form.compania && companyState.selected) form.compania = companyState.selected;
+    checkForDraft();
     loading.value = false;
     return;
   }
   try {
     const data = await db.get("Costeo", route.params.name);
     await fillFromDoc(data);
+    checkForDraft();
     manufacturaGuardada.value = false;
     await loadRelated();
     await loadCotDefaults();
@@ -4928,16 +5312,21 @@ async function loadCosteoData() {
 
 onMounted(async () => {
   document.addEventListener("click", onDocClick, true);
-  loadFamilias();
+  document.addEventListener("focusin", onNumberFocus);
   loadAllSuppliers();
   loadAllTallas();
+  loadPuedeValidarCosteo();
+  loadPermisosValidacion();
   await loadCosteoData();
   await loadPrecioAcordadoStatus();
 });
 watch(() => route.params.name, (newName, oldName) => {
   if (newName && newName !== oldName) loadCosteoData();
 });
-onUnmounted(() => document.removeEventListener("click", onDocClick, true));
+onUnmounted(() => {
+  document.removeEventListener("click", onDocClick, true);
+  document.removeEventListener("focusin", onNumberFocus);
+});
 </script>
 
 <style scoped>

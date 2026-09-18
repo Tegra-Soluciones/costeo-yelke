@@ -124,7 +124,7 @@
                 <label class="field-label">Cliente <span class="text-red-400">*</span></label>
                 <select v-model="form.customer" :disabled="!canEdit" class="field-input">
                   <option value="">— Seleccionar cliente —</option>
-                  <option v-for="c in defaults.customers" :key="c.name" :value="c.name">{{ c.customer_name }}</option>
+                  <option v-for="c in defaults.customers" :key="c.name" :value="c.name">{{ c.nombre_comercial || c.customer_name }}</option>
                 </select>
               </div>
 
@@ -681,9 +681,10 @@ const isDirty = computed(() => {
   return form.items.some(r => r._dirty);
 });
 
-const customerDisplayName = computed(() =>
-  defaults.customers.find(c => c.name === form.customer)?.customer_name || form.customer
-);
+const customerDisplayName = computed(() => {
+  const c = defaults.customers.find(c => c.name === form.customer);
+  return c?.nombre_comercial || c?.customer_name || form.customer;
+});
 
 const totals = computed(() => {
   const subtotal = form.items.reduce((s, r) => s + (r.amount || 0), 0);

@@ -2,6 +2,8 @@ import frappe
 from frappe import _
 from frappe.utils import flt, formatdate, getdate, now_datetime, nowdate
 
+from costeo_yelke.utils import nombres_comerciales
+
 
 def _valuation_expense_account(company):
     """Cuenta 'Expenses Included In Valuation' de la compañía (o None si no existe).
@@ -642,14 +644,7 @@ def get_recordatorios(estado=None, limit=200):
         order_by="valid_upto asc, modified desc",
         limit=int(limit),
     )
-    cust_names = {r.customer for r in rows if r.customer}
-    label = {
-        c.name: c.customer_name
-        for c in frappe.get_all(
-            "Customer", filters={"name": ["in", list(cust_names)]},
-            fields=["name", "customer_name"],
-        )
-    } if cust_names else {}
+    label = nombres_comerciales("Customer", [r.customer for r in rows], "customer_name")
     for r in rows:
         r["customer_name"] = label.get(r.customer, r.customer)
     return rows
@@ -678,6 +673,31 @@ def save_item_uoms(item_code, uoms):
     doc.save()
     frappe.db.commit()
     return {"saved": len(doc.uoms)}
+
+
+@frappe.whitelist()
+def get_item_uoms(item_code: str) -> dict:
+    """UDM que se puede usar para ESTE artículo: su UDM de almacén (stock_uom) más las
+    conversiones que ya se dieron de alta en 'Alta de Productos' (Item.uoms, ver
+    save_item_uoms) -- para pickers de "cambiar UDM" en Solicitud de Material / Plan
+    de Producción que NO deben ofrecer cualquier UDM del catálogo, solo las que este
+    artículo en particular ya tiene una conversión conocida."""
+    stock_uom = frappe.db.get_value("Item", item_code, "stock_uom")
+    conversiones = frappe.get_all(
+        "UOM Conversion Detail", filters={"parent": item_code, "parenttype": "Item"},
+        fields=["uom", "conversion_factor"], order_by="idx asc",
+    )
+    # stock_uom siempre factor 1, sin importar qué haya quedado guardado en el renglón
+    # -- algunos artículos arrastran un renglón redundante para su propia stock_uom
+    # (dado de alta antes de que existiera el guard en save_item_uoms), así que se
+    # dedup aquí en vez de confiar en que la tabla nunca la repita.
+    uoms = {stock_uom: 1.0}
+    for c in conversiones:
+        uoms[c.uom] = 1.0 if c.uom == stock_uom else flt(c.conversion_factor)
+    return {
+        "stock_uom": stock_uom,
+        "uoms": [{"uom": u, "conversion_factor": f} for u, f in uoms.items()],
+    }
 
 
 @frappe.whitelist()

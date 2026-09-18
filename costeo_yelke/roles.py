@@ -33,8 +33,46 @@ ROLES_APROBACION = {
     "Supervisor Yelke":          "Configura los niveles de validación, administra las delegaciones y actúa de respaldo del Director.",
 }
 
-ROLES_YELKE = {**ROLES_PROCESO, **ROLES_APROBACION}
+# ── Roles genéricos de flujo de documentos ───────────────────────────────────
+# No son de un proceso en particular (a diferencia de ROLES_PROCESO) -- sirven
+# para cualquier documento del flujo bajo cualquiera de los dos esquemas que usa
+# Yelke:
+#   Simple: Enviar Documentos -> Aprobador de Documentos           (Costeo)
+#   Doble:  Enviar Documentos -> Revisor de Documentos -> Aprobador de Documentos
+#           (Orden de Compra -- materia prima y subcontratada, ver costeo_api.py
+#           validar_documento / marcar_revisado_documento)
+# Todos los demás documentos importantes (Cotización, Orden de Venta, Factura,
+# Plan de Producción, Recibos...) siguen sin gating por rol -- "validación normal".
+ROLES_FLUJO_DOCUMENTOS = {
+    "Enviar Documentos Yelke":      "Guarda y envía un documento a revisión o validación.",
+    "Revisor de Documentos Yelke":  "Da la verificación intermedia de un documento antes de la aprobación final (esquema Doble).",
+    "Aprobador de Documentos Yelke": "Da la aprobación/validación final de un documento.",
+}
+
+ROLES_YELKE = {**ROLES_PROCESO, **ROLES_APROBACION, **ROLES_FLUJO_DOCUMENTOS}
 
 # Rol que hoy usa item_api._es_ceo() para aprobar precios. Se mantiene por
 # compatibilidad; el motor nuevo acepta tanto este como "Director Yelke".
 ROL_CEO_LEGACY = "CEO"
+
+
+def puede_aprobar_documentos(user=None):
+    """True si `user` (o el usuario actual) puede dar la aprobación/validación
+    final de un documento del flujo -- rol 'Aprobador de Documentos Yelke', o
+    System Manager como respaldo de administrador (para no bloquear a nadie
+    mientras el rol todavía no está asignado a las personas correctas)."""
+    import frappe
+
+    roles = frappe.get_roles(user)
+    return "Aprobador de Documentos Yelke" in roles or "System Manager" in roles
+
+
+def puede_revisar_documentos(user=None):
+    """True si `user` (o el usuario actual) puede dar la verificación intermedia
+    del esquema Doble -- rol 'Revisor de Documentos Yelke', o quien ya pueda dar
+    la aprobación final (un Aprobador siempre puede hacer también el paso previo),
+    o System Manager como respaldo de administrador."""
+    import frappe
+
+    roles = frappe.get_roles(user)
+    return bool({"Revisor de Documentos Yelke", "Aprobador de Documentos Yelke", "System Manager"} & set(roles))

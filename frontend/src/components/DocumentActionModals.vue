@@ -76,26 +76,27 @@
     </div>
   </div>
 
-  <!-- PDF modal -->
-  <div v-if="pdfModal.open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="pdfModal.open = false">
-    <div class="bg-white rounded-2xl shadow-xl w-full max-w-4xl flex flex-col overflow-hidden" style="height: 90vh;">
-      <div class="flex items-center justify-between px-4 py-2.5 border-b border-surface-border flex-shrink-0">
-        <span class="text-sm font-semibold text-ink truncate">{{ pdfModal.name }}</span>
-        <div class="flex items-center gap-2 flex-shrink-0">
-          <button class="doc-action" @click="onPrint(pdfModal.doctype, pdfModal.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>Imprimir</button>
-          <button class="w-8 h-8 flex items-center justify-center rounded-lg text-ink-muted hover:bg-surface-raised" @click="pdfModal.open = false" aria-label="Cerrar"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
-        </div>
+  <!-- PDF modal: a pantalla completa -- la vista previa chica en la página se queda
+       en su tamaño reducido, esto es solo para verla grande sin entrecerrar los ojos. -->
+  <div v-if="pdfModal.open" class="fixed inset-0 z-50 flex flex-col bg-white">
+    <div class="flex items-center justify-between px-4 py-2.5 border-b border-surface-border flex-shrink-0">
+      <span class="text-sm font-semibold text-ink truncate">{{ pdfModal.name }}</span>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <button class="doc-action" @click="onPrint(pdfModal.doctype, pdfModal.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>Imprimir</button>
+        <button class="w-8 h-8 flex items-center justify-center rounded-lg text-ink-muted hover:bg-surface-raised" @click="pdfModal.open = false" aria-label="Cerrar"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
       </div>
-      <iframe :key="'pm' + previewKey" :src="printUrl(pdfModal.doctype, pdfModal.name)" class="flex-1 w-full" style="border: 0;" title="Vista previa del documento"></iframe>
     </div>
+    <iframe :key="'pm' + previewKey" :src="printUrl(pdfModal.doctype, pdfModal.name)" class="flex-1 w-full" style="border: 0;" title="Vista previa del documento"></iframe>
   </div>
 </template>
 
 <script setup>
+import { onMounted, onUnmounted } from "vue";
+
 // Modales genéricos de "acciones sobre documentos" (enviar, asignar, PDF).
 // El estado y la lógica viven en el composable useDocumentActions; este
 // componente es solo la vista sobre esos objetos reactivos.
-defineProps({
+const props = defineProps({
   sendChooser: { type: Object, required: true },
   waModal: { type: Object, required: true },
   sendModal: { type: Object, required: true },
@@ -111,4 +112,12 @@ defineProps({
   onAssign: { type: Function, required: true },
   onPrint: { type: Function, required: true },
 });
+
+// El modal de PDF ocupa toda la pantalla (sin fondo oscuro detrás que cerrarlo con un
+// click), así que Escape es la única salida "rápida" además de la X.
+function onKeydown(e) {
+  if (e.key === "Escape" && props.pdfModal.open) props.pdfModal.open = false;
+}
+onMounted(() => window.addEventListener("keydown", onKeydown));
+onUnmounted(() => window.removeEventListener("keydown", onKeydown));
 </script>

@@ -1,6 +1,8 @@
 import frappe
 from frappe.utils import nowdate, add_days
 
+from costeo_yelke.roles import puede_aprobar_documentos, puede_revisar_documentos
+
 
 @frappe.whitelist()
 def get_purchase_order_form_defaults():
@@ -166,6 +168,11 @@ def get_purchase_order(name):
         "modified": str(doc.modified),
         "items": items,
         "taxes": taxes,
+        # Doble validación (Enviar -> Revisor -> Aprobador, ver roles.py) --
+        # requisito para poder confirmar (submit_purchase_order).
+        "revisado_yelke": bool(doc.get("revisado_yelke")),
+        "revisado_por_yelke": doc.get("revisado_por_yelke") or "",
+        "revisado_en_yelke": str(doc.get("revisado_en_yelke") or ""),
     }
 
 
@@ -230,15 +237,54 @@ def save_purchase_order(data):
 
 @frappe.whitelist()
 def submit_purchase_order(name):
+    """Confirma (submit) una Orden de Compra -- misma doble validación que
+    costeo_api.validar_documento para este doctype (Enviar -> Revisor ->
+    Aprobador, ver costeo_yelke/roles.py): sin esto, confirmar una OC desde esta
+    página se saltaba por completo el candado de revisión."""
     doc = frappe.get_doc("Purchase Order", name)
     if doc.docstatus != 0:
         frappe.throw("La orden de compra ya fue enviada o cancelada.")
+    if not puede_aprobar_documentos():
+        frappe.throw(
+            "No tienes permiso para confirmar esta Orden de Compra -- se requiere el rol 'Aprobador de Documentos Yelke'.",
+            frappe.PermissionError,
+        )
+    if not doc.get("revisado_yelke"):
+        frappe.throw(
+            "Esta Orden de Compra necesita revisión antes de poder confirmarse -- pide a alguien con el rol 'Revisor de Documentos Yelke' que la revise primero."
+        )
     doc.flags.ignore_permissions = True
     doc.flags.ignore_mandatory   = True
     doc.flags.ignore_links       = True
     doc.submit()
     frappe.db.commit()
     return {"name": doc.name, "docstatus": doc.docstatus, "status": doc.status}
+
+
+@frappe.whitelist()
+def marcar_revisada_purchase_order(name):
+    """Marca la revisión intermedia de esta Orden de Compra (ver
+    costeo_api.marcar_revisado_documento -- misma mecánica, expuesta aquí también
+    porque esta página no pasa por costeo_api.get_documento_compra)."""
+    if not puede_revisar_documentos():
+        frappe.throw(
+            "No tienes permiso para revisar esta Orden de Compra -- se requiere el rol 'Revisor de Documentos Yelke'.",
+            frappe.PermissionError,
+        )
+    doc = frappe.get_doc("Purchase Order", name)
+    if doc.docstatus != 0:
+        frappe.throw("La orden ya está validada o cancelada; no se puede revisar.")
+    doc.db_set("revisado_yelke", 1, update_modified=False)
+    doc.db_set("revisado_por_yelke", frappe.session.user, update_modified=False)
+    doc.db_set("revisado_en_yelke", frappe.utils.now(), update_modified=False)
+    return {"ok": True, "revisado_por_yelke": frappe.session.user}
+
+
+@frappe.whitelist()
+def get_permisos_validacion_yelke():
+    """Mismo endpoint que costeo_api.py, expuesto aquí también para no forzar a
+    esta página a importar el módulo del Costeo solo para esto."""
+    return {"puede_revisar": puede_revisar_documentos(), "puede_aprobar": puede_aprobar_documentos()}
 
 
 @frappe.whitelist()

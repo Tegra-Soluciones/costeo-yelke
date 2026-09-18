@@ -240,6 +240,10 @@
             </button>
           </div>
           <div class="flex items-center gap-3">
+            <span v-if="!isNew && po.revisado_yelke" class="text-xs font-medium text-brand-700 bg-brand-50 rounded-full px-2.5 py-1 flex items-center gap-1">
+              <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+              Revisado{{ po.revisado_por_yelke ? ` · ${po.revisado_por_yelke}` : "" }}
+            </span>
             <button v-if="!isNew"
               :disabled="!!(saving || acting)"
               class="px-5 py-2 border border-gray-200 text-gray-600 text-sm font-medium rounded-xl hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2"
@@ -247,9 +251,18 @@
               <svg v-if="saving" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
               {{ saving ? 'Guardando…' : 'Guardar borrador' }}
             </button>
+            <button v-if="!isNew && !po.revisado_yelke"
+              :disabled="!!(saving || acting) || !permisos.puede_revisar"
+              class="px-5 py-2 border border-brand-200 text-brand-700 bg-brand-50 text-sm font-medium rounded-xl hover:bg-brand-100 disabled:opacity-50 flex items-center gap-2"
+              :title="permisos.puede_revisar ? 'Marca la revisión intermedia -- requisito antes de Confirmar' : `Necesitas el rol 'Revisor de Documentos Yelke' para revisar`"
+              @click="revisarPO">
+              <svg v-if="acting === 'review'" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+              {{ acting === 'review' ? 'Revisando…' : 'Revisar' }}
+            </button>
             <button
-              :disabled="!!(saving || acting)"
+              :disabled="!!(saving || acting) || !po.revisado_yelke || !permisos.puede_aprobar"
               class="px-5 py-2 bg-brand-500 text-white text-sm font-semibold rounded-xl hover:bg-brand-600 disabled:opacity-50 flex items-center gap-2"
+              :title="!po.revisado_yelke ? 'Guarda y revisa esta orden antes de poder confirmarla' : (permisos.puede_aprobar ? '' : `Necesitas el rol 'Aprobador de Documentos Yelke' para confirmar`)"
               @click="doConfirm">
               <svg v-if="saving || acting === 'confirm'" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
               <svg v-else class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
@@ -390,7 +403,11 @@ const isNew     = computed(() => !props.name || props.name === "nueva");
 const po = reactive({
   name: "", docstatus: 0, status: "", creation: "", modified: "",
   total_taxes_and_charges: 0, supplier_name: "",
+  // Doble validación (Enviar -> Revisor -> Aprobador, ver roles.py) -- requisito
+  // para poder confirmar (submit_purchase_order).
+  revisado_yelke: false, revisado_por_yelke: "", revisado_en_yelke: "",
 });
+const permisos = reactive({ puede_revisar: true, puede_aprobar: true });
 
 const form = reactive({
   name: "", supplier: "", company: "",
@@ -491,6 +508,9 @@ function syncFromPO(data) {
     creation: data.creation, modified: data.modified,
     total_taxes_and_charges: data.total_taxes_and_charges || 0,
     supplier_name: data.supplier_name || "",
+    revisado_yelke: !!data.revisado_yelke,
+    revisado_por_yelke: data.revisado_por_yelke || "",
+    revisado_en_yelke: data.revisado_en_yelke || "",
   });
   const scalars = ["supplier","company","transaction_date","schedule_date","currency",
     "buying_price_list","conversion_rate","taxes_and_charges","additional_discount_percentage",
@@ -566,6 +586,26 @@ async function doConfirm() {
   }
 }
 
+// Doble validación (Enviar -> Revisor -> Aprobador) -- paso previo obligatorio a
+// "Confirmar OC" (ver submit_purchase_order).
+async function revisarPO() {
+  acting.value = "review";
+  try {
+    const res = await call("costeo_yelke.api.purchase_order_api.marcar_revisada_purchase_order", { name: po.name });
+    po.revisado_yelke = true;
+    po.revisado_por_yelke = res.revisado_por_yelke;
+    showToast("Orden de compra revisada");
+  } catch (e) {
+    showToast(e.message || "No se pudo revisar", "error");
+  } finally {
+    acting.value = "";
+  }
+}
+async function loadPermisos() {
+  try { Object.assign(permisos, await call("costeo_yelke.api.purchase_order_api.get_permisos_validacion_yelke")); }
+  catch { /* si falla, se dejan en true -- el backend igual bloquea si no toca */ }
+}
+
 async function cancelPO() {
   if (!confirm("¿Cancelar esta orden de compra?")) return;
   acting.value = "cancel";
@@ -600,6 +640,7 @@ async function openPrint() {
 
 onMounted(async () => {
   loading.value = true;
+  loadPermisos();
   try {
     const defs = await call("costeo_yelke.api.purchase_order_api.get_purchase_order_form_defaults");
     await loadItemIndex();

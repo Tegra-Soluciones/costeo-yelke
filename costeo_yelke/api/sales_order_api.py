@@ -1,6 +1,8 @@
 import frappe
 from frappe.utils import nowdate, add_days
 
+from costeo_yelke.utils import nombres_comerciales
+
 
 @frappe.whitelist()
 def get_sales_order_form_defaults():
@@ -8,7 +10,7 @@ def get_sales_order_form_defaults():
 
     customers = frappe.get_all(
         "Customer",
-        fields=["name", "customer_name", "customer_group", "territory"],
+        fields=["name", "customer_name", "nombre_comercial", "customer_group", "territory"],
         filters={"disabled": 0},
         order_by="customer_name asc",
         limit=200,
@@ -96,6 +98,9 @@ def get_sales_orders(status=None, customer=None, company=None, limit=50):
         order_by="transaction_date desc, creation desc",
         limit=int(limit),
     )
+    nombres = nombres_comerciales("Customer", [r.customer for r in rows], "customer_name")
+    for r in rows:
+        r["customer_name"] = nombres.get(r.customer, r.customer_name)
     return rows
 
 
@@ -144,7 +149,7 @@ def get_sales_order(name):
         "docstatus": doc.docstatus,
         "status": doc.status,
         "customer": doc.customer,
-        "customer_name": doc.customer_name or "",
+        "customer_name": frappe.db.get_value("Customer", doc.customer, "nombre_comercial") or doc.customer_name or "",
         "company": doc.company,
         "transaction_date": str(doc.transaction_date) if doc.transaction_date else "",
         "delivery_date": str(doc.delivery_date) if doc.delivery_date else "",

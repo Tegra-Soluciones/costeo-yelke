@@ -109,12 +109,56 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   const mrValidated = computed(() => mrDetail.value?.docstatus === 1);
   const anyOcValidated = computed(() => reciboOcs.value.length > 0);
 
+  // UDM que se puede elegir por artículo en la Solicitud de Material -- solo las que
+  // ya se dieron de alta para ese artículo (item_api.get_item_uoms), nunca cualquier
+  // UDM del catálogo. Cache por item_code -- varias líneas suelen compartir artículo
+  // (mismo material repartido en varios lotes) y no vale la pena repetir el fetch.
+  const itemUomOptions = reactive({});
+  async function loadItemUoms(item_code) {
+    if (!item_code || itemUomOptions[item_code]) return;
+    itemUomOptions[item_code] = []; // corta fetches duplicados en lo que responde
+    try {
+      const r = await call("costeo_yelke.api.item_api.get_item_uoms", { item_code });
+      itemUomOptions[item_code] = r.uoms || [];
+    } catch { itemUomOptions[item_code] = []; }
+  }
+  // Cambiar la UDM de una línea reexpresa la cantidad para conservar la cantidad
+  // física real (ej. 100 Metro -> 2 Rollo si 1 Rollo = 50 Metro), en vez de dejar el
+  // mismo número tal cual bajo la nueva UDM -- eso multiplicaría o dividiría la
+  // compra real por el factor de conversión sin que se note a simple vista. El
+  // guardado en el backend vuelve a aplicar esta misma conversión de forma
+  // autoritativa (ver costeo_api.guardar_solicitud_material), esto es solo para que
+  // se vea bien de inmediato en la pantalla.
+  function onMrUomChange(it, nuevoUom) {
+    const opciones = itemUomOptions[it.item_code] || [];
+    const nueva = opciones.find((o) => o.uom === nuevoUom);
+    if (!nueva) return;
+    const factorActual = Number(it.conversion_factor) || 1;
+    const factorNuevo = Number(nueva.conversion_factor) || 1;
+    const escala = factorActual / factorNuevo;
+    it.qty = Math.round(((Number(it.qty) || 0) * escala) * 10000) / 10000;
+    if (it.qty_original != null) {
+      it.qty_original = Math.round(((Number(it.qty_original) || 0) * escala) * 10000) / 10000;
+    }
+    it.conversion_factor = factorNuevo;
+    it.uom = nuevoUom;
+  }
+
   const docCompra = ref(null);
   const docCompraItems = ref([]);
   const docCompraForm = reactive({ schedule_date: "", valid_till: "", payment_terms_template: "", tc_name: "", shipping_cost: 0 });
   const docCompraValidated = computed(() => docCompra.value?.docstatus === 1);
   const docCompraHasRate = computed(() => docCompraItems.value.some((i) => i.has_rate));
   const ocSelected = ref("");
+
+  // Doble validación (Enviar -> Revisor -> Aprobador) -- hoy solo aplica a la
+  // Orden de Compra (materia prima y subcontratada); el resto de docs de este
+  // composable sigue con validación normal. Los roles se cargan una sola vez.
+  const permisosValidacion = reactive({ puede_revisar: true, puede_aprobar: true });
+  async function loadPermisosValidacion() {
+    try { Object.assign(permisosValidacion, await call("costeo_yelke.api.costeo_api.get_permisos_validacion_yelke")); }
+    catch { /* si falla, se dejan en true -- el backend igual bloquea si no toca */ }
+  }
 
   // Lote actual (cantidad por material) para crear una OC parcial contra la MR.
   const loteOc = reactive({ open: false, items: [], schedule_date: "", lote_ref: "" });
@@ -168,6 +212,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
         mrItems.value = r.detail.items.map((i) => ({ ...i }));
         mrSchedule.value = r.detail.schedule_date || "";
         mrResults.value = { ocs: r.detail.linked_ocs || [] };
+        mrItems.value.forEach((it) => loadItemUoms(it.item_code));
       } else {
         mrItems.value = []; mrSchedule.value = "";
       }
@@ -358,6 +403,20 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
       await loadLotesProduccion();
       showToast("Validado");
     } catch (e) { showToast(e.message || "No se pudo validar", "error"); }
+    finally { advancing.value = false; }
+  }
+  // Paso de revisión intermedia (esquema Doble) -- hoy solo aplica cuando
+  // docCompra.doctype es Purchase Order (materia prima o subcontratada, ver
+  // requiere_doble_validacion en get_documento_compra).
+  async function revisarDocCompra() {
+    if (!docCompra.value) return;
+    advancing.value = true;
+    try {
+      await call("costeo_yelke.api.costeo_api.marcar_revisado_documento", { doctype: docCompra.value.doctype, name: docCompra.value.name });
+      await loadDocCompra(docCompra.value.doctype, docCompra.value.name);
+      await loadLotesProduccion();
+      showToast("Orden de compra revisada");
+    } catch (e) { showToast(e.message || "No se pudo revisar", "error"); }
     finally { advancing.value = false; }
   }
   async function jalarPreciosOC() {
@@ -1008,6 +1067,18 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     } catch (e) { showToast(e.message || "No se pudo validar", "error"); }
     finally { advancing.value = false; }
   }
+  // Revisión intermedia de la Orden de Compra subcontratada (mismo esquema Doble
+  // que la de materia prima, ver revisarDocCompra -- es el mismo doctype).
+  async function revisarSub() {
+    if (!subPo.value) return;
+    advancing.value = true;
+    try {
+      await call("costeo_yelke.api.costeo_api.marcar_revisado_documento", { doctype: "Purchase Order", name: subPo.value.name });
+      await loadSub(subPo.value.name);
+      showToast("Orden de subcontrato revisada");
+    } catch (e) { showToast(e.message || "No se pudo revisar", "error"); }
+    finally { advancing.value = false; }
+  }
 
   // ── Lotes de producción (vista por PARADAS) ──
   // Un lote es del COSTEO (cubre varios productos, cada uno a su cantidad) y se
@@ -1019,6 +1090,26 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   const loteActivoRef = ref("");
   const loteParadaActiva = ref("");     // parada_id de la parada abierta en el detalle
   const nuevoLoteForm = reactive({ open: false, schedule_date: "", loading: false, porProducto: [] });
+  // Tallas con sustitución de material ya confirmadas ("Definida") que todavía no
+  // se asignaron a ningún lote -- se ofrecen al abrir un lote nuevo (ver
+  // costeo_api.get_tallas_material_sin_lote / lote_ref en Costeo Producto Talla).
+  const tallasSinLote = ref([]);
+  async function loadTallasSinLote() {
+    if (!planCosteoName.value) { tallasSinLote.value = []; return; }
+    try {
+      tallasSinLote.value = await call("costeo_yelke.api.costeo_api.get_tallas_material_sin_lote", { costeo: planCosteoName.value }) || [];
+    } catch { tallasSinLote.value = []; }
+  }
+  function tallasSinLoteDe(finished_item) {
+    return tallasSinLote.value.filter((t) => t.finished_item === finished_item);
+  }
+  // Al elegir "esta cantidad es de tal talla" en el form de nuevo lote, prellena
+  // la cantidad del lote con la ya confirmada para esa talla (editable después).
+  function onTallaLoteSelect(fila) {
+    if (!fila.talla_row) return;
+    const t = tallasSinLote.value.find((x) => x.name === fila.talla_row);
+    if (t) fila.qty = t.qty;
+  }
 
   const loteActivo = computed(() =>
     lotesProduccion.value.find((l) => l.lote_ref === loteActivoRef.value) || null
@@ -1103,6 +1194,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     nuevoLoteForm.open = true;
     nuevoLoteForm.schedule_date = "";
     nuevoLoteForm.porProducto = [];
+    loadTallasSinLote();
     if (productosCosteo.value.every((p) => !p.root_po)) return; // template ofrece "Crear órdenes de subcontrato"
     const pendiente = productosCosteo.value.find((p) => p.root_po && p.root_po_docstatus !== 1);
     if (pendiente) { await selectSub(pendiente.root_po); return; } // valida la OC del taller primero
@@ -1112,6 +1204,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
       po: p.root_po || null,
       po_docstatus: p.root_po_docstatus ?? null,
       qty: 0, sugerido: 0, saldo: 0, limitadoPorStock: false,
+      talla_row: "", // si se elige una talla con sustitución de material (ver tallasSinLoteDe)
     }));
     nuevoLoteForm.loading = true;
     try {
@@ -1141,7 +1234,11 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   async function crearNuevoLote() {
     if (!planDetail.value) { showToast("No hay plan de producción", "error"); return; }
     const cantidades = {};
-    nuevoLoteForm.porProducto.forEach((f) => { if (f.qty > 0) cantidades[f.finished_item] = f.qty; });
+    const tallas_por_producto = {};
+    nuevoLoteForm.porProducto.forEach((f) => {
+      if (f.qty > 0) cantidades[f.finished_item] = f.qty;
+      if (f.qty > 0 && f.talla_row) tallas_por_producto[f.finished_item] = f.talla_row;
+    });
     if (!Object.keys(cantidades).length) { showToast("Indica la cantidad de al menos un producto", "error"); return; }
     advancing.value = true;
     try {
@@ -1149,6 +1246,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
       const r = await call("costeo_yelke.api.costeo_api.lote_abrir", {
         plan: planDetail.value.name, lote_ref, cantidades,
         schedule_date: nuevoLoteForm.schedule_date || null,
+        tallas_por_producto: Object.keys(tallas_por_producto).length ? tallas_por_producto : null,
       });
       cerrarNuevoLote();
       await loadLotesProduccion();
@@ -1308,18 +1406,21 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     loadPlan, obtenerMateriasPrimas, guardarPlan, validarPlan, crearOrdenesTrabajo,
     // materia prima
     mrDetail, mrItems, mrSchedule, mrResults, mrDocTab, mrValidated, anyOcValidated,
+    itemUomOptions, loadItemUoms, onMrUomChange,
     rfqSelected, sqSelected,
     docCompra, docCompraItems, docCompraForm, docCompraValidated, docCompraHasRate, ocSelected,
     loteOc, abrirLoteOc, cerrarLoteOc, crearOc,
     mrLotes, addMrLote, removeMrLote, repartirMrLotesIgual, mrLotePendiente,
     loadSolicitud, crearSolicitud, guardarSolicitud, validarSolicitud,
-    loadDocCompra, selectOC, selectOcLote, selectRfq, selectSq, guardarDocCompra, validarDocCompra, jalarPreciosOC,
+    loadDocCompra, selectOC, selectOcLote, selectRfq, selectSq, guardarDocCompra, validarDocCompra, revisarDocCompra, jalarPreciosOC,
+    // doble validación (Enviar -> Revisor -> Aprobador) -- hoy solo la Orden de Compra
+    permisosValidacion, loadPermisosValidacion,
     // recibo de compra
     reciboOcs, reciboOcSel, reciboPr, reciboItems, reciboForm, reciboValidated,
     loadRecibos, selectReciboOc, selectReciboLote, loadRecibo, crearRecibo, guardarRecibo, validarRecibo,
     // subcontratación
     subOcs, subSel, subPo, subItems, subForm, subValidated, subHasRate, subDone,
-    loadSubcontratos, crearSubcontratos, selectSub, loadSub, guardarSub, validarSub,
+    loadSubcontratos, crearSubcontratos, selectSub, loadSub, guardarSub, validarSub, revisarSub,
     flujo, scoActivo, scoSel, scoValidated, scoForm, scoCostos,
     loadFlujo, selectSco, guardarSco, validarSco, addCosto, removeCosto,
     transDoc, transForm, transCostos, transValidated, transferDone, loadTrans, transferirMaterial, guardarTrans, validarTransferencia, enviarMaterialTaller,
@@ -1331,6 +1432,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     loteActivo, paradaActiva, tracksLote, paradaEstado,
     loadLotesProduccion, seleccionarLote, seleccionarParada, verParadaPo,
     abrirNuevoLote, cerrarNuevoLote, crearNuevoLote, abrirParada, siguienteParadaPendiente, generarOcLote,
+    tallasSinLote, tallasSinLoteDe, onTallaLoteSelect,
     primeraEtapaQty, primeraEtapaLoading, primeraEtapaLimitado, sugerirPrimeraEtapaQty,
     crearRfqLote, crearSqLote,
     omGeneral, omCab, omDama, omProc, omTablas, omArchivos, omUploading, omEsMaestra,

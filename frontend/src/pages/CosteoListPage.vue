@@ -83,7 +83,7 @@
                 <p class="font-medium text-gray-900">{{ item.titulo || item.name }}</p>
                 <p v-if="item.titulo" class="font-mono text-[11px] text-gray-400 mt-0.5">{{ item.name }}</p>
               </td>
-              <td class="px-4 py-3 font-medium text-gray-900">{{ item.cliente }}</td>
+              <td class="px-4 py-3 font-medium text-gray-900">{{ nombreCliente(item.cliente) }}</td>
               <td class="px-4 py-3 text-gray-600">{{ item["compañia"] }}</td>
               <td class="px-4 py-3 text-gray-500">{{ formatDate(item.fecha) }}</td>
               <td class="px-4 py-3"><StatusBadge :model-value="item.costeo_status || 'Borrador'" /></td>
@@ -184,6 +184,7 @@ const filteredItems = computed(() =>
     const q = search.value.toLowerCase();
     const matchSearch = !q ||
       (i.cliente || "").toLowerCase().includes(q) ||
+      (nombreCliente(i.cliente) || "").toLowerCase().includes(q) ||
       (i.titulo  || "").toLowerCase().includes(q) ||
       (i.name    || "").toLowerCase().includes(q);
     const matchStatus = !filterStatus.value || i.costeo_status === filterStatus.value;
@@ -254,6 +255,28 @@ async function doDelete() {
 }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
+// Nombre Comercial del cliente en vez de su nombre real (id) -- ver patch
+// v0_2_31. db.getList de Costeo solo trae el Link crudo (cliente); se resuelve
+// aparte en un segundo query batched, igual que hace PlantillasPage con esto mismo.
+const clienteNombres = ref({});
+async function loadClienteNombres() {
+  const ids = [...new Set(items.value.map(i => i.cliente).filter(Boolean))];
+  if (!ids.length) { clienteNombres.value = {}; return; }
+  try {
+    const rows = await db.getList("Customer", {
+      fields: ["name", "customer_name", "nombre_comercial"],
+      filters: [["name", "in", ids]],
+      limit: 0,
+    });
+    const map = {};
+    rows.forEach(r => { map[r.name] = r.nombre_comercial || r.customer_name || r.name; });
+    clienteNombres.value = map;
+  } catch { /* ignore */ }
+}
+function nombreCliente(id) {
+  return clienteNombres.value[id] || id;
+}
+
 async function load() {
   loading.value = true;
   try {
@@ -263,6 +286,7 @@ async function load() {
       orderBy: "modified desc",
       limit: 200,
     });
+    await loadClienteNombres();
   } catch (e) {
     console.error(e);
   } finally {
