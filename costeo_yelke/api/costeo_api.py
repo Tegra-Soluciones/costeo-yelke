@@ -3089,6 +3089,18 @@ def _fill_mr_items_from_inventory(pp, warehouse):
             "creation", "modified", "modified_by", "owner"}
     for row in (rows or []):
         clean = {k: v for k, v in dict(row).items() if not str(k).startswith("__") and k not in skip}
+        # Los sub-ensamblajes (grupo "Sub-Ensamblajes", ver auto_materializar_subensamblajes)
+        # NUNCA se compran -- crear_pos_subcontratacion los produce por subcontratación
+        # directo desde las etapas del costeo, sin pasar por esta Solicitud de Material.
+        # Si el explode multi-nivel de ERPNext los mete aquí de todos modos, mr_crear_oc
+        # ya no puede armar NINGUNA OC (ni la del proveedor real): la MR queda con
+        # renglones con proveedor (materia prima) mezclados con renglones sin proveedor
+        # (sub-ensamblaje), y make_purchase_order se rinde en cuanto ve la mezcla. Se
+        # descartan aquí, antes de que lleguen a la MR, para no depender de que cada
+        # botón que genera OC sepa filtrarlos por su cuenta.
+        item_group = frappe.db.get_value("Item", clean.get("item_code"), "item_group")
+        if item_group == "Sub-Ensamblajes":
+            continue
         clean["warehouse"] = warehouse
         # Redondear SIEMPRE hacia arriba -- para compra y control es mejor pedir de
         # más (aunque quede una merma pequeña) que quedarse corto de materia prima
