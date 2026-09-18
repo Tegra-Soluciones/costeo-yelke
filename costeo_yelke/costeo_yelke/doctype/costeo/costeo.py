@@ -344,7 +344,17 @@ def pp_make_work_orders(doc):
 
 
 def _get_company_name(source):
-    return source.get("company") or source.get("compañia")
+    """"compañia" es el campo real que se captura en el Costeo -- "company" es un
+    campo heredado (arrastrado de cuando el Costeo embebía directo los campos de
+    Production Plan) que Frappe autorellena solo con la compañía default global en
+    cuanto se crea el documento, sin que nadie lo haya elegido. En cualquier costeo
+    de una compañía DISTINTA a esa default, "company" queda con el valor equivocado
+    mientras "compañia" (y los almacenes que de ahí se derivan) sí tienen el
+    correcto -- eso hacía que crear_pos_subcontratacion armara la OC de
+    subcontratación bajo la compañía equivocada y reventara con
+    'Warehouse ... does not belong to company ...' en cuanto el almacén de destino
+    era de la compañía real."""
+    return source.get("compañia") or source.get("company")
 
 
 def _normalize_label(value):
