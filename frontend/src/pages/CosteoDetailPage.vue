@@ -888,6 +888,17 @@
     <div v-else-if="activeStep === 2" class="p-5 pb-20">
       <div class="max-w-6xl mx-auto space-y-3">
 
+        <!-- Generar nueva OV: a nivel costeo, no dentro de una orden en particular --
+             toma como base la última OV validada (o la que se elija abajo si hay
+             varias) y solo pide ajustar cantidades; el precio ya viene acordado. -->
+        <div v-if="sosValidadas.length" class="bg-white rounded-xl border border-surface-border p-4 flex items-center justify-between gap-3">
+          <div>
+            <p class="text-sm font-semibold text-ink mb-0.5">Generar nueva OV</p>
+            <p class="text-[12px] text-ink-muted">Pedido recurrente del mismo cliente: crea otra Orden de Venta con los productos y el precio ya acordado, solo ajustando la cantidad -- sin volver a cotizar.</p>
+          </div>
+          <button class="h-9 px-4 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 flex-shrink-0" @click="openNuevaOvModal()">+ Generar nueva OV</button>
+        </div>
+
         <!-- Lista de órdenes de venta del costeo (acordeón, mismo patrón que Cotizar) -->
         <div v-for="so in related.sales_orders" :key="so.name" class="group bg-white rounded-xl border border-surface-border overflow-hidden" :id="`doc-hl-${so.name}`" :class="{ 'doc-highlight-flash': highlightTarget === so.name }">
           <div class="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-surface-raised/50 transition-colors" @click="toggleSalesOrder(so)">
@@ -967,11 +978,6 @@
                     <button class="doc-action justify-center" @click="openAssign('Sales Order', so.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Asignar</button>
                   </div>
                   <a class="doc-action justify-center w-full" :href="`/app/sales-order/${so.name}`" target="_blank"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>Abrir en ERPNext</a>
-
-                  <div v-if="so.docstatus === 1" class="pt-2 mt-1 border-t border-surface-border">
-                    <button class="w-full h-8 text-[12.5px] font-medium text-ink-muted border border-surface-border rounded-lg hover:bg-surface-raised" @click="openReplicaModal(so)">Generar réplica</button>
-                    <p class="text-[10.5px] text-ink-light mt-1.5">Crea una OV nueva con estos mismos productos y su precio fijado, sin volver a cotizar -- mientras el precio siga vigente.</p>
-                  </div>
 
                   <div class="pt-3 mt-2 border-t border-surface-border">
                     <AttachmentsPanel doctype="Sales Order" :docname="so.name" />
@@ -1055,27 +1061,34 @@
       </div>
     </div>
 
-    <!-- Modal: Generar réplica de Orden de Venta -->
-    <div v-if="replicaModal.open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" @click.self="replicaModal.open = false">
+    <!-- Modal: Generar nueva Orden de Venta (a partir de una ya validada, mismo precio acordado) -->
+    <div v-if="nuevaOvModal.open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" @click.self="nuevaOvModal.open = false">
       <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-5">
-        <p class="text-sm font-semibold text-ink mb-1">Generar réplica de {{ replicaModal.so?.name }}</p>
-        <p class="text-[12px] text-ink-muted mb-4">Crea una OV nueva con estos artículos y su precio fijado -- ajusta la cantidad de cada uno.</p>
+        <p class="text-sm font-semibold text-ink mb-1">Generar nueva OV</p>
+        <p class="text-[12px] text-ink-muted mb-3">Crea otra Orden de Venta con los mismos artículos y el precio ya acordado -- ajusta la cantidad de cada uno, sin volver a cotizar.</p>
 
-        <div v-if="replicaModal.loading" class="py-6 text-center text-ink-light text-sm">Cargando…</div>
+        <div v-if="sosValidadas.length > 1" class="mb-4">
+          <label class="field-label">Basado en</label>
+          <select class="field-input" :value="nuevaOvModal.so?.name" @change="cambiarBaseNuevaOv($event.target.value)">
+            <option v-for="so in sosValidadas" :key="so.name" :value="so.name">{{ so.name }} · {{ fmtC(so.grand_total) }}</option>
+          </select>
+        </div>
+
+        <div v-if="nuevaOvModal.loading" class="py-6 text-center text-ink-light text-sm">Cargando…</div>
         <template v-else>
-          <div v-if="replicaModal.status && !replicaModal.status.puede_generar" class="rounded-lg px-3 py-2.5 mb-4" :class="replicaModal.status.es_ceo ? 'bg-amber-50 border border-amber-100' : 'bg-red-50 border border-red-100'">
-            <p class="text-[11.5px] font-semibold mb-0.5" :class="replicaModal.status.es_ceo ? 'text-amber-700' : 'text-red-700'">
-              {{ replicaModal.status.vencido ? 'El precio acordado ya venció' : 'Falta fijar el precio de algún artículo' }}
+          <div v-if="nuevaOvModal.status && !nuevaOvModal.status.puede_generar" class="rounded-lg px-3 py-2.5 mb-4" :class="nuevaOvModal.status.es_ceo ? 'bg-amber-50 border border-amber-100' : 'bg-red-50 border border-red-100'">
+            <p class="text-[11.5px] font-semibold mb-0.5" :class="nuevaOvModal.status.es_ceo ? 'text-amber-700' : 'text-red-700'">
+              {{ nuevaOvModal.status.vencido ? 'El precio acordado ya venció' : 'Falta fijar el precio de algún artículo' }}
             </p>
-            <p class="text-[11.5px]" :class="replicaModal.status.es_ceo ? 'text-amber-600' : 'text-red-600'">
-              <template v-if="replicaModal.status.es_ceo">Tienes permiso de CEO para generar la réplica de todos modos.</template>
-              <template v-else-if="replicaModal.status.vencido">Un usuario con rol CEO debe generar esta réplica para desbloquearlo, o vuelve a "Fijar Precio" desde la cotización.</template>
+            <p class="text-[11.5px]" :class="nuevaOvModal.status.es_ceo ? 'text-amber-600' : 'text-red-600'">
+              <template v-if="nuevaOvModal.status.es_ceo">Tienes permiso de CEO para generarla de todos modos.</template>
+              <template v-else-if="nuevaOvModal.status.vencido">Un usuario con rol CEO debe generar esta OV para desbloquearlo, o vuelve a "Fijar Precio" desde la cotización.</template>
               <template v-else>Usa "Fijar Precio" desde la cotización para los artículos que falten.</template>
             </p>
           </div>
 
           <div class="space-y-2 mb-4 max-h-64 overflow-y-auto">
-            <div v-for="row in replicaModal.items" :key="row.item_code" class="flex items-center gap-2 border border-surface-border rounded-lg px-3 py-2">
+            <div v-for="row in nuevaOvModal.items" :key="row.item_code" class="flex items-center gap-2 border border-surface-border rounded-lg px-3 py-2">
               <div class="flex-1 min-w-0">
                 <p class="text-[13px] font-medium text-ink truncate">{{ row.item_name || row.item_code }}</p>
                 <p class="text-[11px] text-ink-light">
@@ -1084,14 +1097,17 @@
                   <template v-else-if="!row.vigente"> · vencido {{ row.valid_upto }}</template>
                 </p>
               </div>
-              <input v-model.number="row.qty" type="number" min="1" step="1" class="field-input text-right" style="width: 90px;" />
+              <div>
+                <label class="text-[10px] text-ink-light block text-right mb-0.5">Cantidad a generar</label>
+                <input v-model.number="row.qty" type="number" min="1" step="1" class="field-input text-right" style="width: 100px;" />
+              </div>
             </div>
           </div>
 
           <div class="flex justify-end gap-2">
-            <button class="px-3 py-1.5 text-[13px] text-ink-muted hover:bg-surface-raised rounded-lg" @click="replicaModal.open = false">Cancelar</button>
-            <button :disabled="replicaModal.generating || (replicaModal.status && !replicaModal.status.puede_generar && !replicaModal.status.es_ceo)" class="px-4 py-1.5 text-[13px] font-medium text-white bg-brand-500 hover:bg-brand-600 disabled:opacity-50 rounded-lg" @click="confirmarGenerarReplica">
-              {{ replicaModal.generating ? "Generando…" : "Generar réplica" }}
+            <button class="px-3 py-1.5 text-[13px] text-ink-muted hover:bg-surface-raised rounded-lg" @click="nuevaOvModal.open = false">Cancelar</button>
+            <button :disabled="nuevaOvModal.generating || (nuevaOvModal.status && !nuevaOvModal.status.puede_generar && !nuevaOvModal.status.es_ceo)" class="px-4 py-1.5 text-[13px] font-medium text-white bg-brand-500 hover:bg-brand-600 disabled:opacity-50 rounded-lg" @click="confirmarNuevaOv">
+              {{ nuevaOvModal.generating ? "Generando…" : "Generar nueva OV" }}
             </button>
           </div>
         </template>
@@ -2552,40 +2568,58 @@ const actionsOpen = ref(false);
 const confirmDelete = reactive({ open: false, loading: false });
 const confirmDeleteQuot = reactive({ open: false, loading: false, name: "" });
 const confirmDeleteSO = reactive({ open: false, loading: false, name: "" });
-// Generar réplica: OV nueva con los mismos artículos/precio acordado de una OV
-// existente, sin volver a Costear/Cotizar -- bloqueada si el precio acordado venció,
-// salvo rol CEO (get_precio_acordado_status/generar_replica_ov revalidan del lado
-// servidor, esto solo evita el intento cuando ya se sabe que va a fallar).
-const replicaModal = reactive({ open: false, loading: false, generating: false, so: null, status: null, items: [] });
-async function openReplicaModal(so) {
-  replicaModal.so = so;
-  replicaModal.open = true;
-  replicaModal.loading = true;
-  replicaModal.status = null;
-  replicaModal.items = [];
+// Generar nueva OV: pedido recurrente del mismo cliente -- reusa los mismos
+// artículos/precio acordado de una OV YA VALIDADA del costeo, sin volver a
+// Costear/Cotizar; solo se ajusta la cantidad de cada uno. Bloqueada si el
+// precio acordado venció, salvo rol CEO (get_precio_acordado_status/
+// generar_replica_ov revalidan del lado servidor, esto solo evita el intento
+// cuando ya se sabe que va a fallar). El botón vive a nivel costeo (arriba de
+// la lista de OVs, no colgado de una en particular) -- si hay más de una OV
+// validada, el modal deja elegir de cuál partir.
+const sosValidadas = computed(() => related.sales_orders.filter(s => s.docstatus === 1));
+const nuevaOvModal = reactive({ open: false, loading: false, generating: false, so: null, status: null, items: [] });
+async function _cargarPrecioAcordado(so) {
+  nuevaOvModal.so = so;
+  nuevaOvModal.loading = true;
+  nuevaOvModal.status = null;
+  nuevaOvModal.items = [];
   try {
     const res = await call("costeo_yelke.api.costeo_api.get_precio_acordado_status", { sales_order: so.name });
-    replicaModal.status = res;
-    replicaModal.items = (res.items || []).map(i => ({ ...i }));
-  } catch (e) { showToast(e.message || "No se pudo revisar el precio acordado", "error"); replicaModal.open = false; }
-  finally { replicaModal.loading = false; }
+    nuevaOvModal.status = res;
+    nuevaOvModal.items = (res.items || []).map(i => ({ ...i }));
+  } catch (e) { showToast(e.message || "No se pudo revisar el precio acordado", "error"); nuevaOvModal.open = false; }
+  finally { nuevaOvModal.loading = false; }
 }
-async function confirmarGenerarReplica() {
-  if (!replicaModal.so) return;
-  replicaModal.generating = true;
+// so opcional -- sin argumento (botón de arriba) toma la OV activa si está
+// validada, si no la última OV validada del costeo.
+function openNuevaOvModal(so) {
+  const base = so
+    || (activeSO.value?.docstatus === 1 ? activeSO.value : null)
+    || sosValidadas.value[sosValidadas.value.length - 1];
+  if (!base) { showToast("Necesitas al menos una Orden de Venta validada para generar otra", "error"); return; }
+  nuevaOvModal.open = true;
+  _cargarPrecioAcordado(base);
+}
+function cambiarBaseNuevaOv(soName) {
+  const so = sosValidadas.value.find(s => s.name === soName);
+  if (so) _cargarPrecioAcordado(so);
+}
+async function confirmarNuevaOv() {
+  if (!nuevaOvModal.so) return;
+  nuevaOvModal.generating = true;
   try {
     const res = await call("costeo_yelke.api.costeo_api.generar_replica_ov", {
-      sales_order: replicaModal.so.name,
-      items: replicaModal.items.map(r => ({ item_code: r.item_code, qty: r.qty, rate: r.rate })),
+      sales_order: nuevaOvModal.so.name,
+      items: nuevaOvModal.items.map(r => ({ item_code: r.item_code, qty: r.qty, rate: r.rate })),
     });
-    replicaModal.open = false;
+    nuevaOvModal.open = false;
     expandedSOName.value = res.name;
     activeSOName.value = res.name;
     await loadRelated();
     previewKey.value++;
-    showToast(`Réplica creada: ${res.name}`);
-  } catch (e) { showToast(e.message || "No se pudo generar la réplica", "error"); }
-  finally { replicaModal.generating = false; }
+    showToast(`Nueva OV creada: ${res.name}`);
+  } catch (e) { showToast(e.message || "No se pudo generar la nueva OV", "error"); }
+  finally { nuevaOvModal.generating = false; }
 }
 const confirmCancel = reactive({ open: false, loading: false });
 const tplModal = reactive({ open: false, saving: false });
