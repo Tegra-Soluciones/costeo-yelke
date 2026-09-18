@@ -890,13 +890,29 @@
 
         <!-- Generar nueva OV: a nivel costeo, no dentro de una orden en particular --
              toma como base la última OV validada (o la que se elija abajo si hay
-             varias) y solo pide ajustar cantidades; el precio ya viene acordado. -->
-        <div v-if="sosValidadas.length" class="bg-white rounded-xl border border-surface-border p-4 flex items-center justify-between gap-3">
+             varias) y solo pide ajustar cantidades; el precio ya viene acordado.
+             Oculto mientras esa OV base no tenga precio acordado fijado; si lo
+             tiene pero ya venció, el botón avisa en vez de desaparecer -- quien
+             tenga rol CEO puede destrabarlo desde el propio modal. -->
+        <div v-if="nuevaOvGate.show" class="bg-white rounded-xl border p-4 flex items-center justify-between gap-3" :class="nuevaOvGate.vencido ? 'border-amber-200 bg-amber-50/30' : 'border-surface-border'">
           <div>
-            <p class="text-sm font-semibold text-ink mb-0.5">Generar nueva OV</p>
-            <p class="text-[12px] text-ink-muted">Pedido recurrente del mismo cliente: crea otra Orden de Venta con los productos y el precio ya acordado, solo ajustando la cantidad -- sin volver a cotizar.</p>
+            <p class="text-sm font-semibold mb-0.5" :class="nuevaOvGate.vencido ? 'text-amber-800' : 'text-ink'">
+              {{ nuevaOvGate.vencido ? 'Precio acordado caducado' : 'Generar nueva OV' }}
+            </p>
+            <p class="text-[12px]" :class="nuevaOvGate.vencido ? 'text-amber-700' : 'text-ink-muted'">
+              <template v-if="nuevaOvGate.vencido">
+                El precio acordado para un nuevo pedido de este cliente ya venció.
+                <template v-if="nuevaOvGate.esCeo">Tienes permiso de CEO para generar la OV de todos modos, o actualízalo desde "Fijar Precio" en la cotización.</template>
+                <template v-else>Pide a alguien con rol CEO que la genere, o actualiza el precio desde "Fijar Precio" en la cotización.</template>
+              </template>
+              <template v-else>Pedido recurrente del mismo cliente: crea otra Orden de Venta con los productos y el precio ya acordado, solo ajustando la cantidad -- sin volver a cotizar.</template>
+            </p>
           </div>
-          <button class="h-9 px-4 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 flex-shrink-0" @click="openNuevaOvModal()">+ Generar nueva OV</button>
+          <button
+            class="h-9 px-4 text-[13px] font-semibold rounded-lg flex-shrink-0"
+            :class="nuevaOvGate.vencido ? 'text-amber-800 bg-amber-100 hover:bg-amber-200' : 'text-white bg-brand-500 hover:bg-brand-600'"
+            @click="openNuevaOvModal()"
+          >{{ nuevaOvGate.vencido ? 'Precio caducado -- revisar' : '+ Generar nueva OV' }}</button>
         </div>
 
         <!-- Lista de órdenes de venta del costeo (acordeón, mismo patrón que Cotizar) -->
@@ -2577,6 +2593,30 @@ const confirmDeleteSO = reactive({ open: false, loading: false, name: "" });
 // la lista de OVs, no colgado de una en particular) -- si hay más de una OV
 // validada, el modal deja elegir de cuál partir.
 const sosValidadas = computed(() => related.sales_orders.filter(s => s.docstatus === 1));
+// La OV que se usaría por default si se pulsa "Generar nueva OV" sin elegir
+// una en particular: la activa si está validada, si no la última validada.
+function _baseSoParaNuevaOv() {
+  return (activeSO.value?.docstatus === 1 ? activeSO.value : null)
+    || sosValidadas.value[sosValidadas.value.length - 1]
+    || null;
+}
+// Estado del botón de arriba (a nivel costeo, no depende de abrir el modal):
+// oculto mientras esa OV base no tenga precio acordado fijado; "vencido" si lo
+// tiene pero ya caducó (el botón cambia a avisar en vez de desaparecer, para
+// que quien tenga permiso de CEO lo note y pueda destrabarlo).
+const nuevaOvGate = reactive({ show: false, vencido: false, esCeo: false, loading: false });
+async function refreshNuevaOvGate() {
+  const base = _baseSoParaNuevaOv();
+  if (!base) { nuevaOvGate.show = false; nuevaOvGate.vencido = false; return; }
+  nuevaOvGate.loading = true;
+  try {
+    const res = await call("costeo_yelke.api.costeo_api.get_precio_acordado_status", { sales_order: base.name });
+    nuevaOvGate.show = res.puede_generar || res.vencido;
+    nuevaOvGate.vencido = !!res.vencido;
+    nuevaOvGate.esCeo = !!res.es_ceo;
+  } catch { nuevaOvGate.show = false; nuevaOvGate.vencido = false; }
+  finally { nuevaOvGate.loading = false; }
+}
 const nuevaOvModal = reactive({ open: false, loading: false, generating: false, so: null, status: null, items: [] });
 async function _cargarPrecioAcordado(so) {
   nuevaOvModal.so = so;
@@ -2593,9 +2633,7 @@ async function _cargarPrecioAcordado(so) {
 // so opcional -- sin argumento (botón de arriba) toma la OV activa si está
 // validada, si no la última OV validada del costeo.
 function openNuevaOvModal(so) {
-  const base = so
-    || (activeSO.value?.docstatus === 1 ? activeSO.value : null)
-    || sosValidadas.value[sosValidadas.value.length - 1];
+  const base = so || _baseSoParaNuevaOv();
   if (!base) { showToast("Necesitas al menos una Orden de Venta validada para generar otra", "error"); return; }
   nuevaOvModal.open = true;
   _cargarPrecioAcordado(base);
@@ -4136,6 +4174,7 @@ async function loadRelated() {
     } else {
       activeSOName.value = null;
     }
+    refreshNuevaOvGate();
     if (related.quotations.length) {
       ensurePrintFmt("Quotation");
       if (!quotAutoExpandDone && expandedQuotName.value === null) {
