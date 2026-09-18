@@ -1849,11 +1849,18 @@ def _crear_poliza_overhead_venta(si_doc, costeo):
     if monto <= 0:
         return None
 
-    costo_venta_account = frappe.get_cached_value(
-        "Account", {"account_name": "COSTO DE VENTAS", "company": si_doc.company}, "name"
-    )
+    # La cuenta de costo de ventas de cada compañía no siempre se llama igual
+    # (ej. "COSTO DE VENTAS" en SUS INDUSTRIAL vs "Costo sobre ventas" en YELKE
+    # TEXTILES) -- se usa la que la propia Compañía ya tiene configurada como su
+    # cuenta de gastos default, en vez de buscar un nombre literal fijo que solo
+    # coincidía por casualidad con el catálogo de una compañía en particular.
+    costo_venta_account = frappe.get_cached_value("Company", si_doc.company, "default_expense_account") or \
+        frappe.get_cached_value("Account", {"account_name": "COSTO DE VENTAS", "company": si_doc.company}, "name")
     if not costo_venta_account:
-        frappe.throw(_("No se encontró la cuenta 'COSTO DE VENTAS' para la compañía {0}.").format(si_doc.company))
+        frappe.throw(_(
+            "No hay una cuenta de costo de ventas configurada para la compañía {0} "
+            "(revisa 'Cuenta de gastos default' en la Compañía)."
+        ).format(si_doc.company))
     overhead_account = frappe.get_cached_value(
         "Account", {"account_name": "GASTOS INDIRECTOS ABSORBIDOS", "company": si_doc.company}, "name"
     )
