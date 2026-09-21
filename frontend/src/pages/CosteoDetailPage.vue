@@ -1564,6 +1564,21 @@
           </template>
         </div>
 
+        <!-- ═══ Continuar a producción -- llamado a la acción claro justo después de
+             la Solicitud de Material, para no depender de que se note el pequeño "+"
+             del riel de lotes arriba en el stepper (ver CosteoStepper.vue). Mismo
+             botón/función que ese "+" -- abrirNuevoLote() ya crea y valida solo lo
+             que haga falta y no exige dividir en lotes si no se quiere. ═══ -->
+        <div v-if="mrValidated && !nuevoLoteForm.open && !lotesProduccion.length" class="bg-white rounded-xl border border-surface-border p-4 flex items-center justify-between gap-3">
+          <div>
+            <p class="text-sm font-semibold text-ink mb-0.5">Continuar a producción</p>
+            <p class="text-[12.5px] text-ink-muted">Materia prima ya solicitada. Sin dividir en lotes, esto produce todo de un jalón.</p>
+          </div>
+          <button :disabled="advancing" class="h-9 px-4 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex items-center gap-1.5" @click="abrirNuevoLote">
+            Continuar<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+          </button>
+        </div>
+
         <!-- ═══ Nuevo lote (disparado desde el "+" del riel de lotes en el stepper) ═══ -->
         <div v-if="nuevoLoteForm.open && planValidated" class="bg-white rounded-xl border border-surface-border p-4 space-y-3">
           <div class="prod-head"><span class="prod-title"><svg class="w-4 h-4 text-ink-light" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Nuevo lote de producción</span></div>
