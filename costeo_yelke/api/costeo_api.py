@@ -3645,7 +3645,13 @@ def get_solicitud_material(plan: str) -> dict:
             "qty": it.qty, "uom": it.uom, "conversion_factor": flt(it.conversion_factor) or 1,
             "warehouse": it.warehouse,
             "supplier": (it.get("supplier") if has_sup else ""),
-            "rate": (it.get("rate") if has_rate else 0),
+            # None (no 0) cuando nadie ha forzado un precio -- el campo es Currency y
+            # Frappe guarda 0.0 por default en la fila si nunca se ha tocado, no NULL;
+            # sin este ajuste el campo se ve en pantalla como "$0" (parece un dato
+            # capturado) en vez de vacío con el placeholder "Auto" (se va a jalar solo
+            # al generar la OC). guardar_solicitud_material ya hace el mismo ajuste
+            # en sentido inverso al guardar (flt(...) or None).
+            "rate": (flt(it.get("rate")) or None if has_rate else None),
             "qty_original": it.get("qty_original") or it.qty,
         } for it in primary.items],
     }
