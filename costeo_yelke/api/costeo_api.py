@@ -3626,6 +3626,7 @@ def get_solicitud_material(plan: str) -> dict:
 
     has_sup = frappe.db.has_column("Material Request Item", "supplier")
     has_rate = frappe.db.has_column("Material Request Item", "rate")
+    has_lote_ref = frappe.db.has_column("Material Request Item", "lote_ref")
     mrs = frappe.get_all(
         "Material Request", filters={"name": ["in", mr_names]},
         fields=["name", "status", "docstatus", "material_request_type", "transaction_date", "schedule_date"],
@@ -3653,8 +3654,14 @@ def get_solicitud_material(plan: str) -> dict:
             # en sentido inverso al guardar (flt(...) or None).
             "rate": (flt(it.get("rate")) or None if has_rate else None),
             "qty_original": it.get("qty_original") or it.qty,
+            "lote_ref": (it.get("lote_ref") if has_lote_ref else None),
         } for it in primary.items],
     }
+    # Si ya se dividió la Solicitud en Lotes de entrega (mr_dividir_en_lotes), la OC
+    # de materia prima se genera POR LOTE, desde la vista de cada lote de
+    # producción -- no hay un botón genérico "Generar OC" para toda la MR de un
+    # jalón, porque eso ignoraría la división y compraría todo junto igual.
+    detail["usa_lotes_entrega"] = has_lote_ref and any(it.get("lote_ref") for it in primary.items)
     detail["linked_ocs"] = list(dict.fromkeys(
         frappe.get_all("Purchase Order Item", filters={"material_request": primary.name}, pluck="parent")
     ))

@@ -1568,11 +1568,20 @@
              proveedor (agrupa TODO lo que pide la Solicitud, sin depender de
              ningún "Lote de entrega" opcional). Reusa exactamente el mismo
              docCompra/PurchaseDocPanel que ya se usaba dentro de un lote -- solo
-             que aquí no está condicionado a que exista esa división. ═══ -->
+             que aquí no está condicionado a que exista esa división.
+
+             OJO: si la Solicitud SÍ se dividió en Lotes de entrega
+             (mr_dividir_en_lotes, ver mrDetail.usa_lotes_entrega), el botón
+             genérico de aquí abajo se oculta -- generar de un jalón ignoraría esa
+             división y compraría todo junto. En ese caso la OC de cada lote se
+             sigue generando desde la vista de su propio lote de producción
+             ("Materia prima de este lote"), como siempre. ═══ -->
         <div v-if="mrValidated" class="bg-white rounded-xl border border-surface-border p-4 space-y-3">
           <div class="prod-head"><span class="prod-title"><svg class="w-4 h-4 text-ink-light" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>Compra de materia prima</span></div>
 
-          <div v-if="!mrResults.ocs.length" class="flex items-center justify-between gap-3">
+          <p v-if="mrDetail.usa_lotes_entrega && !mrResults.ocs.length" class="text-[12.5px] text-ink-muted">Esta Solicitud se dividió en Lotes de entrega — genera la Orden de Compra de cada lote desde la vista de su Lote de producción correspondiente, no aquí (para respetar la división).</p>
+
+          <div v-else-if="!mrResults.ocs.length" class="flex items-center justify-between gap-3">
             <p class="text-[12.5px] text-ink-muted">Genera la Orden de Compra de cada proveedor (una por proveedor) — ahí ajustas UDM y precio si hace falta.</p>
             <button :disabled="advancing" class="h-9 px-4 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex-shrink-0" @click="crearOc()">Generar Orden(es) de Compra</button>
           </div>
