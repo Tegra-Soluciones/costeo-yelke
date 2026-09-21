@@ -3626,7 +3626,6 @@ def get_solicitud_material(plan: str) -> dict:
 
     has_sup = frappe.db.has_column("Material Request Item", "supplier")
     has_rate = frappe.db.has_column("Material Request Item", "rate")
-    has_lote_ref = frappe.db.has_column("Material Request Item", "lote_ref")
     mrs = frappe.get_all(
         "Material Request", filters={"name": ["in", mr_names]},
         fields=["name", "status", "docstatus", "material_request_type", "transaction_date", "schedule_date"],
@@ -3654,14 +3653,8 @@ def get_solicitud_material(plan: str) -> dict:
             # en sentido inverso al guardar (flt(...) or None).
             "rate": (flt(it.get("rate")) or None if has_rate else None),
             "qty_original": it.get("qty_original") or it.qty,
-            "lote_ref": (it.get("lote_ref") if has_lote_ref else None),
         } for it in primary.items],
     }
-    # Si ya se dividió la Solicitud en Lotes de entrega (mr_dividir_en_lotes), la OC
-    # de materia prima se genera POR LOTE, desde la vista de cada lote de
-    # producción -- no hay un botón genérico "Generar OC" para toda la MR de un
-    # jalón, porque eso ignoraría la división y compraría todo junto igual.
-    detail["usa_lotes_entrega"] = has_lote_ref and any(it.get("lote_ref") for it in primary.items)
     detail["linked_ocs"] = list(dict.fromkeys(
         frappe.get_all("Purchase Order Item", filters={"material_request": primary.name}, pluck="parent")
     ))
@@ -4025,15 +4018,27 @@ def mr_dividir_en_lotes(mr: str, lotes) -> dict:
 
 @frappe.whitelist()
 def mr_generar_oc_lote(mr: str, lote_ref: str, supplier: str = None) -> dict:
-    """Genera la Orden de Compra de UN lote específico (ya dividido por
-    mr_dividir_en_lotes), con la cantidad y fecha que ya se capturaron al definir
-    el lote -- se dispara desde la pantalla de ese lote, no automáticamente. Si se
-    indica `supplier`, sólo genera la OC de ESE proveedor (su propio botón, junto a
-    los de Solicitud de cotización / Presupuesto), sin tocar los demás."""
+    """Genera la Orden de Compra de UN lote específico, con la cantidad y fecha que
+    ya se capturaron al definir el lote -- se dispara desde la pantalla de ese
+    lote, no automáticamente. Si se indica `supplier`, sólo genera la OC de ESE
+    proveedor (su propio botón, junto a los de Solicitud de cotización /
+    Presupuesto), sin tocar los demás.
+
+    Si la Solicitud SÍ se dividió en Lotes de entrega (mr_dividir_en_lotes), se usa
+    solo lo asignado a `lote_ref`. Si NADIE la dividió (ningún renglón tiene
+    lote_ref) es porque no se quiso dividir -- en ese caso este único lote toma
+    TODA la Solicitud tal cual (filtrada solo por proveedor si se indicó), igual
+    que si se hubiera "dividido" en un solo lote que es la Solicitud completa. La
+    validación de saldo pendiente de mr_crear_oc sigue aplicando de todos modos, así
+    que no hay riesgo de comprar de más si esto se llama más de una vez."""
     doc = frappe.get_doc("Material Request", mr)
     if doc.docstatus != 1:
         frappe.throw(_("Valida la solicitud primero."))
-    rows = [it for it in doc.items if it.get("lote_ref") == lote_ref and (not supplier or it.get("supplier") == supplier)]
+    algun_lote_explicito = any(it.get("lote_ref") for it in doc.items)
+    if algun_lote_explicito:
+        rows = [it for it in doc.items if it.get("lote_ref") == lote_ref and (not supplier or it.get("supplier") == supplier)]
+    else:
+        rows = [it for it in doc.items if (not supplier or it.get("supplier") == supplier)]
     if not rows:
         frappe.throw(_("No hay materiales asignados a {0} en esta solicitud.").format(lote_ref))
     items = [{"item_code": r.item_code, "qty": r.qty} for r in rows]
@@ -4593,6 +4598,30 @@ def get_lotes_produccion(plan: str) -> dict:
         + list(material_pos_by_lote.keys())
         + list(materiales_por_lote.keys())
     ))
+
+    # Si nadie dividió la Solicitud en "Lotes de entrega" (mr_dividir_en_lotes) pero
+    # solo existe UN lote de producción (el caso normal cuando no se quiere dividir),
+    # no tiene caso exigir esa división manual: ese único lote absorbe TODA la
+    # materia prima pendiente de la Solicitud tal cual, sin que nadie tenga que
+    # repetir a mano la misma cantidad que ya está en la Solicitud. Con 2+ lotes de
+    # producción SÍ hace falta dividir explícitamente (mr_dividir_en_lotes) -- ahí no
+    # hay forma de adivinar sola qué material le toca a cada uno.
+    if not materiales_por_lote and len(lote_keys) == 1 and mr_names:
+        unico_lote = lote_keys[0]
+        mri_rows_todos = frappe.get_all(
+            "Material Request Item",
+            filters={"parent": ["in", mr_names]},
+            fields=["parent", "item_code", "item_name", "qty", "uom"] + (["supplier"] if has_sup else []),
+        )
+        if mri_rows_todos:
+            materiales_por_lote[unico_lote] = {
+                "mr": mri_rows_todos[0]["parent"],
+                "items": [
+                    {"item_code": r["item_code"], "item_name": r["item_name"], "qty": r["qty"], "uom": r["uom"],
+                     "supplier": (r.get("supplier") if has_sup else "")}
+                    for r in mri_rows_todos
+                ],
+            }
 
     todos_pts = [p.finished_item for p in doc.costeo_producto if p.finished_item]
 
