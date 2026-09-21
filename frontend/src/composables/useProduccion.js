@@ -1154,39 +1154,78 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     advancing.value = true;
     try { await selectSub(parada.po); } finally { advancing.value = false; }
   }
+  // Cuando NO se quiere dividir la producción en varios lotes explícitos, este
+  // paso debe sentirse tan "normal" como cualquier otro -- no debe hacer falta ir
+  // clic por clic creando y validando cada OC de subcontratación (maquila) antes
+  // de poder producir. Por eso, al abrir "Nuevo lote", si todavía no existen esas
+  // OC raíz se crean solas, y si ya existen pero siguen en borrador se revisan y
+  // validan solas -- con las MISMAS funciones de siempre (plan_crear_subcontratacion,
+  // marcar_revisado_documento, validar_documento); esto no cambia nada de cómo se
+  // arma un lote ni de cómo se reparten las paradas, solo evita la espera manual
+  // entre cada paso intermedio. Si alguna no se puede validar sola (por permisos,
+  // el rol "Aprobador de Documentos Yelke" es de alguien más), se cae de vuelta al
+  // panel manual de esa OC, igual que antes.
   async function abrirNuevoLote() {
+    if (nuevoLoteForm.loading) return; // evita reentradas (el watch de abajo puede disparar de nuevo a medias)
     nuevoLoteForm.open = true;
     nuevoLoteForm.schedule_date = "";
     nuevoLoteForm.porProducto = [];
     loadTallasSinLote();
-    if (productosCosteo.value.every((p) => !p.root_po)) return; // template ofrece "Crear órdenes de subcontrato"
-    const pendiente = productosCosteo.value.find((p) => p.root_po && p.root_po_docstatus !== 1);
-    if (pendiente) { await selectSub(pendiente.root_po); return; } // valida la OC del taller primero
-    nuevoLoteForm.porProducto = productosCosteo.value.map((p) => ({
-      finished_item: p.finished_item,
-      item_name: p.item_name || p.finished_item,
-      po: p.root_po || null,
-      po_docstatus: p.root_po_docstatus ?? null,
-      qty: 0, sugerido: 0, saldo: 0, limitadoPorStock: false,
-      talla_row: "", // si se elige una talla con sustitución de material (ver tallasSinLoteDe)
-    }));
     nuevoLoteForm.loading = true;
     try {
+      if (!subOcs.value.length) {
+        try {
+          await call("costeo_yelke.api.costeo_api.plan_crear_subcontratacion", { plan: planDetail.value.name });
+        } catch (e) {
+          showToast(e.message || "No se pudieron crear las órdenes de subcontrato", "error");
+        }
+      }
+      const rsub = await call("costeo_yelke.api.costeo_api.get_subcontratos", { plan: planDetail.value.name });
+      subOcs.value = rsub.ocs || [];
+
+      for (const po of subOcs.value) {
+        if (po.docstatus !== 0) continue;
+        try {
+          await call("costeo_yelke.api.costeo_api.marcar_revisado_documento", { doctype: "Purchase Order", name: po.name });
+        } catch { /* ya revisada, o sin permiso -- se intenta validar de todos modos */ }
+        try {
+          await call("costeo_yelke.api.costeo_api.validar_documento", { doctype: "Purchase Order", name: po.name });
+        } catch (e) {
+          showToast(`No se pudo validar ${po.name} automáticamente (${e.message || "revisa permisos"}) -- valídala a mano abajo.`, "error");
+        }
+      }
+
+      const r = await call("costeo_yelke.api.costeo_api.get_lotes_produccion", { plan: planDetail.value.name });
+      lotesProduccion.value = r.lotes || [];
+      productosCosteo.value = r.productos || [];
+
+      if (productosCosteo.value.every((p) => !p.root_po)) return; // template ofrece "Crear órdenes de subcontrato" a mano
+      const pendiente = productosCosteo.value.find((p) => p.root_po && p.root_po_docstatus !== 1);
+      if (pendiente) { await loadSub(pendiente.root_po); subSel.value = pendiente.root_po; return; } // respaldo manual (no se pudo validar sola)
+
+      nuevoLoteForm.porProducto = productosCosteo.value.map((p) => ({
+        finished_item: p.finished_item,
+        item_name: p.item_name || p.finished_item,
+        po: p.root_po || null,
+        po_docstatus: p.root_po_docstatus ?? null,
+        qty: 0, sugerido: 0, saldo: 0, limitadoPorStock: false,
+        talla_row: "", // si se elige una talla con sustitución de material (ver tallasSinLoteDe)
+      }));
       // Secuencial (no Promise.all): varios productos pueden compartir la misma OC
       // raíz y sub_qty_disponible crea/borra una SCO borrador contra ella -- dos
       // llamadas en paralelo sobre la misma OC se pisan y una devuelve 0.
       for (const fila of nuevoLoteForm.porProducto) {
         if (!fila.po || fila.po_docstatus !== 1) continue;
         try {
-          const r = await call("costeo_yelke.api.costeo_api.sub_qty_disponible",
+          const rr = await call("costeo_yelke.api.costeo_api.sub_qty_disponible",
             { po: fila.po, producto: fila.finished_item });
-          fila.sugerido = r.sugerido || 0;
-          fila.saldo = r.saldo_pendiente || 0;
+          fila.sugerido = rr.sugerido || 0;
+          fila.saldo = rr.saldo_pendiente || 0;
           // Prefill con la cantidad que el stock soporta; si no hay material aún
           // (sugerido 0), con el pendiente completo -- abrir el lote no exige stock
           // (el candado vive en la transferencia), solo se avisa del límite.
-          fila.qty = r.sugerido || r.saldo_pendiente || 0;
-          fila.limitadoPorStock = !!r.limitado_por_stock;
+          fila.qty = rr.sugerido || rr.saldo_pendiente || 0;
+          fila.limitadoPorStock = !!rr.limitado_por_stock;
         } catch { /* fila en 0, se captura a mano */ }
       }
     } finally { nuevoLoteForm.loading = false; }

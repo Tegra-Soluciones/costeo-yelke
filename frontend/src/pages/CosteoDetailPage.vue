@@ -1568,13 +1568,22 @@
         <div v-if="nuevoLoteForm.open && planValidated" class="bg-white rounded-xl border border-surface-border p-4 space-y-3">
           <div class="prod-head"><span class="prod-title"><svg class="w-4 h-4 text-ink-light" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Nuevo lote de producción</span></div>
 
-          <div v-if="!subOcs.length" class="text-center py-6">
+          <!-- Mientras se crean/validan solas las OC de subcontratación (ver
+               abrirNuevoLote), se muestra un solo mensaje de carga en vez de dejar
+               que se alcancen a ver, parpadeando, las pantallas intermedias de abajo
+               (que son el respaldo manual para cuando algo no se pudo automatizar). -->
+          <div v-if="nuevoLoteForm.loading && !nuevoLoteForm.porProducto.length" class="text-center py-6">
+            <p class="text-sm text-ink-muted">Preparando el lote — creando y validando las órdenes de subcontratación…</p>
+          </div>
+
+          <div v-else-if="!subOcs.length" class="text-center py-6">
             <p class="text-sm font-medium text-ink mb-1">Aún no has creado las órdenes de subcontrato</p>
             <p class="text-[12.5px] text-ink-muted mb-3">Se crea una orden por proveedor (corte, costura, bordado…) — las etapas que comparten taller quedan juntas en la misma orden, cada una con su servicio y BOM de subcontratación.</p>
             <button :disabled="advancing" class="px-4 py-2 text-sm font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="crearSubcontratos">Crear órdenes de subcontrato</button>
           </div>
 
-          <!-- Prerrequisito (solo la primera vez): validar la OC de maquila de cada taller -->
+          <!-- Prerrequisito: la OC de maquila de algún taller no se pudo validar sola
+               (normalmente por permisos) -- respaldo manual. -->
           <template v-else-if="productosCosteo.some((p) => p.root_po && p.root_po_docstatus !== 1)">
             <p class="text-[12.5px] text-ink-muted">Antes de crear el primer lote, valida la orden de compra de maquila de cada taller.</p>
             <template v-if="subPo">
