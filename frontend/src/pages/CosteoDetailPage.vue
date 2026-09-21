@@ -3197,6 +3197,21 @@ watch(() => `${loteActivoRef.value}::${loteParadaActiva.value}`, async () => {
 // todavía; se ofrece crearla sin salir de la pantalla del lote.
 async function crearSubcontratosDesdeLote() {
   await crearSubcontratos();
+  // crearSubcontratos() las deja en Borrador (docstatus 0) -- sin revisarlas y
+  // validarlas aquí, get_lotes_produccion sigue sin ver ninguna parada (filtra
+  // por docstatus=1) y la pantalla se hubiera quedado tan "vacía" como antes de
+  // darle al botón. Mismo auto-encadenado que abrirNuevoLote.
+  for (const po of subOcs.value) {
+    if (po.docstatus !== 0) continue;
+    try {
+      await call("costeo_yelke.api.costeo_api.marcar_revisado_documento", { doctype: "Purchase Order", name: po.name });
+    } catch { /* ya revisada, o sin permiso -- se intenta validar de todos modos */ }
+    try {
+      await call("costeo_yelke.api.costeo_api.validar_documento", { doctype: "Purchase Order", name: po.name });
+    } catch (e) {
+      showToast(`No se pudo validar ${po.name} automáticamente (${e.message || "revisa permisos"}) -- valídala a mano.`, "error");
+    }
+  }
   await loadLotesProduccion();
   // Antes de crear las OC de subcontrato el lote no tenía ninguna parada, así
   // que loteParadaActiva seguía vacío -- sin este fallback, tras crearlas la
