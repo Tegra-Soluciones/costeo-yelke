@@ -1564,6 +1564,44 @@
           </template>
         </div>
 
+        <!-- ═══ Compra de materia prima -- genera la Orden de Compra de cada
+             proveedor (agrupa TODO lo que pide la Solicitud, sin depender de
+             ningún "Lote de entrega" opcional). Reusa exactamente el mismo
+             docCompra/PurchaseDocPanel que ya se usaba dentro de un lote -- solo
+             que aquí no está condicionado a que exista esa división. ═══ -->
+        <div v-if="mrValidated" class="bg-white rounded-xl border border-surface-border p-4 space-y-3">
+          <div class="prod-head"><span class="prod-title"><svg class="w-4 h-4 text-ink-light" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>Compra de materia prima</span></div>
+
+          <div v-if="!mrResults.ocs.length" class="flex items-center justify-between gap-3">
+            <p class="text-[12.5px] text-ink-muted">Genera la Orden de Compra de cada proveedor (una por proveedor) — ahí ajustas UDM y precio si hace falta.</p>
+            <button :disabled="advancing" class="h-9 px-4 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex-shrink-0" @click="crearOc()">Generar Orden(es) de Compra</button>
+          </div>
+
+          <template v-else>
+            <div class="flex flex-wrap gap-1.5">
+              <button
+                v-for="po in mrResults.ocs" :key="po"
+                class="h-8 px-3 text-[12.5px] font-semibold rounded-lg border flex-shrink-0"
+                :class="ocSelected === po ? 'bg-brand-50 border-brand-300 text-brand-700' : 'bg-white border-surface-border text-ink hover:bg-surface-raised'"
+                @click="selectOC(po)"
+              >{{ po }}</button>
+            </div>
+            <div v-if="docCompra && docCompra.doctype === 'Purchase Order' && mrResults.ocs.includes(docCompra.name)" class="pt-1">
+              <PurchaseDocPanel
+                :doc="docCompra" :items="docCompraItems" :form="docCompraForm" desk-route="purchase-order"
+                :payment-terms-options="cotDefaults.payment_terms_templates" :terms-options="cotDefaults.terms"
+                show-pull-prices editable-uom :advancing="advancing"
+                :inline-preview-url="printUrl(docCompra.doctype, docCompra.name)" :preview-key="previewKey"
+                :requires-review="docCompra.requiere_doble_validacion" :reviewed="docCompra.revisado_yelke"
+                :reviewed-by="docCompra.revisado_por_yelke" :reviewed-at="docCompra.revisado_en_yelke"
+                :puede-revisar="permisosValidacion.puede_revisar" :puede-aprobar="permisosValidacion.puede_aprobar"
+                @save="guardarDocCompra" @validate="validarDocCompra" @review="revisarDocCompra" @pull-prices="jalarPreciosOC"
+                @send="openSend(docCompra.doctype, docCompra.name, docCompra.contact_email, docCompra.contact_mobile)"
+              />
+            </div>
+          </template>
+        </div>
+
         <!-- ═══ Continuar a producción -- llamado a la acción claro justo después de
              la Solicitud de Material, para no depender de que se note el pequeño "+"
              del riel de lotes arriba en el stepper (ver CosteoStepper.vue). Mismo
@@ -3019,7 +3057,7 @@ const {
   docCompra, docCompraItems, docCompraForm, docCompraValidated, ocSelected,
   mrLotes, addMrLote, removeMrLote, repartirMrLotesIgual, mrLotePendiente,
   loadSolicitud, crearSolicitud, guardarSolicitud, validarSolicitud,
-  selectOC, selectOcLote, selectRfq, selectSq, guardarDocCompra, validarDocCompra, revisarDocCompra, jalarPreciosOC,
+  selectOC, selectOcLote, selectRfq, selectSq, guardarDocCompra, validarDocCompra, revisarDocCompra, jalarPreciosOC, crearOc,
   permisosValidacion, loadPermisosValidacion,
   reciboPr, reciboItems, reciboForm,
   selectReciboLote, guardarRecibo, validarRecibo,
