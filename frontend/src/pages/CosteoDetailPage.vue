@@ -2122,6 +2122,17 @@
                 </div>
               </template>
             </div>
+
+            <!-- Lote sin NINGUNA parada todavía (nunca se corrió "Crear órdenes de
+                 subcontrato" para este costeo): tracksLote sale vacío (depende de
+                 loteActivo.paradas) y paradaActiva también, así que sin este bloque
+                 el botón para generarlas queda inalcanzable -- la sección se veía
+                 en blanco debajo de "Flujo de este lote". -->
+            <div v-else-if="loteActivo" class="border-t border-surface-border pt-3 text-center py-6">
+              <p class="text-sm font-medium text-ink mb-1">Aún no has creado las órdenes de subcontrato</p>
+              <p class="text-[12.5px] text-ink-muted mb-3">Se crea una orden por proveedor (corte, costura, bordado…) — las etapas que comparten taller quedan juntas en la misma orden, cada una con su servicio y BOM de subcontratación.</p>
+              <button :disabled="advancing" class="px-4 py-2 text-sm font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="crearSubcontratosDesdeLote">Crear órdenes de subcontrato</button>
+            </div>
         </div>
       </template>
     </div>
@@ -3187,7 +3198,14 @@ watch(() => `${loteActivoRef.value}::${loteParadaActiva.value}`, async () => {
 async function crearSubcontratosDesdeLote() {
   await crearSubcontratos();
   await loadLotesProduccion();
-  const p2 = loteActivo.value?.paradas.find((x) => x.parada_id === loteParadaActiva.value);
+  // Antes de crear las OC de subcontrato el lote no tenía ninguna parada, así
+  // que loteParadaActiva seguía vacío -- sin este fallback, tras crearlas la
+  // pantalla se habría quedado igual de "en blanco" (paradaActiva nunca se
+  // vuelve a fijar solo). Se abre la primera parada pendiente, igual que
+  // seleccionarLote.
+  const lote = loteActivo.value;
+  const p2 = lote?.paradas.find((x) => x.parada_id === loteParadaActiva.value)
+    || siguienteParadaPendiente(lote);
   if (p2) await seleccionarParada(p2);
 }
 const showAcordadoModal = ref(false);
