@@ -5852,16 +5852,7 @@ def _lote_paradas(doc, cantidades):
 
     po_de_key, faltan = {}, []
     for k, op in ops_by_key.items():
-        # docstatus < 2 (no ["=", 1]): la OC raíz de maquila puede seguir en borrador --
-        # "Nuevo lote" necesita VERLA para poder pedir que se valide primero (ver
-        # abrirNuevoLote en el frontend, que ya contempla root_po_docstatus !== 1).
-        # Exigir aquí que ya estuviera validada dejaba el producto sin ningún root_po
-        # visible mientras la OC seguía en borrador, y "Nuevo lote" se veía vacío (sin
-        # ningún renglón que llenar) en vez de pedir la validación.
-        po = frappe.db.get_value(
-            "Purchase Order Item", {"fg_item": op.output_item, "docstatus": ["<", 2]},
-            "parent", order_by="creation desc",
-        )
+        po = frappe.db.get_value("Purchase Order Item", {"fg_item": op.output_item, "docstatus": 1}, "parent")
         if not po or frappe.db.get_value("Purchase Order", po, "costeo") != costeo:
             faltan.append(op.output_item)
             continue
