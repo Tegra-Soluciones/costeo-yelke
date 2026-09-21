@@ -3684,21 +3684,17 @@ def _uom_conversion_factor(item_code, uom, stock_uom=None):
 
 @frappe.whitelist()
 def guardar_solicitud_material(mr: str, items=None, schedule_date=None) -> dict:
-    """Guarda ediciones de la MR en borrador (proveedor/precio/cantidad por línea,
-    fecha). El precio manual (si se captura) se respeta al generar la OC en lugar del
-    que se jalaría solo de la cotización de proveedor / última compra -- ver mr_crear_oc.
+    """Guarda ediciones de la MR en borrador -- SOLO proveedor y cantidad por línea, más
+    la fecha. Para no confundir con dos lugares donde "se supone" que se ajusta lo mismo,
+    ni la UDM ni el precio se tocan aquí: la Solicitud es el total real que sale del
+    costeo, igual para cualquier proveedor. Ambos ajustes viven en la Orden de Compra que
+    se genera desde esta MR (ver guardar_documento_compra) -- ahí sí importa el proveedor
+    específico que se haya elegido, con su propia UDM y su propio precio.
 
     La cantidad se puede mover hasta un 5% de lo que en realidad se necesita
     (qty_original, capturada al crear la solicitud) -- de más (mermas/control de
     calidad) o de menos (ej. comprar en múltiplos/rollos cerrados) -- sin dejar que se
-    dispare a lo que sea.
-
-    La UDM de la Solicitud NO se puede cambiar aquí -- la Solicitud representa el total
-    que de verdad se necesita, tal como sale del costeo, igual para cualquier proveedor.
-    El ajuste de UDM al proveedor real (que puede vender en una unidad distinta) se hace
-    en la Orden de Compra que se genera desde esta MR (ver guardar_documento_compra),
-    donde sí se permite libremente, sin exigir que esa UDM ya esté dada de alta para el
-    artículo -- ahí es el proveedor específico el que manda, no el catálogo interno."""
+    dispare a lo que sea."""
     doc = frappe.get_doc("Material Request", mr)
     if doc.docstatus != 0:
         frappe.throw(_("La solicitud ya está validada; no se puede editar."))
@@ -3708,19 +3704,13 @@ def guardar_solicitud_material(mr: str, items=None, schedule_date=None) -> dict:
         rows = json.loads(items) if isinstance(items, str) else items
         by_name = {r.get("name"): r for r in rows if r.get("name")}
         has_sup = frappe.db.has_column("Material Request Item", "supplier")
-        has_rate = frappe.db.has_column("Material Request Item", "rate")
         has_original = frappe.db.has_column("Material Request Item", "qty_original")
         for it in doc.items:
             r = by_name.get(it.name)
             if not r:
                 continue
-            # La UDM de la Solicitud YA NO se puede cambiar aquí -- la Solicitud es el
-            # total que de verdad se necesita, tal como sale del costeo, y cambiarla por
-            # línea complicaba de más esta pantalla. El lugar correcto para ajustar la
-            # UDM al proveedor real (que puede vender en una unidad distinta) es la
-            # Orden de Compra que se genera desde aquí -- ver guardar_documento_compra,
-            # que sí permite cambiarla libremente mientras la OC siga en borrador.
-            # Cualquier "uom" que llegue en el payload simplemente se ignora.
+            # Ni "uom" ni "rate" se aceptan aquí aunque lleguen en el payload -- se
+            # ignoran a propósito (ver docstring). Se ajustan en la Orden de Compra.
             if r.get("qty") is not None:
                 nueva_qty = flt(r.get("qty"))
                 original = (flt(it.get("qty_original")) if has_original else 0) or flt(it.qty)
@@ -3733,16 +3723,42 @@ def guardar_solicitud_material(mr: str, items=None, schedule_date=None) -> dict:
                 it.qty = nueva_qty
             if has_sup:
                 it.supplier = r.get("supplier") or None
-            if has_rate:
-                it.rate = flt(r.get("rate")) or None
     doc.flags.ignore_permissions = True
     doc.save()
     return {"name": doc.name}
 
 
-def _precio_para_oc(item_code, supplier, company=None):
-    """Precio para la OC: si hay Presupuesto de Proveedor (Supplier Quotation) del MISMO
-    proveedor para el item, usa ese; si no, el precio de lista / última compra."""
+def _precio_costeo_material(costeo, item_code):
+    """Precio y UDM con los que se costeó este material (costeo_producto_detalle,
+    renglones de Materia Prima) -- fuente PREFERIDA para la OC (ver _precio_para_oc),
+    mientras la UDM de la OC no haya cambiado frente a la que se costeó."""
+    if not costeo:
+        return None, None
+    rows = frappe.get_all(
+        "Costeo Producto Detalle",
+        filters={"parent": costeo, "concept_type": "Materia Prima", "item": item_code},
+        fields=["unit_price", "internal_uom"],
+        order_by="idx asc",
+    )
+    for r in rows:
+        if flt(r.unit_price):
+            return flt(r.unit_price), r.internal_uom
+    return None, None
+
+
+def _precio_para_oc(item_code, supplier, company=None, costeo=None, uom=None):
+    """Precio para la OC, en orden de preferencia:
+
+    1. Presupuesto de Proveedor (Supplier Quotation) VALIDADO del MISMO proveedor --
+       es el flujo normal opcional del ERP (Solicitud de cotización -> Presupuesto ->
+       OC), una cotización real y más reciente que cualquier otra fuente, así que
+       siempre gana si existe.
+    2. El precio con el que se costeó este material -- SOLO si la UDM de esta línea de
+       la OC sigue siendo la misma con la que se costeó (`uom` == `internal_uom` del
+       costeo). Si la UDM cambió, ese precio por unidad ya no aplica.
+    3. Precio de lista / última compra (comportamiento nativo), como último recurso --
+       típicamente cuando cambió la UDM y no hay Presupuesto de Proveedor que resuelva
+       el precio en la nueva unidad."""
     if supplier:
         # Solo presupuestos de proveedor VALIDADOS (docstatus 1) sobrescriben el precio de
         # lista; los borradores son tentativos y no deben afectar la OC.
@@ -3757,6 +3773,9 @@ def _precio_para_oc(item_code, supplier, company=None):
                 continue
             if frappe.db.get_value("Supplier Quotation", r.parent, "supplier") == supplier:
                 return flt(r.rate)
+    precio_costeo, uom_costeo = _precio_costeo_material(costeo, item_code)
+    if precio_costeo and (not uom or not uom_costeo or uom == uom_costeo):
+        return precio_costeo
     from costeo_yelke.api.costeo_template_api import _get_buying_rate
     return _get_buying_rate(item_code, supplier)
 
@@ -3781,9 +3800,10 @@ def _aplicar_precios_oc(po_names):
         po = frappe.get_doc("Purchase Order", po_name)
         if po.docstatus != 0:
             continue
+        costeo = po.get("costeo") if po.meta.get_field("costeo") else None
         changed = False
         for it in po.items:
-            precio = _precio_para_oc(it.item_code, po.supplier, po.company)
+            precio = _precio_para_oc(it.item_code, po.supplier, po.company, costeo=costeo, uom=it.uom)
             if precio is not None and flt(precio) != flt(it.rate):
                 it.rate = flt(precio)
                 changed = True
@@ -3794,35 +3814,12 @@ def _aplicar_precios_oc(po_names):
             po.save()  # recalcula totales e impuestos
 
 
-def _aplicar_rate_manual_mr(mr_doc, pos):
-    """Si el usuario capturó un precio manual por material en la Solicitud (porque el
-    proveedor por defecto le quedó mal y ajustó costo/proveedor ahí), ese precio gana
-    sobre el que _aplicar_precios_oc jaló automáticamente (cotización/última compra)."""
-    if not frappe.db.has_column("Material Request Item", "rate"):
-        return
-    rate_by_item = {r.item_code: flt(r.rate) for r in mr_doc.items if flt(r.get("rate"))}
-    if not rate_by_item:
-        return
-    for po_name in pos:
-        po = frappe.get_doc("Purchase Order", po_name)
-        if po.docstatus != 0:
-            continue
-        changed = False
-        for it in po.items:
-            r = rate_by_item.get(it.item_code)
-            if r and flt(it.rate) != r:
-                it.rate = r
-                changed = True
-        if changed:
-            po.flags.ignore_permissions = True
-            po.save()
-
-
 @frappe.whitelist()
 def mr_crear_oc(mr: str, items=None, schedule_date=None, lote_ref: str = None) -> dict:
-    """Crea Orden(es) de Compra desde la MR (una OC por proveedor) y jala el precio:
-    primero el manual capturado en la Solicitud (si lo hay), si no del Presupuesto de
-    Proveedor, si no de la lista de precios (última compra).
+    """Crea Orden(es) de Compra desde la MR (una OC por proveedor) y jala el precio (ver
+    _precio_para_oc): primero el Presupuesto de Proveedor validado si existe (flujo
+    normal opcional del ERP), si no el precio con el que se costeó el material (mientras
+    la UDM no haya cambiado), si no la lista de precios / última compra.
 
     Sin `items`, mapea todo el saldo pendiente de la MR (comportamiento nativo). Con
     `items` ([{item_code, qty}]), crea un LOTE parcial: cada OC generada se recorta a
@@ -3915,7 +3912,6 @@ def mr_crear_oc(mr: str, items=None, schedule_date=None, lote_ref: str = None) -
         pos = final_pos
 
     _aplicar_precios_oc(pos)
-    _aplicar_rate_manual_mr(doc, pos)
 
     if schedule_date:
         for po_name in pos:
@@ -4040,7 +4036,8 @@ def mr_generar_oc_lote(mr: str, lote_ref: str, supplier: str = None) -> dict:
 
 @frappe.whitelist()
 def oc_jalar_precios(po: str) -> dict:
-    """Re-jala los precios de una OC en borrador (Presupuesto de Proveedor → lista de precios)."""
+    """Re-jala los precios de una OC en borrador (Presupuesto de Proveedor → precio del
+    costeo si la UDM no cambió → lista de precios), ver _precio_para_oc."""
     doc = frappe.get_doc("Purchase Order", po)
     if doc.docstatus != 0:
         frappe.throw(_("La OC ya está validada; no se puede editar."))

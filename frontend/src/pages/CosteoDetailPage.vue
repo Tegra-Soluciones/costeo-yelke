@@ -1508,23 +1508,18 @@
                 <div><label class="field-label">Estatus</label><div class="field-input bg-surface-raised/60">{{ mrDetail.status }}</div></div>
               </div>
               <table class="w-full text-sm">
-                <thead><tr class="text-left text-xs font-semibold text-ink-light border-b border-surface-border"><th class="py-2">Artículo</th><th class="py-2 w-24 text-right">Cantidad</th><th class="py-2 w-20">UOM</th><th class="py-2 w-1/4">Proveedor</th><th class="py-2 w-28 text-right">Precio</th></tr></thead>
+                <thead><tr class="text-left text-xs font-semibold text-ink-light border-b border-surface-border"><th class="py-2">Artículo</th><th class="py-2 w-24 text-right">Cantidad</th><th class="py-2 w-20">UOM</th><th class="py-2 w-1/4">Proveedor</th></tr></thead>
                 <tbody>
                   <tr v-for="it in mrItems" :key="it.name" class="border-b border-surface-border/60">
                     <td class="py-1.5 pr-2 font-mono text-[12px]">{{ it.item_code }}</td>
                     <td class="py-1.5 pr-2"><input v-if="!mrValidated" v-model.number="it.qty" type="number" :min="Math.round((it.qty_original || it.qty) * 0.95 * 100) / 100" :max="Math.round((it.qty_original || it.qty) * 1.05 * 100) / 100" class="field-input text-right" :class="(it.qty > (it.qty_original || it.qty) * 1.05 + 0.001 || it.qty < (it.qty_original || it.qty) * 0.95 - 0.001) ? 'border-red-400' : ''" /><span v-else class="text-right block">{{ it.qty }}</span></td>
                     <td class="py-1.5 pr-2 text-ink-muted text-xs">{{ it.uom }}</td>
                     <td class="py-1.5 pr-2"><LinkInput v-if="!mrValidated" v-model="it.supplier" doctype="Supplier" placeholder="Proveedor…" /><span v-else>{{ it.supplier || '—' }}</span></td>
-                    <td class="py-1.5 pr-2">
-                      <div v-if="!mrValidated" class="relative"><span class="prefix text-xs">$</span><input v-model.number="it.rate" type="number" min="0" step="0.01" class="field-input text-right pl-5" placeholder="Auto" /></div>
-                      <span v-else class="text-right block">{{ it.rate ? fmtC(it.rate) : '—' }}</span>
-                    </td>
                   </tr>
                 </tbody>
               </table>
-              <p v-if="!mrValidated" class="text-[11px] text-ink-light -mt-1">Deja "Precio" vacío para que se jale solo (cotización de proveedor o última compra) al generar la OC — captúralo aquí solo si necesitas forzar uno distinto (p. ej. cambiaste de proveedor).</p>
               <p v-if="!mrValidated" class="text-[11px] text-ink-light -mt-1">Puedes ajustar hasta 5% de más o de menos de lo requerido (mermas/control de calidad, compra en múltiplos…) — de ahí no se deja pasar.</p>
-              <p v-if="!mrValidated" class="text-[11px] text-ink-light -mt-1">La UDM aquí es la del costeo y no se cambia — si el proveedor que elijas vende en otra unidad, ajústala en la Orden de Compra ya generada.</p>
+              <p v-if="!mrValidated" class="text-[11px] text-ink-light -mt-1">La UDM y el precio se ajustan en la Orden de Compra que generes desde aquí, no en esta pantalla — ahí ya se sabe con qué proveedor específico se está comprando.</p>
             </div>
 
             <!-- Lotes de entrega: se definen ANTES de validar, para que al validar se
@@ -1715,6 +1710,7 @@
                   :payment-terms-options="cotDefaults.payment_terms_templates" :terms-options="cotDefaults.terms"
                   :show-pull-prices="loteDocOpen.tab === 'oc'"
                   :editable-uom="docCompra.doctype === 'Purchase Order'"
+                  :help-text="loteDocOpen.tab === 'oc' ? 'Precio y UDM se ajustan aquí. Por defecto trae el precio del costeo (si la UDM sigue igual) o el del Presupuesto de proveedor si generaste uno — Jalar precios lo vuelve a calcular.' : ''"
                   :advancing="advancing"
                   :inline-preview-url="printUrl(docCompra.doctype, docCompra.name)" :preview-key="previewKey"
                   :requires-review="docCompra.requiere_doble_validacion" :reviewed="docCompra.revisado_yelke"
