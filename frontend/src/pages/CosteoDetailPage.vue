@@ -638,8 +638,7 @@
                           </select>
                         </td>
                         <td class="py-1.5 pr-2">
-                          <input v-if="t.sobrecosto_tipo === 'Fijo' || t.sobrecosto_tipo === 'Porcentaje'" v-model.number="t.sobrecosto_valor" type="number" min="0" step="0.01" class="field-input text-right" @input="recalcTalla(t, prod)" />
-                          <div v-else-if="t.sobrecosto_tipo === 'Material'" class="field-input bg-surface-raised/60 text-ink-muted text-right" title="Se calcula solo: diferencia de precio entre el material original y el alterno">{{ fmtC(t.sobrecosto_valor) }}</div>
+                          <input v-if="t.sobrecosto_tipo === 'Fijo' || t.sobrecosto_tipo === 'Porcentaje' || t.sobrecosto_tipo === 'Material'" v-model.number="t.sobrecosto_valor" type="number" min="0" step="0.01" class="field-input text-right" @input="recalcTalla(t, prod)" />
                           <div v-else class="field-input bg-surface-raised/60 text-ink-xlight text-right">—</div>
                         </td>
                         <td class="py-1.5 pr-2 text-right font-medium text-brand-600">{{ fmtC(t.precio_venta) }}</td>
@@ -649,17 +648,20 @@
                       <tr v-if="t.sobrecosto_tipo === 'Material'" class="border-b border-surface-border/60 bg-surface-raised/40">
                         <td colspan="7" class="py-2 px-2">
                           <div class="flex items-center gap-2 text-[12px]">
-                            <span class="text-ink-muted flex-shrink-0">Cambia el material</span>
-                            <select v-model="t.sobrecosto_material_original" class="field-input flex-1 min-w-0" @change="onTallaMaterialAlternoChange(t, prod)">
+                            <span class="text-ink-muted flex-shrink-0">Material que genera el sobrecosto</span>
+                            <select v-model="t.sobrecosto_material_original" class="field-input flex-1 min-w-0">
                               <option value="">— elige cuál —</option>
                               <option v-for="m in materialesDe(prod.finished_item)" :key="m._tid" :value="m.item">{{ m.item }}</option>
                             </select>
-                            <span class="text-ink-light flex-shrink-0">por</span>
+                          </div>
+                          <div class="flex items-center gap-2 text-[12px] mt-1.5">
+                            <span class="text-ink-light flex-shrink-0">Si esta talla lo compra con otro artículo (opcional, ej. un cierre más grande)</span>
                             <div class="flex-1 min-w-0">
-                              <LinkInput v-model="t.sobrecosto_material_alterno" doctype="Item" :filters="ITEM_FILTERS.mp" placeholder="Artículo alterno…" @update:model-value="onTallaMaterialAlternoChange(t, prod)" />
+                              <LinkInput v-model="t.sobrecosto_material_alterno" doctype="Item" :filters="ITEM_FILTERS.mp" placeholder="Artículo alterno…" />
                             </div>
                           </div>
-                          <p v-if="t.lote_ref" class="text-[11px] text-ink-light mt-1">Ya asignado al lote "{{ t.lote_ref }}" -- ese envío de material usará el artículo alterno.</p>
+                          <p class="text-[11px] text-ink-light mt-1">El valor del sobrecosto se captura a la izquierda, en la columna "Valor" -- aquí solo se indica a qué material corresponde.</p>
+                          <p v-if="t.lote_ref" class="text-[11px] text-ink-light mt-1">Ya asignado al lote "{{ t.lote_ref }}" -- si indicaste artículo alterno, ese envío de material lo usará en vez del estándar.</p>
                         </td>
                       </tr>
                       </template>
@@ -3819,9 +3821,10 @@ function onTallaQtyInput(t, prod) {
 // precio de venta "sin sobrecosto" (idénticos para todas las tallas de un mismo
 // producto), calculados una sola vez en recalcProducto.
 function computeTallaCost(t, costoFlat, pvFlat) {
-  // "Material": el sobrecosto es la diferencia de precio entre el material
-  // original y el alterno -- ya viene calculada en t.sobrecosto_valor (ver
-  // onTallaMaterialAlternoChange), así que se suma igual que "Fijo".
+  // "Material": el sobrecosto ya NO se calcula solo (diferencia de precio entre
+  // el material original y el alterno) -- se captura a mano, igual que "Fijo".
+  // sobrecosto_material_original/alterno quedan solo para indicar A QUÉ
+  // material corresponde y, si aplica, con qué artículo se compra esa talla.
   const sobrecosto = (t.sobrecosto_tipo === "Fijo" || t.sobrecosto_tipo === "Material") ? (t.sobrecosto_valor || 0)
     : t.sobrecosto_tipo === "Porcentaje" ? pvFlat * ((t.sobrecosto_valor || 0) / 100)
     : 0;
@@ -3860,24 +3863,6 @@ function toggleTallaPendiente(t, prod, checked) {
   if (checked) t.qty = 0;
   recalcTalla(t, prod);
 }
-// Al elegir cuál material se reemplaza y por cuál artículo (ver sobrecosto_tipo
-// "Material"), el sobrecosto se calcula solo: la diferencia de precio de compra
-// entre uno y otro -- no se escribe a mano como en Fijo/Porcentaje.
-async function onTallaMaterialAlternoChange(t, prod) {
-  if (!t.sobrecosto_material_original || !t.sobrecosto_material_alterno) {
-    t.sobrecosto_valor = 0;
-    recalcTalla(t, prod);
-    return;
-  }
-  try {
-    const [original, alterno] = await Promise.all([
-      call("costeo_yelke.api.costeo_api.get_item_price", { item_code: t.sobrecosto_material_original, price_list: "Compra estandar" }),
-      call("costeo_yelke.api.costeo_api.get_item_price", { item_code: t.sobrecosto_material_alterno, price_list: "Compra estandar" }),
-    ]);
-    t.sobrecosto_valor = Math.max(0, (alterno?.price || 0) - (original?.price || 0));
-  } catch { /* ignore */ }
-  recalcTalla(t, prod);
-}
 async function onEtapaServicioChange(e, prod) {
   if (e.servicio && !e.precio_servicio) {
     try {
@@ -3903,6 +3888,14 @@ function recalcProducto(prod) {
   const overheadFlat = base * ((prod.overhead_pct || 0) / 100);
   const costoFlat = round2(base + overheadFlat);
   const pvFlat = round2((m > 0 && m < 1) ? costoFlat / (1 - m) : costoFlat);
+  // Con precio fijo, la base "sin sobrecosto" para tallas y remanente debe ser
+  // el precio EXACTO que se tecleó (prod.unit_sales_price) -- no pvFlat, que es
+  // solo una aproximación derivada de margin_pct (y margin_pct a su vez se
+  // redondeó a partir del precio fijo). Usar pvFlat aquí arrastraba un
+  // pequeño desfase de redondeo a las 7493 piezas del remanente, mayor que el
+  // propio sobrecosto de la talla, y el total podía terminar moviéndose para
+  // el lado contrario del esperado.
+  const pvBase = prod.precio_manual ? (prod.unit_sales_price || 0) : pvFlat;
 
   const tRows = tallasDe(fi);
   const totalTallaQty = tRows.reduce((s, t) => s + (t.qty || 0), 0);
@@ -3917,7 +3910,7 @@ function recalcProducto(prod) {
     const remainder = Math.max(0, totalQty - totalTallaQty);
     let sumCosto = 0, sumOverheadQty = 0, sumVenta = 0;
     tRows.forEach(t => {
-      computeTallaCost(t, costoFlat, pvFlat);
+      computeTallaCost(t, costoFlat, pvBase);
       sumCosto += t.costo_total;
       sumOverheadQty += overheadFlat * (t.qty || 0);
       sumVenta += t.precio_venta * (t.qty || 0);
@@ -3925,16 +3918,20 @@ function recalcProducto(prod) {
     if (remainder > 0) {
       sumCosto += costoFlat * remainder;
       sumOverheadQty += overheadFlat * remainder;
-      sumVenta += pvFlat * remainder;
+      sumVenta += pvBase * remainder;
     }
     const divisor = totalQty > 0 ? totalQty : totalTallaQty;
     prod.overhead_amt = round2(sumOverheadQty / divisor);
     prod.total_unit_cost = round2(sumCosto / divisor);
     if (prod.precio_manual) {
-      // Precio fijo: no se pisa aunque cambien los costos -- el total sí se
-      // recalcula (mismas piezas, precio fijo * qty), el margen queda como
-      // dato informativo nada más.
-      prod.total_sales_price = round2(prod.unit_sales_price * (prod.qty || 0));
+      // Precio fijo: la BASE (unit_sales_price) no se pisa aunque cambien los
+      // costos -- pero el sobrecosto de cada talla (ya sumado dentro de
+      // t.precio_venta, con esa base fija de piso) sí debe reflejarse en el
+      // total: antes se recalculaba como unit_sales_price * qty a secas,
+      // ignorando por completo cualquier sobrecosto por talla (Fijo,
+      // Porcentaje o Material) -- el total nunca se movía sin importar lo que
+      // se capturara ahí. El margen sigue siendo solo informativo.
+      prod.total_sales_price = round2(sumVenta);
       const priceM = prod.unit_sales_price || 0;
       prod.margin_pct = round2(Math.max(0, priceM > 0 ? ((priceM - prod.total_unit_cost) / priceM) * 100 : 0));
     } else {
