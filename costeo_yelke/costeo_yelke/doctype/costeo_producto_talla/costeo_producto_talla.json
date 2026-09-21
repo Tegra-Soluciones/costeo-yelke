@@ -14,8 +14,6 @@
   "qty",
   "sobrecosto_tipo",
   "sobrecosto_valor",
-  "sobrecosto_material_original",
-  "sobrecosto_material_alterno",
   "lote_ref",
   "costo_unitario",
   "precio_venta",
@@ -61,11 +59,11 @@
   },
   {
    "default": "Ninguno",
-   "description": "'Material': el sobrecosto viene de cambiar un material del costeo por un artículo alterno (ej. un cierre más grande) -- ver sobrecosto_material_original/alterno. No se combina con Fijo/Porcentaje.",
+   "description": "Ajuste de precio para las piezas de esta talla, sobre el mismo producto y el mismo material -- si la talla necesita material distinto (más consumo, artículo distinto), en vez de esto se costea como una 'Variante de talla' aparte (ver Costeo Producto -> variante_talla_de).",
    "fieldname": "sobrecosto_tipo",
    "fieldtype": "Select",
    "label": "Sobrecosto",
-   "options": "Ninguno\nFijo\nPorcentaje\nMaterial"
+   "options": "Ninguno\nFijo\nPorcentaje"
   },
   {
    "depends_on": "eval:doc.sobrecosto_tipo == 'Fijo' || doc.sobrecosto_tipo == 'Porcentaje'",
@@ -73,21 +71,6 @@
    "fieldtype": "Float",
    "label": "Valor de sobrecosto",
    "precision": "2"
-  },
-  {
-   "depends_on": "eval:doc.sobrecosto_tipo == 'Material'",
-   "description": "Código del material (de los ya capturados en este producto) que se reemplaza para las piezas de esta talla.",
-   "fieldname": "sobrecosto_material_original",
-   "fieldtype": "Data",
-   "label": "Material a reemplazar"
-  },
-  {
-   "depends_on": "eval:doc.sobrecosto_tipo == 'Material'",
-   "description": "Artículo real que se compra/usa en vez del material original para esta talla (ej. Cierre 70cm en vez de Cierre 60cm). Se registra como 'Artículo Alterno' del original -- así la compra, el envío al taller y el inventario quedan correctos, sin tocar el BOM estándar del producto.",
-   "fieldname": "sobrecosto_material_alterno",
-   "fieldtype": "Link",
-   "label": "Artículo alterno",
-   "options": "Item"
   },
   {
    "description": "Lote de producción al que se asignó la cantidad ya confirmada de esta talla (se llena solo al crear ese lote) -- correlaciona con el mismo lote_ref usado en Solicitud de Material/Orden de Compra/Orden de Subcontratación.",

@@ -135,24 +135,23 @@ def _es_talla_pendiente(t):
     return (t.get("estado_cantidad") or "Definida") == "Pendiente por cliente"
 
 
-def _sobrecosto_titulo(sobrecosto_tipo, sobrecosto_valor, material_original=None, material_alterno=None):
+def _sobrecosto_titulo(sobrecosto_tipo, sobrecosto_valor):
     if sobrecosto_tipo == "Porcentaje":
         return f"Tallas extra (+{flt(sobrecosto_valor):g}%)"
-    if sobrecosto_tipo == "Material":
-        orig = frappe.db.get_value("Item", material_original, "item_name") or material_original or "material estándar"
-        alt = frappe.db.get_value("Item", material_alterno, "item_name") or material_alterno or "artículo alterno"
-        return f"Tallas extra (cambia {orig} por {alt}, +${flt(sobrecosto_valor):,.2f} c/u)"
     return f"Tallas extra (+${flt(sobrecosto_valor):,.2f} c/u)"
 
 
-def _build_talla_extra_description(base_description, sobrecosto_tipo, sobrecosto_valor, rows, material_original=None, material_alterno=None):
+def _build_talla_extra_description(base_description, sobrecosto_tipo, sobrecosto_valor, rows):
     """Descripción autogenerada para la línea de tallas extra: mismo producto,
     listando qué tallas llevan el sobrecosto. No exige cantidad -- lo normal
     es que al cotizar no se sepa cuántas piezas serán tallas extra, solo que
     existe el ajuste de precio; si sí se capturó cantidad por talla, se
     incluye como referencia. Si alguna fila del grupo sigue 'Pendiente por
-    cliente', se avisa al final -- esa cantidad todavía no es definitiva."""
-    titulo = _sobrecosto_titulo(sobrecosto_tipo, sobrecosto_valor, material_original, material_alterno)
+    cliente', se avisa al final -- esa cantidad todavía no es definitiva.
+    Solo aplica a sobrecosto Fijo/Porcentaje -- una talla que necesita material
+    distinto se costea como una 'Variante de talla' aparte (su propio Costeo
+    Producto), no con este mecanismo."""
+    titulo = _sobrecosto_titulo(sobrecosto_tipo, sobrecosto_valor)
     lineas = []
     pendiente = False
     for t in rows:
@@ -201,7 +200,7 @@ def _venta_items_para_producto(doc, p, extra_fields=None):
 
     grupos = {}
     for t in talla_rows:
-        key = (t.sobrecosto_tipo, flt(t.sobrecosto_valor), t.get("sobrecosto_material_original"), t.get("sobrecosto_material_alterno"))
+        key = (t.sobrecosto_tipo, flt(t.sobrecosto_valor))
         grupos.setdefault(key, []).append(t)
 
     definidas = [t for t in talla_rows if not _es_talla_pendiente(t)]
@@ -216,7 +215,7 @@ def _venta_items_para_producto(doc, p, extra_fields=None):
             item["description"] = p.description
         items.append(item)
 
-    for (sobrecosto_tipo, sobrecosto_valor, mat_orig, mat_alt), rows in grupos.items():
+    for (sobrecosto_tipo, sobrecosto_valor), rows in grupos.items():
         algun_pendiente = any(_es_talla_pendiente(t) for t in rows)
         qty_grupo = sum(flt(t.qty) for t in rows)
         qty = qty_grupo if (qty_grupo > 0 and not algun_pendiente) else 1
@@ -226,40 +225,11 @@ def _venta_items_para_producto(doc, p, extra_fields=None):
             "qty": qty,
             "rate": rate,
             "price_list_rate": rate,
-            "description": _build_talla_extra_description(p.description, sobrecosto_tipo, sobrecosto_valor, rows, mat_orig, mat_alt),
+            "description": _build_talla_extra_description(p.description, sobrecosto_tipo, sobrecosto_valor, rows),
             **extra_fields,
         })
 
     return items
-
-
-def _asegurar_articulo_alterno(original: str, alterno: str):
-    """Registra 'alterno' como Artículo Alterno de 'original' (bidireccional) si
-    todavía no existe -- una sola vez por par, reutilizado siempre que se repita
-    la misma combinación. Es el mecanismo NATIVO de Frappe/ERPNext (Item
-    Alternative), no algo propio de esta app: así el envío de material al taller
-    y el consumo en producción reconocen el artículo real que se compró, sin
-    pisar el BOM estándar del producto (ver sub_transferir_material y
-    crear_boms_spa).
-
-    ERPNext exige que AMBOS artículos tengan 'Permitir artículo alterno' marcado
-    antes de poder registrar el par (si no, Item Alternative.validate() lo
-    rechaza) -- se asegura SIEMPRE, incluso si el par ya estaba registrado (por
-    si alguien lo desmarcó a mano en el Artículo después; sin esto, la
-    sustitución en la transferencia seguiría fallando aunque el par ya existiera)."""
-    if not original or not alterno or original == alterno:
-        return
-    for item_code in (original, alterno):
-        if not frappe.db.get_value("Item", item_code, "allow_alternative_item"):
-            frappe.db.set_value("Item", item_code, "allow_alternative_item", 1, update_modified=False)
-    if frappe.db.exists("Item Alternative", {"item_code": original, "alternative_item_code": alterno}):
-        return
-    ia = frappe.new_doc("Item Alternative")
-    ia.item_code = original
-    ia.alternative_item_code = alterno
-    ia.two_way = 1
-    ia.flags.ignore_permissions = True
-    ia.insert()
 
 
 @frappe.whitelist()
@@ -323,6 +293,96 @@ def _sync_venta_items_desde_tallas(doc, finished_item: str = None) -> dict:
             vdoc.save()
             actualizados.append({"doctype": doctype, "name": vdoc.name})
     return {"actualizados": actualizados, "omitidos": omitidos}
+
+
+_CHILD_ROW_SYSTEM_FIELDS = ("name", "parent", "parentfield", "parenttype", "idx",
+                            "creation", "modified", "modified_by", "owner", "docstatus")
+
+
+def _clonar_fila_hija(doc, fieldname, fila_original, campo_producto, valor_nuevo):
+    """Copia una fila hija tal cual (menos los campos de control de Frappe) hacia
+    otro renglón de `finished_item`/`producto_terminado` -- usado para clonar
+    materiales y etapas de un producto hacia su variante de talla. Los
+    identificadores internos propios de cada doctype (stage_id de Etapas Costeo,
+    material_id de Costeo Producto Detalle, y las referencias entre ellos como
+    recibe_de/etapa) se copian sin cambiar -- solo importan dentro del mismo
+    producto, así que no chocan entre el original y la variante."""
+    data = fila_original.as_dict()
+    for k in _CHILD_ROW_SYSTEM_FIELDS:
+        data.pop(k, None)
+    data[campo_producto] = valor_nuevo
+    doc.append(fieldname, data)
+
+
+@frappe.whitelist()
+def crear_variante_talla(costeo: str, producto_base: str, item_code: str, talla_grupo_label: str = None) -> dict:
+    """Crea una 'Variante de talla' de un producto ya cargado en el Costeo: un
+    renglón de Costeo Producto NUEVO E INDEPENDIENTE (su propio artículo, sus
+    propios materiales, sus propias etapas, su propio precio/margen) -- para
+    tallas que necesitan más/otro material, no solo un ajuste de precio. Se
+    clonan los materiales y etapas del producto base como punto de partida (ya
+    editable como cualquier producto); el enlace `variante_talla_de` es solo
+    para mostrarlo agrupado en pantalla, nunca se fusiona de vuelta en
+    Cotización/Orden de Venta/Factura -- ahí genera su propia línea, con su
+    propio precio y descripción, como cualquier otro producto del costeo.
+
+    ``producto_base``: el `name` (o, si el costeo es nuevo y aún no tiene
+    nombres de fila, el `finished_item`) del renglón de Costeo Producto que se
+    va a clonar.
+    ``item_code``: código del artículo nuevo (no debe existir ya) -- se crea
+    clonando los datos básicos del artículo base (grupo, UDM, si es
+    subcontratado, etc.), sin BOM ni precios propios (esos se arman normal
+    desde este costeo, igual que con cualquier producto nuevo)."""
+    if not item_code:
+        frappe.throw(_("Indica el código del artículo de la variante."))
+    if frappe.db.exists("Item", item_code):
+        frappe.throw(_("Ya existe un artículo con ese código."))
+
+    doc = frappe.get_doc("Costeo", costeo)
+    base = next((p for p in doc.costeo_producto if p.name == producto_base or p.finished_item == producto_base), None)
+    if not base:
+        frappe.throw(_("No se encontró ese producto en este costeo."))
+    if not base.finished_item or not frappe.db.exists("Item", base.finished_item):
+        frappe.throw(_("El producto base todavía no tiene un artículo válido -- termina de darlo de alta primero."))
+
+    base_item = frappe.get_doc("Item", base.finished_item)
+    nuevo_item = frappe.copy_doc(base_item)
+    nuevo_item.item_code = item_code
+    nuevo_item.item_name = f"{base_item.item_name} - {talla_grupo_label}" if talla_grupo_label else f"{base_item.item_name} (variante)"
+    nuevo_item.image = None
+    nuevo_item.default_bom = None
+    nuevo_item.set("item_defaults", [])
+    nuevo_item.flags.ignore_permissions = True
+    nuevo_item.flags.ignore_mandatory = True
+    nuevo_item.insert()
+
+    nueva = doc.append("costeo_producto", {})
+    for f in ("qty", "shipping_cost", "labeling_cost", "packaging_cost", "overhead_pct", "margin_pct"):
+        nueva.set(f, base.get(f))
+    nueva.finished_item = nuevo_item.name
+    nueva.description = base.description
+    nueva.variante_talla_de = base.finished_item
+    nueva.talla_grupo_label = talla_grupo_label or ""
+
+    for d in list(doc.costeo_producto_detalle):
+        if d.finished_item == base.finished_item:
+            _clonar_fila_hija(doc, "costeo_producto_detalle", d, "finished_item", nuevo_item.name)
+
+    for e in list(doc.tabla_etapas_costeo):
+        if e.producto_terminado == base.finished_item:
+            _clonar_fila_hija(doc, "tabla_etapas_costeo", e, "producto_terminado", nuevo_item.name)
+
+    doc.flags.ignore_permissions = True
+    doc.flags.ignore_mandatory = True
+    # Un Costeo validado (docstatus=1) normalmente queda bloqueado para editarse --
+    # agregar una variante de talla es una excepción deliberada (mismo espíritu que
+    # costo_unitario/precio_venta con allow_on_submit en Costeo Producto Talla):
+    # solo AGREGA un producto nuevo e independiente, no toca ningún dato ya
+    # validado de los productos existentes.
+    doc.flags.ignore_validate_update_after_submit = True
+    doc.save()
+    frappe.db.commit()
+    return {"item_code": nuevo_item.name, "producto_row": nueva.name}
 
 
 @frappe.whitelist()
@@ -2538,17 +2598,6 @@ def crear_boms_spa(costeo: str) -> dict:
         if d.finished_item and d.concept_type == "Materia Prima" and d.item:
             mats_por_producto.setdefault(d.finished_item, []).append(d)
 
-    # ── 2b. Sustituciones de material por talla (sobrecosto_tipo = "Material") ──
-    # El BOM se queda tal cual (sigue costeando con el material estándar) -- solo
-    # se marca esa línea como "permite artículo alterno" y se registra el par en
-    # Item Alternative, así el envío de material al taller de un lote específico
-    # de esa talla puede usar el artículo real sin que el sistema marque "sin
-    # stock" (ver sub_transferir_material)."""
-    alternos_por_producto: dict = {}
-    for t in doc.tabla_tallas_costeo:
-        if t.finished_item and t.sobrecosto_tipo == "Material" and t.sobrecosto_material_original and t.sobrecosto_material_alterno:
-            alternos_por_producto.setdefault(t.finished_item, {})[t.sobrecosto_material_original] = t.sobrecosto_material_alterno
-
     # ── 3. Procesar cada producto ─────────────────────────────────────────────
     for producto in doc.costeo_producto:
         finished_item = producto.finished_item
@@ -2702,19 +2751,6 @@ def crear_boms_spa(costeo: str) -> dict:
                     bom.costeo = costeo
                 for it in items_bom:
                     bom.append("items", it)
-
-                # Marcar líneas con sustitución de material por talla (ver 2b) --
-                # el BOM sigue costeando con el material estándar, solo se habilita
-                # para que un lote de esa talla pueda usar el alterno al transferir.
-                alternos = alternos_por_producto.get(finished_item, {})
-                if alternos:
-                    for row in bom.items:
-                        alterno = alternos.get(row.item_code)
-                        if not alterno:
-                            continue
-                        row.allow_alternative_item = 1
-                        bom.allow_alternative_item = 1
-                        _asegurar_articulo_alterno(row.item_code, alterno)
 
                 bom.flags.ignore_permissions = True
                 bom.flags.ignore_links       = True
@@ -5600,69 +5636,12 @@ def _redondear_qty_arriba(se, save=True):
         se.save()
 
 
-def _aplicar_articulos_alternos_por_talla(se, sco: str, save: bool = False):
-    """Si el lote de esta Orden de Subcontratación (sco.lote_ref) corresponde a
-    una talla con sustitución de material (sobrecosto_tipo = 'Material'),
-    reemplaza esa línea del Stock Entry por el artículo REAL (ej. Cierre 70cm en
-    vez de Cierre 60cm) -- mismo Stock Entry que ya arma sub_transferir_material,
-    solo se ajustan las líneas afectadas antes de guardarlo. El BOM del producto
-    sigue sin tocarse (sigue costeando con el material estándar); esto solo
-    afecta lo que se transfiere/consume para ESTE lote en particular, así el
-    inventario y la producción reconocen el artículo que de verdad se compró
-    (ver crear_boms_spa, que ya dejó marcado allow_alternative_item en el BOM y
-    registrado el par en Item Alternative la primera vez que se usó)."""
-    lote_ref = frappe.db.get_value("Subcontracting Order", sco, "lote_ref")
-    if not lote_ref:
-        return False
-    po = frappe.db.get_value("Subcontracting Order", sco, "purchase_order")
-    costeo = frappe.db.get_value("Purchase Order", po, "costeo") if po else None
-    if not costeo:
-        return False
-
-    tallas = frappe.get_all(
-        "Costeo Producto Talla",
-        filters={"parent": costeo, "lote_ref": lote_ref, "sobrecosto_tipo": "Material"},
-        fields=["sobrecosto_material_original", "sobrecosto_material_alterno"],
-    )
-    alterno_por_original = {
-        t.sobrecosto_material_original: t.sobrecosto_material_alterno
-        for t in tallas if t.sobrecosto_material_original and t.sobrecosto_material_alterno
-    }
-    if not alterno_por_original:
-        return False
-
-    cambio = False
-    for row in se.items:
-        alterno = alterno_por_original.get(row.item_code)
-        if not alterno or row.get("original_item"):  # ya se sustituyó antes -- no repetir
-            continue
-        _asegurar_articulo_alterno(row.item_code, alterno)
-        alt = frappe.db.get_value("Item", alterno, ["item_name", "description", "stock_uom"], as_dict=True)
-        row.original_item = row.item_code
-        row.allow_alternative_item = 1
-        row.item_code = alterno
-        row.item_name = alt.item_name
-        row.description = alt.description or alt.item_name
-        row.uom = alt.stock_uom
-        row.stock_uom = alt.stock_uom
-        row.conversion_factor = 1
-        row.transfer_qty = row.qty
-        cambio = True
-
-    if cambio and save and se.docstatus == 0:
-        se.flags.ignore_permissions = True
-        se.save()
-    return cambio
-
-
 @frappe.whitelist()
 def sub_transferir_material(sco: str) -> dict:
     """Crea el Stock Entry 'Send to Subcontractor' EN BORRADOR (igual que el botón nativo
     'Transferencia → Materiales al proveedor' de ERPNext). No lo valida: el usuario revisa
     almacenes y cantidades y lo valida aparte (así no fuerza stock negativo).
-    El almacén de origen se pre-llena según la etapa (materia prima / trabajo en proceso).
-    Si el lote de esta orden tiene sustitución de material por talla, esa línea ya
-    llega con el artículo alterno real (ver _aplicar_articulos_alternos_por_talla)."""
+    El almacén de origen se pre-llena según la etapa (materia prima / trabajo en proceso)."""
     from erpnext.controllers.subcontracting_controller import make_rm_stock_entry
 
     doc = frappe.get_doc("Subcontracting Order", sco)
@@ -5671,8 +5650,7 @@ def sub_transferir_material(sco: str) -> dict:
 
     # Reutiliza un borrador existente si ya se generó uno -- de paso, sanea sus
     # cantidades por si quedó de antes de que esto redondeara hacia arriba (o si el
-    # required_qty de la SCO que lo originó todavía traía decimales), y aplica la
-    # sustitución de material si todavía no se había hecho.
+    # required_qty de la SCO que lo originó todavía traía decimales).
     existing = frappe.db.get_value(
         "Stock Entry",
         {"subcontracting_order": sco, "purpose": "Send to Subcontractor", "docstatus": 0},
@@ -5680,7 +5658,6 @@ def sub_transferir_material(sco: str) -> dict:
     )
     if existing:
         se_existing = frappe.get_doc("Stock Entry", existing)
-        _aplicar_articulos_alternos_por_talla(se_existing, sco, save=True)
         _redondear_qty_arriba(se_existing)
         return {"ok": True, "stock_entry": existing, "docstatus": 0}
 
@@ -5688,7 +5665,6 @@ def sub_transferir_material(sco: str) -> dict:
     se = frappe.get_doc(se) if isinstance(se, dict) else se
     po = frappe.db.get_value("Subcontracting Order", sco, "purchase_order")
     _aplicar_almacenes_origen_por_material(se, po)
-    _aplicar_articulos_alternos_por_talla(se, sco)
     _redondear_qty_arriba(se, save=False)
     se.flags.ignore_permissions = True
     se.insert()
@@ -5987,29 +5963,8 @@ def _lote_paradas(doc, cantidades):
 
 
 @frappe.whitelist()
-def get_tallas_material_sin_lote(costeo: str) -> list:
-    """Tallas con sustitución de material (sobrecosto_tipo = 'Material') ya
-    'Definidas' (cantidad confirmada por el cliente) que todavía no se asignaron
-    a ningún lote -- se ofrecen al abrir un lote nuevo para que esa cantidad se
-    marque como "esta parte es de tal talla" (ver lote_abrir, tallas_por_producto)
-    y el envío de material al taller de ese lote use el artículo alterno."""
-    rows = frappe.get_all(
-        "Costeo Producto Talla",
-        filters={
-            "parent": costeo, "sobrecosto_tipo": "Material", "estado_cantidad": "Definida",
-            "qty": [">", 0], "lote_ref": ["in", ["", None]],
-        },
-        fields=["name", "finished_item", "genero", "talla", "qty", "sobrecosto_material_original", "sobrecosto_material_alterno"],
-    )
-    for r in rows:
-        r["talla_label"] = " ".join(filter(None, [r.genero, _tallas_label(r.talla)])) or r.talla
-        r["material_label"] = frappe.db.get_value("Item", r.sobrecosto_material_alterno, "item_name") or r.sobrecosto_material_alterno
-    return rows
-
-
-@frappe.whitelist()
 def lote_abrir(plan: str, lote_ref: str, cantidades=None, schedule_date: str = None,
-               qty: float = None, producto: str = None, tallas_por_producto=None) -> dict:
+               qty: float = None, producto: str = None) -> dict:
     """Abre un lote de producción de un jalón: crea y valida la Subcontracting Order
     de CADA PARADA del lote (ver _lote_paradas) -- un paso del flujo en un taller,
     con la cantidad de cada producto que entra en el lote.
@@ -6017,7 +5972,10 @@ def lote_abrir(plan: str, lote_ref: str, cantidades=None, schedule_date: str = N
     ``cantidades`` = ``{producto: qty}``. Un taller que maquila para VARIOS productos
     en el mismo punto del flujo recibe UNA sola SCO (con la cantidad de cada uno). Un
     taller que hace dos pasos NO adyacentes del flujo recibe DOS SCO (una por parada).
-    Un producto sin saldo pendiente se omite en silencio.
+    Un producto sin saldo pendiente se omite en silencio. Una talla que necesita
+    material distinto es, desde ese punto de vista, otro producto más (su propia
+    'Variante de talla', ver Costeo Producto.variante_talla_de) -- entra aquí igual
+    que cualquier otro renglón de `costeo_producto`, con su propio saldo/lote.
 
     Compat: `qty` (+ `producto`) -- firma anterior -- se traduce a ``cantidades``.
 
@@ -6025,31 +5983,17 @@ def lote_abrir(plan: str, lote_ref: str, cantidades=None, schedule_date: str = N
     insumo de la anterior, que todavía no ha producido nada. El candado de existencias
     vive en la TRANSFERENCIA.
 
-    Las paradas que ya tengan su SCO en este lote se saltan -- seguro reintentar.
-
-    ``tallas_por_producto`` (opcional) = ``{producto: nombre_de_fila_de_talla}`` --
-    cuando la cantidad de un producto en este lote corresponde a una talla con
-    sustitución de material ya confirmada ('Definida'), se marca esa fila con
-    este lote_ref (Costeo Producto Talla.lote_ref). Así, al enviar el material
-    de este lote al taller, el sistema sabe que debe usar el artículo alterno en
-    vez del material estándar (ver _aplicar_articulos_alternos_por_talla)."""
+    Las paradas que ya tengan su SCO en este lote se saltan -- seguro reintentar."""
     if not lote_ref:
         frappe.throw(_("Indica la referencia del lote."))
     if isinstance(cantidades, str):
         cantidades = frappe.parse_json(cantidades) if cantidades else None
-    if isinstance(tallas_por_producto, str):
-        tallas_por_producto = frappe.parse_json(tallas_por_producto) if tallas_por_producto else None
 
     costeo = frappe.db.get_value("Production Plan", plan, "costeo")
     if not costeo:
         frappe.throw(_("El plan no está ligado a ningún costeo."))
     doc = frappe.get_doc("Costeo", costeo)
     pts_costeo = [p.finished_item for p in doc.costeo_producto if p.finished_item]
-
-    if tallas_por_producto:
-        for producto_fi, talla_row in tallas_por_producto.items():
-            if producto_fi in pts_costeo and talla_row:
-                frappe.db.set_value("Costeo Producto Talla", talla_row, "lote_ref", lote_ref, update_modified=False)
 
     if cantidades is None:
         if not qty or flt(qty) <= 0:

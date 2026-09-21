@@ -1054,26 +1054,6 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   const loteActivoRef = ref("");
   const loteParadaActiva = ref("");     // parada_id de la parada abierta en el detalle
   const nuevoLoteForm = reactive({ open: false, schedule_date: "", loading: false, porProducto: [] });
-  // Tallas con sustitución de material ya confirmadas ("Definida") que todavía no
-  // se asignaron a ningún lote -- se ofrecen al abrir un lote nuevo (ver
-  // costeo_api.get_tallas_material_sin_lote / lote_ref en Costeo Producto Talla).
-  const tallasSinLote = ref([]);
-  async function loadTallasSinLote() {
-    if (!planCosteoName.value) { tallasSinLote.value = []; return; }
-    try {
-      tallasSinLote.value = await call("costeo_yelke.api.costeo_api.get_tallas_material_sin_lote", { costeo: planCosteoName.value }) || [];
-    } catch { tallasSinLote.value = []; }
-  }
-  function tallasSinLoteDe(finished_item) {
-    return tallasSinLote.value.filter((t) => t.finished_item === finished_item);
-  }
-  // Al elegir "esta cantidad es de tal talla" en el form de nuevo lote, prellena
-  // la cantidad del lote con la ya confirmada para esa talla (editable después).
-  function onTallaLoteSelect(fila) {
-    if (!fila.talla_row) return;
-    const t = tallasSinLote.value.find((x) => x.name === fila.talla_row);
-    if (t) fila.qty = t.qty;
-  }
 
   const loteActivo = computed(() =>
     lotesProduccion.value.find((l) => l.lote_ref === loteActivoRef.value) || null
@@ -1170,7 +1150,6 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     nuevoLoteForm.open = true;
     nuevoLoteForm.schedule_date = "";
     nuevoLoteForm.porProducto = [];
-    loadTallasSinLote();
     nuevoLoteForm.loading = true;
     try {
       if (!subOcs.value.length) {
@@ -1209,7 +1188,6 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
         po: p.root_po || null,
         po_docstatus: p.root_po_docstatus ?? null,
         qty: 0, sugerido: 0, saldo: 0, limitadoPorStock: false,
-        talla_row: "", // si se elige una talla con sustitución de material (ver tallasSinLoteDe)
       }));
       // Secuencial (no Promise.all): varios productos pueden compartir la misma OC
       // raíz y sub_qty_disponible crea/borra una SCO borrador contra ella -- dos
@@ -1237,10 +1215,8 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   async function crearNuevoLote() {
     if (!planDetail.value) { showToast("No hay plan de producción", "error"); return; }
     const cantidades = {};
-    const tallas_por_producto = {};
     nuevoLoteForm.porProducto.forEach((f) => {
       if (f.qty > 0) cantidades[f.finished_item] = f.qty;
-      if (f.qty > 0 && f.talla_row) tallas_por_producto[f.finished_item] = f.talla_row;
     });
     if (!Object.keys(cantidades).length) { showToast("Indica la cantidad de al menos un producto", "error"); return; }
     advancing.value = true;
@@ -1249,7 +1225,6 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
       const r = await call("costeo_yelke.api.costeo_api.lote_abrir", {
         plan: planDetail.value.name, lote_ref, cantidades,
         schedule_date: nuevoLoteForm.schedule_date || null,
-        tallas_por_producto: Object.keys(tallas_por_producto).length ? tallas_por_producto : null,
       });
       cerrarNuevoLote();
       await loadLotesProduccion();
@@ -1434,7 +1409,6 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     loteActivo, paradaActiva, tracksLote, paradaEstado,
     loadLotesProduccion, seleccionarLote, seleccionarParada, verParadaPo,
     abrirNuevoLote, cerrarNuevoLote, crearNuevoLote, abrirParada, siguienteParadaPendiente, generarOcLote,
-    tallasSinLote, tallasSinLoteDe, onTallaLoteSelect,
     primeraEtapaQty, primeraEtapaLoading, primeraEtapaLimitado, sugerirPrimeraEtapaQty,
     crearRfqLote, crearSqLote,
     omGeneral, omCab, omDama, omProc, omTablas, omArchivos, omUploading, omEsMaestra,

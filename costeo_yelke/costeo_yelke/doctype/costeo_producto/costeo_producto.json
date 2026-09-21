@@ -7,6 +7,8 @@
  "engine": "InnoDB",
  "field_order": [
   "finished_item",
+  "variante_talla_de",
+  "talla_grupo_label",
   "image",
   "description",
   "qty",
@@ -126,6 +128,19 @@
    "in_list_view": 1,
    "label": "Producto Terminado",
    "reqd": 1
+  },
+  {
+   "description": "Si este producto es una variante de talla de otro renglón de este mismo costeo (ej. una talla que necesita más material y por eso se costea como producto aparte), aquí va el 'Producto Terminado' del renglón base. Vacío para un producto normal.",
+   "fieldname": "variante_talla_de",
+   "fieldtype": "Data",
+   "label": "Variante de talla de"
+  },
+  {
+   "depends_on": "eval:doc.variante_talla_de",
+   "description": "Etiqueta libre para identificar la variante (ej. \"2XL/3XL\").",
+   "fieldname": "talla_grupo_label",
+   "fieldtype": "Data",
+   "label": "Tallas que cubre"
   }
  ],
  "grid_page_length": 50,
