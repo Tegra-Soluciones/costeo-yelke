@@ -58,7 +58,10 @@
           <tr v-for="it in items" :key="it.name" class="border-b border-surface-border/60">
             <td class="py-1.5 pr-2 font-mono text-[12px]">{{ it.item_code }}</td>
             <td class="py-1.5 pr-2"><input v-if="!isValidated" v-model.number="it.qty" type="number" min="0" class="field-input text-right" /><span v-else class="block text-right">{{ it.qty }}</span></td>
-            <td class="py-1.5 pr-2 text-ink-muted text-xs">{{ it.uom }}</td>
+            <td class="py-1.5 pr-2">
+              <LinkInput v-if="!isValidated && editableUom" v-model="it.uom" doctype="UOM" placeholder="UDM" class="w-24 text-xs" />
+              <span v-else class="text-ink-muted text-xs">{{ it.uom }}</span>
+            </td>
             <td v-if="hasRate" class="py-1.5 pr-2"><input v-if="!isValidated && it.has_rate" v-model.number="it.rate" type="number" min="0" step="0.01" class="field-input text-right" /><span v-else class="block text-right">{{ it.rate }}</span></td>
             <td v-if="showWarehouse" class="py-1.5 pr-2 text-ink-muted text-xs">{{ it.warehouse }}</td>
           </tr>
@@ -106,6 +109,7 @@
 <script setup>
 import { computed } from "vue";
 import DocStatusPill from "./DocStatusPill.vue";
+import LinkInput from "./LinkInput.vue";
 
 // Panel genérico para ver/editar CUALQUIER documento de compra-producción (OC, RFQ,
 // Presupuesto de proveedor, Recibo de compra, OC de subcontratación...) -- todos
@@ -125,6 +129,12 @@ const props = defineProps({
   inlinePreviewUrl: { type: String, default: "" },
   previewKey: { type: [Number, String], default: 0 },
   showWarehouse: { type: Boolean, default: false },
+  // Solo la Orden de Compra de materia prima la pone en true -- ahí es donde tiene
+  // sentido ajustar la UDM al proveedor real que se terminó eligiendo (puede vender en
+  // una unidad distinta a la que se costeó o a la que trae la Solicitud de Material).
+  // RFQ, Presupuesto de proveedor, Recibo y las órdenes de subcontratación (que usan
+  // este mismo panel) se quedan en el valor por defecto y siguen de solo lectura.
+  editableUom: { type: Boolean, default: false },
   helpText: { type: String, default: "" },
   validateLabel: { type: String, default: "Validar" },
   validatedText: { type: String, default: "Validada" },

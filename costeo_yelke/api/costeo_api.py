@@ -3678,7 +3678,7 @@ def _uom_conversion_factor(item_code, uom, stock_uom=None):
 
 @frappe.whitelist()
 def guardar_solicitud_material(mr: str, items=None, schedule_date=None) -> dict:
-    """Guarda ediciones de la MR en borrador (proveedor/precio/cantidad/UDM por línea,
+    """Guarda ediciones de la MR en borrador (proveedor/precio/cantidad por línea,
     fecha). El precio manual (si se captura) se respeta al generar la OC en lugar del
     que se jalaría solo de la cotización de proveedor / última compra -- ver mr_crear_oc.
 
@@ -3687,11 +3687,12 @@ def guardar_solicitud_material(mr: str, items=None, schedule_date=None) -> dict:
     calidad) o de menos (ej. comprar en múltiplos/rollos cerrados) -- sin dejar que se
     dispare a lo que sea.
 
-    La UDM de compra puede diferir de la que se costeó (ej. se costeó por metro pero
-    se compra por rollo) -- solo se permite cambiar a una UDM que el artículo ya tenga
-    dada de alta (ver _uom_conversion_factor); al cambiarla, `qty_original` se reescala
-    con la misma conversión para que el margen del 5% se siga midiendo sobre la misma
-    cantidad física, no sobre el número tal cual quedó en la UDM anterior."""
+    La UDM de la Solicitud NO se puede cambiar aquí -- la Solicitud representa el total
+    que de verdad se necesita, tal como sale del costeo, igual para cualquier proveedor.
+    El ajuste de UDM al proveedor real (que puede vender en una unidad distinta) se hace
+    en la Orden de Compra que se genera desde esta MR (ver guardar_documento_compra),
+    donde sí se permite libremente, sin exigir que esa UDM ya esté dada de alta para el
+    artículo -- ahí es el proveedor específico el que manda, no el catálogo interno."""
     doc = frappe.get_doc("Material Request", mr)
     if doc.docstatus != 0:
         frappe.throw(_("La solicitud ya está validada; no se puede editar."))
@@ -3707,23 +3708,13 @@ def guardar_solicitud_material(mr: str, items=None, schedule_date=None) -> dict:
             r = by_name.get(it.name)
             if not r:
                 continue
-            nuevo_uom = r.get("uom")
-            if nuevo_uom and nuevo_uom != it.uom:
-                factor_actual = flt(it.conversion_factor) or 1
-                factor_nuevo = _uom_conversion_factor(it.item_code, nuevo_uom)
-                if not factor_nuevo:
-                    frappe.throw(_(
-                        "{0} no tiene dada de alta la UDM {1} -- agrégala primero en Alta de Productos."
-                    ).format(it.item_code, nuevo_uom))
-                escala = factor_actual / factor_nuevo
-                it.uom = nuevo_uom
-                it.conversion_factor = factor_nuevo
-                if has_original:
-                    it.qty_original = (flt(it.get("qty_original")) or flt(it.qty)) * escala
-                if r.get("qty") is None:
-                    # El front no mandó una qty nueva junto con el cambio de UDM --
-                    # reexpresa la que ya había para conservar la cantidad física real.
-                    it.qty = flt(it.qty) * escala
+            # La UDM de la Solicitud YA NO se puede cambiar aquí -- la Solicitud es el
+            # total que de verdad se necesita, tal como sale del costeo, y cambiarla por
+            # línea complicaba de más esta pantalla. El lugar correcto para ajustar la
+            # UDM al proveedor real (que puede vender en una unidad distinta) es la
+            # Orden de Compra que se genera desde aquí -- ver guardar_documento_compra,
+            # que sí permite cambiarla libremente mientras la OC siga en borrador.
+            # Cualquier "uom" que llegue en el payload simplemente se ignora.
             if r.get("qty") is not None:
                 nueva_qty = flt(r.get("qty"))
                 original = (flt(it.get("qty_original")) if has_original else 0) or flt(it.qty)
@@ -6390,7 +6381,16 @@ def get_documento_compra(doctype: str, name: str) -> dict:
 def guardar_documento_compra(doctype: str, name: str, schedule_date=None, valid_till=None,
                              transaction_date=None, posting_date=None, payment_terms_template=None,
                              tc_name=None, items=None, shipping_cost=None) -> dict:
-    """Guarda ediciones de un documento de compra en borrador."""
+    """Guarda ediciones de un documento de compra en borrador.
+
+    La UDM de línea solo se puede cambiar en la Orden de Compra (no en RFQ, Presupuesto
+    de proveedor ni Recibo) -- es el punto donde ya se sabe con qué proveedor específico
+    se está comprando, y ese proveedor puede vender en una unidad distinta a la que se
+    costeó o a la que trae la Solicitud de Material. A diferencia de
+    guardar_solicitud_material, aquí SÍ se permite cambiar a cualquier UDM del catálogo,
+    exista o no ya una conversión dada de alta para el artículo -- si existe, se usa esa;
+    si no, el factor de conversión se deja en 1 (igual que ERPNext nativo) para que se
+    pueda ajustar a mano."""
     doc = frappe.get_doc(doctype, name)
     if doc.docstatus != 0:
         frappe.throw(_("El documento ya está validado; no se puede editar."))
@@ -6422,6 +6422,21 @@ def guardar_documento_compra(doctype: str, name: str, schedule_date=None, valid_
                 it.qty = flt(r.get("qty"))
             if r.get("rate") is not None and it.meta.get_field("rate"):
                 it.rate = flt(r.get("rate"))
+            if doctype == "Purchase Order" and r.get("uom") and it.meta.get_field("uom"):
+                nuevo_uom = r.get("uom")
+                if nuevo_uom != it.uom:
+                    # stock_uom real del artículo (catálogo) -- NO el que trae el renglón,
+                    # que puede venir "congelado" a la UDM con la que se armó la Solicitud
+                    # de Material (ver _make_supplier_purchase_order en
+                    # overrides/material_request.py). Se recalcula aquí siempre contra el
+                    # maestro del artículo para que el factor de conversión sea correcto
+                    # sin importar en qué UDM se haya costeado o solicitado originalmente.
+                    stock_uom_real = frappe.db.get_value("Item", it.item_code, "stock_uom")
+                    factor = _uom_conversion_factor(it.item_code, nuevo_uom, stock_uom=stock_uom_real)
+                    it.uom = nuevo_uom
+                    if it.meta.get_field("stock_uom"):
+                        it.stock_uom = stock_uom_real
+                    it.conversion_factor = factor if factor else 1.0
 
     if doctype in ("Purchase Order", "Purchase Receipt") and shipping_cost is not None and meta.get_field("taxes"):
         _set_purchase_shipping_row(doc, shipping_cost)

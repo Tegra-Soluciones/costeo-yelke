@@ -109,41 +109,6 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   const mrValidated = computed(() => mrDetail.value?.docstatus === 1);
   const anyOcValidated = computed(() => reciboOcs.value.length > 0);
 
-  // UDM que se puede elegir por artículo en la Solicitud de Material -- solo las que
-  // ya se dieron de alta para ese artículo (item_api.get_item_uoms), nunca cualquier
-  // UDM del catálogo. Cache por item_code -- varias líneas suelen compartir artículo
-  // (mismo material repartido en varios lotes) y no vale la pena repetir el fetch.
-  const itemUomOptions = reactive({});
-  async function loadItemUoms(item_code) {
-    if (!item_code || itemUomOptions[item_code]) return;
-    itemUomOptions[item_code] = []; // corta fetches duplicados en lo que responde
-    try {
-      const r = await call("costeo_yelke.api.item_api.get_item_uoms", { item_code });
-      itemUomOptions[item_code] = r.uoms || [];
-    } catch { itemUomOptions[item_code] = []; }
-  }
-  // Cambiar la UDM de una línea reexpresa la cantidad para conservar la cantidad
-  // física real (ej. 100 Metro -> 2 Rollo si 1 Rollo = 50 Metro), en vez de dejar el
-  // mismo número tal cual bajo la nueva UDM -- eso multiplicaría o dividiría la
-  // compra real por el factor de conversión sin que se note a simple vista. El
-  // guardado en el backend vuelve a aplicar esta misma conversión de forma
-  // autoritativa (ver costeo_api.guardar_solicitud_material), esto es solo para que
-  // se vea bien de inmediato en la pantalla.
-  function onMrUomChange(it, nuevoUom) {
-    const opciones = itemUomOptions[it.item_code] || [];
-    const nueva = opciones.find((o) => o.uom === nuevoUom);
-    if (!nueva) return;
-    const factorActual = Number(it.conversion_factor) || 1;
-    const factorNuevo = Number(nueva.conversion_factor) || 1;
-    const escala = factorActual / factorNuevo;
-    it.qty = Math.round(((Number(it.qty) || 0) * escala) * 10000) / 10000;
-    if (it.qty_original != null) {
-      it.qty_original = Math.round(((Number(it.qty_original) || 0) * escala) * 10000) / 10000;
-    }
-    it.conversion_factor = factorNuevo;
-    it.uom = nuevoUom;
-  }
-
   const docCompra = ref(null);
   const docCompraItems = ref([]);
   const docCompraForm = reactive({ schedule_date: "", valid_till: "", payment_terms_template: "", tc_name: "", shipping_cost: 0 });
@@ -212,7 +177,6 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
         mrItems.value = r.detail.items.map((i) => ({ ...i }));
         mrSchedule.value = r.detail.schedule_date || "";
         mrResults.value = { ocs: r.detail.linked_ocs || [] };
-        mrItems.value.forEach((it) => loadItemUoms(it.item_code));
       } else {
         mrItems.value = []; mrSchedule.value = "";
       }
@@ -1406,7 +1370,6 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     loadPlan, obtenerMateriasPrimas, guardarPlan, validarPlan, crearOrdenesTrabajo,
     // materia prima
     mrDetail, mrItems, mrSchedule, mrResults, mrDocTab, mrValidated, anyOcValidated,
-    itemUomOptions, loadItemUoms, onMrUomChange,
     rfqSelected, sqSelected,
     docCompra, docCompraItems, docCompraForm, docCompraValidated, docCompraHasRate, ocSelected,
     loteOc, abrirLoteOc, cerrarLoteOc, crearOc,
