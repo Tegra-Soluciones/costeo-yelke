@@ -582,73 +582,6 @@
                     </div>
                 </div>
 
-                <div class="bg-white rounded-lg border border-surface-border p-4">
-                  <div class="flex items-center gap-2 mb-3">
-                    <svg class="w-4 h-4 text-ink-light flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 16h4m10 0h4"/></svg>
-                    <h4 class="text-[13px] font-semibold text-ink">Tallas incluidas</h4>
-                    <span v-if="tallasDe(prod.finished_item).length" class="px-1.5 py-0.5 rounded-full text-xs bg-surface-raised text-ink-muted">{{ tallasDe(prod.finished_item).length }}</span>
-                    <svg class="w-3.5 h-3.5 text-ink-xlight hover:text-ink-light cursor-help flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" title="Opcional. Puedes mezclar tallas de Dama y Caballero. Un ajuste de precio (fijo o %) se suma al precio de venta de esa talla, no al costo -- para una talla que además necesita más o distinto material, usa 'Variante de talla' abajo en vez de esto."><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                    <span v-if="tallasDe(prod.finished_item).length" class="ml-auto text-[11.5px]" :class="tallasAsignadas(prod) === (prod.qty || 0) ? 'text-green-600' : 'text-amber-600'">Asignadas: {{ tallasAsignadas(prod) }} / {{ prod.qty || 0 }}</span>
-                  </div>
-                  <table v-if="tallasDe(prod.finished_item).length" class="w-full text-sm mb-3">
-                    <thead><tr class="border-b border-surface-border text-left text-xs font-semibold text-ink-light"><th class="py-2 w-2/5">Género / Tipo de prenda / Talla</th><th class="py-2 w-24 text-right">Cantidad</th><th class="py-2 w-32">Ajuste de precio</th><th class="py-2 w-24 text-right">Valor</th><th class="py-2 w-24 text-right">Precio venta</th><th class="py-2 w-24 text-right">Venta total</th><th class="w-7"></th></tr></thead>
-                    <tbody>
-                      <tr v-for="t in tallasDe(prod.finished_item)" :key="t._tid" class="border-b border-surface-border/60" :class="esTallaPendiente(t) ? 'bg-amber-50/50' : ''">
-                        <td class="py-1.5 pr-2">
-                          <div class="flex items-center gap-1">
-                            <select v-model="t.genero" class="field-input" style="flex: 0 0 92px;" @change="onTallaGeneroChange(t)">
-                              <option value="">Género…</option>
-                              <option value="Dama">Dama</option>
-                              <option value="Caballero">Caballero</option>
-                            </select>
-                            <select v-model="t.grupo_talla" class="field-input min-w-0" style="flex: 1 1 auto;" :disabled="!t.genero" @change="onTallaGrupoChange(t)">
-                              <option value="">{{ t.genero ? 'Tipo de prenda…' : '— elige género —' }}</option>
-                              <option v-for="g in gruposDeGenero(t.genero)" :key="g.name" :value="g.name">{{ g.talla }}</option>
-                            </select>
-                          </div>
-                          <div v-if="t.grupo_talla" class="flex flex-wrap gap-1 mt-1">
-                            <button
-                              v-for="s in tallasDeGrupo(t.grupo_talla)" :key="s.name" type="button"
-                              :disabled="tallaUsadaEnOtraFila(t, prod, s.name)"
-                              class="px-1.5 py-0.5 rounded text-[10.5px] border transition-colors"
-                              :class="tallaSeleccionada(t, s.name)
-                                ? 'bg-brand-500 text-white border-brand-500'
-                                : tallaUsadaEnOtraFila(t, prod, s.name)
-                                  ? 'bg-surface-raised text-ink-xlight border-surface-border cursor-not-allowed'
-                                  : 'bg-white text-ink-muted border-surface-border hover:border-brand-300'"
-                              :title="tallaUsadaEnOtraFila(t, prod, s.name) ? 'Ya asignada a otra fila' : ''"
-                              @click="toggleTallaEnGrupo(t, s.name, prod)"
-                            >{{ s.talla }}</button>
-                          </div>
-                          <p v-else class="text-[10.5px] text-ink-xlight mt-1">Elige género y tipo de prenda para ver las tallas</p>
-                        </td>
-                        <td class="py-1.5 pr-2">
-                          <input v-model.number="t.qty" type="number" min="0" :max="tallaMaxQty(t, prod)" :disabled="esTallaPendiente(t)" class="field-input text-right" @input="onTallaQtyInput(t, prod)" />
-                          <label class="flex items-center gap-1 mt-1 text-[10px] cursor-pointer select-none" :class="esTallaPendiente(t) ? 'text-amber-700 font-medium' : 'text-ink-light'">
-                            <input type="checkbox" :checked="esTallaPendiente(t)" class="w-3 h-3" @change="toggleTallaPendiente(t, prod, $event.target.checked)" />
-                            Pendiente
-                          </label>
-                        </td>
-                        <td class="py-1.5 pr-2">
-                          <select v-model="t.sobrecosto_tipo" class="field-input" @change="recalcTalla(t, prod)">
-                            <option value="Ninguno">Ninguno</option>
-                            <option value="Fijo">Fijo ($)</option>
-                            <option value="Porcentaje">Porcentaje (%)</option>
-                          </select>
-                        </td>
-                        <td class="py-1.5 pr-2">
-                          <input v-if="t.sobrecosto_tipo === 'Fijo' || t.sobrecosto_tipo === 'Porcentaje'" v-model.number="t.sobrecosto_valor" type="number" min="0" step="0.01" class="field-input text-right" @input="recalcTalla(t, prod)" />
-                          <div v-else class="field-input bg-surface-raised/60 text-ink-xlight text-right">—</div>
-                        </td>
-                        <td class="py-1.5 pr-2 text-right font-medium text-brand-600">{{ fmtC(t.precio_venta) }}</td>
-                        <td class="py-1.5 pr-2 text-right font-medium text-ink">{{ fmtC((t.precio_venta || 0) * (t.qty || 0)) }}</td>
-                        <td class="py-1.5"><button class="del-btn" @click="removeTalla(t, prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button></td>
-                      </tr>
-                    </tbody>
-                  </table>
-                  <p v-if="tallasDe(prod.finished_item).length" class="text-[12px] text-ink-muted mb-3">Total de venta con ajustes por talla: <span class="font-semibold text-ink">{{ fmtC(tallasVentaTotal(prod)) }}</span></p>
-                  <button class="add-link" @click="addTalla(prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Agregar talla</button>
-                </div>
 
                 <!-- Variante de talla: para una talla que necesita MÁS/DISTINTO material
                      (no solo un ajuste de precio) -- se costea como su propio producto,
@@ -669,12 +602,12 @@
                   <template v-if="varianteWizard.step === 1">
                     <p class="text-[12px] text-ink-muted mb-3">Se va a crear como un producto nuevo, independiente, con su propio artículo, precio y materiales (clonados de este como punto de partida) -- su propia línea en Cotización/Orden de Venta/Factura.</p>
                     <div class="flex items-center gap-1 mb-2">
-                      <select v-model="varianteWizard.genero" class="field-input" style="flex: 0 0 110px;">
+                      <select v-model="varianteWizard.genero" class="field-input" style="flex: 0 0 110px;" @change="varianteWizard.grupo_talla = ''; varianteWizard.talla = '';">
                         <option value="">Género…</option>
                         <option value="Dama">Dama</option>
                         <option value="Caballero">Caballero</option>
                       </select>
-                      <select v-model="varianteWizard.grupo_talla" class="field-input min-w-0" style="flex: 1 1 auto;" :disabled="!varianteWizard.genero">
+                      <select v-model="varianteWizard.grupo_talla" class="field-input min-w-0" style="flex: 1 1 auto;" :disabled="!varianteWizard.genero" @change="varianteWizard.talla = ''">
                         <option value="">{{ varianteWizard.genero ? 'Tipo de prenda…' : '— elige género —' }}</option>
                         <option v-for="g in gruposDeGenero(varianteWizard.genero)" :key="g.name" :value="g.name">{{ g.talla }}</option>
                       </select>
@@ -3846,8 +3779,6 @@ function buildTallaDescriptionSuffix(prod) {
   const lines = rows.map(t => `- Talla ${tallaLabel(t.talla)}: ${t.qty} pza(s)`);
   return `\n\nTallas especiales:\n${lines.join("\n")}`;
 }
-function addTalla(prod) { loadAllTallas(); tallas.value.push({ _tid: uid(), finished_item: prod.finished_item, genero: "", grupo_talla: "", talla: "", estado_cantidad: "Definida", qty: 0, sobrecosto_tipo: "Ninguno", sobrecosto_valor: 0, lote_ref: "", costo_unitario: 0, precio_venta: 0, costo_total: 0 }); }
-
 // "Variante de talla": una talla que necesita más/distinto material se costea
 // como su propio producto (Costeo Producto nuevo, con su propio artículo,
 // materiales, etapas y precio), enlazado solo para mostrarlo agrupado en
@@ -3932,17 +3863,6 @@ async function recargarConservandoExpandido(finished_item) {
   const fila = productos.value.find((p) => p.finished_item === finished_item);
   if (fila) expandedTid.value = fila._tid;
 }
-function removeTalla(t, prod) { const i = tallas.value.findIndex(x => x._tid === t._tid); if (i !== -1) tallas.value.splice(i, 1); recalcProducto(prod); }
-// No se puede repartir entre tallas más piezas de las que se van a producir en total.
-function tallaMaxQty(t, prod) {
-  const otherQty = tallasDe(prod.finished_item).filter(x => x._tid !== t._tid).reduce((s, x) => s + (x.qty || 0), 0);
-  return Math.max(0, (prod.qty || 0) - otherQty);
-}
-function onTallaQtyInput(t, prod) {
-  const max = tallaMaxQty(t, prod);
-  if ((t.qty || 0) > max) t.qty = max;
-  recalcProducto(prod);
-}
 // Precio de UNA talla: el sobrecosto (fijo o %) se suma sobre el PRECIO DE VENTA
 // plano del producto (el mismo que se ve en la cotización sin tallas), no sobre
 // el costo -- una talla extra no cambia el costo de producción registrado, solo
@@ -3960,9 +3880,6 @@ function computeTallaCost(t, costoFlat, pvFlat) {
   t.costo_unitario = round2(costoFlat);
   t.costo_total = round2(t.costo_unitario * (t.qty || 0));
 }
-function recalcTalla(t, prod) { recalcProducto(prod); }
-function tallasAsignadas(prod) { return tallasDe(prod.finished_item).reduce((s, t) => s + (t.qty || 0), 0); }
-function tallasVentaTotal(prod) { return tallasDe(prod.finished_item).reduce((s, t) => s + (t.precio_venta || 0) * (t.qty || 0), 0); }
 // "Pendiente por cliente": todavía no se sabe cuántas piezas de esta talla se
 // van a producir -- qty se bloquea en 0 y se avisa en la cotización como línea
 // aparte (ver costeo_api._venta_items_para_producto) para que el cliente diga
@@ -3971,26 +3888,7 @@ function tallasVentaTotal(prod) { return tallasDe(prod.finished_item).reduce((s,
 // cantidad y sobrecosto (ej. "2XL,3XL" con el mismo sobrecosto de material) --
 // se guarda como texto separado por coma (ver doctype Costeo Producto Talla).
 function tallasSeleccionadasDe(t) { return (t.talla || "").split(",").filter(Boolean); }
-function tallaSeleccionada(t, code) { return tallasSeleccionadasDe(t).includes(code); }
-// Evita que la misma talla quede asignada en dos filas del mismo producto a la
-// vez (se contaría/facturaría dos veces) -- se ve deshabilitada en la otra fila.
-function tallaUsadaEnOtraFila(t, prod, code) {
-  return tallasDe(prod.finished_item).some(x => x._tid !== t._tid && tallasSeleccionadasDe(x).includes(code));
-}
-function toggleTallaEnGrupo(t, code, prod) {
-  if (tallaUsadaEnOtraFila(t, prod, code)) return;
-  const actuales = tallasSeleccionadasDe(t);
-  const idx = actuales.indexOf(code);
-  if (idx === -1) actuales.push(code); else actuales.splice(idx, 1);
-  t.talla = actuales.join(",");
-  recalcTalla(t, prod);
-}
 function esTallaPendiente(t) { return t.estado_cantidad === "Pendiente por cliente"; }
-function toggleTallaPendiente(t, prod, checked) {
-  t.estado_cantidad = checked ? "Pendiente por cliente" : "Definida";
-  if (checked) t.qty = 0;
-  recalcTalla(t, prod);
-}
 async function onEtapaServicioChange(e, prod) {
   if (e.servicio && !e.precio_servicio) {
     try {
@@ -4224,8 +4122,6 @@ function tallasDeGrupo(grupoName) {
   if (!grupoName) return [];
   return allTallas.value.filter(t => !t.is_group && t.parent_talla === grupoName);
 }
-function onTallaGeneroChange(t) { t.grupo_talla = ""; t.talla = ""; }
-function onTallaGrupoChange(t) { t.talla = ""; }
 async function hydrateSupplierOptions() {
   for (const d of detalles.value) {
     if (d.concept_type !== "Materia Prima" || !d.item) continue;
