@@ -26,10 +26,16 @@
             <option value="">Todos los proyectos</option>
             <option v-for="p in proyectosDisponibles" :key="p" :value="p">{{ p }}</option>
           </select>
+          <div class="flex items-center gap-1.5 text-[12.5px] text-ink-muted">
+            <span>Fecha del proyecto:</span>
+            <input v-model="filtroFechaDesde" type="date" class="border border-surface-border rounded-lg px-2 py-1.5 text-sm" />
+            <span>a</span>
+            <input v-model="filtroFechaHasta" type="date" class="border border-surface-border rounded-lg px-2 py-1.5 text-sm" />
+          </div>
           <button
-            v-if="search || filtroCliente || filtroProyecto"
+            v-if="search || filtroCliente || filtroProyecto || filtroFechaDesde || filtroFechaHasta"
             class="text-[12.5px] text-ink-muted hover:text-ink px-2 py-2"
-            @click="search = ''; filtroCliente = ''; filtroProyecto = ''"
+            @click="search = ''; filtroCliente = ''; filtroProyecto = ''; filtroFechaDesde = ''; filtroFechaHasta = ''"
           >
             Limpiar filtros
           </button>
@@ -116,12 +122,15 @@
           <p v-if="t.description" class="text-[12px] text-ink-muted truncate mt-0.5">{{ t.description }}</p>
           <p class="text-[12px] font-medium text-ink mt-2">{{ formatMoney(t.total_unit_cost) }} <span class="text-ink-muted font-normal">/ unidad</span></p>
 
-          <div v-if="t.plantilla_origen_titulo || t.origen_cliente_nombre" class="mt-2 pt-2 border-t border-surface-border/60 text-[11px] text-ink-muted leading-snug">
+          <div v-if="t.plantilla_origen_titulo || t.origen_cliente_nombre || t.plantilla_origen_fecha" class="mt-2 pt-2 border-t border-surface-border/60 text-[11px] text-ink-muted leading-snug">
             <p v-if="t.plantilla_origen_titulo" class="truncate" :title="t.plantilla_origen_titulo">
               <span class="text-ink-light">Proyecto:</span> {{ t.plantilla_origen_titulo }}
             </p>
             <p v-if="t.origen_cliente_nombre" class="truncate" :title="t.origen_cliente_nombre">
               <span class="text-ink-light">Cliente:</span> {{ t.origen_cliente_nombre }}
+            </p>
+            <p v-if="t.plantilla_origen_fecha">
+              <span class="text-ink-light">Fecha:</span> {{ formatFecha(t.plantilla_origen_fecha) }}
             </p>
           </div>
         </div>
@@ -272,6 +281,8 @@ const selected  = ref([]); // nombres (Costeo.name) de las plantillas elegidas, 
 const search        = ref("");
 const filtroCliente = ref("");
 const filtroProyecto = ref("");
+const filtroFechaDesde = ref(""); // compara contra plantilla_origen_fecha (fecha del Costeo de origen)
+const filtroFechaHasta = ref("");
 
 // Opciones de los filtros, derivadas de las plantillas ya cargadas (no hay tantas
 // como para justificar un endpoint aparte).
@@ -309,6 +320,8 @@ const templatesFiltrados = computed(() => {
   return templatesConImportadas.value.filter(t => {
     if (filtroCliente.value && t.plantilla_origen_cliente !== filtroCliente.value) return false;
     if (filtroProyecto.value && t.plantilla_origen_titulo !== filtroProyecto.value) return false;
+    if (filtroFechaDesde.value && (!t.plantilla_origen_fecha || t.plantilla_origen_fecha < filtroFechaDesde.value)) return false;
+    if (filtroFechaHasta.value && (!t.plantilla_origen_fecha || t.plantilla_origen_fecha > filtroFechaHasta.value)) return false;
     if (q) {
       const haystack = [t.nombre_plantilla, t.finished_item, t.description, t.plantilla_origen_titulo, t.origen_cliente_nombre]
         .filter(Boolean).join(" ").toLowerCase();
@@ -397,6 +410,14 @@ watch(() => importModal.value.company, (c) => {
 function formatMoney(v) {
   const n = Number(v) || 0;
   return n.toLocaleString("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 2 });
+}
+
+function formatFecha(v) {
+  if (!v) return "";
+  // v llega como "YYYY-MM-DD" (frappe Date) -- parsear con new Date(v) directo
+  // lo interpreta en UTC y puede mostrar el día anterior según el huso horario.
+  const [y, m, d] = v.split("-");
+  return `${d}/${m}/${y}`;
 }
 
 function isSelected(name) {

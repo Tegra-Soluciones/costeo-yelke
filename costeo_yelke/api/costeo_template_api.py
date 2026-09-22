@@ -152,8 +152,9 @@ def get_costeo_templates(company=None):
     módulo), así que se trae de una vez el renglón de costeo_producto para mostrar
     directo el artículo, su imagen y su costo unitario -- sin esto el SPA tendría
     que pedir cada plantilla completa solo para saber qué producto es. También trae
-    el proyecto/cliente de origen (capturados una vez al crear la plantilla, ver
-    save_as_template) para que 'Mis Plantillas' pueda mostrarlos y filtrar por ellos."""
+    el proyecto/cliente/fecha de origen (capturados una vez al crear la plantilla,
+    ver _sync_templates_from_costeo) para que 'Mis Plantillas' pueda mostrarlos y
+    filtrar por ellos."""
     filters = {"es_plantilla": 1}
     if company:
         filters["compañia"] = company
@@ -163,6 +164,7 @@ def get_costeo_templates(company=None):
         fields=[
             "name", "nombre_plantilla", "familia_prenda", "compañia", "modified",
             "plantilla_origen_costeo", "plantilla_origen_titulo", "plantilla_origen_cliente",
+            "plantilla_origen_fecha",
         ],
         order_by="modified desc",
     )
@@ -339,6 +341,7 @@ def _sync_templates_from_costeo(doc):
         tpl.plantilla_origen_costeo = doc.name
         tpl.plantilla_origen_titulo = doc.get("titulo") or doc.name
         tpl.plantilla_origen_cliente = doc.get("cliente")
+        tpl.plantilla_origen_fecha = doc.get("fecha")
 
         tpl.set("costeo_producto", [])
         prod_row = _child_row_dict(prod)

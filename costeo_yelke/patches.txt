@@ -53,3 +53,4 @@ costeo_yelke.patches.v0_2_28.add_guardar_como_plantilla_field
 costeo_yelke.patches.v0_2_29.crear_roles_flujo_documentos
 costeo_yelke.patches.v0_2_30.add_doble_validacion_purchase_order
 costeo_yelke.patches.v0_2_31.add_customer_nombre_comercial
+costeo_yelke.patches.v0_2_32.add_plantilla_origen_fecha_field
