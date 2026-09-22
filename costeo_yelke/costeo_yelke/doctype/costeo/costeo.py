@@ -115,27 +115,33 @@ class Costeo(Document):
             )
         self.validate_at_least_one_product_to_produce()
 
-    def on_update(self):
-        # Costeo en borrador (docstatus 0): Frappe llama on_update en cada guardado.
+    def on_submit(self):
+        # Al validar (docstatus 0 -> 1) es cuando se decide si este Costeo deja o
+        # no una plantilla -- ver sync_templates_if_enabled.
         self.sync_templates_if_enabled()
 
     def on_update_after_submit(self):
-        # Costeo ya validado (docstatus 1): un guardado ahí no dispara on_update,
-        # sino este método -- sin este segundo gancho, editar un Costeo ya
-        # enviado nunca actualizaría sus plantillas.
+        # Costeo ya validado (docstatus 1): un guardado posterior ahí no dispara
+        # on_update sino este método -- sin este segundo gancho, editar un Costeo
+        # ya validado nunca actualizaría sus plantillas.
         self.sync_templates_if_enabled()
 
     def sync_templates_if_enabled(self):
-        """Si esto es un Costeo real (no una plantilla) y trae marcada la casilla
-        'guardar_como_plantilla', cada uno de sus productos se guarda/actualiza como
-        su propia plantilla en automático, cada vez que se guarda este Costeo (ver
-        costeo_template_api._sync_templates_from_costeo -- upsert por producto, así
-        que guardar varias veces no genera plantillas duplicadas).
+        """Deliberadamente NO corre en cada guardado de borrador (on_update) -- solo
+        al Validar (on_submit) y en guardados posteriores a la Validación
+        (on_update_after_submit). Mientras el Costeo sigue en borrador, marcar y
+        desmarcar la casilla 'guardar_como_plantilla' y guardar no hace nada: ni
+        crea ni borra plantillas -- para eso hay que Validar. Esto evita que un
+        guardado de borrador a medio capturar (o repetido, mientras se sigue
+        editando) genere/borre plantillas de más.
 
-        Si la casilla está DESMARCADA, se borran las plantillas que este Costeo
-        haya generado antes (si las hay) -- para que desmarcar y guardar de verdad
-        signifique "esto ya no es una plantilla", en vez de dejar una plantilla
-        vieja huérfana dando vueltas en 'Plantillas'."""
+        Si esto es un Costeo real (no una plantilla) y trae marcada la casilla,
+        cada uno de sus productos se guarda/actualiza como su propia plantilla
+        (ver costeo_template_api._sync_templates_from_costeo -- upsert por
+        producto, así que validar/guardar varias veces no genera duplicados). Si
+        la casilla está desmarcada, se borran las plantillas que este Costeo haya
+        generado antes (si las hay), para que "desmarcar y guardar" signifique de
+        verdad "esto ya no es una plantilla"."""
         if self.get("es_plantilla"):
             return
         if not cint(self.get("guardar_como_plantilla")):
