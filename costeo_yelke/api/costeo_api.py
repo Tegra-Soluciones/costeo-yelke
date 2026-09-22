@@ -365,7 +365,9 @@ def crear_variante_talla(costeo: str, producto_base: str, genero: str = None, ta
     nuevo_item = frappe.copy_doc(base_item)
     nuevo_item.item_code = item_code
     nuevo_item.item_name = f"{base_item.item_name} - {label}"
-    nuevo_item.image = None
+    # La imagen SÍ se hereda a propósito (frappe.copy_doc ya la trae) -- es la
+    # misma prenda, solo cambia talla/consumo; el frontend la vuelve a jalar del
+    # Artículo en cada carga (fetchItemImage), así que basta con no borrarla aquí.
     nuevo_item.default_bom = None
     nuevo_item.set("item_defaults", [])
     nuevo_item.flags.ignore_permissions = True
