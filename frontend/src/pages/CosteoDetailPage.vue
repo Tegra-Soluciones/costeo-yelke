@@ -262,8 +262,8 @@
                       <div><label class="field-label mb-0.5">Empaquetado</label><div class="relative"><span class="prefix">$</span><input v-model.number="prod.packaging_cost" type="number" min="0" class="field-input py-1.5 pl-6" @input="recalcProducto(prod)" /></div></div>
                       <div><label class="field-label mb-0.5">Margen %</label><div class="relative"><input v-model.number="prod.margin_pct" type="number" min="0" max="99" class="field-input py-1.5 pr-7" @input="onMarginChange(prod)" /><span class="suffix">%</span></div></div>
                       <div>
-                        <label class="field-label mb-0.5 flex items-center gap-1">Precio unit.<span v-if="prod.precio_manual" class="text-[9.5px] font-normal text-orange-600 bg-orange-50 border border-orange-200 rounded px-1" title="Precio fijado a mano -- no se recalcula aunque cambien costos, el margen se ajusta a él">fijo</span></label>
-                        <div class="relative"><span class="prefix" :class="prod.precio_manual ? 'text-orange-600' : 'text-brand-600'">$</span><input v-model.number="prod.unit_sales_price" type="number" min="0" step="0.01" class="field-input py-1.5 pl-6 font-semibold" :class="prod.precio_manual ? 'text-orange-600' : 'text-brand-600'" @input="onPriceChange(prod)" /></div>
+                        <label class="field-label mb-0.5 flex items-center gap-1">Precio unit.<span v-if="prod.precio_manual" class="text-[9.5px] font-normal text-brand-600 bg-brand-50 border border-brand-200 rounded px-1" title="Precio fijado a mano -- no se recalcula aunque cambien costos, el margen se ajusta a él">fijo</span></label>
+                        <div class="relative"><span class="prefix text-brand-600">$</span><input v-model.number="prod.unit_sales_price" type="number" min="0" step="0.01" class="field-input py-1.5 pl-6 text-brand-600 font-semibold" @input="onPriceChange(prod)" /></div>
                       </div>
                     </div>
                   </div>
@@ -711,7 +711,7 @@
 
                   <div v-if="q.docstatus === 1 && q.status !== 'Lost'" class="pt-2 mt-1 border-t border-surface-border space-y-2">
                     <button
-                      class="w-full h-8 text-[12.5px] font-medium text-ink-muted border border-surface-border rounded-lg hover:bg-surface-raised disabled:opacity-50 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                      class="w-full h-8 text-[12.5px] font-semibold text-orange-600 border border-orange-300 bg-orange-50 rounded-lg hover:bg-orange-100 disabled:opacity-50 disabled:hover:bg-orange-50 disabled:cursor-not-allowed"
                       :disabled="precioAcordadoStatus.todos_validados"
                       :title="precioAcordadoStatus.todos_validados ? 'El precio acordado ya está validado -- no se puede volver a fijar/editar desde aquí.' : ''"
                       @click="openAcordadoModal"
