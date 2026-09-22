@@ -146,21 +146,6 @@
       </div>
     </div>
 
-    <!-- Borrador recuperado de este navegador (localStorage) -- por si se recarga o
-         se cierra la pestaña sin haber apretado "Guardar Costeo". -->
-    <div v-if="draftBanner.show" class="mx-5 mt-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
-      <div class="flex items-center gap-2.5">
-        <svg class="w-4 h-4 text-amber-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.71-3l-6.93-12a2 2 0 00-3.42 0l-6.93 12a2 2 0 001.71 3z"/></svg>
-        <p class="text-[13px] text-ink-muted">
-          Se encontró un <span class="font-medium text-ink">borrador sin guardar</span> de {{ draftAgeLabel() }} en este navegador.
-        </p>
-      </div>
-      <div class="flex items-center gap-2 flex-shrink-0">
-        <button class="text-[12.5px] text-ink-muted hover:text-ink px-2 py-1" @click="discardDraft">Descartar</button>
-        <button class="text-[12.5px] font-semibold text-amber-700 hover:text-amber-800 px-2 py-1" @click="restoreDraft">Recuperar</button>
-      </div>
-    </div>
-
     <div v-if="loading" class="flex-1 flex items-center justify-center text-ink-light">
       <svg class="w-7 h-7 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
     </div>
@@ -2887,8 +2872,6 @@ async function loadPuedeValidarCosteo() {
   try { puedeValidarCosteo.value = !!(await call("costeo_yelke.api.costeo_api.puede_validar_costeo")).puede; }
   catch { /* si falla, se deja en true -- el backend igual bloquea si no toca */ }
 }
-const draftBanner = reactive({ show: false, savedAt: null });
-const pendingDraft = ref(null);
 const productos = ref([]);
 const detalles = ref([]);
 const etapas = ref([]);
@@ -4713,53 +4696,25 @@ function clearDraft(id) {
 
 let draftTimer = null;
 function scheduleDraftSave() {
-  // No guardar borrador mientras se está cargando desde el servidor (fillFromDoc)
-  // ni mientras hay un borrador pendiente de decisión -- si no, se pisaría solo.
-  if (loading.value || cargandoDoc || draftBanner.show) return;
+  // No guardar borrador mientras se está cargando desde el servidor (fillFromDoc).
+  if (loading.value || cargandoDoc) return;
   clearTimeout(draftTimer);
   draftTimer = setTimeout(saveDraftToLocalStorage, 800);
 }
 watch([form, productos, detalles, etapas, materialesEtapa, tallas], scheduleDraftSave, { deep: true });
 
-function checkForDraft() {
+// Ya no se avisa ni se ofrece recuperar nada -- cada quien es responsable de
+// apretar "Guardar Costeo". Este respaldo en localStorage sigue escribiéndose
+// solo por si alguien necesita rescatarlo a mano desde las herramientas del
+// navegador tras un cierre accidental, pero se descarta solo pasada una semana
+// para no ir acumulando borradores viejos sin que nadie los use.
+function pruneDraftSiSeVencio() {
   const raw = loadDraftFromLocalStorage(docName.value || route.params.name);
-  if (!raw || !raw.data) return;
+  if (!raw) return;
   const UNA_SEMANA = 7 * 24 * 60 * 60 * 1000;
   if (!raw.savedAt || Date.now() - raw.savedAt > UNA_SEMANA) {
     clearDraft(docName.value || route.params.name);
-    return;
   }
-  pendingDraft.value = raw.data;
-  draftBanner.savedAt = raw.savedAt;
-  draftBanner.show = true;
-}
-function restoreDraft() {
-  const d = pendingDraft.value;
-  if (!d) return;
-  Object.assign(form, d.form || {});
-  productos.value = d.productos || [];
-  detalles.value = d.detalles || [];
-  etapas.value = d.etapas || [];
-  materialesEtapa.value = d.materialesEtapa || [];
-  tallas.value = d.tallas || [];
-  draftBanner.show = false;
-  pendingDraft.value = null;
-  showToast("Borrador recuperado");
-}
-function discardDraft() {
-  clearDraft(docName.value || route.params.name);
-  draftBanner.show = false;
-  pendingDraft.value = null;
-}
-function draftAgeLabel() {
-  if (!draftBanner.savedAt) return "";
-  const mins = Math.round((Date.now() - draftBanner.savedAt) / 60000);
-  if (mins < 1) return "hace un momento";
-  if (mins < 60) return `hace ${mins} minuto${mins === 1 ? "" : "s"}`;
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `hace ${hrs} hora${hrs === 1 ? "" : "s"}`;
-  const dias = Math.round(hrs / 24);
-  return `hace ${dias} día${dias === 1 ? "" : "s"}`;
 }
 
 async function saveDoc() {
@@ -5317,14 +5272,14 @@ async function loadCosteoData() {
   loading.value = true;
   if (isNew.value) {
     if (!form.compania && companyState.selected) form.compania = companyState.selected;
-    checkForDraft();
+    pruneDraftSiSeVencio();
     loading.value = false;
     return;
   }
   try {
     const data = await db.get("Costeo", route.params.name);
     await fillFromDoc(data);
-    checkForDraft();
+    pruneDraftSiSeVencio();
     manufacturaGuardada.value = false;
     await loadRelated();
     await loadCotDefaults();
