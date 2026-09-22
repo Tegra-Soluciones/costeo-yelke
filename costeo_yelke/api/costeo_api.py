@@ -299,21 +299,6 @@ _CHILD_ROW_SYSTEM_FIELDS = ("name", "parent", "parentfield", "parenttype", "idx"
                             "creation", "modified", "modified_by", "owner", "docstatus")
 
 
-def _clonar_fila_hija(doc, fieldname, fila_original, campo_producto, valor_nuevo):
-    """Copia una fila hija tal cual (menos los campos de control de Frappe) hacia
-    otro renglón de `finished_item`/`producto_terminado` -- usado para clonar
-    materiales y etapas de un producto hacia su variante de talla. Los
-    identificadores internos propios de cada doctype (stage_id de Etapas Costeo,
-    material_id de Costeo Producto Detalle, y las referencias entre ellos como
-    recibe_de/etapa) se copian sin cambiar -- solo importan dentro del mismo
-    producto, así que no chocan entre el original y la variante."""
-    data = fila_original.as_dict()
-    for k in _CHILD_ROW_SYSTEM_FIELDS:
-        data.pop(k, None)
-    data[campo_producto] = valor_nuevo
-    doc.append(fieldname, data)
-
-
 def _slug_item_code(base_item_code, texto):
     slug = "".join(c if (c.isalnum() or c in "-_") else "-" for c in (texto or "")).strip("-").upper()
     return f"{base_item_code}-{slug}" if slug else f"{base_item_code}-VAR"
@@ -383,13 +368,59 @@ def crear_variante_talla(costeo: str, producto_base: str, genero: str = None, ta
     nueva.variante_talla_de = base.finished_item
     nueva.talla_grupo_label = label
 
-    for d in list(doc.costeo_producto_detalle):
-        if d.finished_item == base.finished_item:
-            _clonar_fila_hija(doc, "costeo_producto_detalle", d, "finished_item", nuevo_item.name)
+    # stage_id (Etapas Costeo) y material_id (Costeo Producto Detalle) son
+    # identificadores GLOBALES del costeo, no por producto -- varias pantallas
+    # los usan para cruzar datos sin filtrar por producto a la vez (ej.
+    # materialesDelPunto en el frontend, o Costeo Material Etapa/
+    # tabla_materiales_etapa aquí abajo). Copiarlos tal cual entre el producto
+    # base y su variante los deja COMPARTIDOS -- un material o etapa de la
+    # variante se confunde con el del base (se edita uno pensando que es el
+    # otro). Por eso se regenera un id nuevo para cada fila clonada, y se
+    # reescriben las referencias que apuntan a esos ids (recibe_de, etapa).
+    stage_id_map = {}
+    for e in doc.tabla_etapas_costeo:
+        if e.producto_terminado == base.finished_item and e.stage_id:
+            stage_id_map[e.stage_id] = frappe.generate_hash(length=10)
 
     for e in list(doc.tabla_etapas_costeo):
-        if e.producto_terminado == base.finished_item:
-            _clonar_fila_hija(doc, "tabla_etapas_costeo", e, "producto_terminado", nuevo_item.name)
+        if e.producto_terminado != base.finished_item:
+            continue
+        data = e.as_dict()
+        for k in _CHILD_ROW_SYSTEM_FIELDS:
+            data.pop(k, None)
+        data["producto_terminado"] = nuevo_item.name
+        data["stage_id"] = stage_id_map.get(e.stage_id) or frappe.generate_hash(length=10)
+        recibe_de_viejos = [s.strip() for s in (e.recibe_de or "").split(",") if s.strip()]
+        data["recibe_de"] = ",".join(stage_id_map.get(s, s) for s in recibe_de_viejos)
+        doc.append("tabla_etapas_costeo", data)
+
+    material_id_map = {}
+    for d in doc.costeo_producto_detalle:
+        if d.finished_item == base.finished_item and d.material_id:
+            material_id_map[d.material_id] = frappe.generate_hash(length=10)
+
+    for d in list(doc.costeo_producto_detalle):
+        if d.finished_item != base.finished_item:
+            continue
+        data = d.as_dict()
+        for k in _CHILD_ROW_SYSTEM_FIELDS:
+            data.pop(k, None)
+        data["finished_item"] = nuevo_item.name
+        data["material_id"] = material_id_map.get(d.material_id) or frappe.generate_hash(length=10)
+        if d.etapa:
+            data["etapa"] = stage_id_map.get(d.etapa, d.etapa)
+        doc.append("costeo_producto_detalle", data)
+
+    # Costeo Material Etapa (tabla_materiales_etapa): reparte un material entre
+    # varias etapas del MISMO producto -- se clonan solo las filas de los
+    # materiales que sí se acaban de clonar arriba, con sus ids ya remapeados.
+    for r in list(doc.get("tabla_materiales_etapa") or []):
+        if r.material_id in material_id_map:
+            doc.append("tabla_materiales_etapa", {
+                "material_id": material_id_map[r.material_id],
+                "stage_id": stage_id_map.get(r.stage_id, r.stage_id),
+                "qty": r.qty,
+            })
 
     doc.append("tabla_tallas_costeo", {
         "finished_item": nuevo_item.name,
