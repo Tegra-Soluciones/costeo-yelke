@@ -3818,6 +3818,12 @@ function cerrarVarianteWizard() { varianteWizard.finished_item = ""; }
 async function crearVarianteTalla(prod) {
   varianteWizard.loading = true;
   try {
+    // crear_variante_talla trabaja directo sobre lo último guardado en el
+    // servidor -- si hay cambios sin guardar en pantalla (ej. un producto que
+    // acabas de borrar, o un material que acabas de corregir), se guardan
+    // PRIMERO. Si no, la recarga de abajo los pisaría y los perdería sin
+    // avisar, y la variante se crearía a partir de datos viejos.
+    if (!(await saveDoc())) return;
     const r = await call("costeo_yelke.api.costeo_api.crear_variante_talla", {
       costeo: docName.value,
       producto_base: prod.finished_item,
@@ -3840,6 +3846,10 @@ async function agregarMaterialVariante(prod) {
   if (!varianteWizard.nuevoMaterial) return;
   varianteWizard.loading = true;
   try {
+    // Mismo motivo que en crearVarianteTalla: se guarda lo que haya en
+    // pantalla antes de que el backend edite el documento directamente y la
+    // recarga de abajo traiga esa versión de vuelta.
+    if (!(await saveDoc())) return;
     const r = await call("costeo_yelke.api.costeo_api.ajustar_material_variante_talla", {
       costeo: docName.value,
       finished_item: varianteWizard.item_code,
