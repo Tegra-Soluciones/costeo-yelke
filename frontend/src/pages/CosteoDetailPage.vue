@@ -647,18 +647,84 @@
                     </tbody>
                   </table>
                   <p v-if="tallasDe(prod.finished_item).length" class="text-[12px] text-ink-muted mb-3">Total de venta con ajustes por talla: <span class="font-semibold text-ink">{{ fmtC(tallasVentaTotal(prod)) }}</span></p>
-                  <div class="flex items-center gap-3 flex-wrap">
-                    <button class="add-link" @click="addTalla(prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Agregar talla</button>
-                    <button class="add-link" @click="toggleVarianteTallaForm(prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Variante de talla (material distinto)</button>
+                  <button class="add-link" @click="addTalla(prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Agregar talla</button>
+                </div>
+
+                <!-- Variante de talla: para una talla que necesita MÁS/DISTINTO material
+                     (no solo un ajuste de precio) -- se costea como su propio producto,
+                     independiente, con sus propios materiales/etapas/precio. -->
+                <button
+                  v-if="varianteWizard.finished_item !== prod.finished_item"
+                  class="w-full py-3 rounded-lg border-2 border-dashed border-surface-border hover:border-brand-300 hover:bg-brand-50/40 text-sm font-semibold text-ink-muted hover:text-brand-600 transition-colors flex items-center justify-center gap-2"
+                  @click="abrirVarianteWizard(prod)"
+                ><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Agregar variante por talla</button>
+
+                <div v-else class="bg-white rounded-lg border border-surface-border p-4">
+                  <div class="flex items-center justify-between mb-3">
+                    <h4 class="text-[13px] font-semibold text-ink">Nueva variante por talla</h4>
+                    <button class="text-ink-light hover:text-ink text-xs" @click="cerrarVarianteWizard">Cancelar</button>
                   </div>
-                  <div v-if="varianteTallaForm.finished_item === prod.finished_item" class="mt-3 p-3 rounded-lg border border-surface-border bg-surface-raised/40">
-                    <p class="text-[12px] text-ink-muted mb-2">Para una talla que necesita más o distinto material (ej. 2XL/3XL) -- se crea como un producto nuevo, independiente, con sus propios materiales/etapas/precio (clonados de este como punto de partida) y su propia línea en Cotización/Orden de Venta.</p>
-                    <div class="flex items-center gap-2 flex-wrap">
-                      <input v-model="varianteTallaForm.item_code" placeholder="Código del artículo nuevo…" class="field-input flex-1 min-w-[180px]" />
-                      <input v-model="varianteTallaForm.talla_grupo_label" placeholder="Tallas que cubre (ej. 2XL/3XL)…" class="field-input flex-1 min-w-[180px]" />
-                      <button :disabled="varianteTallaForm.loading || !varianteTallaForm.item_code" class="h-9 px-4 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="crearVarianteTalla(prod)">Crear</button>
+
+                  <!-- Paso 1: qué tallas cubre y cuántas piezas -->
+                  <template v-if="varianteWizard.step === 1">
+                    <p class="text-[12px] text-ink-muted mb-3">Se va a crear como un producto nuevo, independiente, con su propio artículo, precio y materiales (clonados de este como punto de partida) -- su propia línea en Cotización/Orden de Venta/Factura.</p>
+                    <div class="flex items-center gap-1 mb-2">
+                      <select v-model="varianteWizard.genero" class="field-input" style="flex: 0 0 110px;">
+                        <option value="">Género…</option>
+                        <option value="Dama">Dama</option>
+                        <option value="Caballero">Caballero</option>
+                      </select>
+                      <select v-model="varianteWizard.grupo_talla" class="field-input min-w-0" style="flex: 1 1 auto;" :disabled="!varianteWizard.genero">
+                        <option value="">{{ varianteWizard.genero ? 'Tipo de prenda…' : '— elige género —' }}</option>
+                        <option v-for="g in gruposDeGenero(varianteWizard.genero)" :key="g.name" :value="g.name">{{ g.talla }}</option>
+                      </select>
                     </div>
-                  </div>
+                    <div v-if="varianteWizard.grupo_talla" class="flex flex-wrap gap-1 mb-3">
+                      <button
+                        v-for="s in tallasDeGrupo(varianteWizard.grupo_talla)" :key="s.name" type="button"
+                        class="px-2 py-1 rounded text-[11px] border transition-colors"
+                        :class="varianteWizardTallas.includes(s.name) ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-ink-muted border-surface-border hover:border-brand-300'"
+                        @click="toggleVarianteWizardTalla(s.name)"
+                      >{{ s.talla }}</button>
+                    </div>
+                    <div class="flex items-center gap-3 mb-3">
+                      <div class="flex-1">
+                        <label class="field-label">Cantidad</label>
+                        <input v-model.number="varianteWizard.qty" type="number" min="0" :disabled="varianteWizard.pendiente" class="field-input" />
+                      </div>
+                      <label class="flex items-center gap-1.5 text-[12.5px] text-ink-muted cursor-pointer select-none mt-4">
+                        <input type="checkbox" v-model="varianteWizard.pendiente" class="w-3.5 h-3.5" />
+                        Cantidad pendiente por confirmar
+                      </label>
+                    </div>
+                    <button :disabled="varianteWizard.loading || !varianteWizardTallas.length || (!varianteWizard.pendiente && !varianteWizard.qty)" class="h-9 px-4 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="crearVarianteTalla(prod)">Crear variante</button>
+                  </template>
+
+                  <!-- Paso 2: materiales con consumo distinto -->
+                  <template v-else>
+                    <p class="text-[12px] text-ink-muted mb-3">
+                      Variante <strong>{{ varianteWizard.item_code }}</strong> creada, con los mismos materiales del producto base como punto de partida.
+                      Agrega aquí solo los materiales que cambian de consumo para esta talla.
+                    </p>
+                    <table v-if="varianteWizard.materiales.length" class="w-full text-sm mb-3">
+                      <thead><tr class="border-b border-surface-border text-left text-xs font-semibold text-ink-light"><th class="py-2">Material</th><th class="py-2 w-32 text-right">Consumo/pieza</th></tr></thead>
+                      <tbody>
+                        <tr v-for="m in varianteWizard.materiales" :key="m.item" class="border-b border-surface-border/60">
+                          <td class="py-1.5">{{ m.item }}</td>
+                          <td class="py-1.5 text-right tabular-nums">{{ m.internal_qty }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <select v-model="varianteWizard.nuevoMaterial" class="field-input flex-1 min-w-[160px]">
+                        <option value="">— elige el material —</option>
+                        <option v-for="m in materialesDe(prod.finished_item)" :key="m._tid" :value="m.item">{{ m.item }}</option>
+                      </select>
+                      <input v-model.number="varianteWizard.nuevoConsumo" type="number" min="0" step="0.0001" placeholder="Consumo/pieza nuevo" class="field-input w-40" />
+                      <button :disabled="varianteWizard.loading || !varianteWizard.nuevoMaterial" class="h-9 px-4 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="agregarMaterialVariante(prod)">+ Agregar material</button>
+                    </div>
+                    <button class="add-link mt-3" @click="cerrarVarianteWizard">Listo, terminar</button>
+                  </template>
                 </div>
               </div>
             </div>
@@ -3788,31 +3854,83 @@ function addTalla(prod) { loadAllTallas(); tallas.value.push({ _tid: uid(), fini
 // pantalla (variante_talla_de) -- nunca se fusiona de vuelta en
 // Cotización/Orden de Venta/Factura, genera su propia línea igual que
 // cualquier otro producto del costeo.
-const varianteTallaForm = reactive({ finished_item: "", item_code: "", talla_grupo_label: "", loading: false });
-function toggleVarianteTallaForm(prod) {
-  if (varianteTallaForm.finished_item === prod.finished_item) { varianteTallaForm.finished_item = ""; return; }
-  varianteTallaForm.finished_item = prod.finished_item;
-  varianteTallaForm.item_code = prod.finished_item ? `${prod.finished_item}-VAR` : "";
-  varianteTallaForm.talla_grupo_label = "";
+// Paso 1: género/tipo de prenda/talla(s) + cantidad (o pendiente) -- mismo
+// widget que "Tallas incluidas", pero aquí decide qué cubre la variante nueva,
+// no un ajuste de precio. Paso 2: una vez creada, tabla para ir marcando solo
+// los materiales cuyo consumo por pieza cambia para esta talla (el resto ya
+// quedó clonado igual que el producto base).
+const varianteWizard = reactive({
+  finished_item: "", step: 1, loading: false,
+  genero: "", grupo_talla: "", talla: "", qty: 0, pendiente: false,
+  item_code: "", materiales: [], nuevoMaterial: "", nuevoConsumo: null,
+});
+const varianteWizardTallas = computed(() => (varianteWizard.talla || "").split(",").filter(Boolean));
+function toggleVarianteWizardTalla(code) {
+  const actuales = varianteWizardTallas.value.slice();
+  const idx = actuales.indexOf(code);
+  if (idx === -1) actuales.push(code); else actuales.splice(idx, 1);
+  varianteWizard.talla = actuales.join(",");
 }
+function abrirVarianteWizard(prod) {
+  Object.assign(varianteWizard, {
+    finished_item: prod.finished_item, step: 1, loading: false,
+    genero: "", grupo_talla: "", talla: "", qty: 0, pendiente: false,
+    item_code: "", materiales: [], nuevoMaterial: "", nuevoConsumo: null,
+  });
+}
+function cerrarVarianteWizard() { varianteWizard.finished_item = ""; }
 async function crearVarianteTalla(prod) {
-  if (!varianteTallaForm.item_code) return;
-  varianteTallaForm.loading = true;
+  varianteWizard.loading = true;
   try {
-    await call("costeo_yelke.api.costeo_api.crear_variante_talla", {
+    const r = await call("costeo_yelke.api.costeo_api.crear_variante_talla", {
       costeo: docName.value,
       producto_base: prod.finished_item,
-      item_code: varianteTallaForm.item_code,
-      talla_grupo_label: varianteTallaForm.talla_grupo_label,
+      genero: varianteWizard.genero,
+      talla: varianteWizard.talla,
+      qty: varianteWizard.qty,
+      pendiente: varianteWizard.pendiente,
     });
-    varianteTallaForm.finished_item = "";
-    showToast("Variante de talla creada -- recargando el costeo…");
-    await loadCosteoData();
+    varianteWizard.item_code = r.item_code;
+    varianteWizard.step = 2;
+    showToast("Variante creada -- ya puedes ajustar el consumo de materiales que cambien");
+    await recargarConservandoExpandido(prod.finished_item);
   } catch (e) {
     showToast(e.message || "No se pudo crear la variante", "error");
   } finally {
-    varianteTallaForm.loading = false;
+    varianteWizard.loading = false;
   }
+}
+async function agregarMaterialVariante(prod) {
+  if (!varianteWizard.nuevoMaterial) return;
+  varianteWizard.loading = true;
+  try {
+    const r = await call("costeo_yelke.api.costeo_api.ajustar_material_variante_talla", {
+      costeo: docName.value,
+      finished_item: varianteWizard.item_code,
+      item_code: varianteWizard.nuevoMaterial,
+      internal_qty: varianteWizard.nuevoConsumo || 0,
+    });
+    const existente = varianteWizard.materiales.find((m) => m.item === varianteWizard.nuevoMaterial);
+    if (existente) existente.internal_qty = r.internal_qty;
+    else varianteWizard.materiales.push({ item: varianteWizard.nuevoMaterial, internal_qty: r.internal_qty });
+    varianteWizard.nuevoMaterial = "";
+    varianteWizard.nuevoConsumo = null;
+    await recargarConservandoExpandido(prod.finished_item);
+  } catch (e) {
+    showToast(e.message || "No se pudo ajustar el material", "error");
+  } finally {
+    varianteWizard.loading = false;
+  }
+}
+// loadCosteoData reemplaza productos.value por completo -- cada renglón recibe
+// un _tid nuevo, así que expandedTid (que apunta al _tid viejo) dejaría de
+// calzar con nada y la tarjeta del producto se colapsaría solita en cada paso
+// del wizard. Se vuelve a expandir la fila del mismo producto (por
+// finished_item, que sí es estable) después de recargar.
+async function recargarConservandoExpandido(finished_item) {
+  await loadCosteoData();
+  const fila = productos.value.find((p) => p.finished_item === finished_item);
+  if (fila) expandedTid.value = fila._tid;
 }
 function removeTalla(t, prod) { const i = tallas.value.findIndex(x => x._tid === t._tid); if (i !== -1) tallas.value.splice(i, 1); recalcProducto(prod); }
 // No se puede repartir entre tallas más piezas de las que se van a producir en total.

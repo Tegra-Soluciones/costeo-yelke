@@ -314,30 +314,36 @@ def _clonar_fila_hija(doc, fieldname, fila_original, campo_producto, valor_nuevo
     doc.append(fieldname, data)
 
 
+def _slug_item_code(base_item_code, texto):
+    slug = "".join(c if (c.isalnum() or c in "-_") else "-" for c in (texto or "")).strip("-").upper()
+    return f"{base_item_code}-{slug}" if slug else f"{base_item_code}-VAR"
+
+
 @frappe.whitelist()
-def crear_variante_talla(costeo: str, producto_base: str, item_code: str, talla_grupo_label: str = None) -> dict:
+def crear_variante_talla(costeo: str, producto_base: str, genero: str = None, talla: str = None,
+                          qty: float = 0, pendiente: bool = False, item_code: str = None,
+                          talla_grupo_label: str = None) -> dict:
     """Crea una 'Variante de talla' de un producto ya cargado en el Costeo: un
     renglón de Costeo Producto NUEVO E INDEPENDIENTE (su propio artículo, sus
     propios materiales, sus propias etapas, su propio precio/margen) -- para
     tallas que necesitan más/otro material, no solo un ajuste de precio. Se
-    clonan los materiales y etapas del producto base como punto de partida (ya
-    editable como cualquier producto); el enlace `variante_talla_de` es solo
-    para mostrarlo agrupado en pantalla, nunca se fusiona de vuelta en
-    Cotización/Orden de Venta/Factura -- ahí genera su propia línea, con su
-    propio precio y descripción, como cualquier otro producto del costeo.
+    clonan los materiales y etapas del producto base como punto de partida; el
+    enlace `variante_talla_de` es solo para mostrarla agrupada en pantalla,
+    nunca se fusiona de vuelta en Cotización/Orden de Venta/Factura -- ahí
+    genera su propia línea, con su propio precio y descripción, como cualquier
+    otro producto del costeo.
 
-    ``producto_base``: el `name` (o, si el costeo es nuevo y aún no tiene
-    nombres de fila, el `finished_item`) del renglón de Costeo Producto que se
-    va a clonar.
-    ``item_code``: código del artículo nuevo (no debe existir ya) -- se crea
-    clonando los datos básicos del artículo base (grupo, UDM, si es
-    subcontratado, etc.), sin BOM ni precios propios (esos se arman normal
-    desde este costeo, igual que con cualquier producto nuevo)."""
-    if not item_code:
-        frappe.throw(_("Indica el código del artículo de la variante."))
-    if frappe.db.exists("Item", item_code):
-        frappe.throw(_("Ya existe un artículo con ese código."))
-
+    ``producto_base``: el `name` (o `finished_item`) del renglón de Costeo
+    Producto que se va a clonar.
+    ``genero``/``talla``: igual que en Costeo Producto Talla -- una o varias
+    tallas (separadas por coma) que cubre esta variante. Se guarda como un
+    renglón de talla informativo en la propia variante (sobrecosto_tipo
+    'Ninguno' -- el precio de la variante ya es el suyo propio, no un ajuste).
+    ``qty``: cantidad a producir de esta variante; si ``pendiente`` es True,
+    qty se ignora y queda en 0 con estado 'Pendiente por cliente' (igual que
+    cualquier talla pendiente, ver actualizar_talla_cantidad).
+    ``item_code``: opcional -- si no se manda, se genera solo a partir del
+    artículo base + la(s) talla(s)."""
     doc = frappe.get_doc("Costeo", costeo)
     base = next((p for p in doc.costeo_producto if p.name == producto_base or p.finished_item == producto_base), None)
     if not base:
@@ -345,10 +351,20 @@ def crear_variante_talla(costeo: str, producto_base: str, item_code: str, talla_
     if not base.finished_item or not frappe.db.exists("Item", base.finished_item):
         frappe.throw(_("El producto base todavía no tiene un artículo válido -- termina de darlo de alta primero."))
 
+    pendiente = frappe.parse_json(pendiente) if isinstance(pendiente, str) else bool(pendiente)
+    qty_final = 0 if pendiente else flt(qty)
+    if not pendiente and qty_final <= 0:
+        frappe.throw(_("Indica la cantidad de esta variante, o márcala como pendiente."))
+
+    label = talla_grupo_label or " ".join(filter(None, [genero, _tallas_label(talla)])) or "Variante"
+    item_code = item_code or _slug_item_code(base.finished_item, label)
+    if frappe.db.exists("Item", item_code):
+        frappe.throw(_("Ya existe un artículo con ese código ({0}).").format(item_code))
+
     base_item = frappe.get_doc("Item", base.finished_item)
     nuevo_item = frappe.copy_doc(base_item)
     nuevo_item.item_code = item_code
-    nuevo_item.item_name = f"{base_item.item_name} - {talla_grupo_label}" if talla_grupo_label else f"{base_item.item_name} (variante)"
+    nuevo_item.item_name = f"{base_item.item_name} - {label}"
     nuevo_item.image = None
     nuevo_item.default_bom = None
     nuevo_item.set("item_defaults", [])
@@ -357,12 +373,13 @@ def crear_variante_talla(costeo: str, producto_base: str, item_code: str, talla_
     nuevo_item.insert()
 
     nueva = doc.append("costeo_producto", {})
-    for f in ("qty", "shipping_cost", "labeling_cost", "packaging_cost", "overhead_pct", "margin_pct"):
+    for f in ("shipping_cost", "labeling_cost", "packaging_cost", "overhead_pct", "margin_pct"):
         nueva.set(f, base.get(f))
     nueva.finished_item = nuevo_item.name
+    nueva.qty = qty_final
     nueva.description = base.description
     nueva.variante_talla_de = base.finished_item
-    nueva.talla_grupo_label = talla_grupo_label or ""
+    nueva.talla_grupo_label = label
 
     for d in list(doc.costeo_producto_detalle):
         if d.finished_item == base.finished_item:
@@ -371,6 +388,15 @@ def crear_variante_talla(costeo: str, producto_base: str, item_code: str, talla_
     for e in list(doc.tabla_etapas_costeo):
         if e.producto_terminado == base.finished_item:
             _clonar_fila_hija(doc, "tabla_etapas_costeo", e, "producto_terminado", nuevo_item.name)
+
+    doc.append("tabla_tallas_costeo", {
+        "finished_item": nuevo_item.name,
+        "genero": genero or "",
+        "talla": talla or "",
+        "qty": qty_final,
+        "estado_cantidad": "Pendiente por cliente" if pendiente else "Definida",
+        "sobrecosto_tipo": "Ninguno",
+    })
 
     doc.flags.ignore_permissions = True
     doc.flags.ignore_mandatory = True
@@ -383,6 +409,37 @@ def crear_variante_talla(costeo: str, producto_base: str, item_code: str, talla_
     doc.save()
     frappe.db.commit()
     return {"item_code": nuevo_item.name, "producto_row": nueva.name}
+
+
+@frappe.whitelist()
+def ajustar_material_variante_talla(costeo: str, finished_item: str, item_code: str, internal_qty: float) -> dict:
+    """Ajusta el consumo por pieza (Costeo Producto Detalle.internal_qty) de UN
+    material ya clonado en una variante de talla (ver crear_variante_talla) --
+    para capturar 'esta talla usa más/menos de tal material'. Recalcula
+    rendimiento (su inverso) y supplier_qty/total con la misma fórmula que la
+    pantalla de Costear (ver recalcDetalle en el frontend); los totales
+    agregados del producto (costo/precio) se recalculan solos al recargar el
+    costeo en pantalla, igual que con cualquier edición de materiales.
+    Guarda aunque el Costeo ya esté validado (mismo criterio que
+    crear_variante_talla)."""
+    doc = frappe.get_doc("Costeo", costeo)
+    row = next((d for d in doc.costeo_producto_detalle
+                if d.finished_item == finished_item and d.item == item_code), None)
+    if not row:
+        frappe.throw(_("No se encontró ese material en esa variante."))
+    prod = next((p for p in doc.costeo_producto if p.finished_item == finished_item), None)
+
+    row.internal_qty = flt(internal_qty)
+    row.rendimiento = round(1 / row.internal_qty, 4) if row.internal_qty > 0 else 0
+    row.supplier_qty = round(row.internal_qty * flt(prod.qty if prod else 0), 2)
+    row.total = round(row.internal_qty * flt(row.unit_price or 0), 2)
+
+    doc.flags.ignore_permissions = True
+    doc.flags.ignore_mandatory = True
+    doc.flags.ignore_validate_update_after_submit = True
+    doc.save()
+    frappe.db.commit()
+    return {"ok": True, "internal_qty": row.internal_qty, "rendimiento": row.rendimiento, "total": row.total}
 
 
 @frappe.whitelist()
