@@ -268,12 +268,24 @@ def create_costeo_from_templates(templates, cliente, compania=None, fecha=None):
 
 
 def _sync_templates_from_costeo(doc):
-    """Crea o ACTUALIZA (upsert) una plantilla por cada producto de `doc` -- si ya
-    existe una plantilla de un producto para este mismo costeo de origen, se
-    actualiza en su lugar en vez de duplicarla. Esto es lo que permite que el
-    guardado automático (ver Costeo.on_update, casilla 'guardar_como_plantilla')
-    corra en CADA guardado del Costeo sin ir generando plantillas repetidas; el
-    botón manual 'Guardar como Plantilla' (save_as_template) usa el mismo mecanismo."""
+    """Crea o ACTUALIZA (upsert) una plantilla por cada producto BASE de `doc`
+    (no por variante -- ver más abajo) -- si ya existe una plantilla de un
+    producto para este mismo costeo de origen, se actualiza en su lugar en vez
+    de duplicarla. Esto es lo que permite que el guardado automático (ver
+    Costeo.sync_templates_if_enabled, casilla 'guardar_como_plantilla') corra sin
+    ir generando plantillas repetidas; el botón manual 'Guardar como Plantilla'
+    (save_as_template) usa el mismo mecanismo.
+
+    Las "variantes de talla" (Costeo Producto con `variante_talla_de` apuntando a
+    su base) NO generan su propia plantilla independiente: cada variante surge ad
+    hoc de una negociación puntual con un cliente -- casi nunca es algo que valga
+    la pena reutilizar tal cual en otro proyecto. Si se templatizara igual que un
+    producto normal,
+    quedaría además una plantilla con `variante_talla_de` apuntando a un artículo
+    que no existe en ese contexto si se usa la plantilla de la variante SOLA (sin
+    la de su base) para armar un costeo nuevo -- una referencia colgada. Al armar
+    un costeo nuevo desde la plantilla del producto base, quien la use puede crear
+    ahí mismo las variantes que ese proyecto en particular necesite."""
     productos = doc.get("costeo_producto") or []
     if not productos:
         return []
@@ -295,8 +307,19 @@ def _sync_templates_from_costeo(doc):
         )
         tpl_por_producto = {f.finished_item: f.parent for f in filas}
 
+    # Limpieza: si alguna variante ya tenía una plantilla propia de una corrida
+    # anterior (antes de esta regla), se borra -- una variante nunca debe quedar
+    # con plantilla independiente.
+    finished_items_variantes = {p.finished_item for p in productos if p.get("variante_talla_de") and p.finished_item}
+    for finished, tpl_name in list(tpl_por_producto.items()):
+        if finished in finished_items_variantes:
+            frappe.delete_doc("Costeo", tpl_name, force=True, ignore_permissions=True)
+            tpl_por_producto.pop(finished, None)
+
     resultado = []
     for prod in productos:
+        if prod.get("variante_talla_de"):
+            continue  # las variantes no se templatizan aparte, ver docstring
         finished = prod.finished_item
         if not finished:
             continue
