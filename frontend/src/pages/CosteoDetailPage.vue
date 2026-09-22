@@ -278,7 +278,7 @@
           <div v-else class="divide-y divide-surface-border">
             <div v-for="(prod, idx) in productos" :key="prod._tid">
               <div class="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-surface-raised/50 transition-colors group" :class="{ 'pl-10': prod.variante_talla_de }" @click="toggleProduct(prod._tid)">
-                <svg class="w-4 h-4 text-ink-light flex-shrink-0 transition-transform" :class="expandedTid === prod._tid ? 'rotate-90' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                <svg class="w-4 h-4 text-ink-light flex-shrink-0 transition-transform" :class="expandedTids.has(prod._tid) ? 'rotate-90' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
                 <img v-if="prod.image" :src="prod.image" class="w-9 h-9 rounded-lg object-cover border border-surface-border flex-shrink-0" alt="" />
                 <div v-else class="w-9 h-9 rounded-lg bg-surface-raised border border-surface-border flex items-center justify-center flex-shrink-0">
                   <svg class="w-4 h-4 text-ink-xlight" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
@@ -298,7 +298,7 @@
                 </button>
               </div>
 
-              <div v-if="expandedTid === prod._tid" class="bg-surface-raised/40 border-t border-surface-border px-5 pt-4 pb-14 space-y-4">
+              <div v-if="expandedTids.has(prod._tid)" class="bg-surface-raised/40 border-t border-surface-border px-5 pt-4 pb-14 space-y-4">
                 <div class="flex gap-4 items-start">
                   <div class="w-36 h-36 flex-shrink-0 rounded-lg border border-surface-border overflow-hidden bg-white relative group/img" :class="canEditCosteo ? 'cursor-pointer' : 'cursor-default'" @click="pickImage(prod)" title="Subir imagen del producto">
                     <img v-if="prod.image" :src="prod.image" class="w-full h-full object-cover" alt="" />
@@ -2846,9 +2846,9 @@ async function loadCotItems(name) {
   } catch { cotItems.value = []; }
 }
 // Un Costeo puede acumular varias cotizaciones (rechazada + nueva, "Cotizar de
-// nuevo"...) -- se muestran como acordeón (mismo patrón que "Productos a costear",
-// expandedTid): solo una expandida a la vez, y expandirla carga sus datos en
-// cotForm/cotItems para reusar exactamente el mismo panel de edición de antes.
+// nuevo"...) -- a diferencia de "Productos a costear" (expandedTids, varios
+// abiertos a la vez), aquí SÍ solo una expandida: expandirla carga sus datos en
+// cotForm/cotItems, un solo panel de edición compartido para reusarlo tal cual.
 const expandedQuotName = ref(null);
 let quotAutoExpandDone = false;
 function applyQuotToForm(q) {
@@ -2993,7 +2993,12 @@ const materialesEtapa = ref([]);
 const tallas = ref([]);
 const allSuppliers = ref([]);
 const allTallas = ref([]);
-const expandedTid = ref(null);
+// Cada producto se abre/cierra de forma independiente -- a diferencia del
+// acordeón de Cotizaciones (expandedQuotName, un solo panel de edición
+// compartido), aquí cada renglón ya trae sus propios datos siempre cargados
+// (detalles/etapas/tallas se filtran por finished_item), así que no hay
+// ningún estado compartido que obligue a mantener solo uno abierto a la vez.
+const expandedTids = reactive(new Set());
 const { toast, showToast } = useToast();
 const {
   printFmtMap, previewKey,
@@ -3556,7 +3561,7 @@ function genStageId() { return Math.random().toString(36).slice(2, 10) + Date.no
 
 
 // ── Product / detail / stage ──
-function addProducto() { const p = { _tid: uid(), _lastFinishedItem: "", image: "", description: "", finished_item: "", variante_talla_de: "", talla_grupo_label: "", qty: 1, shipping_cost: 0, labeling_cost: 0, packaging_cost: 0, overhead_pct: 0, margin_pct: 0, material_cost: 0, services_cost: 0, overhead_amt: 0, total_unit_cost: 0, unit_sales_price: 0, precio_manual: 0, total_sales_price: 0 }; productos.value.push(p); expandedTid.value = p._tid; }
+function addProducto() { const p = { _tid: uid(), _lastFinishedItem: "", image: "", description: "", finished_item: "", variante_talla_de: "", talla_grupo_label: "", qty: 1, shipping_cost: 0, labeling_cost: 0, packaging_cost: 0, overhead_pct: 0, margin_pct: 0, material_cost: 0, services_cost: 0, overhead_amt: 0, total_unit_cost: 0, unit_sales_price: 0, precio_manual: 0, total_sales_price: 0 }; productos.value.push(p); expandedTids.add(p._tid); }
 function directCost(prod) { return (prod.material_cost || 0) + (prod.services_cost || 0) + (prod.shipping_cost || 0) + (prod.labeling_cost || 0) + (prod.packaging_cost || 0); }
 // Desglose informativo de directCost por grupo -- telas y avíos son subconjuntos
 // de material_cost (según tipo_material de cada renglón), servicios agrupa todo
@@ -3578,8 +3583,8 @@ function totalEtapas(prod) {
   return round2(etapasDe(prod.finished_item).reduce((s, e) => s + precioPorPiezaEtapa(e), 0));
 }
 function expectedProfit(prod) { return (prod.unit_sales_price || 0) - (prod.total_unit_cost || 0); }
-function removeProducto(idx) { const prod = productos.value[idx]; if (!prod) return; const stageIdsDeProd = new Set(etapas.value.filter(e => e.producto_terminado === prod.finished_item).map(e => e.stage_id)); const materialIdsDeProd = new Set(detalles.value.filter(d => d.finished_item === prod.finished_item).map(d => d.material_id)); detalles.value = detalles.value.filter(d => d.finished_item !== prod.finished_item); etapas.value = etapas.value.filter(e => e.producto_terminado !== prod.finished_item); materialesEtapa.value = materialesEtapa.value.filter(r => !materialIdsDeProd.has(r.material_id) && !stageIdsDeProd.has(r.stage_id)); tallas.value = tallas.value.filter(t => t.finished_item !== prod.finished_item); productos.value.splice(idx, 1); if (expandedTid.value === prod._tid) expandedTid.value = null; }
-function toggleProduct(tid) { expandedTid.value = expandedTid.value === tid ? null : tid; }
+function removeProducto(idx) { const prod = productos.value[idx]; if (!prod) return; const stageIdsDeProd = new Set(etapas.value.filter(e => e.producto_terminado === prod.finished_item).map(e => e.stage_id)); const materialIdsDeProd = new Set(detalles.value.filter(d => d.finished_item === prod.finished_item).map(d => d.material_id)); detalles.value = detalles.value.filter(d => d.finished_item !== prod.finished_item); etapas.value = etapas.value.filter(e => e.producto_terminado !== prod.finished_item); materialesEtapa.value = materialesEtapa.value.filter(r => !materialIdsDeProd.has(r.material_id) && !stageIdsDeProd.has(r.stage_id)); tallas.value = tallas.value.filter(t => t.finished_item !== prod.finished_item); productos.value.splice(idx, 1); expandedTids.delete(prod._tid); }
+function toggleProduct(tid) { if (expandedTids.has(tid)) expandedTids.delete(tid); else expandedTids.add(tid); }
 // Materiales, etapas y tallas se vinculan al producto por el VALOR de finished_item
 // (son tablas hermanas, no anidadas -- Frappe no guarda tablas dentro de tablas), no
 // por la fila del producto en sí. Si aquí solo se actualizara prod.finished_item,
@@ -3854,14 +3859,20 @@ async function agregarMaterialVariante(prod) {
   }
 }
 // loadCosteoData reemplaza productos.value por completo -- cada renglón recibe
-// un _tid nuevo, así que expandedTid (que apunta al _tid viejo) dejaría de
-// calzar con nada y la tarjeta del producto se colapsaría solita en cada paso
-// del wizard. Se vuelve a expandir la fila del mismo producto (por
-// finished_item, que sí es estable) después de recargar.
+// un _tid nuevo, así que expandedTids (que apunta a los _tid viejos) dejaría
+// de calzar con nada y TODAS las tarjetas abiertas se colapsarían solas en
+// cada paso del wizard. Se recuerdan los finished_item (estables) de lo que
+// estaba abierto antes de recargar, y se vuelve a expandir cada uno.
 async function recargarConservandoExpandido(finished_item) {
+  const abiertos = new Set(
+    productos.value.filter((p) => expandedTids.has(p._tid)).map((p) => p.finished_item)
+  );
+  abiertos.add(finished_item);
   await loadCosteoData();
-  const fila = productos.value.find((p) => p.finished_item === finished_item);
-  if (fila) expandedTid.value = fila._tid;
+  expandedTids.clear();
+  for (const p of productos.value) {
+    if (abiertos.has(p.finished_item)) expandedTids.add(p._tid);
+  }
 }
 // Precio de UNA talla: el sobrecosto (fijo o %) se suma sobre el PRECIO DE VENTA
 // plano del producto (el mismo que se ve en la cotización sin tallas), no sobre
