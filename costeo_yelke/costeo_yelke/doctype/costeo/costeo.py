@@ -130,13 +130,27 @@ class Costeo(Document):
         'guardar_como_plantilla', cada uno de sus productos se guarda/actualiza como
         su propia plantilla en automático, cada vez que se guarda este Costeo (ver
         costeo_template_api._sync_templates_from_costeo -- upsert por producto, así
-        que guardar varias veces no genera plantillas duplicadas). Desmarcar la
-        casilla desactiva esto sin afectar el botón manual 'Guardar como Plantilla'."""
-        if self.get("es_plantilla") or not cint(self.get("guardar_como_plantilla")):
+        que guardar varias veces no genera plantillas duplicadas).
+
+        Si la casilla está DESMARCADA, se borran las plantillas que este Costeo
+        haya generado antes (si las hay) -- para que desmarcar y guardar de verdad
+        signifique "esto ya no es una plantilla", en vez de dejar una plantilla
+        vieja huérfana dando vueltas en 'Plantillas'."""
+        if self.get("es_plantilla"):
+            return
+        if not cint(self.get("guardar_como_plantilla")):
+            self._eliminar_plantillas_generadas()
             return
         from costeo_yelke.api.costeo_template_api import _sync_templates_from_costeo
 
         _sync_templates_from_costeo(self)
+
+    def _eliminar_plantillas_generadas(self):
+        huerfanas = frappe.get_all(
+            "Costeo", filters={"es_plantilla": 1, "plantilla_origen_costeo": self.name}, pluck="name",
+        )
+        for nombre in huerfanas:
+            frappe.delete_doc("Costeo", nombre, force=True, ignore_permissions=True)
 
     def validate_at_least_one_product_to_produce(self):
         # Las plantillas no llevan cantidad (es específica de cada pedido).
