@@ -192,8 +192,16 @@ def _venta_items_para_producto(doc, p, extra_fields=None):
     # sobrecosto, no una rebaja), ese descuento sale negativo y se imprime en la
     # cotización como algo confuso que en realidad no es un descuento real.
     if not talla_rows:
+        # Una variante de talla creada como "pendiente" (ver crear_variante_talla)
+        # llega aquí con p.qty = 0 -- ERPNext no permite qty 0 en una línea de
+        # Cotización/Orden de Venta/Factura. Se usa 1 de referencia, igual que
+        # cualquier otra cantidad pendiente en esta misma función (ver más abajo,
+        # el grupo de sobrecosto de talla); se corrige después con
+        # actualizar_talla_cantidad o editando la línea a mano una vez que el
+        # cliente confirme cuántas piezas quiere de verdad.
+        qty = p.qty if flt(p.qty) > 0 else 1
         rate = p.unit_sales_price or 0
-        item = {"item_code": p.finished_item, "qty": p.qty, "rate": rate, "price_list_rate": rate, **extra_fields}
+        item = {"item_code": p.finished_item, "qty": qty, "rate": rate, "price_list_rate": rate, **extra_fields}
         if p.description:
             item["description"] = p.description
         return [item]
