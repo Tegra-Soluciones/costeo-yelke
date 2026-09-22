@@ -477,9 +477,9 @@
                                     <button type="button" class="text-[10px] px-1.5 py-0.5 rounded-full" :class="qtyModeFor(d) === 'consumo' ? 'bg-brand-100 text-brand-700 font-semibold' : 'text-ink-light hover:bg-surface-raised'" @click="d._qtyMode = 'consumo'">Consumo</button>
                                   </template>
                                 </div>
-                                <input v-if="qtyModeFor(d) === 'consumo'" v-model.number="d.internal_qty" type="number" min="0" step="0.0001" class="field-input text-right" placeholder="UDM por pza" @input="onConsumoInput(d, prod)" />
-                                <input v-else-if="qtyModeFor(d) === 'piezas'" :value="piezasPorPrenda(d)" type="number" min="0" step="0.0001" class="field-input text-right" placeholder="pzas por prenda" @input="onPiezasInput(d, prod, $event.target.value)" />
-                                <input v-else v-model.number="d.rendimiento" type="number" min="0" step="0.0001" class="field-input text-right" placeholder="pzas por UDM" @input="onRendimientoInput(d, prod)" />
+                                <input v-if="qtyModeFor(d) === 'consumo'" v-model.number="d.internal_qty" type="number" min="0" step="1" class="field-input text-right" placeholder="UDM por pza" @input="onConsumoInput(d, prod)" />
+                                <input v-else-if="qtyModeFor(d) === 'piezas'" :value="piezasPorPrenda(d)" type="number" min="0" step="1" class="field-input text-right" placeholder="pzas por prenda" @input="onPiezasInput(d, prod, $event.target.value)" />
+                                <input v-else v-model.number="d.rendimiento" type="number" min="0" step="1" class="field-input text-right" placeholder="pzas por UDM" @input="onRendimientoInput(d, prod)" />
                                 <p class="text-[10.5px] text-ink-light mt-1 truncate">
                                   <template v-if="qtyModeFor(d) === 'consumo'">≈ {{ fmtQty(d.rendimiento) }} pzas/{{ d.internal_uom || 'UDM' }}</template>
                                   <template v-else-if="qtyModeFor(d) === 'piezas'">1 {{ d.internal_uom }} = {{ fmtQty(piezasPorUdm(d)) }} pzas</template>
@@ -653,7 +653,7 @@
                         <option value="">— elige el material —</option>
                         <option v-for="m in materialesDe(prod.finished_item)" :key="m._tid" :value="m.item">{{ m.item }}</option>
                       </select>
-                      <input v-model.number="varianteWizard.nuevoConsumo" type="number" min="0" step="0.0001" placeholder="Consumo/pieza nuevo" class="field-input w-40" />
+                      <input v-model.number="varianteWizard.nuevoConsumo" type="number" min="0" step="1" placeholder="Consumo/pieza nuevo" class="field-input w-40" />
                       <button :disabled="varianteWizard.loading || !varianteWizard.nuevoMaterial" class="h-9 px-4 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="agregarMaterialVariante(prod)">+ Agregar material</button>
                     </div>
                     <button class="add-link mt-3" @click="cerrarVarianteWizard">Listo, terminar</button>
