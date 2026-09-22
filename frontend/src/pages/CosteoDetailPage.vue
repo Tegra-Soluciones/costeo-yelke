@@ -29,53 +29,6 @@
       @confirm="doDeleteSO" @cancel="confirmDeleteSO.open = false"
     />
 
-    <!-- Modal: guardar como plantilla -->
-    <div v-if="tplModal.open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" @click.self="tplModal.open = false">
-      <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
-        <p class="text-sm font-semibold text-ink">Guardar como plantilla</p>
-        <p class="text-[12px] text-ink-muted mt-0.5 mb-4">
-          Cada producto de este costeo se guarda como su propia plantilla independiente (materiales, etapas y márgenes), sin cliente. Se crearán {{ productosConNombre.length }} plantilla{{ productosConNombre.length === 1 ? "" : "s" }}:
-        </p>
-        <ul class="text-[13px] text-ink mb-4 list-disc pl-5 space-y-0.5">
-          <li v-for="p in productosConNombre" :key="p">{{ p }}</li>
-        </ul>
-        <div class="flex gap-2 justify-end">
-          <button class="px-3 py-1.5 text-[13px] text-ink-muted hover:bg-surface-raised rounded-lg" @click="tplModal.open = false">Cancelar</button>
-          <button :disabled="!productosConNombre.length || tplModal.saving" class="px-4 py-1.5 text-[13px] font-medium text-white bg-brand-500 hover:bg-brand-600 disabled:opacity-50 rounded-lg flex items-center gap-2" @click="guardarComoPlantilla">
-            <svg v-if="tplModal.saving" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-            {{ tplModal.saving ? "Guardando…" : "Guardar plantillas" }}
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modal: actualizar cantidades por talla (cuando el cliente ya confirmó) -->
-    <div v-if="actualizarTallasModal.open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" @click.self="actualizarTallasModal.open = false">
-      <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-5">
-        <p class="text-sm font-semibold text-ink">Actualizar cantidades por talla</p>
-        <p class="text-[12px] text-ink-muted mt-0.5 mb-4">
-          Captura la cantidad real que ya confirmó el cliente para cada talla pendiente. Si hay una Cotización u Orden de Venta en borrador ligada a este costeo, sus líneas se actualizan solas.
-        </p>
-        <div class="space-y-2 max-h-[50vh] overflow-y-auto mb-4">
-          <div v-for="f in actualizarTallasModal.filas" :key="f.talla_row" class="flex items-center gap-2 border border-surface-border rounded-lg p-2.5">
-            <div class="flex-1 min-w-0">
-              <p class="text-[13px] font-medium text-ink truncate">{{ f.finished_item }}</p>
-              <p class="text-[12px] text-ink-muted truncate">{{ f.label }}</p>
-            </div>
-            <input v-model.number="f.qtyNueva" type="number" min="0" class="field-input w-24 text-right" placeholder="Cantidad" />
-          </div>
-        </div>
-        <p v-if="actualizarTallasModal.error" class="text-[12px] text-red-600 mb-3">{{ actualizarTallasModal.error }}</p>
-        <div class="flex gap-2 justify-end">
-          <button class="px-3 py-1.5 text-[13px] text-ink-muted hover:bg-surface-raised rounded-lg" @click="actualizarTallasModal.open = false">Cancelar</button>
-          <button :disabled="actualizarTallasModal.saving" class="px-4 py-1.5 text-[13px] font-medium text-white bg-brand-500 hover:bg-brand-600 disabled:opacity-50 rounded-lg flex items-center gap-2" @click="confirmarActualizarTallas">
-            <svg v-if="actualizarTallasModal.saving" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-            {{ actualizarTallasModal.saving ? "Guardando…" : "Confirmar cantidades" }}
-          </button>
-        </div>
-      </div>
-    </div>
-
     <!-- Modal: materializar producto terminado (al pasar a cotización) -->
     <MaterializeProductModal
       :open="materializeModal.open"
@@ -118,11 +71,6 @@
             <div class="py-1">
               <template v-if="headerDoc.isCosteo">
                 <button class="action-item" @click="duplicateDoc">Duplicar</button>
-                <button class="action-item" @click="openTplModal">Guardar como plantilla</button>
-                <button v-if="tallasPendientes.length" class="action-item text-amber-700" @click="openActualizarTallasModal">
-                  Actualizar cantidades por talla
-                  <span class="ml-auto text-[10px] font-semibold bg-amber-100 text-amber-700 rounded-full px-1.5 py-0.5">{{ tallasPendientes.length }}</span>
-                </button>
                 <button class="action-item" @click="actionsOpen = false; showHistorialModal = true">Ver historial</button>
               </template>
               <button class="action-item" @click="printDoc">Imprimir / PDF</button>
@@ -2662,47 +2610,6 @@ async function confirmarNuevaOv() {
   finally { nuevaOvModal.generating = false; }
 }
 const confirmCancel = reactive({ open: false, loading: false });
-const tplModal = reactive({ open: false, saving: false });
-// Tallas "Pendiente por cliente" en TODO el costeo (no solo el producto abierto)
-// -- para el badge del kebab y el modal de "Actualizar cantidades por talla".
-const tallasPendientes = computed(() => tallas.value.filter(esTallaPendiente));
-const actualizarTallasModal = reactive({ open: false, saving: false, error: "", filas: [] });
-function openActualizarTallasModal() {
-  actionsOpen.value = false;
-  actualizarTallasModal.error = "";
-  actualizarTallasModal.filas = tallasPendientes.value.map(t => ({
-    talla_row: t.name, finished_item: t.finished_item, label: tallaEtiqueta(t), qtyNueva: 0,
-  }));
-  actualizarTallasModal.open = true;
-}
-function tallaEtiqueta(t) {
-  const codes = tallasSeleccionadasDe(t);
-  const labels = codes.map(c => allTallas.value.find(x => x.name === c)?.talla || c);
-  return [t.genero, labels.join("/")].filter(Boolean).join(" ") || "(sin talla capturada)";
-}
-async function confirmarActualizarTallas() {
-  const filas = actualizarTallasModal.filas.filter(f => (f.qtyNueva || 0) > 0);
-  if (!filas.length) { actualizarTallasModal.error = "Captura al menos una cantidad."; return; }
-  actualizarTallasModal.saving = true;
-  actualizarTallasModal.error = "";
-  try {
-    let sincronizados = 0;
-    for (const f of filas) {
-      const r = await call("costeo_yelke.api.costeo_api.actualizar_talla_cantidad", {
-        costeo: docName.value, talla_row: f.talla_row, qty: f.qtyNueva, estado_cantidad: "Definida",
-      });
-      sincronizados += (r.actualizados || []).length;
-    }
-    await fillFromDoc(await db.get("Costeo", docName.value));
-    actualizarTallasModal.open = false;
-    showToast(sincronizados ? `Cantidades confirmadas · ${sincronizados} documento(s) actualizado(s)` : "Cantidades confirmadas");
-  } catch (e) {
-    actualizarTallasModal.error = e.message || "No se pudieron actualizar las cantidades";
-  } finally {
-    actualizarTallasModal.saving = false;
-  }
-}
-const productosConNombre = computed(() => productos.value.filter(p => p.finished_item).map(p => p.finished_item));
 const materializeModal = reactive({ open: false, saving: false, text: "", suggestedPrice: 0, suggestedDescription: "", suggestedImage: "" });
 const pendientesArticulos = ref([]);
 const pendientesContext = reactive({ company: "", almacen_materias_primas: "", almacen_trabajo_en_proceso: "" });
@@ -2932,7 +2839,7 @@ const pinvForm = reactive({ posting_date: "", due_date: "", bill_no: "", bill_da
 const cotDefaults = reactive({ payment_terms_templates: [], terms: [], users: [], price_lists: [], currencies: [], tax_templates: [] });
 const prepSteps = ref([]);
 
-const form = reactive({ titulo: "", cliente: "", fecha: today(), compania: "", proyecto: "", guardar_como_plantilla: true, centro_de_costos: "", almacen_materias_primas: "", almacen_trabajo_en_proceso: "" });
+const form = reactive({ titulo: "", cliente: "", fecha: today(), compania: "", proyecto: "", guardar_como_plantilla: false, centro_de_costos: "", almacen_materias_primas: "", almacen_trabajo_en_proceso: "" });
 // Centro de costos y almacenes ya no se capturan a mano -- se derivan solos de
 // la compañía (mismo criterio en costeo_api.get_company_defaults), para no
 // pedirle al usuario que repita en cada costeo algo que siempre es igual.
@@ -4201,7 +4108,7 @@ async function fillFromDoc(data) {
   form.cliente = data.cliente || ""; form.fecha = data.fecha || today(); form.compania = data["compañia"] || "";
   form.proyecto = data.proyecto || "";
   form.guardar_como_plantilla = (data.guardar_como_plantilla === undefined || data.guardar_como_plantilla === null)
-    ? true : !!Number(data.guardar_como_plantilla);
+    ? false : !!Number(data.guardar_como_plantilla);
   form.centro_de_costos = data.centro_de_costos || ""; form.almacen_materias_primas = data.almacen_materias_primas || ""; form.almacen_trabajo_en_proceso = data.almacen_trabajo_en_proceso || "";
   productos.value = (data.costeo_producto || []).map(r => ({ _tid: uid(), image: "", description: "", precio_manual: 0, ...r, _lastFinishedItem: r.finished_item || "" }));
   detalles.value = (data.costeo_producto_detalle || []).map(r => ({ _tid: uid(), _supplierOptions: [], _qtyMode: "rendimiento", ...r, material_id: r.material_id || genStageId() }));
@@ -5328,24 +5235,6 @@ function onDocClick(e) { if (actionsRef.value && !actionsRef.value.contains(e.ta
 // original se queda intacto -- no se vacía el campo por accidente.
 function onNumberFocus(e) {
   if (e.target?.tagName === "INPUT" && e.target.type === "number") e.target.select();
-}
-function openTplModal() {
-  actionsOpen.value = false;
-  if (isNew.value) { showToast("Guarda el costeo primero", "error"); return; }
-  tplModal.open = true;
-}
-async function guardarComoPlantilla() {
-  tplModal.saving = true;
-  try {
-    if (docState.value === 0) await saveDoc();
-    const res = await call("costeo_yelke.api.costeo_template_api.save_as_template", {
-      costeo: docName.value,
-    });
-    tplModal.open = false;
-    const n = (res?.creadas || []).length;
-    showToast(n ? `${n} plantilla${n === 1 ? "" : "s"} guardada${n === 1 ? "" : "s"} · disponibles en Plantillas` : "No se creó ninguna plantilla");
-  } catch (e) { showToast(e.message || "No se pudo guardar la plantilla", "error"); }
-  finally { tplModal.saving = false; }
 }
 function openCancel() { actionsOpen.value = false; confirmCancel.open = true; }
 async function doCancel() {

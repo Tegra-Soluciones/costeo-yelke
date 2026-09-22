@@ -282,7 +282,12 @@ async function load() {
   try {
     items.value = await db.getList("Costeo", {
       fields: ["name", "titulo", "cliente", "fecha", "compañia", "costeo_status"],
-      filters: companyState.selected ? [["compañia", "=", companyState.selected]] : [],
+      // Una plantilla (es_plantilla=1) es un Costeo de verdad por dentro, pero no es
+      // un proyecto/pedido -- no debe aparecer mezclada aquí, solo en "Plantillas".
+      filters: [
+        ["es_plantilla", "!=", 1],
+        ...(companyState.selected ? [["compañia", "=", companyState.selected]] : []),
+      ],
       orderBy: "modified desc",
       limit: 200,
     });
