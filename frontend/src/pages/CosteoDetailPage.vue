@@ -262,8 +262,8 @@
                       <div><label class="field-label mb-0.5">Empaquetado</label><div class="relative"><span class="prefix">$</span><input v-model.number="prod.packaging_cost" type="number" min="0" class="field-input py-1.5 pl-6" @input="recalcProducto(prod)" /></div></div>
                       <div><label class="field-label mb-0.5">Margen %</label><div class="relative"><input v-model.number="prod.margin_pct" type="number" min="0" max="99" class="field-input py-1.5 pr-7" @input="onMarginChange(prod)" /><span class="suffix">%</span></div></div>
                       <div>
-                        <label class="field-label mb-0.5 flex items-center gap-1">Precio unit.<span v-if="prod.precio_manual" class="text-[9.5px] font-normal text-brand-600 bg-brand-50 border border-brand-200 rounded px-1" title="Precio fijado a mano -- no se recalcula aunque cambien costos, el margen se ajusta a él">fijo</span></label>
-                        <div class="relative"><span class="prefix text-brand-600">$</span><input v-model.number="prod.unit_sales_price" type="number" min="0" step="0.01" class="field-input py-1.5 pl-6 text-brand-600 font-semibold" @input="onPriceChange(prod)" /></div>
+                        <label class="field-label mb-0.5 flex items-center gap-1">Precio unit.<span v-if="prod.precio_manual" class="text-[9.5px] font-normal text-orange-600 bg-orange-50 border border-orange-200 rounded px-1" title="Precio fijado a mano -- no se recalcula aunque cambien costos, el margen se ajusta a él">fijo</span></label>
+                        <div class="relative"><span class="prefix" :class="prod.precio_manual ? 'text-orange-600' : 'text-brand-600'">$</span><input v-model.number="prod.unit_sales_price" type="number" min="0" step="0.01" class="field-input py-1.5 pl-6 font-semibold" :class="prod.precio_manual ? 'text-orange-600' : 'text-brand-600'" @input="onPriceChange(prod)" /></div>
                       </div>
                     </div>
                   </div>
