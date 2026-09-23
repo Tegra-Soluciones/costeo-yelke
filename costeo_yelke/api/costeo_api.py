@@ -169,17 +169,26 @@ def _build_talla_extra_description(base_description, sobrecosto_tipo, sobrecosto
     return f"{base}\n\n{bloque}" if base else bloque
 
 
-def _build_variante_description(base_description, talla_grupo_label):
-    """Descripción para la línea de venta de una VARIANTE de talla: mismo
-    criterio que _build_talla_extra_description (avisar qué talla(s) se
-    engloban), pero para el mecanismo de variantes (su propia línea, no un
-    ajuste de precio sobre la base) -- sin esto la línea hereda tal cual la
-    descripción del producto base, sin ninguna pista de qué talla es."""
-    base = (base_description or "").strip()
-    if not talla_grupo_label:
-        return base
-    bloque = f"Talla: {talla_grupo_label}"
-    return f"{base}\n\n{bloque}" if base else bloque
+def _build_variante_description(genero, tallas, talla_grupo_label, desglose=None):
+    """Descripción para la línea de venta de una VARIANTE de talla -- SOLO el
+    desglose de qué talla(s) representa, NUNCA la descripción del producto
+    base (decisión explícita del usuario: ya la trae la línea del producto
+    base, repetirla en la variante es ruido). Mismo espíritu que
+    _build_talla_extra_description (avisar qué talla(s) se engloban), pero
+    para el mecanismo de variantes (su propia línea, no un ajuste de precio).
+
+    ``desglose``: opcional, {talla_code: qty} con la cantidad real que el
+    cliente confirmó para CADA talla individual del grupo (capturado en
+    'Cantidades confirmadas por talla' de la OV) -- sin esto, se muestra
+    solo la etiqueta agrupada (aún no hay nada que desglosar); con esto, se
+    lista una por una con su cantidad, igual que _build_talla_extra_description."""
+    if desglose:
+        lineas = [f"- {_talla_label(t)} × {cint(qty)} pza(s)" for t, qty in desglose.items() if flt(qty) > 0]
+        if lineas:
+            titulo = f"Talla: {genero}" if genero else "Talla"
+            return f"{titulo}\n" + "\n".join(lineas)
+    etiqueta = talla_grupo_label or " ".join(filter(None, [genero, "/".join(tallas or [])]))
+    return f"Talla: {etiqueta}" if etiqueta else ""
 
 
 def _venta_items_para_producto(doc, p, extra_fields=None):
@@ -221,9 +230,14 @@ def _venta_items_para_producto(doc, p, extra_fields=None):
         # es confiable -- sin esto la línea queda sin UOM y truena al Validar.
         uom = frappe.db.get_value("Item", p.finished_item, "stock_uom") or ""
         item = {"item_code": p.finished_item, "qty": qty, "rate": rate, "price_list_rate": rate, "uom": uom, **extra_fields}
-        description = p.description
         if p.get("variante_talla_de"):
-            description = _build_variante_description(description, p.get("talla_grupo_label"))
+            talla_row = next((t for t in doc.tabla_tallas_costeo if t.finished_item == p.finished_item), None)
+            tallas = [c.strip() for c in (talla_row.talla if talla_row else "").split(",") if c.strip()]
+            description = _build_variante_description(
+                talla_row.genero if talla_row else "", tallas, p.get("talla_grupo_label"),
+            )
+        else:
+            description = p.description
         if description:
             item["description"] = description
         return [item]
@@ -326,24 +340,42 @@ def _sync_venta_items_desde_tallas(doc, finished_item: str = None) -> dict:
 
 
 def _variantes_de_costeo(costeo_name):
-    """`finished_item -> {variante_talla_de, talla_grupo_label}` de las variantes
-    de talla de este Costeo (ver crear_variante_talla) -- una variante es
-    siempre 1:1 con su línea de venta (nunca genera más de una, a diferencia de
-    un producto base con sobrecosto por talla), así que emparejar por
-    finished_item/item_code es inequívoco."""
+    """`finished_item -> {variante_talla_de, talla_grupo_label, genero, tallas}`
+    de las variantes de talla de este Costeo (ver crear_variante_talla) -- una
+    variante es siempre 1:1 con su línea de venta (nunca genera más de una, a
+    diferencia de un producto base con sobrecosto por talla), así que
+    emparejar por finished_item/item_code es inequívoco. `tallas` es la lista
+    de códigos individuales que engloba (ej. ["XXL", "3XL"]) -- para poder
+    desglosar cantidad por talla en el editor de la OV."""
     filas = frappe.get_all(
         "Costeo Producto",
         filters={"parent": costeo_name, "variante_talla_de": ["is", "set"]},
         fields=["finished_item", "variante_talla_de", "talla_grupo_label"],
     )
-    return {f.finished_item: f for f in filas}
+    if not filas:
+        return {}
+    tallas_por_item = {
+        t.finished_item: t for t in frappe.get_all(
+            "Costeo Producto Talla",
+            filters={"parent": costeo_name, "finished_item": ["in", [f.finished_item for f in filas]]},
+            fields=["finished_item", "genero", "talla"],
+        )
+    }
+    out = {}
+    for f in filas:
+        t = tallas_por_item.get(f.finished_item)
+        f["genero"] = t.genero if t else ""
+        f["tallas"] = [c.strip() for c in (t.talla if t else "").split(",") if c.strip()]
+        out[f.finished_item] = f
+    return out
 
 
 def adjuntar_info_variante(costeo_name, items):
     """Le agrega a cada dict de `items` (ya trae `item_code`) las claves
-    `variante_talla_de`/`talla_grupo_label` cuando ese item_code es una
-    variante de talla de `costeo_name` -- dato de solo lectura para que el SPA
-    muestre de dónde viene esa línea (Cotización/Orden de Venta), nunca se
+    `variante_talla_de`/`talla_grupo_label`/`genero`/`tallas` cuando ese
+    item_code es una variante de talla de `costeo_name` -- dato de solo
+    lectura para que el SPA muestre de dónde viene esa línea (Cotización/
+    Orden de Venta) y pueda desglosar cantidad por talla individual, nunca se
     guarda de vuelta con esto."""
     if not costeo_name:
         return items
@@ -353,11 +385,23 @@ def adjuntar_info_variante(costeo_name, items):
         if v:
             it["variante_talla_de"] = v.variante_talla_de
             it["talla_grupo_label"] = v.talla_grupo_label
+            it["genero"] = v.genero
+            it["tallas"] = v.tallas
     return items
 
 
 @frappe.whitelist()
-def lineas_venta_variantes(costeo: str, finished_items) -> dict:
+def listar_variantes_de_costeo(costeo: str) -> list:
+    """Todas las variantes de talla de este Costeo (estén o no presentes en
+    alguna línea de venta) -- para 'Cantidades confirmadas por talla' en la
+    OV, que necesita mostrarlas TODAS (incluida la que el cliente todavía no
+    ha confirmado, con cantidad en 0) y no solo las que ya tiene esa orden en
+    particular."""
+    return list(_variantes_de_costeo(costeo).values())
+
+
+@frappe.whitelist()
+def lineas_venta_variantes(costeo: str, finished_items, desglose=None) -> dict:
     """Arma la línea de venta (item_code/description con la talla/rate/
     price_list_rate/uom) para cada variante indicada de `finished_items`,
     reutilizando _venta_items_para_producto -- la misma función que ya arma
@@ -366,17 +410,36 @@ def lineas_venta_variantes(costeo: str, finished_items) -> dict:
     al agregar una variante que no estaba antes en las líneas, esto evita
     reconstruir a mano en el frontend campos que ya se les olvidó una vez
     (UOM, descripción con la talla) -- se arma siempre igual de completa,
-    aquí o al crear el documento desde cero. Devuelve {finished_item: dict}."""
+    aquí o al crear el documento desde cero.
+
+    ``desglose``: opcional, {finished_item: {talla_code: qty}} -- la
+    cantidad real que el cliente confirmó por CADA talla individual del
+    grupo (capturada en el mismo editor); si se manda, la descripción lista
+    talla por talla con su cantidad en vez de solo la etiqueta agrupada.
+
+    Devuelve {finished_item: dict}."""
     if isinstance(finished_items, str):
         finished_items = frappe.parse_json(finished_items)
+    if isinstance(desglose, str):
+        desglose = frappe.parse_json(desglose)
+    desglose = desglose or {}
     doc = frappe.get_doc("Costeo", costeo)
     pedidos = set(finished_items or [])
     out = {}
     for p in doc.costeo_producto:
-        if p.finished_item in pedidos and p.get("variante_talla_de"):
-            items = _venta_items_para_producto(doc, p)
-            if items:
-                out[p.finished_item] = items[0]
+        if p.finished_item not in pedidos or not p.get("variante_talla_de"):
+            continue
+        items = _venta_items_para_producto(doc, p)
+        if not items:
+            continue
+        item = items[0]
+        desglose_prod = desglose.get(p.finished_item)
+        if desglose_prod:
+            talla_row = next((t for t in doc.tabla_tallas_costeo if t.finished_item == p.finished_item), None)
+            item["description"] = _build_variante_description(
+                talla_row.genero if talla_row else "", None, p.get("talla_grupo_label"), desglose=desglose_prod,
+            )
+        out[p.finished_item] = item
     return out
 
 

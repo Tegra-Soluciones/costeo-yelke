@@ -927,11 +927,25 @@
                     <p class="text-[12.5px] font-semibold text-ink mb-0.5">Cantidades confirmadas por talla</p>
                     <p class="text-[11px] text-ink-muted mb-2">Ajusta la cantidad real que confirmó el cliente. Pon 0 para quitarla del pedido -- se actualiza en el Costeo al Validar esta orden.</p>
                     <div v-if="soVariantesLoading" class="text-[12px] text-ink-light py-2 text-center">Cargando…</div>
-                    <div v-else class="space-y-1.5">
-                      <label v-for="v in soVariantesForm" :key="v.item_code" class="flex items-center gap-2">
-                        <span class="flex-1 text-[12.5px] text-ink truncate" :class="{ 'text-ink-light': !v.qty }" :title="v.talla_grupo_label">{{ v.talla_grupo_label }}</span>
-                        <input v-model.number="v.qty" type="number" min="0" step="1" class="field-input w-20 text-xs py-1" />
-                      </label>
+                    <div v-else class="space-y-2.5">
+                      <div v-for="v in soVariantesForm" :key="v.item_code">
+                        <label class="flex items-center gap-2">
+                          <span class="flex-1 text-[12.5px] text-ink truncate" :class="{ 'text-ink-light': !v.qty }" :title="v.talla_grupo_label">{{ v.talla_grupo_label }}</span>
+                          <input v-model.number="v.qty" type="number" min="0" step="1" class="field-input w-20 text-xs py-1" />
+                        </label>
+                        <!-- Desglose por talla individual -- solo si el grupo engloba más
+                             de una (ej. "XXL/3XL"); es únicamente para la descripción de
+                             la línea, no cambia la cantidad total de arriba. -->
+                        <div v-if="v.qty && v.tallas.length > 1" class="mt-1 ml-3 pl-2 border-l-2 border-surface-border space-y-1">
+                          <div v-for="t in v.tallas" :key="t" class="flex items-center gap-2">
+                            <span class="flex-1 text-[11.5px] text-ink-muted">{{ t }}</span>
+                            <input v-model.number="v.desglose[t]" type="number" min="0" step="1" class="field-input w-16 text-xs py-0.5" />
+                          </div>
+                          <p class="text-[10.5px]" :class="Object.values(v.desglose).reduce((a,b)=>a+(Number(b)||0),0) === v.qty ? 'text-ink-light' : 'text-amber-600'">
+                            Suma: {{ Object.values(v.desglose).reduce((a,b)=>a+(Number(b)||0),0) }} / {{ v.qty }}
+                          </p>
+                        </div>
+                      </div>
                     </div>
                     <button
                       :disabled="soVariantesSaving || soVariantesLoading"
@@ -2840,15 +2854,35 @@ async function loadSoVariantesForm(so) {
   if (!variantesDelCosteo.value.length || so.docstatus !== 0) { soVariantesForm.value = []; return; }
   soVariantesLoading.value = true;
   try {
-    const data = await call("costeo_yelke.api.sales_order_api.get_sales_order", { name: so.name });
+    const [data, variantes] = await Promise.all([
+      call("costeo_yelke.api.sales_order_api.get_sales_order", { name: so.name }),
+      call("costeo_yelke.api.costeo_api.listar_variantes_de_costeo", { costeo: docName.value }),
+    ]);
     const porItem = Object.fromEntries((data.items || []).map(it => [it.item_code, it]));
-    soVariantesForm.value = variantesDelCosteo.value.map(p => {
-      const linea = porItem[p.finished_item];
+    soVariantesForm.value = variantes.map(v => {
+      const linea = porItem[v.finished_item];
+      const qty = linea ? linea.qty : 0;
+      const tallas = v.tallas || [];
+      // Reparto inicial parejo entre las tallas individuales del grupo --
+      // solo sirve de punto de partida, el usuario lo ajusta a mano; nunca
+      // se guarda nada si el grupo es de una sola talla (no hay nada que
+      // desglosar).
+      const desglose = {};
+      if (tallas.length > 1) {
+        const base = Math.floor(qty / tallas.length);
+        let resto = Math.round(qty) - base * tallas.length;
+        for (const t of tallas) {
+          desglose[t] = base + (resto > 0 ? 1 : 0);
+          if (resto > 0) resto--;
+        }
+      }
       return {
-        item_code: p.finished_item,
-        talla_grupo_label: p.talla_grupo_label || p.finished_item,
-        qty: linea ? linea.qty : 0,
-        rate: linea ? linea.rate : (p.unit_sales_price || 0),
+        item_code: v.finished_item,
+        talla_grupo_label: v.talla_grupo_label || v.finished_item,
+        tallas,
+        qty,
+        rate: linea ? linea.rate : (productos.value.find(p => p.finished_item === v.finished_item)?.unit_sales_price || 0),
+        desglose,
       };
     });
   } catch (e) {
@@ -2881,12 +2915,18 @@ async function guardarVariantesOV(so) {
     // que mandarlo explícito o la línea nueva queda sin almacén y truena.
     const almacenRef = items[0]?.warehouse || "";
     const incluidas = soVariantesForm.value.filter(v => Number(v.qty) > 0);
-    // Descripción (con la talla) y UOM correctos, armados del lado del
-    // servidor con la misma lógica que ya usa crear_cotizacion/crear_orden_venta
-    // -- reconstruirlos a mano aquí ya se le olvidó el UOM una vez.
+    // Descripción (con el desglose por talla, si hay más de una en el grupo)
+    // y UOM correctos, armados del lado del servidor con la misma lógica que
+    // ya usa crear_cotizacion/crear_orden_venta -- reconstruirlos a mano aquí
+    // ya se le olvidó el UOM una vez.
+    const desglose = {};
+    for (const v of incluidas) {
+      if (v.tallas.length > 1) desglose[v.item_code] = v.desglose;
+    }
     const lineas = incluidas.length
       ? await call("costeo_yelke.api.costeo_api.lineas_venta_variantes", {
           costeo: docName.value, finished_items: JSON.stringify(incluidas.map(v => v.item_code)),
+          desglose: JSON.stringify(desglose),
         })
       : {};
     for (const v of incluidas) {
