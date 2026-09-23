@@ -1318,6 +1318,51 @@
           </TransitionGroup>
         </div>
 
+        <!-- Sub-ensamblajes: solo tiene sentido con 2+ pasos -- son las "tandas"
+             físicas (puños, mangas...) que un mismo lote puede entregar por
+             separado, cada una por un subconjunto distinto de estos pasos (ver
+             Costeo Sub Ensamblaje / _multiplicador_por_operacion). No crea
+             ningún Artículo -- solo le dice al sistema cuántas veces de verdad
+             se repite el servicio de cada paso intermedio, para que su OC de
+             maquila nazca ya con la capacidad correcta. -->
+        <div v-if="prod.operaciones.length > 1" class="mt-4 pt-4 border-t border-surface-border">
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-[12px] font-medium text-ink-muted">Sub-ensamblajes</span>
+            <button type="button" class="text-[11px] text-brand-600 hover:text-brand-700" @click="agregarSubEnsamblaje(prod)">+ agregar</button>
+          </div>
+          <p v-if="!prod.sub_ensamblajes.length" class="text-[11px] text-ink-light leading-relaxed">
+            Ninguno declarado -- úsalo solo si este producto se entrega en varias tandas físicas distintas (puños, mangas, cuellos...) que pasan por caminos distintos del flujo.
+          </p>
+          <div v-else class="space-y-2">
+            <div v-for="(s, si) in prod.sub_ensamblajes" :key="si" class="rounded-lg ring-1 ring-surface-border p-2">
+              <div class="flex items-center gap-2">
+                <input
+                  v-model="s.nombre" type="text" placeholder="Ej. Puños"
+                  class="flex-1 min-w-0 text-[12px] px-2 py-1 rounded-md ring-1 ring-inset ring-surface-border focus:ring-brand-400 focus:outline-none"
+                  @input="flujoDirty = true"
+                />
+                <button type="button" class="mini-icon-btn flex-shrink-0" title="Quitar" @click="quitarSubEnsamblaje(prod, si)">
+                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+              </div>
+              <div class="flex flex-wrap gap-1.5 mt-1.5">
+                <button
+                  v-for="op in prod.operaciones.filter(o => !terminalKeysVivo(prod).includes(o.op_key))" :key="op.op_key"
+                  type="button"
+                  class="text-[11px] px-2 py-1 rounded-full transition-colors"
+                  :class="s.op_keys.includes(op.op_key) ? 'bg-brand-50 text-brand-700 ring-1 ring-brand-200' : 'bg-surface-raised text-ink-muted ring-1 ring-transparent hover:ring-surface-border'"
+                  @click="toggleSubEnsamblajeOp(s, op.op_key)"
+                >{{ supplierLabel(prod, op) }}</button>
+                <span
+                  v-for="op in prod.operaciones.filter(o => terminalKeysVivo(prod).includes(o.op_key))" :key="op.op_key"
+                  class="text-[11px] px-2 py-1 rounded-full bg-surface-raised text-ink-light"
+                  title="Todo sub-ensamblaje llega hasta el paso final -- no hace falta marcarlo"
+                >{{ supplierLabel(prod, op) }} (siempre)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
       </div>
 
       <div class="flex justify-end items-center gap-3 mt-8">
@@ -1823,6 +1868,57 @@
 
               <!-- Orden de subcontratación (SCO) -->
               <template v-if="subStepOpen === 'sco'">
+                <!-- Entregas de esta parada: una parada puede tener VARIAS (una
+                     por "ola" de sub-ensamblaje, ver parada_registrar_entrega) --
+                     no solo la primera que se ve abajo en detalle. -->
+                <div v-if="paradaActiva.sco" class="mb-3">
+                  <div class="flex items-center justify-between mb-1.5">
+                    <span class="text-[11.5px] font-medium text-ink-muted uppercase tracking-wide">Entregas de esta parada</span>
+                    <button type="button" class="text-[11px] text-brand-600 hover:text-brand-700" @click="abrirNuevaEntrega">+ Otra entrega</button>
+                  </div>
+                  <div class="space-y-1">
+                    <button
+                      v-for="e in paradaActiva.entregas" :key="e.sco"
+                      type="button"
+                      class="w-full flex items-center justify-between gap-2 text-[12px] px-2.5 py-1.5 rounded-md transition-colors"
+                      :class="scoSel && scoSel.name === e.sco ? 'bg-brand-50 ring-1 ring-brand-200' : 'hover:bg-surface-raised'"
+                      @click="subStepOpen = 'sco'; verEntrega(e)"
+                    >
+                      <span class="truncate text-ink">{{ e.referencia_entrega || 'Sin referencia' }}</span>
+                      <span class="flex items-center gap-2 flex-shrink-0 text-ink-light tabular-nums">
+                        <span>{{ (e.cantidad || 0).toLocaleString('es-MX') }}</span>
+                        <svg v-if="e.receipt_validated" class="w-3.5 h-3.5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                        <span v-else-if="e.transfer_done" class="text-brand-600">enviado</span>
+                        <span v-else class="text-ink-xlight">pendiente</span>
+                      </span>
+                    </button>
+                  </div>
+
+                  <!-- Checklist de sub-ensamblajes declarados (vacío si el producto no declaró ninguno) -->
+                  <div v-if="paradaActiva.sub_ensamblajes.length" class="flex flex-wrap gap-1.5 mt-2">
+                    <span
+                      v-for="s in paradaActiva.sub_ensamblajes" :key="s.nombre"
+                      class="text-[11px] px-2 py-0.5 rounded-full"
+                      :class="s.pendiente ? 'bg-surface-raised text-ink-light' : 'bg-green-50 text-green-700 ring-1 ring-green-200'"
+                    >{{ s.nombre }}</span>
+                  </div>
+
+                  <div v-if="nuevaEntregaForm.open" class="mt-2 rounded-lg ring-1 ring-surface-border p-2.5 space-y-2">
+                    <div class="flex items-center gap-2">
+                      <input v-model.number="nuevaEntregaForm.cantidad" type="number" min="0" step="1" placeholder="Cantidad" class="field-input w-28" />
+                      <select v-if="paradaActiva.sub_ensamblajes.length" v-model="nuevaEntregaForm.sub_ensamblaje" class="field-input flex-1">
+                        <option value="">— Elige el sub-ensamblaje —</option>
+                        <option v-for="s in paradaActiva.sub_ensamblajes" :key="s.nombre" :value="s.nombre">{{ s.nombre }}</option>
+                      </select>
+                      <input v-else v-model="nuevaEntregaForm.referencia" type="text" placeholder="Referencia (opcional)" class="field-input flex-1" />
+                    </div>
+                    <div class="flex justify-end gap-2">
+                      <button type="button" class="px-3 py-1.5 text-[12px] text-ink-muted hover:text-ink" @click="cerrarNuevaEntrega">Cancelar</button>
+                      <button type="button" :disabled="nuevaEntregaForm.loading" class="px-3 py-1.5 text-[12px] font-medium text-white bg-brand-500 rounded-md hover:bg-brand-600 disabled:opacity-50" @click="confirmarNuevaEntrega">{{ nuevaEntregaForm.loading ? 'Registrando…' : 'Registrar' }}</button>
+                    </div>
+                  </div>
+                </div>
+
                 <div v-if="!paradaActiva.sco" class="text-center py-6">
                   <p class="text-sm font-medium text-ink mb-1">{{ paradaActiva.titulo }} · {{ paradaActiva.supplier }} — {{ loteActivoRef }}</p>
                   <template v-if="paradaActiva.productos.some((x) => x.qty > 0) || loteActivo.productos.some((x) => x.qty > 0)">
@@ -1844,6 +1940,7 @@
                     </p>
                   </template>
                 </div>
+
                 <div v-else-if="scoSel" class="space-y-3">
                   <div class="bg-white rounded-xl border border-surface-border p-4">
                     <div class="flex items-center justify-between mb-3">
@@ -3109,6 +3206,7 @@ const {
   loteActivo, paradaActiva, tracksLote, paradaEstado,
   loadLotesProduccion, seleccionarLote, seleccionarParada, verParadaPo,
   abrirNuevoLote, cerrarNuevoLote, crearNuevoLote, abrirParada, siguienteParadaPendiente, generarOcLote,
+  nuevaEntregaForm, abrirNuevaEntrega, cerrarNuevaEntrega, confirmarNuevaEntrega, verEntrega,
   primeraEtapaQty, primeraEtapaLoading, primeraEtapaLimitado, sugerirPrimeraEtapaQty,
   crearRfqLote, crearSqLote,
   omGeneral, omCab, omDama, omProc, omTablas, omArchivos, omUploading, omEsMaestra,
@@ -4621,7 +4719,8 @@ async function loadFlujoOps() {
       // Marca como "fijado" lo que NO es el default lineal -- eso es lo que el
       // reordenar debe respetar; el resto se reengancha solo.
       ops.forEach((o, i) => { o.recibe_custom = !esRecibeLineal(ops, i); });
-      return { ...p, operaciones: ops };
+      const subs = (p.sub_ensamblajes || []).map(s => ({ ...s, op_keys: [...(s.op_keys || [])] }));
+      return { ...p, operaciones: ops, sub_ensamblajes: subs };
     });
   } catch (e) { showToast(e.message || "No se pudo cargar el flujo", "error"); }
   finally { flujoLoading.value = false; }
@@ -4788,6 +4887,23 @@ function toggleMaterialOp(mat, opKey) {
 function materialesDirectosDe(prod, op) {
   return prod.materiales.filter(m => m.op_key === op.op_key);
 }
+// Sub-ensamblajes declarados (ver Costeo Sub Ensamblaje) -- filas puramente
+// locales hasta que se guardan junto con el resto de "Flujo de Producción"
+// (ver confirmarFlujo). `op_keys` nunca incluye el/los paso(s) terminal(es):
+// esos llegan siempre, se muestran aparte como fijos (ver plantilla).
+function agregarSubEnsamblaje(prod) {
+  prod.sub_ensamblajes.push({ nombre: "", op_keys: [], multiplicador: 1 });
+  flujoDirty.value = true;
+}
+function quitarSubEnsamblaje(prod, idx) {
+  prod.sub_ensamblajes.splice(idx, 1);
+  flujoDirty.value = true;
+}
+function toggleSubEnsamblajeOp(s, opKey) {
+  const i = s.op_keys.indexOf(opKey);
+  if (i === -1) s.op_keys.push(opKey); else s.op_keys.splice(i, 1);
+  flujoDirty.value = true;
+}
 async function confirmarFlujo() {
   if (isNew.value) { showToast("Guarda el costeo primero", "error"); return; }
   advancing.value = true;
@@ -4809,6 +4925,14 @@ async function confirmarFlujo() {
     await call("costeo_yelke.api.costeo_api.guardar_flujo_operaciones", {
       costeo: docName.value, cambios: JSON.stringify(cambios), materiales: JSON.stringify(materiales),
     });
+    for (const prod of flujoOps.value) {
+      const filas = (prod.sub_ensamblajes || [])
+        .filter(s => (s.nombre || "").trim())
+        .map(s => ({ nombre: s.nombre.trim(), op_keys: s.op_keys, multiplicador: s.multiplicador || 1 }));
+      await call("costeo_yelke.api.costeo_api.guardar_subensamblajes", {
+        costeo: docName.value, producto: prod.finished_item, filas: JSON.stringify(filas),
+      });
+    }
     flujoDirty.value = false;
     manufacturaGuardada.value = true;
     const ok = await materializeArticulosIfNeeded();

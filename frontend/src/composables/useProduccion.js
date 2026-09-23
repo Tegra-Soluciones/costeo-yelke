@@ -1324,6 +1324,53 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     finally { advancing.value = false; }
   }
 
+  // Una entrega MÁS sobre una parada que ya tiene al menos una (ver
+  // parada_registrar_entrega) -- para cuando el taller entrega el trabajo en
+  // varias tandas ("olas") de un sub-ensamblaje físico distinto (puños,
+  // mangas...) que el costeo declaró (Flujo de Producción · "Sub-ensamblajes")
+  // o, si no declaró ninguno, con solo una referencia de texto libre. Crea su
+  // PROPIA Subcontracting Order -- no toca las anteriores.
+  const nuevaEntregaForm = reactive({ open: false, cantidad: null, sub_ensamblaje: "", referencia: "", loading: false });
+  function abrirNuevaEntrega() {
+    Object.assign(nuevaEntregaForm, { open: true, cantidad: null, sub_ensamblaje: "", referencia: "", loading: false });
+  }
+  function cerrarNuevaEntrega() {
+    nuevaEntregaForm.open = false;
+  }
+  async function confirmarNuevaEntrega() {
+    const parada = paradaActiva.value;
+    const lote = loteActivo.value;
+    if (!parada || !lote) return;
+    if (!nuevaEntregaForm.cantidad || nuevaEntregaForm.cantidad <= 0) {
+      showToast("Indica la cantidad de esta entrega", "error");
+      return;
+    }
+    nuevaEntregaForm.loading = true;
+    try {
+      await call("costeo_yelke.api.costeo_api.parada_registrar_entrega", {
+        plan: planDetail.value.name, lote_ref: lote.lote_ref, parada_id: parada.parada_id,
+        cantidad: nuevaEntregaForm.cantidad,
+        sub_ensamblaje: nuevaEntregaForm.sub_ensamblaje || null,
+        referencia: nuevaEntregaForm.sub_ensamblaje ? null : (nuevaEntregaForm.referencia || null),
+      });
+      cerrarNuevaEntrega();
+      await loadLotesProduccion();
+      const p2 = loteActivo.value?.paradas.find((x) => x.parada_id === parada.parada_id);
+      if (p2) await seleccionarParada(p2);
+      showToast("Entrega registrada");
+    } catch (e) { showToast(e.message || "No se pudo registrar la entrega", "error"); }
+    finally { nuevaEntregaForm.loading = false; }
+  }
+  // Clic en una entrega ya registrada: carga esa Subcontracting Order
+  // específica en el mismo detalle de siempre (Orden de subcontratación /
+  // Transferencia / Recibo) -- reusa selectSco tal cual, que ya resuelve
+  // cualquier SCO de la OC activa, no solo la primera. `subStepOpen` vive en
+  // la página (no en este composable), así que el clic real lo pone en "sco"
+  // aparte -- ver template.
+  async function verEntrega(entrega) {
+    await selectSco(entrega.sco);
+  }
+
   // ── Progreso general ──
   const prodComplete = reactive({ complete: false, total: 0, recibidas: 0, lotes_total: 0, lotes_recibidos: 0, pct_recibido: 0 });
   async function loadProdComplete(costeoName, salesOrder = null) {
@@ -1409,6 +1456,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     loteActivo, paradaActiva, tracksLote, paradaEstado,
     loadLotesProduccion, seleccionarLote, seleccionarParada, verParadaPo,
     abrirNuevoLote, cerrarNuevoLote, crearNuevoLote, abrirParada, siguienteParadaPendiente, generarOcLote,
+    nuevaEntregaForm, abrirNuevaEntrega, cerrarNuevaEntrega, confirmarNuevaEntrega, verEntrega,
     primeraEtapaQty, primeraEtapaLoading, primeraEtapaLimitado, sugerirPrimeraEtapaQty,
     crearRfqLote, crearSqLote,
     omGeneral, omCab, omDama, omProc, omTablas, omArchivos, omUploading, omEsMaestra,
