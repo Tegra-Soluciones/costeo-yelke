@@ -5108,17 +5108,33 @@ def get_lotes_produccion(plan: str) -> dict:
         materiales = materiales_por_lote.get(lote_ref)
         material_pos_lote = material_pos_by_lote.get(lote_ref, [])
 
-        # Cantidad real por producto en el lote: la qty de cualquiera de sus piezas
-        # (todas iguales dentro del lote) -- máx entre sus fg para no sumar paradas.
+        # Cantidad real por producto en el lote: se prefiere el fg TERMINAL (el que
+        # coincide exactamente con el producto -- op.is_terminal hace
+        # op.output_item = producto_terminado, ver _resolve_production_operations),
+        # que es la única cifra que de verdad representa "piezas terminadas del
+        # lote". Los demás fg (de etapas intermedias) son contadores propios de esa
+        # etapa que pueden ACUMULAR de más con varias entregas/"olas" (ver
+        # parada_registrar_entrega) sin que eso signifique que el lote creció -- de
+        # ahí que ya NO se pueda usar el máximo entre todos los fg como antes (eso
+        # mostraría, ej., 3000 en vez de las 1000 piezas reales del lote en cuanto
+        # una etapa intermedia recibe 3 olas). Solo si el fg terminal todavía no
+        # tiene ninguna SCO (parada aún no abierta) se cae al máximo de las
+        # intermedias, nada más para no dejar la tarjeta en blanco.
         qty_por_fg = {}
         for s in scos_lote:
             for it in s["items"]:
                 qty_por_fg[it["item_code"]] = qty_por_fg.get(it["item_code"], 0) + flt(it["qty"])
-        qty_por_prod = {}
+        qty_por_prod, qty_por_prod_fallback = {}, {}
         for fg, q in qty_por_fg.items():
             pr = _producto_de_fg(fg, pts_costeo)
-            if pr:
-                qty_por_prod[pr] = max(qty_por_prod.get(pr, 0), round(q))
+            if not pr:
+                continue
+            if fg == pr:
+                qty_por_prod[pr] = round(q)
+            else:
+                qty_por_prod_fallback[pr] = max(qty_por_prod_fallback.get(pr, 0), round(q))
+        for pr, q in qty_por_prod_fallback.items():
+            qty_por_prod.setdefault(pr, q)
 
         # Estructura de paradas: si aún no hay SCO (lote de material), todos los
         # productos del costeo (cantidad 0) para mostrar qué talleres hará falta.
@@ -6471,22 +6487,65 @@ def lote_abrir(plan: str, lote_ref: str, cantidades=None, schedule_date: str = N
     return {"ok": not errores, "creadas": creadas, "saltadas": saltadas, "errores": errores}
 
 
+def _parada_entregas_registradas(po, lote_ref, fg_items):
+    """Entregas (SCO Item) ya registradas de esta parada -- mismo `po` + `lote_ref`,
+    filtradas a los `fg_items` de la parada -- ordenadas de más antigua a más
+    reciente. Cada elemento: {"item_code", "qty", "creation", "sco"}."""
+    scos = frappe.get_all(
+        "Subcontracting Order",
+        filters={"purchase_order": po, "lote_ref": lote_ref, "docstatus": ["<", 2]},
+        fields=["name", "creation"], order_by="creation asc",
+    )
+    if not scos:
+        return []
+    creation_por_sco = {s.name: s.creation for s in scos}
+    items = frappe.get_all(
+        "Subcontracting Order Item",
+        filters={"parent": ["in", [s.name for s in scos]], "item_code": ["in", fg_items]},
+        fields=["parent", "item_code", "qty"],
+    )
+    for it in items:
+        it["sco"] = it.pop("parent")
+        it["creation"] = creation_por_sco[it["sco"]]
+    items.sort(key=lambda it: it["creation"])
+    return items
+
+
 def _ampliar_oc_raiz(po_doc, faltante):
-    """Amplía `fg_item_qty` de las líneas de la OC raíz de maquila que ya no
-    alcanzan para una entrega nueva -- `faltante` = {fg_item: cantidad_extra}.
-    `fg_item_qty` es solo un contador de seguimiento (cuántas piezas de esa
-    pieza representa la línea, ver _po_subcontratacion_lineas) -- no participa
-    en importes/impuestos, así que se escribe directo por DB en vez de pasar
-    por doc.save() (el campo no es allow_on_submit nativo de ERPNext, y no
-    hace falta re-disparar todo el validate() de la Purchase Order solo para
-    subir este contador)."""
-    for it in po_doc.items:
-        extra = faltante.get(it.fg_item)
-        if extra:
-            frappe.db.set_value(
-                "Purchase Order Item", it.name, "fg_item_qty",
-                flt(it.fg_item_qty) + extra, update_modified=False,
-            )
+    """INTENTO DE DISEÑO ORIGINAL, PROBADO EN VIVO Y DESCARTADO -- se deja
+    documentado para no repetir el mismo intento.
+
+    La idea era: cuando el saldo pendiente de la OC raíz ya no alcanza para
+    una entrega nueva (una parada visitada por varias "olas"), subirle la
+    cantidad a esa misma OC. Primer intento: escribir `fg_item_qty` (nuestro
+    contador propio) directo por DB -- FALLA, porque ERPNext decide "OC
+    completamente subcontratada" (make_subcontracting_order -> "This PO has
+    been fully subcontracted") mirando `Purchase Order Item.qty` (la cantidad
+    de SERVICIO nativa), no `fg_item_qty`. Segundo intento: usar también el
+    mecanismo nativo de "Actualizar artículos" (`update_child_qty_rate`) para
+    subir `qty` -- FALLA IGUAL, con un candado más profundo y sin excepción:
+    `Purchase Order.can_update_items()` (erpnext/buying/doctype/purchase_order/
+    purchase_order.py) responde False para CUALQUIER OC de subcontratación
+    (flujo nuevo) en cuanto tiene UNA SOLA Subcontracting Order creada contra
+    ella -- sin importar si esa SCO ya se transfirió/consumió o no. Como
+    `parada_registrar_entrega` solo se llama sobre paradas de un lote YA
+    ABIERTO (que por definición ya tiene al menos una SCO), este camino está
+    permanentemente cerrado, no es un caso raro.
+
+    Conclusión: ampliar la OC raíz in-place NO es viable con las herramientas
+    nativas de ERPNext. La alternativa (crear una OC de ampliación NUEVA, chica,
+    que pase por el mismo flujo de doble validación Revisor/Aprobador que
+    cualquier OC de maquila) es un cambio de diseño con una decisión de negocio
+    real (¿se auto-valida esa OC nueva para no frenar el registro de la
+    entrega, saltándose el control de aprobación, o se deja en borrador y la
+    entrega espera a que alguien la apruebe?) -- pendiente de decidir con el
+    usuario antes de implementarla. Mientras tanto, ver el `frappe.throw` en
+    `parada_registrar_entrega` que explica esta limitación con claridad en vez
+    de dejar pasar un error crudo de ERPNext."""
+    raise NotImplementedError(
+        "Ampliar la OC raíz in-place no es viable (ver docstring) -- pendiente de "
+        "decisión de diseño (OC de ampliación + su flujo de aprobación)."
+    )
 
 
 @frappe.whitelist()
@@ -6509,10 +6568,18 @@ def parada_registrar_entrega(plan: str, lote_ref: str, parada_id: str, cantidad:
     una parada visitada por varias "olas" (ej. Reflejante, si por ahí pasan
     puños + espaldas + frentes) termina procesando varias veces esa cantidad.
     Como no se sabe de antemano cuántas olas tocarán cada parada (varía según
-    la carga real del proveedor), si la cantidad pedida excede el saldo
-    pendiente de la OC raíz para esa pieza, se AMPLÍA sola esa OC lo necesario
-    (ver _ampliar_oc_raiz) -- transparente, el usuario nunca tiene que tocar
-    la OC a mano."""
+    la carga real del proveedor), en teoría convendría ampliar sola la OC raíz
+    cuando el saldo pendiente para esa pieza no alcance -- PROBADO EN VIVO que
+    eso no es viable con las herramientas nativas de ERPNext (ver docstring de
+    _ampliar_oc_raiz): por ahora, si la cantidad pedida excede el saldo
+    pendiente, esta función avisa con claridad y NO registra la entrega --
+    pendiente de decisión de diseño antes de poder automatizarlo.
+
+    EXCEPCIÓN: una parada TERMINAL (es_terminal -- la que entrega el artículo
+    terminado) sí tiene un tope real, y esta función lo hace cumplir: entre
+    TODAS sus entregas no puede acumular más piezas que las ya definidas para
+    el lote (ver _parada_entregas_registradas) -- no existe una "ola" legítima
+    ahí, terminar de más sería un error."""
     if not lote_ref or not parada_id:
         frappe.throw(_("Indica el lote y la parada."))
     cantidad = round(flt(cantidad))
@@ -6548,6 +6615,42 @@ def parada_registrar_entrega(plan: str, lote_ref: str, parada_id: str, cantidad:
         primero = next(iter(cantidades))
         cantidades[primero] += diff
 
+    # Tope real: una parada TERMINAL (la que entrega el artículo terminado, ver
+    # es_terminal en _lote_paradas) no puede acumular entre TODAS sus entregas
+    # más piezas que las ya definidas para este lote -- a diferencia de una
+    # parada intermedia (que sí puede recibir varias "olas" de sub-ensamblaje
+    # distintas y acumular de más, ver docstring de esta función), aquí no
+    # existe una "ola siguiente" legítima: terminar más prendas de las que el
+    # lote dice que va a producir sería un error real. "Ya definidas para el
+    # lote" = lo que trae su entrega más antigua (normalmente la que crea
+    # lote_abrir al abrir el lote con la cantidad total) -- fg_item de una
+    # parada terminal es igual al producto terminado (op.is_terminal ->
+    # op.output_item = producto_terminado), así que basta comparar por fg.
+    if parada.es_terminal:
+        registradas = _parada_entregas_registradas(parada.po, lote_ref, parada.fg_items)
+        if registradas:
+            nominal_por_fg, acumulado_por_fg = {}, {}
+            for it in registradas:
+                nominal_por_fg.setdefault(it["item_code"], flt(it["qty"]))
+                acumulado_por_fg[it["item_code"]] = acumulado_por_fg.get(it["item_code"], 0) + flt(it["qty"])
+            excedidos = []
+            for fg in parada.fg_items:
+                pedido = flt(cantidades.get(_producto_de_fg(fg, pts) or fg, 0))
+                if not pedido or fg not in nominal_por_fg:
+                    continue
+                nominal, ya = nominal_por_fg[fg], acumulado_por_fg.get(fg, 0)
+                if ya + pedido > nominal + 0.5:
+                    nombre = frappe.db.get_value("Item", fg, "item_name") or fg
+                    excedidos.append(
+                        _("{0}: ya lleva {1} de {2} piezas ya definidas para este lote -- "
+                          "esta entrega dejaría {3}.").format(nombre, cint(ya), cint(nominal), cint(ya + pedido))
+                    )
+            if excedidos:
+                frappe.throw(
+                    _("Esta parada es el paso final del flujo (entrega el artículo terminado) -- "
+                      "no puede pasar de la cantidad ya definida para el lote:") + "<br>" + "<br>".join(excedidos)
+                )
+
     po_doc = frappe.get_doc("Purchase Order", parada.po)
     saldo_fg = _po_saldo_por_fg(po_doc)
     faltante = {}
@@ -6558,7 +6661,26 @@ def parada_registrar_entrega(plan: str, lote_ref: str, parada_id: str, cantidad:
         if necesita > disponible + 0.001:
             faltante[fg] = necesita - disponible
     if faltante:
-        _ampliar_oc_raiz(po_doc, faltante)
+        # NO se puede ampliar la OC raíz in-place -- probado en vivo, ver
+        # docstring de _ampliar_oc_raiz: ERPNext bloquea cualquier cambio de
+        # cantidad en una OC de subcontratación en cuanto tiene una sola
+        # Subcontracting Order creada contra ella, y una parada de un lote ya
+        # abierto siempre tiene al menos una. Pendiente de decisión de diseño
+        # (crear una OC de ampliación nueva + decidir si se auto-valida o pasa
+        # por el flujo normal de Revisor/Aprobador) -- mientras tanto se avisa
+        # con claridad en vez de dejar pasar el ValidationError crudo de
+        # ERPNext ("This PO has been fully subcontracted").
+        piezas = ", ".join(
+            f"{frappe.db.get_value('Item', fg, 'item_name') or fg} (faltan {cint(qty)})"
+            for fg, qty in faltante.items()
+        )
+        frappe.throw(
+            _("Esta entrega necesita más piezas de las que la orden de compra de maquila "
+              "{0} tiene disponibles todavía: {1}. Ampliar esa orden automáticamente no es "
+              "posible con el mecanismo actual -- pídele a quien lleva el sistema que revise "
+              "cómo dar de alta la cantidad extra antes de registrar esta entrega.")
+            .format(parada.po, piezas)
+        )
 
     r = sub_crear_sco(
         parada.po, cantidades=cantidades, fg_items=parada.fg_items,
