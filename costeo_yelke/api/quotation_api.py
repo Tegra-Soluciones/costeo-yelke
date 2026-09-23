@@ -247,6 +247,9 @@ def save_quotation(data):
         row.uom                = r.get("uom") or ""
         row.conversion_factor  = float(r.get("conversion_factor") or 1)
         row.rate               = float(r.get("rate") or 0)
+        # price_list_rate = rate a propósito -- ver el mismo comentario en
+        # sales_order_api.save_sales_order.
+        row.price_list_rate    = float(r.get("price_list_rate") or r.get("rate") or 0)
         row.discount_percentage = float(r.get("discount_percentage") or 0)
         row.warehouse          = r.get("warehouse") or ""
 

@@ -225,6 +225,13 @@ def save_sales_order(data):
         row.uom               = r.get("uom") or ""
         row.conversion_factor = float(r.get("conversion_factor") or 1)
         row.rate              = float(r.get("rate") or 0)
+        # price_list_rate = rate a propósito -- si se deja en blanco,
+        # set_missing_values() lo llena solo desde la lista de precios real
+        # del Item, que casi nunca coincide con el rate que se mandó aquí; la
+        # diferencia sale impresa como un "Descuento" (o un descuento
+        # NEGATIVO si el rate es mayor -- un sobrecosto se ve como rebaja
+        # rara). Mismo criterio que ya usa costeo_api._venta_items_para_producto.
+        row.price_list_rate   = float(r.get("price_list_rate") or r.get("rate") or 0)
         row.discount_percentage = float(r.get("discount_percentage") or 0)
         row.warehouse         = r.get("warehouse") or ""
         row.delivery_date     = r.get("delivery_date") or doc.delivery_date or add_days(nowdate(), 7)
