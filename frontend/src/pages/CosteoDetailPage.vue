@@ -925,13 +925,12 @@
                        quiere. Se refleja en el Costeo hasta Validar esta orden. -->
                   <div v-if="so.docstatus === 0 && variantesDelCosteo.length" class="pt-3 mt-2 border-t border-surface-border">
                     <p class="text-[12.5px] font-semibold text-ink mb-0.5">Cantidades confirmadas por talla</p>
-                    <p class="text-[11px] text-ink-muted mb-2">Ajusta la cantidad real que confirmó el cliente, o desmárcala si ya no la quiere. Se actualiza en el Costeo al Validar esta orden.</p>
+                    <p class="text-[11px] text-ink-muted mb-2">Ajusta la cantidad real que confirmó el cliente. Pon 0 para quitarla del pedido -- se actualiza en el Costeo al Validar esta orden.</p>
                     <div v-if="soVariantesLoading" class="text-[12px] text-ink-light py-2 text-center">Cargando…</div>
                     <div v-else class="space-y-1.5">
                       <label v-for="v in soVariantesForm" :key="v.item_code" class="flex items-center gap-2">
-                        <input type="checkbox" v-model="v.incluida" class="flex-shrink-0" />
-                        <span class="flex-1 text-[12.5px] text-ink truncate" :class="{ 'text-ink-light': !v.incluida }" :title="v.talla_grupo_label">{{ v.talla_grupo_label }}</span>
-                        <input v-model.number="v.qty" type="number" min="0" step="1" class="field-input w-20 text-xs py-1" :disabled="!v.incluida" />
+                        <span class="flex-1 text-[12.5px] text-ink truncate" :class="{ 'text-ink-light': !v.qty }" :title="v.talla_grupo_label">{{ v.talla_grupo_label }}</span>
+                        <input v-model.number="v.qty" type="number" min="0" step="1" class="field-input w-20 text-xs py-1" />
                       </label>
                     </div>
                     <button
@@ -2848,8 +2847,7 @@ async function loadSoVariantesForm(so) {
       return {
         item_code: p.finished_item,
         talla_grupo_label: p.talla_grupo_label || p.finished_item,
-        incluida: !!linea,
-        qty: linea ? linea.qty : (p.qty || 1),
+        qty: linea ? linea.qty : 0,
         rate: linea ? linea.rate : (p.unit_sales_price || 0),
       };
     });
@@ -2876,14 +2874,19 @@ async function guardarVariantesOV(so) {
         rate: it.rate, discount_percentage: it.discount_percentage,
         warehouse: it.warehouse, delivery_date: it.delivery_date,
       }));
+    // Almacén de referencia para una variante que se agrega por primera vez --
+    // el mismo de cualquier otra línea ya presente (todas entregan del mismo
+    // almacén). set_missing_values() no lo completa solo en un save() sobre un
+    // documento ya existente (a diferencia de un insert() nuevo), así que hay
+    // que mandarlo explícito o la línea nueva queda sin almacén y truena.
+    const almacenRef = items[0]?.warehouse || "";
     for (const v of soVariantesForm.value) {
-      if (!v.incluida) continue; // se deja fuera -- el cliente no la quiere
-      if (!(Number(v.qty) > 0)) {
-        showToast(`Indica una cantidad mayor a 0 para "${v.talla_grupo_label}", o desmárcala`, "error");
-        soVariantesSaving.value = false;
-        return;
-      }
-      items.push({ item_code: v.item_code, qty: v.qty, rate: v.rate });
+      if (!(Number(v.qty) > 0)) continue; // 0 (o vacío) = se quita del pedido
+      // delivery_date explícito por la misma razón: si se omite,
+      // save_sales_order cae a doc.delivery_date, que es un objeto fecha (no
+      // texto) -- mezclado con las demás líneas (que sí traen fecha en
+      // texto) hace tronar la validación nativa de ERPNext.
+      items.push({ item_code: v.item_code, qty: v.qty, rate: v.rate, warehouse: almacenRef, delivery_date: data.delivery_date });
     }
     await call("costeo_yelke.api.sales_order_api.save_sales_order", {
       data: JSON.stringify({ name: so.name, items }),
