@@ -939,10 +939,7 @@
                         <div v-if="v.qty && v.tallas.length > 1" class="mt-1 ml-3 pl-2 border-l-2 border-surface-border space-y-1">
                           <div v-for="t in v.tallas" :key="t" class="flex items-center gap-2">
                             <span class="flex-1 text-[11.5px] text-ink-muted">{{ t }}</span>
-                            <input
-                              v-model.number="v.desglose[t]" type="number" min="0" :max="maxDesglose(v, t)" step="1"
-                              class="field-input w-16 text-xs py-0.5" @input="onDesgloseInput(v, t)"
-                            />
+                            <input v-model.number="v.desglose[t]" type="number" min="0" step="1" class="field-input w-16 text-xs py-0.5" />
                           </div>
                           <p class="text-[10.5px]" :class="Object.values(v.desglose).reduce((a,b)=>a+(Number(b)||0),0) === v.qty ? 'text-ink-light' : 'text-amber-600'">
                             Suma: {{ Object.values(v.desglose).reduce((a,b)=>a+(Number(b)||0),0) }} / {{ v.qty }}
@@ -2920,18 +2917,6 @@ async function loadSoVariantesForm(so) {
   } finally {
     soVariantesLoading.value = false;
   }
-}
-
-// Tope de cada input de desglose = lo que le queda a la cantidad total una
-// vez restadas las demás tallas del mismo grupo -- así nunca se puede
-// escribir un número que haga pasarse de la cantidad de la línea.
-function maxDesglose(v, talla) {
-  const otras = v.tallas.filter(t => t !== talla).reduce((a, t) => a + (Number(v.desglose[t]) || 0), 0);
-  return Math.max(0, Number(v.qty) - otras);
-}
-function onDesgloseInput(v, talla) {
-  const max = maxDesglose(v, talla);
-  if (Number(v.desglose[talla]) > max) v.desglose[talla] = max;
 }
 
 async function guardarVariantesOV(so) {
