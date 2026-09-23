@@ -2925,14 +2925,15 @@ async function loadSoVariantesForm(so) {
 }
 
 async function guardarVariantesOV(so) {
-  // La suma del desglose nunca puede pasarse de la cantidad total de esa
-  // línea -- no tendría sentido reportar más piezas por talla de las que
-  // en realidad se están vendiendo.
+  // La suma del desglose debe coincidir EXACTO con la cantidad total de esa
+  // línea -- ni de más (piezas que no se están vendiendo) ni de menos
+  // (piezas sin talla asignada).
   for (const v of soVariantesForm.value) {
     if (v.tallas.length <= 1) continue;
     const suma = Object.values(v.desglose).reduce((a, b) => a + (Number(b) || 0), 0);
-    if (suma > Number(v.qty)) {
-      showToast(`El desglose de "${v.talla_grupo_label}" suma ${suma}, más que la cantidad total (${v.qty})`, "error");
+    if (suma !== Number(v.qty)) {
+      const relacion = suma > Number(v.qty) ? "más" : "menos";
+      showToast(`El desglose de "${v.talla_grupo_label}" suma ${suma}, ${relacion} que la cantidad total (${v.qty})`, "error");
       return;
     }
   }
