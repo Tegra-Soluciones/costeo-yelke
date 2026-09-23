@@ -1194,7 +1194,7 @@
 
         <p v-if="!prod.operaciones.length" class="text-[12px] text-ink-light py-2">Sin servicios de manufactura en el costeo.</p>
 
-        <div v-else>
+        <div v-else class="lg:grid lg:gap-6 lg:items-start" :class="prod.operaciones.length > 1 ? 'lg:grid-cols-[1fr_340px]' : ''">
           <TransitionGroup tag="div" name="flujo-card" class="space-y-2">
             <div
               v-for="(op, idx) in prod.operaciones" :key="op.op_key"
@@ -1316,53 +1316,70 @@
               </div>
             </div>
           </TransitionGroup>
-        </div>
 
-        <!-- Sub-ensamblajes: solo tiene sentido con 2+ pasos -- son las "tandas"
-             físicas (puños, mangas...) que un mismo lote puede entregar por
-             separado, cada una por un subconjunto distinto de estos pasos (ver
-             Costeo Sub Ensamblaje / _multiplicador_por_operacion). No crea
-             ningún Artículo -- solo le dice al sistema cuántas veces de verdad
-             se repite el servicio de cada paso intermedio, para que su OC de
-             maquila nazca ya con la capacidad correcta. -->
-        <div v-if="prod.operaciones.length > 1" class="mt-4 pt-4 border-t border-surface-border">
-          <div class="flex items-center justify-between mb-1.5">
-            <span class="text-[12px] font-medium text-ink-muted">Sub-ensamblajes</span>
-            <button type="button" class="text-[11px] text-brand-600 hover:text-brand-700" @click="agregarSubEnsamblaje(prod)">+ agregar</button>
-          </div>
-          <p v-if="!prod.sub_ensamblajes.length" class="text-[11px] text-ink-light leading-relaxed">
-            Ninguno declarado -- úsalo solo si este producto se entrega en varias tandas físicas distintas (puños, mangas, cuellos...) que pasan por caminos distintos del flujo.
-          </p>
-          <div v-else class="space-y-2">
-            <div v-for="(s, si) in prod.sub_ensamblajes" :key="si" class="rounded-lg ring-1 ring-surface-border p-2">
-              <div class="flex items-center gap-2">
-                <input
-                  v-model="s.nombre" type="text" placeholder="Ej. Puños"
-                  class="flex-1 min-w-0 text-[12px] px-2 py-1 rounded-md ring-1 ring-inset ring-surface-border focus:ring-brand-400 focus:outline-none"
-                  @input="flujoDirty = true"
-                />
-                <button type="button" class="mini-icon-btn flex-shrink-0" title="Quitar" @click="quitarSubEnsamblaje(prod, si)">
-                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-                </button>
-              </div>
-              <div class="flex flex-wrap gap-1.5 mt-1.5">
-                <button
-                  v-for="op in prod.operaciones.filter(o => !terminalKeysVivo(prod).includes(o.op_key))" :key="op.op_key"
-                  type="button"
-                  class="text-[11px] px-2 py-1 rounded-full transition-colors"
-                  :class="s.op_keys.includes(op.op_key) ? 'bg-brand-50 text-brand-700 ring-1 ring-brand-200' : 'bg-surface-raised text-ink-muted ring-1 ring-transparent hover:ring-surface-border'"
-                  @click="toggleSubEnsamblajeOp(s, op.op_key)"
-                >{{ supplierLabel(prod, op) }}</button>
-                <span
-                  v-for="op in prod.operaciones.filter(o => terminalKeysVivo(prod).includes(o.op_key))" :key="op.op_key"
-                  class="text-[11px] px-2 py-1 rounded-full bg-surface-raised text-ink-light"
-                  title="Todo sub-ensamblaje llega hasta el paso final -- no hace falta marcarlo"
-                >{{ supplierLabel(prod, op) }} (siempre)</span>
-              </div>
+          <!-- Sub-ensamblajes: solo tiene sentido con 2+ pasos -- son las "tandas"
+               físicas (puños, mangas...) que un mismo lote puede entregar por
+               separado, cada una por un subconjunto distinto de estos pasos (ver
+               Costeo Sub Ensamblaje / _multiplicador_por_operacion). No crea
+               ningún Artículo -- solo le dice al sistema cuántas veces de verdad
+               se repite el servicio de cada paso intermedio, para que su OC de
+               maquila nazca ya con la capacidad correcta. Tabla: una fila por
+               sub-ensamblaje, una columna por paso -- el check marca por dónde
+               pasa. El paso final siempre aparece marcado y fijo (no hace falta
+               tocarlo: una prenda no se termina sin todas sus piezas). -->
+          <div v-if="prod.operaciones.length > 1" class="mt-4 lg:mt-0">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-[12px] font-medium text-ink-muted">Sub-ensamblajes</span>
+              <button type="button" class="text-[11px] text-brand-600 hover:text-brand-700" @click="agregarSubEnsamblaje(prod)">+ agregar</button>
+            </div>
+            <p v-if="!prod.sub_ensamblajes.length" class="text-[11px] text-ink-light leading-relaxed">
+              Ninguno declarado -- úsalo solo si este producto se entrega en varias tandas físicas distintas (puños, mangas, cuellos...) que pasan por caminos distintos del flujo.
+            </p>
+            <div v-else class="overflow-x-auto rounded-lg ring-1 ring-surface-border">
+              <table class="w-full text-[11px] border-collapse">
+                <thead>
+                  <tr class="bg-surface-raised">
+                    <th class="text-left font-medium text-ink-muted px-2 py-1.5">Sub-ensamblaje</th>
+                    <th v-for="op in prod.operaciones" :key="op.op_key" class="font-medium text-ink-muted px-1 py-1.5 text-center" :title="supplierLabel(prod, op)">
+                      <span class="block max-w-[54px] truncate mx-auto">{{ supplierLabel(prod, op) }}</span>
+                    </th>
+                    <th class="w-6"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(s, si) in prod.sub_ensamblajes" :key="si" class="border-t border-surface-border">
+                    <td class="px-2 py-1">
+                      <input
+                        v-model="s.nombre" type="text" placeholder="Ej. Puños"
+                        class="w-full min-w-[80px] text-[11.5px] px-1.5 py-1 rounded ring-1 ring-inset ring-surface-border focus:ring-brand-400 focus:outline-none"
+                        @input="flujoDirty = true"
+                      />
+                    </td>
+                    <td v-for="op in prod.operaciones" :key="op.op_key" class="text-center px-1 py-1">
+                      <button
+                        v-if="!terminalKeysVivo(prod).includes(op.op_key)"
+                        type="button"
+                        class="w-5 h-5 rounded flex items-center justify-center mx-auto transition-colors"
+                        :class="s.op_keys.includes(op.op_key) ? 'bg-brand-500 text-white' : 'ring-1 ring-inset ring-ink-xlight hover:ring-ink-light'"
+                        @click="toggleSubEnsamblajeOp(s, op.op_key)"
+                      >
+                        <svg v-if="s.op_keys.includes(op.op_key)" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                      </button>
+                      <span v-else class="flex items-center justify-center text-green-600" title="Todo sub-ensamblaje llega hasta el paso final -- no hace falta marcarlo">
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                      </span>
+                    </td>
+                    <td class="px-1 py-1">
+                      <button type="button" class="mini-icon-btn" title="Quitar" @click="quitarSubEnsamblaje(prod, si)">
+                        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
-
       </div>
 
       <div class="flex justify-end items-center gap-3 mt-8">
