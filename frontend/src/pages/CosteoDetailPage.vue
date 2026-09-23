@@ -939,7 +939,10 @@
                         <div v-if="v.qty && v.tallas.length > 1" class="mt-1 ml-3 pl-2 border-l-2 border-surface-border space-y-1">
                           <div v-for="t in v.tallas" :key="t" class="flex items-center gap-2">
                             <span class="flex-1 text-[11.5px] text-ink-muted">{{ t }}</span>
-                            <input v-model.number="v.desglose[t]" type="number" min="0" step="1" class="field-input w-16 text-xs py-0.5" />
+                            <input
+                              v-model.number="v.desglose[t]" type="number" min="0" :max="maxDesglose(v, t)" step="1"
+                              class="field-input w-16 text-xs py-0.5" @input="onDesgloseInput(v, t)"
+                            />
                           </div>
                           <p class="text-[10.5px]" :class="Object.values(v.desglose).reduce((a,b)=>a+(Number(b)||0),0) === v.qty ? 'text-ink-light' : 'text-amber-600'">
                             Suma: {{ Object.values(v.desglose).reduce((a,b)=>a+(Number(b)||0),0) }} / {{ v.qty }}
@@ -2846,6 +2849,25 @@ function toggleSalesOrder(so) {
 // Las variantes de talla de este Costeo ya están cargadas en `productos` --
 // no hace falta pedirlas aparte al servidor.
 const variantesDelCosteo = computed(() => productos.value.filter(p => p.variante_talla_de));
+
+// La descripción guardada trae líneas "- <talla> × <qty> pza(s)" (ver
+// costeo_api._build_variante_description) -- se usan para RECUPERAR el
+// desglose que el usuario ya había guardado, en vez de perderlo cada vez que
+// se recarga el formulario. Devuelve null si no encuentra nada reconocible
+// (variante recién agregada, todavía sin desglose guardado).
+function parseDesgloseDeDescripcion(description, tallas) {
+  if (!description) return null;
+  const encontrado = {};
+  let algo = false;
+  for (const t of tallas) {
+    const escapado = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const m = description.match(new RegExp(`-\\s*${escapado}\\s*×\\s*([\\d.]+)\\s*pza`));
+    if (m) { encontrado[t] = Number(m[1]); algo = true; }
+  }
+  if (!algo) return null;
+  for (const t of tallas) if (!(t in encontrado)) encontrado[t] = 0;
+  return encontrado;
+}
 const soVariantesForm = ref([]);
 const soVariantesLoading = ref(false);
 const soVariantesSaving = ref(false);
@@ -2863,17 +2885,24 @@ async function loadSoVariantesForm(so) {
       const linea = porItem[v.finished_item];
       const qty = linea ? linea.qty : 0;
       const tallas = v.tallas || [];
-      // Reparto inicial parejo entre las tallas individuales del grupo --
-      // solo sirve de punto de partida, el usuario lo ajusta a mano; nunca
-      // se guarda nada si el grupo es de una sola talla (no hay nada que
-      // desglosar).
+      // El desglose no tiene un campo propio donde vivir -- se recupera de
+      // la descripción ya guardada (que es justo el desglose en texto, ver
+      // _build_variante_description), para no perder lo que el usuario
+      // ajustó a mano cada vez que se recarga este formulario tras guardar.
+      // Solo si no hay nada que recuperar (variante nueva, sin guardar
+      // todavía) se arranca con un reparto parejo de punto de partida.
       const desglose = {};
       if (tallas.length > 1) {
-        const base = Math.floor(qty / tallas.length);
-        let resto = Math.round(qty) - base * tallas.length;
-        for (const t of tallas) {
-          desglose[t] = base + (resto > 0 ? 1 : 0);
-          if (resto > 0) resto--;
+        const recuperado = parseDesgloseDeDescripcion(linea?.description, tallas);
+        if (recuperado) {
+          Object.assign(desglose, recuperado);
+        } else {
+          const base = Math.floor(qty / tallas.length);
+          let resto = Math.round(qty) - base * tallas.length;
+          for (const t of tallas) {
+            desglose[t] = base + (resto > 0 ? 1 : 0);
+            if (resto > 0) resto--;
+          }
         }
       }
       return {
@@ -2893,7 +2922,30 @@ async function loadSoVariantesForm(so) {
   }
 }
 
+// Tope de cada input de desglose = lo que le queda a la cantidad total una
+// vez restadas las demás tallas del mismo grupo -- así nunca se puede
+// escribir un número que haga pasarse de la cantidad de la línea.
+function maxDesglose(v, talla) {
+  const otras = v.tallas.filter(t => t !== talla).reduce((a, t) => a + (Number(v.desglose[t]) || 0), 0);
+  return Math.max(0, Number(v.qty) - otras);
+}
+function onDesgloseInput(v, talla) {
+  const max = maxDesglose(v, talla);
+  if (Number(v.desglose[talla]) > max) v.desglose[talla] = max;
+}
+
 async function guardarVariantesOV(so) {
+  // La suma del desglose nunca puede pasarse de la cantidad total de esa
+  // línea -- no tendría sentido reportar más piezas por talla de las que
+  // en realidad se están vendiendo.
+  for (const v of soVariantesForm.value) {
+    if (v.tallas.length <= 1) continue;
+    const suma = Object.values(v.desglose).reduce((a, b) => a + (Number(b) || 0), 0);
+    if (suma > Number(v.qty)) {
+      showToast(`El desglose de "${v.talla_grupo_label}" suma ${suma}, más que la cantidad total (${v.qty})`, "error");
+      return;
+    }
+  }
   soVariantesSaving.value = true;
   try {
     const data = await call("costeo_yelke.api.sales_order_api.get_sales_order", { name: so.name });
