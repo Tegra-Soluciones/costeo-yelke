@@ -630,6 +630,11 @@ def crear_variante_talla(costeo: str, producto_base: str, genero: str = None, ta
         for k in _CHILD_ROW_SYSTEM_FIELDS:
             data.pop(k, None)
         data["producto_terminado"] = nuevo_item.name
+        # clonado_de_stage_id: el stage_id ORIGINAL de la base (antes de
+        # remapear) -- es lo que le permite a guardar_flujo_operaciones
+        # encontrar esta fila cuando alguien edita la operación equivalente
+        # en el producto base y propagarle el mismo cambio.
+        data["clonado_de_stage_id"] = e.stage_id
         data["stage_id"] = stage_id_map.get(e.stage_id) or frappe.generate_hash(length=10)
         recibe_de_viejos = [s.strip() for s in (e.recibe_de or "").split(",") if s.strip()]
         data["recibe_de"] = ",".join(stage_id_map.get(s, s) for s in recibe_de_viejos)
@@ -647,6 +652,8 @@ def crear_variante_talla(costeo: str, producto_base: str, genero: str = None, ta
         for k in _CHILD_ROW_SYSTEM_FIELDS:
             data.pop(k, None)
         data["finished_item"] = nuevo_item.name
+        # clonado_de_material_id: mismo criterio que clonado_de_stage_id arriba.
+        data["clonado_de_material_id"] = d.material_id
         data["material_id"] = material_id_map.get(d.material_id) or frappe.generate_hash(length=10)
         if d.etapa:
             data["etapa"] = stage_id_map.get(d.etapa, d.etapa)
@@ -1222,6 +1229,14 @@ def get_flujo_operaciones(costeo: str) -> dict:
     }
 
     for producto in doc.costeo_producto:
+        # Una variante de talla nace como un CLON exacto del flujo de su
+        # producto base (mismos proveedores/servicios/grafo, ver
+        # crear_variante_talla) -- llenarlo aparte sería repetir el mismo
+        # trabajo. No se le muestra su propia tarjeta; guardar_flujo_operaciones
+        # le propaga los cambios que se hagan en la tarjeta de la base (ver
+        # clonado_de_stage_id/clonado_de_material_id).
+        if producto.get("variante_talla_de"):
+            continue
         fi = producto.finished_item
         if not fi:
             continue
@@ -1346,6 +1361,42 @@ def guardar_flujo_operaciones(costeo: str, cambios, materiales=None) -> dict:
     doc = frappe.get_doc("Costeo", costeo)
     por_stage = {e.get("stage_id"): e for e in doc.tabla_etapas_costeo if e.get("stage_id")}
 
+    # Una variante de talla no tiene su propia tarjeta en Flujo de Producción
+    # (ver get_flujo_operaciones) -- los cambios que aquí se guardan sobre el
+    # producto BASE se propagan solos a cada variante, vía la correspondencia
+    # que se guardó al clonar (clonado_de_stage_id/clonado_de_material_id,
+    # patch v0_2_33). `variante_stage_map[finished_item_variante]` traduce un
+    # stage_id de la BASE al stage_id correspondiente de ESA variante (mismo
+    # criterio para materiales).
+    variantes_por_base = {}
+    for p in doc.costeo_producto:
+        if p.get("variante_talla_de"):
+            variantes_por_base.setdefault(p.variante_talla_de, []).append(p.finished_item)
+
+    variante_stage_map = {}
+    for e in doc.tabla_etapas_costeo:
+        if e.get("clonado_de_stage_id"):
+            variante_stage_map.setdefault(e.producto_terminado, {})[e.clonado_de_stage_id] = e.stage_id
+
+    variante_material_map = {}
+    for d in doc.costeo_producto_detalle:
+        if d.get("clonado_de_material_id"):
+            variante_material_map.setdefault(d.finished_item, {})[d.clonado_de_material_id] = d.material_id
+
+    def _fila_variante_por_stage(finished_item_variante, base_stage_id):
+        sid_var = (variante_stage_map.get(finished_item_variante) or {}).get(base_stage_id)
+        if not sid_var:
+            return None
+        return por_stage.get(sid_var)
+
+    def _propagar_a_variantes(e_base, aplicar):
+        """`aplicar(fila_variante)` hace el mismo cambio que se le acaba de
+        hacer a `e_base`, ya traducido a los ids propios de esa variante."""
+        for fi_variante in variantes_por_base.get(e_base.producto_terminado, []):
+            fila_var = _fila_variante_por_stage(fi_variante, e_base.stage_id)
+            if fila_var:
+                aplicar(fila_var, variante_stage_map.get(fi_variante) or {})
+
     # op_key -> [stage_ids] de esa operación (para expandir 'recibe' y ubicar dónde escribir)
     op_stages = {}
     for producto in doc.costeo_producto:
@@ -1366,6 +1417,7 @@ def guardar_flujo_operaciones(costeo: str, cambios, materiales=None) -> dict:
             if e is not None and (e.etapa or "") != str(pos):
                 e.etapa = str(pos)
                 tocado = True
+                _propagar_a_variantes(e, lambda fila_var, _mapa, pos=pos: setattr(fila_var, "etapa", str(pos)))
 
     for c in cambios or []:
         sids = op_stages.get(c.get("op_key"), [])
@@ -1383,6 +1435,12 @@ def guardar_flujo_operaciones(costeo: str, cambios, materiales=None) -> dict:
             if recibe_expandido is not None and (e.recibe_de or "") != recibe_expandido:
                 e.recibe_de = recibe_expandido
                 tocado = True
+                tokens_base = [t for t in recibe_expandido.split(",") if t]
+
+                def _aplicar_recibe(fila_var, mapa, tokens_base=tokens_base):
+                    fila_var.recibe_de = ",".join(mapa.get(t, t) for t in tokens_base)
+
+                _propagar_a_variantes(e, _aplicar_recibe)
 
     if materiales is not None:
         mat_qty = {d.material_id: flt(d.internal_qty) for d in doc.costeo_producto_detalle if d.material_id}
@@ -1411,6 +1469,29 @@ def guardar_flujo_operaciones(costeo: str, cambios, materiales=None) -> dict:
                 doc.append("tabla_materiales_etapa", {"material_id": mid, "stage_id": target_sid, "qty": mat_qty.get(mid, 0)})
                 tocado = True
 
+            # Mismo cambio para el material_id/stage_id equivalente de cada
+            # variante del producto dueño de este material.
+            finished_item_material = next(
+                (d.finished_item for d in doc.costeo_producto_detalle if d.material_id == mid), None,
+            )
+            for fi_variante in variantes_por_base.get(finished_item_material, []):
+                mid_var = (variante_material_map.get(fi_variante) or {}).get(mid)
+                if not mid_var:
+                    continue
+                target_sid_var = None
+                if target_sid:
+                    target_sid_var = (variante_stage_map.get(fi_variante) or {}).get(target_sid)
+                row_var = next((r for r in doc.tabla_materiales_etapa if r.material_id == mid_var), None)
+                qty_var = next((flt(d.internal_qty) for d in doc.costeo_producto_detalle if d.material_id == mid_var), 0)
+                if not target_sid_var:
+                    if row_var:
+                        doc.tabla_materiales_etapa.remove(row_var)
+                elif row_var:
+                    row_var.stage_id = target_sid_var
+                    row_var.qty = qty_var
+                else:
+                    doc.append("tabla_materiales_etapa", {"material_id": mid_var, "stage_id": target_sid_var, "qty": qty_var})
+
     if tocado:
         doc.flags.ignore_permissions = True
         doc.save()
@@ -1436,9 +1517,18 @@ def toggle_no_agrupar(costeo: str, stage_id: str, no_agrupar) -> dict:
     servicio de ella."""
     if not frappe.db.exists("Etapas Costeo", {"parent": costeo, "stage_id": stage_id}):
         frappe.throw(_("No se encontró esa etapa en el costeo."))
+    valor = 1 if cint(no_agrupar) else 0
+    stage_ids = [stage_id]
+    # Propaga el mismo cambio a la etapa equivalente de cada variante de
+    # talla clonada de esa misma etapa (ver clonado_de_stage_id) -- una
+    # variante no tiene tarjeta propia en Flujo de Producción, así que este
+    # stage_id siempre viene de un producto base.
+    stage_ids += frappe.get_all(
+        "Etapas Costeo", filters={"parent": costeo, "clonado_de_stage_id": stage_id}, pluck="stage_id",
+    )
     frappe.db.set_value(
-        "Etapas Costeo", {"parent": costeo, "stage_id": stage_id},
-        "no_agrupar", 1 if cint(no_agrupar) else 0, update_modified=False,
+        "Etapas Costeo", {"parent": costeo, "stage_id": ["in", stage_ids]},
+        "no_agrupar", valor, update_modified=False,
     )
     frappe.db.commit()
     return get_flujo_operaciones(costeo)
