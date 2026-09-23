@@ -1,0 +1,62 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-09-23 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "producto_terminado",
+  "nombre",
+  "stage_ids",
+  "multiplicador"
+ ],
+ "fields": [
+  {
+   "allow_on_submit": 1,
+   "fieldname": "producto_terminado",
+   "fieldtype": "Data",
+   "label": "Producto Terminado"
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "Etiqueta libre para distinguir este sub-ensamblaje a simple vista (ej. \"Puños\", \"Mangas\") -- NO crea ni liga ningún Artículo, es puramente informativa/de cálculo (ver parada_registrar_entrega).",
+   "fieldname": "nombre",
+   "fieldtype": "Data",
+   "label": "Nombre",
+   "reqd": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "stage_id (Etapas Costeo) de las operaciones por las que SÍ pasa este sub-ensamblaje -- lista separada por comas, mismo formato que Etapas Costeo.recibe_de. La operación terminal se agrega sola al calcular (no hace falta incluirla aquí): una prenda no se termina sin todas sus piezas.",
+   "fieldname": "stage_ids",
+   "fieldtype": "Small Text",
+   "hidden": 1,
+   "label": "Etapas que toca"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "1",
+   "description": "Cuántas veces la cantidad del lote representa este sub-ensamblaje en las operaciones que toca -- casi siempre 1 (una entrega completa, igual que el lote). Solo cambia si un sub-ensamblaje en particular necesita otra proporción.",
+   "fieldname": "multiplicador",
+   "fieldtype": "Float",
+   "label": "Multiplicador",
+   "precision": "2"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-23 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Costeo Yelke",
+ "name": "Costeo Sub Ensamblaje",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -863,6 +863,47 @@ def _resolve_production_operations(etapas, producto=None):
     return resolved
 
 
+def _multiplicador_por_operacion(sub_ensamblajes, ops):
+    """{op_key: multiplicador} para dimensionar la OC raíz de cada operación
+    (ver Costeo Sub Ensamblaje / _build_stage_subcontracting_rows).
+
+    Sin sub-ensamblajes declarados (``sub_ensamblajes`` vacío/None) cada
+    operación regresa 1 -- comportamiento de siempre, cero cambio para
+    cualquier costeo que no use esto.
+
+    Con sub-ensamblajes declarados: cada operación NO terminal acumula el
+    ``multiplicador`` (normalmente 1) de todo sub-ensamblaje cuyo
+    ``stage_ids`` intersecte el ``member_stage_keys`` de esa operación --
+    ej. una operación de Reflejante tocada por 3 sub-ensamblajes (puños,
+    espaldas, frentes) acumula multiplicador 3, así su OC raíz nace
+    dimensionada para 3x la cantidad del lote en vez de 1x, y nunca se queda
+    sin saldo a media entrega (probado en vivo que ampliar una OC de
+    subcontratación in-place NO es viable con ERPNext una vez que tiene
+    alguna Subcontracting Order creada).
+
+    La operación TERMINAL SIEMPRE es 1 -- por más sub-ensamblajes que la
+    toquen (para eso están, para juntarse ahí), el taller de confección
+    arma UNA prenda terminada por cada pieza del lote, no una vez por cada
+    sub-ensamblaje que recibe (a diferencia de una operación intermedia,
+    que sí repite su servicio una vez por cada ola que le toca). Que un
+    sub-ensamblaje "siempre llegue" a la operación terminal es un asunto de
+    membresía/validación (ver _parada_stage_ids en costeo_api.py), no de
+    tamaño de OC."""
+    if not sub_ensamblajes:
+        return {op.op_key: 1.0 for op in ops}
+    filas = []
+    for s in sub_ensamblajes:
+        ids = {x.strip() for x in (s.get("stage_ids") or "").split(",") if x.strip()}
+        filas.append((ids, flt(s.get("multiplicador")) or 1.0))
+    out = {}
+    for op in ops:
+        if op.is_terminal:
+            out[op.op_key] = 1.0
+        else:
+            out[op.op_key] = sum(m for ids, m in filas if ids & op.member_stage_keys) or 1.0
+    return out
+
+
 def _get_finished_qty_map(source):
     qty_map = {}
     for row in source.get("costeo_producto") or []:
@@ -1077,19 +1118,36 @@ def _build_stage_subcontracting_rows(source, qty_map_override=None):
         if producto:
             etapas_por_producto.setdefault(producto, []).append(frappe._dict(row))
 
+    # Sub-ensamblajes declarados por producto (ver Costeo Sub Ensamblaje) -- sin
+    # ninguno, _multiplicador_por_operacion regresa 1 para toda operación
+    # (comportamiento de siempre).
+    subensamblajes_por_producto = {}
+    for row in source.get("tabla_subensamblajes_costeo") or []:
+        producto = row.get("producto_terminado")
+        if producto:
+            subensamblajes_por_producto.setdefault(producto, []).append(row)
+
     for producto_terminado, etapas in etapas_por_producto.items():
         if qty_map_override is not None and producto_terminado not in qty_map_override:
             # Con override (plan de una OV específica), un producto que no está en el
             # mapa simplemente no es parte de ESA OV -- se omite en vez de caer al
             # default de 1, que generaría una OC de subcontratación fantasma.
             continue
-        fg_qty = qty_map.get(producto_terminado) or 1
+        fg_qty_base = qty_map.get(producto_terminado) or 1
         operaciones = _resolve_production_operations(etapas, producto_terminado)
+        multiplicadores = _multiplicador_por_operacion(
+            subensamblajes_por_producto.get(producto_terminado), operaciones
+        )
 
         for op in operaciones:
             servicios = [s for s in op.servicios if s.get("service_item")]
             if not op.supplier or not servicios:
                 continue
+
+            # Una operación tocada por varios sub-ensamblajes (ej. Reflejante por
+            # puños+espaldas+frentes) necesita su OC raíz dimensionada para TODAS
+            # esas olas de una vez -- ver _multiplicador_por_operacion.
+            fg_qty = fg_qty_base * multiplicadores.get(op.op_key, 1.0)
 
             finished_good = op.output_item
 

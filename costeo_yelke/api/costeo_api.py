@@ -1212,7 +1212,14 @@ def get_flujo_operaciones(costeo: str) -> dict:
     atribuye sola al/los paso(s) sin 'recibe de' -- ver crear_boms_spa). Asignar un
     material a una operación es lo único que le da a un paso, además de lo que
     reciba de un paso anterior, su propio insumo directo (ej. botones que le
-    llegan al taller de confección aparte de la pieza ya bordada que recibe)."""
+    llegan al taller de confección aparte de la pieza ya bordada que recibe).
+
+    Y "sub_ensamblajes": [{name, nombre, op_keys, multiplicador}] -- declaración
+    opcional de sub-ensamblajes físicos (ver Costeo Sub Ensamblaje) que un mismo
+    lote puede entregar en varias tandas SIN registrarlas como Artículo (ver
+    parada_registrar_entrega); `op_keys` son las operaciones NO terminales que ese
+    sub-ensamblaje toca (la terminal se agrega sola al calcular, ver
+    _multiplicador_por_operacion). Se persiste con `guardar_subensamblajes`."""
     from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_production_operations
 
     doc = frappe.get_doc("Costeo", costeo)
@@ -1322,12 +1329,32 @@ def get_flujo_operaciones(costeo: str) -> dict:
                 "op_key": stage_a_op.get(sid, "") if sid else "",
             })
 
+        # Sub-ensamblajes declarados (ver Costeo Sub Ensamblaje /
+        # _multiplicador_por_operacion): cada fila trae `stage_ids` (CSV) tal
+        # cual se guardó -- se traduce a `op_keys` de la vista ACTUAL (puede
+        # haber cambiado el agrupado desde que se declaró) para que la UI
+        # marque las casillas correctas; un stage_id que ya no exista se cae
+        # solo (no aparece en ningún op_key).
+        sub_ensamblajes_out = []
+        for s in doc.tabla_subensamblajes_costeo or []:
+            if s.producto_terminado != fi:
+                continue
+            sids = [x.strip() for x in (s.stage_ids or "").split(",") if x.strip()]
+            op_keys = sorted({stage_a_op[sid] for sid in sids if sid in stage_a_op})
+            sub_ensamblajes_out.append({
+                "name": s.name,
+                "nombre": s.nombre,
+                "op_keys": op_keys,
+                "multiplicador": flt(s.multiplicador) or 1,
+            })
+
         productos_out.append({
             "finished_item": fi,
             "qty": flt(producto.qty),
             "image": producto.get("image") or "",
             "operaciones": ops_out,
             "materiales": materiales_out,
+            "sub_ensamblajes": sub_ensamblajes_out,
         })
 
     return {"productos": productos_out}
@@ -1497,6 +1524,78 @@ def guardar_flujo_operaciones(costeo: str, cambios, materiales=None) -> dict:
         doc.save()
         frappe.db.commit()
     return {"ok": True, "guardado": tocado}
+
+
+@frappe.whitelist()
+def guardar_subensamblajes(costeo: str, producto: str, filas) -> dict:
+    """Persiste la declaración de sub-ensamblajes de UN producto BASE (ver
+    Costeo Sub Ensamblaje / get_flujo_operaciones -- "sub_ensamblajes"):
+    reemplaza TODAS sus filas por las que manda ``filas``:
+        [{nombre: "...", op_keys: [op_key, ...], multiplicador: 1}, ...]
+
+    Una fila sin `nombre` se descarta (fila vacía del formulario). `op_keys`
+    son las operaciones NO terminales que ese sub-ensamblaje toca -- se
+    traducen a `stage_ids` (cualquier stage_id miembro de esa operación
+    identifica el resto, igual que hace "materiales" en
+    guardar_flujo_operaciones) porque eso es lo que persiste en la fila (ver
+    _multiplicador_por_operacion, que ya agrega la operación terminal sola,
+    sin que haga falta declararla aquí).
+
+    Igual que el resto de "Flujo de Producción": una variante de talla no
+    captura esto aparte -- comparte el flujo de su producto BASE, así que
+    esta función propaga la misma declaración a cada variante, traduciendo
+    los stage_id de la base a los correspondientes de cada variante (vía
+    clonado_de_stage_id, ver crear_variante_talla)."""
+    from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_production_operations
+
+    if isinstance(filas, str):
+        filas = json.loads(filas) if filas else []
+    doc = frappe.get_doc("Costeo", costeo)
+
+    etapas_prod = [e for e in doc.tabla_etapas_costeo if e.producto_terminado == producto]
+    op_stages = {
+        op.op_key: sorted(op.member_stage_keys)
+        for op in _resolve_production_operations(etapas_prod, producto)
+    }
+
+    variantes = [p.finished_item for p in doc.costeo_producto if p.get("variante_talla_de") == producto]
+    variante_stage_map = {}
+    for e in doc.tabla_etapas_costeo:
+        if e.producto_terminado in variantes and e.get("clonado_de_stage_id"):
+            variante_stage_map.setdefault(e.producto_terminado, {})[e.clonado_de_stage_id] = e.stage_id
+
+    productos_a_limpiar = {producto, *variantes}
+    for row in list(doc.tabla_subensamblajes_costeo or []):
+        if row.producto_terminado in productos_a_limpiar:
+            doc.tabla_subensamblajes_costeo.remove(row)
+
+    for f in (filas or []):
+        nombre = (f.get("nombre") or "").strip()
+        if not nombre:
+            continue
+        sids = []
+        for k in (f.get("op_keys") or []):
+            sids += op_stages.get(k, [])
+        sids = list(dict.fromkeys(sids))
+        mult = flt(f.get("multiplicador")) or 1
+        doc.append("tabla_subensamblajes_costeo", {
+            "producto_terminado": producto, "nombre": nombre,
+            "stage_ids": ",".join(sids), "multiplicador": mult,
+        })
+        for fi_variante in variantes:
+            mapa = variante_stage_map.get(fi_variante) or {}
+            sids_var = list(dict.fromkeys(mapa[s] for s in sids if s in mapa))
+            if not sids_var:
+                continue
+            doc.append("tabla_subensamblajes_costeo", {
+                "producto_terminado": fi_variante, "nombre": nombre,
+                "stage_ids": ",".join(sids_var), "multiplicador": mult,
+            })
+
+    doc.flags.ignore_permissions = True
+    doc.save()
+    frappe.db.commit()
+    return {"ok": True}
 
 
 @frappe.whitelist()
@@ -4909,11 +5008,16 @@ def _po_for_bom_item(bom_item, sales_order, costeo):
 @frappe.whitelist()
 def get_lotes_produccion(plan: str) -> dict:
     """Vista por LOTE de la subcontratación. Cada lote se descompone en PARADAS (ver
-    _lote_paradas): un paso del flujo en un taller = 1 Subcontracting Order + 1 envío
-    + 1 recibo. Un taller que maquila para varios productos en el mismo punto del
-    flujo tiene UNA parada (con la cantidad de cada uno); uno que hace dos pasos NO
-    adyacentes tiene DOS. Devuelve ``{productos: [...], lotes: [{lote_ref, productos,
-    paradas, material_*}]}``."""
+    _lote_paradas): un paso del flujo en un taller = 1 o más Subcontracting Order (una
+    por "ola" de entrega, ver parada_registrar_entrega) + su envío + su recibo. Un
+    taller que maquila para varios productos en el mismo punto del flujo tiene UNA
+    parada (con la cantidad de cada uno); uno que hace dos pasos NO adyacentes tiene
+    DOS. Devuelve ``{productos: [...], lotes: [{lote_ref, productos, paradas,
+    material_*}]}``; cada parada trae, además de su estado singular de siempre
+    (`sco`/`transfer_done`/`receipt_validated`, de la PRIMERA entrega, por
+    compatibilidad), `entregas` (lista completa, una por SCO) y `sub_ensamblajes`
+    (checklist de las declaradas para ese producto que tocan esta parada, ver Costeo
+    Sub Ensamblaje -- vacío si no declaró ninguna)."""
     costeo = frappe.db.get_value("Production Plan", plan, "costeo")
     if not costeo:
         return {"productos": [], "lotes": []}
@@ -5030,7 +5134,8 @@ def get_lotes_produccion(plan: str) -> dict:
     scos_all = frappe.get_all(
         "Subcontracting Order",
         filters={"purchase_order": ["in", maquila_pos or [""]], "docstatus": ["<", 2]},
-        fields=["name", "purchase_order", "lote_ref", "docstatus", "schedule_date"],
+        fields=["name", "purchase_order", "lote_ref", "docstatus", "schedule_date", "creation"]
+        + (["referencia_entrega"] if frappe.db.has_column("Subcontracting Order", "referencia_entrega") else []),
         order_by="creation asc",
     ) if maquila_pos else []
     for s in scos_all:
@@ -5144,11 +5249,25 @@ def get_lotes_produccion(plan: str) -> dict:
         paradas_out = []
         for parada in paradas:
             fgset = set(parada.fg_items)
-            sco = next((
+            # Una parada puede tener VARIAS entregas (SCO) -- una por "ola" de
+            # sub-ensamblaje, ver parada_registrar_entrega -- no solo la primera.
+            scos_parada = [
                 s for s in scos_lote
                 if s["purchase_order"] == parada.po
                 and any(it["item_code"] in fgset for it in s["items"])
-            ), None)
+            ]
+            sco = scos_parada[0] if scos_parada else None
+            entregas = [{
+                "sco": s["name"],
+                "referencia_entrega": s.get("referencia_entrega") or "",
+                "cantidad": round(sum(flt(it["qty"]) for it in s["items"] if it["item_code"] in fgset)),
+                "schedule_date": s.get("schedule_date"),
+                "sco_docstatus": s["docstatus"],
+                "transfer_done": s["transfer_done"],
+                "receipt": s["receipt"],
+                "receipt_validated": s["receipt_validated"],
+            } for s in scos_parada]
+
             productos_parada = []
             for pr in parada.productos:
                 q = 0
@@ -5158,6 +5277,32 @@ def get_lotes_produccion(plan: str) -> dict:
                         if it["item_code"] in fgset and _producto_de_fg(it["item_code"], pts_costeo) == pr
                     ))
                 productos_parada.append({"finished_item": pr, "item_name": _inm(pr), "qty": q})
+
+            # Checklist de sub-ensamblajes declarados que tocan esta parada (ver
+            # Costeo Sub Ensamblaje) -- vacío si el producto no declaró ninguno,
+            # y SIEMPRE vacío en la parada terminal: ahí solo se entrega un tipo
+            # de cosa (la prenda ya armada), sin importar cuántos
+            # sub-ensamblajes distintos se juntaron para llegar a ella (ver
+            # _multiplicador_por_operacion -- la terminal es 1x siempre).
+            sub_ensamblajes_out = []
+            if not parada.es_terminal:
+                productos_parada_set = set(parada.productos)
+                stage_ids_parada = _parada_stage_ids(doc, parada)
+                for s in (doc.tabla_subensamblajes_costeo or []):
+                    if s.producto_terminado not in productos_parada_set:
+                        continue
+                    sids = {x.strip() for x in (s.stage_ids or "").split(",") if x.strip()}
+                    if not (sids & stage_ids_parada):
+                        continue
+                    registrado = round(sum(
+                        flt(e["cantidad"]) for e in entregas if e["referencia_entrega"] == s.nombre
+                    ))
+                    sub_ensamblajes_out.append({
+                        "nombre": s.nombre,
+                        "registrado": registrado,
+                        "pendiente": registrado <= 0,
+                    })
+
             paradas_out.append({
                 "parada_id": parada.parada_id,
                 "supplier": parada.supplier,
@@ -5176,6 +5321,8 @@ def get_lotes_produccion(plan: str) -> dict:
                 "transfer_done": sco["transfer_done"] if sco else False,
                 "receipt": sco["receipt"] if sco else None,
                 "receipt_validated": sco["receipt_validated"] if sco else False,
+                "entregas": entregas,
+                "sub_ensamblajes": sub_ensamblajes_out,
             })
 
         done_maquila = bool(paradas_out) and all(p["receipt_validated"] for p in paradas_out)
@@ -6490,15 +6637,20 @@ def lote_abrir(plan: str, lote_ref: str, cantidades=None, schedule_date: str = N
 def _parada_entregas_registradas(po, lote_ref, fg_items):
     """Entregas (SCO Item) ya registradas de esta parada -- mismo `po` + `lote_ref`,
     filtradas a los `fg_items` de la parada -- ordenadas de más antigua a más
-    reciente. Cada elemento: {"item_code", "qty", "creation", "sco"}."""
+    reciente. Cada elemento: {"item_code", "qty", "creation", "sco",
+    "referencia_entrega"}."""
     scos = frappe.get_all(
+        "Subcontracting Order",
+        filters={"purchase_order": po, "lote_ref": lote_ref, "docstatus": ["<", 2]},
+        fields=["name", "creation", "referencia_entrega"], order_by="creation asc",
+    ) if frappe.db.has_column("Subcontracting Order", "referencia_entrega") else frappe.get_all(
         "Subcontracting Order",
         filters={"purchase_order": po, "lote_ref": lote_ref, "docstatus": ["<", 2]},
         fields=["name", "creation"], order_by="creation asc",
     )
     if not scos:
         return []
-    creation_por_sco = {s.name: s.creation for s in scos}
+    info_por_sco = {s.name: s for s in scos}
     items = frappe.get_all(
         "Subcontracting Order Item",
         filters={"parent": ["in", [s.name for s in scos]], "item_code": ["in", fg_items]},
@@ -6506,7 +6658,9 @@ def _parada_entregas_registradas(po, lote_ref, fg_items):
     )
     for it in items:
         it["sco"] = it.pop("parent")
-        it["creation"] = creation_por_sco[it["sco"]]
+        info = info_por_sco[it["sco"]]
+        it["creation"] = info["creation"]
+        it["referencia_entrega"] = info.get("referencia_entrega") or ""
     items.sort(key=lambda it: it["creation"])
     return items
 
@@ -6533,30 +6687,69 @@ def _ampliar_oc_raiz(po_doc, faltante):
     permanentemente cerrado, no es un caso raro.
 
     Conclusión: ampliar la OC raíz in-place NO es viable con las herramientas
-    nativas de ERPNext. La alternativa (crear una OC de ampliación NUEVA, chica,
-    que pase por el mismo flujo de doble validación Revisor/Aprobador que
-    cualquier OC de maquila) es un cambio de diseño con una decisión de negocio
-    real (¿se auto-valida esa OC nueva para no frenar el registro de la
-    entrega, saltándose el control de aprobación, o se deja en borrador y la
-    entrega espera a que alguien la apruebe?) -- pendiente de decidir con el
-    usuario antes de implementarla. Mientras tanto, ver el `frappe.throw` en
-    `parada_registrar_entrega` que explica esta limitación con claridad en vez
-    de dejar pasar un error crudo de ERPNext."""
+    nativas de ERPNext. RESUELTO de otra forma (ver Costeo Sub Ensamblaje /
+    _multiplicador_por_operacion): en vez de ampliar una OC que se quedó
+    corta, se declara de antemano cuántos sub-ensamblajes va a haber y por
+    qué operaciones pasa cada uno, para que la OC raíz de cada operación
+    nazca YA dimensionada para el número real de olas (probado en vivo con
+    documentos nativos de ERPNext -- ninguna ola tiene que llegar en un
+    orden particular). Esta función se queda sin uso en el flujo sano; el
+    aviso claro en `parada_registrar_entrega` (en vez de un ValidationError
+    crudo de ERPNext) se queda como red de seguridad para una ola de más que
+    no se declaró de antemano."""
     raise NotImplementedError(
         "Ampliar la OC raíz in-place no es viable (ver docstring) -- pendiente de "
         "decisión de diseño (OC de ampliación + su flujo de aprobación)."
     )
 
 
+def _parada_stage_ids(doc, parada):
+    """stage_id (Etapas Costeo) que caen dentro de las operaciones de esta
+    parada -- para saber si un sub-ensamblaje declarado (Costeo Sub
+    Ensamblaje.stage_ids) de verdad pasa por aquí (ver
+    parada_registrar_entrega)."""
+    from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_production_operations
+
+    out = set()
+    for prod in parada.productos:
+        etapas_prod = [e for e in doc.tabla_etapas_costeo if e.producto_terminado == prod]
+        for op in _resolve_production_operations(etapas_prod, prod):
+            if op.op_key in parada.op_keys:
+                out |= op.member_stage_keys
+    return out
+
+
+def _lote_nominal_por_producto(lote_ref, paradas, producto):
+    """Cantidad TOTAL ya definida para ``producto`` en este lote -- la de la
+    entrega más antigua de su parada TERMINAL (normalmente la que crea
+    lote_abrir), igual criterio que el tope de la parada terminal más abajo.
+    None si esa parada terminal todavía no tiene ninguna entrega."""
+    term = next((p for p in paradas if p.es_terminal and producto in p.productos), None)
+    if not term:
+        return None
+    registradas = _parada_entregas_registradas(term.po, lote_ref, term.fg_items)
+    fila = next((it for it in registradas if it["item_code"] == producto), None)
+    return flt(fila["qty"]) if fila else None
+
+
 @frappe.whitelist()
 def parada_registrar_entrega(plan: str, lote_ref: str, parada_id: str, cantidad: float,
-                              referencia: str = None, schedule_date: str = None) -> dict:
+                              referencia: str = None, schedule_date: str = None,
+                              sub_ensamblaje: str = None) -> dict:
     """Registra UNA ENTREGA MÁS en una parada de un lote YA abierto -- para cuando
     un taller entrega el trabajo en VARIAS TANDAS ("olas"): cada tanda es un
     sub-ensamblaje físico distinto (puños, mangas, cuellos, espaldas, frentes...)
     que el usuario decide explícitamente NO registrar como Artículo/variante --
     solo se le pone una `referencia` de texto libre para distinguirla a simple
     vista (Subcontracting Order.referencia_entrega, ver patch v0_2_34).
+
+    `sub_ensamblaje`, si se manda, es el `nombre` de una fila YA DECLARADA en
+    Costeo Sub Ensamblaje (ver get_flujo_operaciones/guardar_subensamblajes) --
+    valida que esa parada esté entre las operaciones que ese sub-ensamblaje
+    declaró tocar (ver _parada_stage_ids), usa el nombre como `referencia` si
+    no se mandó una aparte, y aplica el tope POR SUB-ENSAMBLAJE de más abajo.
+    Sin `sub_ensamblaje` (producto que no declaró ninguno) todo sigue como
+    antes: `referencia` es texto libre, sin ese tope extra.
 
     A diferencia de `lote_abrir` (que crea la PRIMERA entrega de cada parada al
     abrir el lote), esta función se puede llamar cuantas veces haga falta y en
@@ -6614,6 +6807,51 @@ def parada_registrar_entrega(plan: str, lote_ref: str, parada_id: str, cantidad:
     if diff and cantidades:
         primero = next(iter(cantidades))
         cantidades[primero] += diff
+
+    # Sub-ensamblaje declarado (opcional, ver Costeo Sub Ensamblaje): solo tiene
+    # sentido en una parada INTERMEDIA -- ahí sí se distingue "esta ola es
+    # Puños" de "esta ola es Mangas" (cada una un multiplicador propio de la
+    # OC raíz, ver _multiplicador_por_operacion). La parada TERMINAL solo
+    # entrega un tipo de cosa (la prenda ya armada, sin importar cuántos
+    # sub-ensamblajes distintos se juntaron ahí) -- si de todos modos se manda
+    # un nombre ahí, se usa solo como referencia de texto, sin el tope extra
+    # (el tope general de la parada terminal, más abajo, ya cubre ese caso).
+    if sub_ensamblaje and parada.es_terminal:
+        if not referencia:
+            referencia = sub_ensamblaje
+    elif sub_ensamblaje:
+        productos_parada = set(parada.productos)
+        sub_row = next(
+            (s for s in (doc.tabla_subensamblajes_costeo or [])
+             if s.producto_terminado in productos_parada and s.nombre == sub_ensamblaje),
+            None,
+        )
+        if not sub_row:
+            frappe.throw(_("No se encontró el sub-ensamblaje \"{0}\" declarado para este producto.").format(sub_ensamblaje))
+        sub_stage_ids = {x.strip() for x in (sub_row.stage_ids or "").split(",") if x.strip()}
+        if not (sub_stage_ids & _parada_stage_ids(doc, parada)):
+            frappe.throw(_("\"{0}\" no está declarado para pasar por esta parada.").format(sub_ensamblaje))
+        if not referencia:
+            referencia = sub_ensamblaje
+
+        # Tope POR SUB-ENSAMBLAJE -- más preciso que el tope general de la
+        # parada terminal (esta parada no es terminal, así que ese otro tope
+        # ni aplica aquí): detecta, por ejemplo, capturar "Espaldas" dos veces
+        # en el mismo taller, cosa que ningún otro candado distingue.
+        lote_nominal = _lote_nominal_por_producto(lote_ref, paradas, sub_row.producto_terminado)
+        if lote_nominal:
+            ya = sum(
+                flt(it["qty"]) for it in _parada_entregas_registradas(parada.po, lote_ref, parada.fg_items)
+                if it["referencia_entrega"] == sub_ensamblaje
+            )
+            pedido = flt(cantidades.get(sub_row.producto_terminado, cantidad))
+            tope = (flt(sub_row.multiplicador) or 1) * lote_nominal
+            if ya + pedido > tope + 0.5:
+                frappe.throw(
+                    _("\"{0}\" ya lleva {1} de {2} piezas ya definidas para este sub-ensamblaje en esta "
+                      "parada -- esta entrega dejaría {3}.")
+                    .format(sub_ensamblaje, cint(ya), cint(tope), cint(ya + pedido))
+                )
 
     # Tope real: una parada TERMINAL (la que entrega el artículo terminado, ver
     # es_terminal en _lote_paradas) no puede acumular entre TODAS sus entregas
