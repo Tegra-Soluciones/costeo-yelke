@@ -169,6 +169,19 @@ def _build_talla_extra_description(base_description, sobrecosto_tipo, sobrecosto
     return f"{base}\n\n{bloque}" if base else bloque
 
 
+def _build_variante_description(base_description, talla_grupo_label):
+    """Descripción para la línea de venta de una VARIANTE de talla: mismo
+    criterio que _build_talla_extra_description (avisar qué talla(s) se
+    engloban), pero para el mecanismo de variantes (su propia línea, no un
+    ajuste de precio sobre la base) -- sin esto la línea hereda tal cual la
+    descripción del producto base, sin ninguna pista de qué talla es."""
+    base = (base_description or "").strip()
+    if not talla_grupo_label:
+        return base
+    bloque = f"Talla: {talla_grupo_label}"
+    return f"{base}\n\n{bloque}" if base else bloque
+
+
 def _venta_items_para_producto(doc, p, extra_fields=None):
     """Arma las líneas de Item (Quotation o Sales Order, misma forma en ambos)
     para un Costeo Producto: la línea base con la descripción normal, más una
@@ -201,9 +214,18 @@ def _venta_items_para_producto(doc, p, extra_fields=None):
         # cliente confirme cuántas piezas quiere de verdad.
         qty = p.qty if flt(p.qty) > 0 else 1
         rate = p.unit_sales_price or 0
-        item = {"item_code": p.finished_item, "qty": qty, "rate": rate, "price_list_rate": rate, **extra_fields}
-        if p.description:
-            item["description"] = p.description
+        # uom explícito -- al crear la Cotización/OV con .insert() (documento
+        # nuevo) ERPNext lo autocompleta solo desde el Item, pero al reconstruir
+        # esta línea sobre un documento YA EXISTENTE (.save(), ver
+        # sales_order_api.save_sales_order/save_quotation) ese autocompletado no
+        # es confiable -- sin esto la línea queda sin UOM y truena al Validar.
+        uom = frappe.db.get_value("Item", p.finished_item, "stock_uom") or ""
+        item = {"item_code": p.finished_item, "qty": qty, "rate": rate, "price_list_rate": rate, "uom": uom, **extra_fields}
+        description = p.description
+        if p.get("variante_talla_de"):
+            description = _build_variante_description(description, p.get("talla_grupo_label"))
+        if description:
+            item["description"] = description
         return [item]
 
     grupos = {}
@@ -332,6 +354,30 @@ def adjuntar_info_variante(costeo_name, items):
             it["variante_talla_de"] = v.variante_talla_de
             it["talla_grupo_label"] = v.talla_grupo_label
     return items
+
+
+@frappe.whitelist()
+def lineas_venta_variantes(costeo: str, finished_items) -> dict:
+    """Arma la línea de venta (item_code/description con la talla/rate/
+    price_list_rate/uom) para cada variante indicada de `finished_items`,
+    reutilizando _venta_items_para_producto -- la misma función que ya arma
+    estas líneas al crear la Cotización/OV. Pensado para el editor de
+    'Cantidades confirmadas por talla' (panel de OV embebido en el Costeo):
+    al agregar una variante que no estaba antes en las líneas, esto evita
+    reconstruir a mano en el frontend campos que ya se les olvidó una vez
+    (UOM, descripción con la talla) -- se arma siempre igual de completa,
+    aquí o al crear el documento desde cero. Devuelve {finished_item: dict}."""
+    if isinstance(finished_items, str):
+        finished_items = frappe.parse_json(finished_items)
+    doc = frappe.get_doc("Costeo", costeo)
+    pedidos = set(finished_items or [])
+    out = {}
+    for p in doc.costeo_producto:
+        if p.finished_item in pedidos and p.get("variante_talla_de"):
+            items = _venta_items_para_producto(doc, p)
+            if items:
+                out[p.finished_item] = items[0]
+    return out
 
 
 def sincronizar_qty_variantes_a_costeo(venta_doc) -> list:

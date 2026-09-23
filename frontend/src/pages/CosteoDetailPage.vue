@@ -2880,13 +2880,22 @@ async function guardarVariantesOV(so) {
     // documento ya existente (a diferencia de un insert() nuevo), así que hay
     // que mandarlo explícito o la línea nueva queda sin almacén y truena.
     const almacenRef = items[0]?.warehouse || "";
-    for (const v of soVariantesForm.value) {
-      if (!(Number(v.qty) > 0)) continue; // 0 (o vacío) = se quita del pedido
-      // delivery_date explícito por la misma razón: si se omite,
-      // save_sales_order cae a doc.delivery_date, que es un objeto fecha (no
-      // texto) -- mezclado con las demás líneas (que sí traen fecha en
-      // texto) hace tronar la validación nativa de ERPNext.
-      items.push({ item_code: v.item_code, qty: v.qty, rate: v.rate, warehouse: almacenRef, delivery_date: data.delivery_date });
+    const incluidas = soVariantesForm.value.filter(v => Number(v.qty) > 0);
+    // Descripción (con la talla) y UOM correctos, armados del lado del
+    // servidor con la misma lógica que ya usa crear_cotizacion/crear_orden_venta
+    // -- reconstruirlos a mano aquí ya se le olvidó el UOM una vez.
+    const lineas = incluidas.length
+      ? await call("costeo_yelke.api.costeo_api.lineas_venta_variantes", {
+          costeo: docName.value, finished_items: JSON.stringify(incluidas.map(v => v.item_code)),
+        })
+      : {};
+    for (const v of incluidas) {
+      const linea = lineas[v.item_code] || {};
+      items.push({
+        item_code: v.item_code, qty: v.qty, rate: v.rate,
+        description: linea.description || "", uom: linea.uom || "",
+        warehouse: almacenRef, delivery_date: data.delivery_date,
+      });
     }
     await call("costeo_yelke.api.sales_order_api.save_sales_order", {
       data: JSON.stringify({ name: so.name, items }),
