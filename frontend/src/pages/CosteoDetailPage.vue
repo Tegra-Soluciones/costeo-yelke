@@ -937,9 +937,9 @@
                              de una (ej. "XXL/3XL"); es únicamente para la descripción de
                              la línea, no cambia la cantidad total de arriba. -->
                         <div v-if="v.qty && v.tallas.length > 1" class="mt-1 ml-3 pl-2 border-l-2 border-surface-border space-y-1">
-                          <div v-for="t in v.tallas" :key="t" class="flex items-center gap-2">
-                            <span class="flex-1 text-[11.5px] text-ink-muted">{{ t }}</span>
-                            <input v-model.number="v.desglose[t]" type="number" min="0" step="1" class="field-input w-16 text-xs py-0.5" />
+                          <div v-for="t in v.tallas" :key="t.code" class="flex items-center gap-2">
+                            <span class="flex-1 text-[11.5px] text-ink-muted">{{ t.label }}</span>
+                            <input v-model.number="v.desglose[t.code]" type="number" min="0" step="1" class="field-input w-16 text-xs py-0.5" />
                           </div>
                           <p class="text-[10.5px]" :class="Object.values(v.desglose).reduce((a,b)=>a+(Number(b)||0),0) === v.qty ? 'text-ink-light' : 'text-amber-600'">
                             Suma: {{ Object.values(v.desglose).reduce((a,b)=>a+(Number(b)||0),0) }} / {{ v.qty }}
@@ -2853,16 +2853,21 @@ const variantesDelCosteo = computed(() => productos.value.filter(p => p.variante
 // se recarga el formulario. Devuelve null si no encuentra nada reconocible
 // (variante recién agregada, todavía sin desglose guardado).
 function parseDesgloseDeDescripcion(description, tallas) {
+  // `tallas` = [{code, label}, ...] -- la descripción imprime el LABEL
+  // (_talla_label(code), ej. "XXL"), no el code real del doctype Talla (ej.
+  // "XXL - CAB-LETRA") -- hay que buscar por label, pero el resultado se
+  // devuelve con el code como llave (es lo que espera `desglose` al mandarlo
+  // de vuelta al guardar).
   if (!description) return null;
   const encontrado = {};
   let algo = false;
   for (const t of tallas) {
-    const escapado = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const escapado = t.label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const m = description.match(new RegExp(`-\\s*${escapado}\\s*×\\s*([\\d.]+)\\s*pza`));
-    if (m) { encontrado[t] = Number(m[1]); algo = true; }
+    if (m) { encontrado[t.code] = Number(m[1]); algo = true; }
   }
   if (!algo) return null;
-  for (const t of tallas) if (!(t in encontrado)) encontrado[t] = 0;
+  for (const t of tallas) if (!(t.code in encontrado)) encontrado[t.code] = 0;
   return encontrado;
 }
 const soVariantesForm = ref([]);
@@ -2897,7 +2902,7 @@ async function loadSoVariantesForm(so) {
           const base = Math.floor(qty / tallas.length);
           let resto = Math.round(qty) - base * tallas.length;
           for (const t of tallas) {
-            desglose[t] = base + (resto > 0 ? 1 : 0);
+            desglose[t.code] = base + (resto > 0 ? 1 : 0);
             if (resto > 0) resto--;
           }
         }

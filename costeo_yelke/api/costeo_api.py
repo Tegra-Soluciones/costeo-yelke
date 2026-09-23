@@ -345,8 +345,14 @@ def _variantes_de_costeo(costeo_name):
     variante es siempre 1:1 con su línea de venta (nunca genera más de una, a
     diferencia de un producto base con sobrecosto por talla), así que
     emparejar por finished_item/item_code es inequívoco. `tallas` es la lista
-    de códigos individuales que engloba (ej. ["XXL", "3XL"]) -- para poder
-    desglosar cantidad por talla en el editor de la OV."""
+    de tallas individuales que engloba, cada una como
+    {"code": <name real del doctype Talla>, "label": <_talla_label(code)>} --
+    el code (ej. "XXL - CAB-LETRA") es el que hay que mandar de vuelta como
+    llave en `desglose`; el label (ej. "XXL") es el que de verdad aparece en
+    la descripción ya armada (_build_variante_description usa _talla_label),
+    así que el SPA necesita AMBOS: el label para mostrar/parsear la
+    descripción guardada, el code para que el desglose que mande de vuelta
+    siga siendo válido."""
     filas = frappe.get_all(
         "Costeo Producto",
         filters={"parent": costeo_name, "variante_talla_de": ["is", "set"]},
@@ -365,7 +371,8 @@ def _variantes_de_costeo(costeo_name):
     for f in filas:
         t = tallas_por_item.get(f.finished_item)
         f["genero"] = t.genero if t else ""
-        f["tallas"] = [c.strip() for c in (t.talla if t else "").split(",") if c.strip()]
+        codes = [c.strip() for c in (t.talla if t else "").split(",") if c.strip()]
+        f["tallas"] = [{"code": c, "label": _talla_label(c)} for c in codes]
         out[f.finished_item] = f
     return out
 
