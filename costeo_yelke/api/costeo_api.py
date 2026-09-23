@@ -337,14 +337,19 @@ def adjuntar_info_variante(costeo_name, items):
 def sincronizar_qty_variantes_a_costeo(venta_doc) -> list:
     """`venta_doc` = Sales Order o Quotation YA VALIDADO (docstatus=1), con
     `.costeo` seteado -- se llama justo después de `doc.submit()`
-    (submit_sales_order/submit_quotation). Por cada línea cuyo item_code
-    coincide con una variante de talla de ese Costeo, actualiza
-    Costeo Producto.qty/total_sales_price y la fila correspondiente de
-    Costeo Producto Talla (qty + estado_cantidad='Definida') con la cantidad
-    ya validada -- así los análisis finales del Costeo usan la cantidad real
-    acordada con el cliente, no el 1 de referencia con el que se creó la
-    variante. Antes de Validar (mientras el documento sigue en borrador) no
-    se toca el Costeo -- una cantidad en un borrador todavía puede cambiar o
+    (submit_sales_order/submit_quotation/validar_documento). Recorre TODAS
+    las variantes de talla del Costeo (no solo las que aparecen en las
+    líneas): si el item_code de una variante SÍ está en alguna línea, su
+    cantidad (sumada si hay más de una) se vuelve la oficial; si el cliente
+    la quitó por completo de la Cotización/OV (no aparece en ninguna línea),
+    se sincroniza como oficialmente qty=0 -- "el cliente no la quiere" es
+    una respuesta real, no se deja sin tocar. En ambos casos se actualiza
+    Costeo Producto.qty/total_sales_price y Costeo Producto Talla
+    (qty + estado_cantidad='Definida'), para que los análisis finales del
+    Costeo usen la cantidad real acordada, no el 1 de referencia con el que
+    se creó la variante. Productos NORMALES (sin variante_talla_de) nunca
+    se tocan aquí -- su cantidad quedó fija desde antes. Antes de Validar
+    (documento en borrador) no se toca el Costeo -- todavía puede cambiar o
     descartarse."""
     costeo_name = venta_doc.get("costeo")
     if not costeo_name:
@@ -356,21 +361,23 @@ def sincronizar_qty_variantes_a_costeo(venta_doc) -> list:
 
     # Suma por item_code -- una variante nunca debería tener más de una línea,
     # pero sumar en vez de tomar la primera es más robusto si alguien duplicó
-    # el renglón a mano.
+    # el renglón a mano. Una variante que el cliente ya NO quiere simplemente
+    # no tiene ninguna línea -- no se ignora, se sincroniza como qty=0 más
+    # abajo (usar variantes.keys() en vez de solo qty_por_item.keys() es lo
+    # que permite detectar ese caso: "ausente" también es una respuesta real).
     qty_por_item = {}
     for row in venta_doc.get("items") or []:
         if row.item_code in variantes:
             qty_por_item[row.item_code] = qty_por_item.get(row.item_code, 0) + flt(row.qty)
 
-    if not qty_por_item:
-        return []
-
     doc = frappe.get_doc("Costeo", costeo_name)
     tocado = False
 
     for prod in doc.costeo_producto:
-        nueva_qty = qty_por_item.get(prod.finished_item)
-        if nueva_qty is None or flt(prod.qty) == nueva_qty:
+        if prod.finished_item not in variantes:
+            continue
+        nueva_qty = qty_por_item.get(prod.finished_item, 0)
+        if flt(prod.qty) == nueva_qty:
             continue
         prod.qty = nueva_qty
         prod.total_sales_price = flt(prod.unit_sales_price) * nueva_qty
@@ -383,9 +390,9 @@ def sincronizar_qty_variantes_a_costeo(venta_doc) -> list:
     # el número no se haya movido.
     cambios = []
     for talla in doc.tabla_tallas_costeo:
-        nueva_qty = qty_por_item.get(talla.finished_item)
-        if nueva_qty is None:
+        if talla.finished_item not in variantes:
             continue
+        nueva_qty = qty_por_item.get(talla.finished_item, 0)
         if talla.qty != nueva_qty or talla.estado_cantidad != "Definida":
             cambios.append({
                 "finished_item": talla.finished_item,
