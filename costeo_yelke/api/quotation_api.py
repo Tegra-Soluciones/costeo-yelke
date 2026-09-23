@@ -2,6 +2,7 @@ import frappe
 from frappe.utils import nowdate
 
 from costeo_yelke.utils import nombres_comerciales
+from costeo_yelke.api.costeo_api import adjuntar_info_variante, sincronizar_qty_variantes_a_costeo
 
 
 @frappe.whitelist()
@@ -153,6 +154,9 @@ def get_quotation(name):
             "total": float(r.total or 0),
         })
 
+    if doc.get("costeo"):
+        adjuntar_info_variante(doc.costeo, items)
+
     return {
         "name": doc.name,
         "docstatus": doc.docstatus,
@@ -273,7 +277,15 @@ def submit_quotation(name):
     doc.flags.ignore_links       = True
     doc.submit()
     frappe.db.commit()
-    return {"name": doc.name, "docstatus": doc.docstatus, "status": doc.status}
+
+    # Al Validar es cuando la cantidad de cada variante de talla deja de ser
+    # un borrador y se refleja en el Costeo -- ver sincronizar_qty_variantes_a_costeo.
+    variantes_sincronizadas = sincronizar_qty_variantes_a_costeo(doc) if doc.get("costeo") else []
+
+    return {
+        "name": doc.name, "docstatus": doc.docstatus, "status": doc.status,
+        "variantes_sincronizadas": variantes_sincronizadas,
+    }
 
 
 @frappe.whitelist()

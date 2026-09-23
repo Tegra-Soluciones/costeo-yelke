@@ -2,6 +2,7 @@ import frappe
 from frappe.utils import nowdate, add_days
 
 from costeo_yelke.utils import nombres_comerciales
+from costeo_yelke.api.costeo_api import adjuntar_info_variante, sincronizar_qty_variantes_a_costeo
 
 
 @frappe.whitelist()
@@ -144,6 +145,9 @@ def get_sales_order(name):
             "total": float(r.total or 0),
         })
 
+    if doc.get("costeo"):
+        adjuntar_info_variante(doc.costeo, items)
+
     return {
         "name": doc.name,
         "docstatus": doc.docstatus,
@@ -151,6 +155,7 @@ def get_sales_order(name):
         "customer": doc.customer,
         "customer_name": frappe.db.get_value("Customer", doc.customer, "nombre_comercial") or doc.customer_name or "",
         "company": doc.company,
+        "costeo": doc.get("costeo") or "",
         "transaction_date": str(doc.transaction_date) if doc.transaction_date else "",
         "delivery_date": str(doc.delivery_date) if doc.delivery_date else "",
         "order_type": doc.order_type or "Sales",
@@ -249,7 +254,15 @@ def submit_sales_order(name):
     doc.flags.ignore_links       = True
     doc.submit()
     frappe.db.commit()
-    return {"name": doc.name, "docstatus": doc.docstatus, "status": doc.status}
+
+    # Al Validar es cuando la cantidad de cada variante de talla deja de ser
+    # un borrador y se refleja en el Costeo -- ver sincronizar_qty_variantes_a_costeo.
+    variantes_sincronizadas = sincronizar_qty_variantes_a_costeo(doc) if doc.get("costeo") else []
+
+    return {
+        "name": doc.name, "docstatus": doc.docstatus, "status": doc.status,
+        "variantes_sincronizadas": variantes_sincronizadas,
+    }
 
 
 @frappe.whitelist()

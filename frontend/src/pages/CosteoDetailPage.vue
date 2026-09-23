@@ -4964,11 +4964,26 @@ async function guardarCambiosCotizacion() {
 async function validarDoc(doctype, name, after) {
   advancing.value = true;
   try {
-    await call("costeo_yelke.api.costeo_api.validar_documento", { doctype, name });
+    // Validar una Cotización/OV puede terminar tocando el Costeo del lado del
+    // servidor (la cantidad de alguna variante, ver
+    // sincronizar_qty_variantes_a_costeo) -- se guarda cualquier edición local
+    // pendiente ANTES de validar, para que ese guardado no pise después el
+    // valor recién sincronizado al recargar (mismo cuidado que en
+    // crearVarianteTalla/agregarMaterialVariante).
+    if (doctype === "Quotation" || doctype === "Sales Order") {
+      if (!(await saveDoc())) return;
+    }
+    const res = await call("costeo_yelke.api.costeo_api.validar_documento", { doctype, name });
     await loadRelated();
     previewKey.value++;
     if (after) after();
-    showToast("Documento validado");
+    if (res.variantes_sincronizadas?.length) {
+      const nombres = res.variantes_sincronizadas.map(v => v.talla_grupo_label || v.finished_item).join(", ");
+      showToast(`Documento validado -- cantidad actualizada en el Costeo (${nombres})`);
+      await recargarConservandoExpandido();
+    } else {
+      showToast("Documento validado");
+    }
   } catch (e) { showToast(e.message || "No se pudo validar", "error"); }
   finally { advancing.value = false; }
 }

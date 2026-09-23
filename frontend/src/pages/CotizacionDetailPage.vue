@@ -313,6 +313,9 @@
                           />
                           <span v-else class="font-medium text-gray-800 text-xs block">{{ row.item_code }}</span>
                           <p v-if="row.item_name && row.item_name !== row.item_code" class="text-xs text-gray-400 truncate">{{ row.item_name }}</p>
+                          <p v-if="row.talla_grupo_label" class="inline-flex items-center gap-1 text-[10.5px] font-medium text-brand-600 bg-brand-50 border border-brand-200 rounded px-1.5 py-0.5" :title="quot.docstatus === 0 ? 'Variante de talla -- la cantidad que pongas aquí se refleja en el Costeo al Validar esta cotización' : 'Variante de talla'">
+                            Variante: {{ row.talla_grupo_label }}
+                          </p>
                         </div>
                       </div>
                     </td>
@@ -1151,7 +1154,12 @@ async function doSubmit() {
   try {
     const res = await call("costeo_yelke.api.quotation_api.submit_quotation", { name: quot.name });
     Object.assign(quot, { docstatus: res.docstatus, status: res.status });
-    showToast("Cotización enviada correctamente");
+    if (res.variantes_sincronizadas?.length) {
+      const nombres = res.variantes_sincronizadas.map(v => v.talla_grupo_label || v.finished_item).join(", ");
+      showToast(`Cotización enviada correctamente -- cantidad actualizada en el Costeo (${nombres})`);
+    } else {
+      showToast("Cotización enviada correctamente");
+    }
   } catch (e) {
     showToast(e.message || "Error al enviar", "error");
   } finally {

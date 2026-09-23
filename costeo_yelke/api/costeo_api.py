@@ -303,6 +303,112 @@ def _sync_venta_items_desde_tallas(doc, finished_item: str = None) -> dict:
     return {"actualizados": actualizados, "omitidos": omitidos}
 
 
+def _variantes_de_costeo(costeo_name):
+    """`finished_item -> {variante_talla_de, talla_grupo_label}` de las variantes
+    de talla de este Costeo (ver crear_variante_talla) -- una variante es
+    siempre 1:1 con su línea de venta (nunca genera más de una, a diferencia de
+    un producto base con sobrecosto por talla), así que emparejar por
+    finished_item/item_code es inequívoco."""
+    filas = frappe.get_all(
+        "Costeo Producto",
+        filters={"parent": costeo_name, "variante_talla_de": ["is", "set"]},
+        fields=["finished_item", "variante_talla_de", "talla_grupo_label"],
+    )
+    return {f.finished_item: f for f in filas}
+
+
+def adjuntar_info_variante(costeo_name, items):
+    """Le agrega a cada dict de `items` (ya trae `item_code`) las claves
+    `variante_talla_de`/`talla_grupo_label` cuando ese item_code es una
+    variante de talla de `costeo_name` -- dato de solo lectura para que el SPA
+    muestre de dónde viene esa línea (Cotización/Orden de Venta), nunca se
+    guarda de vuelta con esto."""
+    if not costeo_name:
+        return items
+    variantes = _variantes_de_costeo(costeo_name)
+    for it in items:
+        v = variantes.get(it.get("item_code"))
+        if v:
+            it["variante_talla_de"] = v.variante_talla_de
+            it["talla_grupo_label"] = v.talla_grupo_label
+    return items
+
+
+def sincronizar_qty_variantes_a_costeo(venta_doc) -> list:
+    """`venta_doc` = Sales Order o Quotation YA VALIDADO (docstatus=1), con
+    `.costeo` seteado -- se llama justo después de `doc.submit()`
+    (submit_sales_order/submit_quotation). Por cada línea cuyo item_code
+    coincide con una variante de talla de ese Costeo, actualiza
+    Costeo Producto.qty/total_sales_price y la fila correspondiente de
+    Costeo Producto Talla (qty + estado_cantidad='Definida') con la cantidad
+    ya validada -- así los análisis finales del Costeo usan la cantidad real
+    acordada con el cliente, no el 1 de referencia con el que se creó la
+    variante. Antes de Validar (mientras el documento sigue en borrador) no
+    se toca el Costeo -- una cantidad en un borrador todavía puede cambiar o
+    descartarse."""
+    costeo_name = venta_doc.get("costeo")
+    if not costeo_name:
+        return []
+
+    variantes = _variantes_de_costeo(costeo_name)
+    if not variantes:
+        return []
+
+    # Suma por item_code -- una variante nunca debería tener más de una línea,
+    # pero sumar en vez de tomar la primera es más robusto si alguien duplicó
+    # el renglón a mano.
+    qty_por_item = {}
+    for row in venta_doc.get("items") or []:
+        if row.item_code in variantes:
+            qty_por_item[row.item_code] = qty_por_item.get(row.item_code, 0) + flt(row.qty)
+
+    if not qty_por_item:
+        return []
+
+    doc = frappe.get_doc("Costeo", costeo_name)
+    tocado = False
+
+    for prod in doc.costeo_producto:
+        nueva_qty = qty_por_item.get(prod.finished_item)
+        if nueva_qty is None or flt(prod.qty) == nueva_qty:
+            continue
+        prod.qty = nueva_qty
+        prod.total_sales_price = flt(prod.unit_sales_price) * nueva_qty
+        tocado = True
+
+    # El reporte de "qué cambió" se arma aquí, no en el loop de arriba -- una
+    # variante puede llegar a la OV con la MISMA cantidad de referencia (1) con
+    # la que se creó, y aun así debe dejar de estar "Pendiente por cliente" al
+    # validarse (ver docstring); eso también cuenta como un cambio real aunque
+    # el número no se haya movido.
+    cambios = []
+    for talla in doc.tabla_tallas_costeo:
+        nueva_qty = qty_por_item.get(talla.finished_item)
+        if nueva_qty is None:
+            continue
+        if talla.qty != nueva_qty or talla.estado_cantidad != "Definida":
+            cambios.append({
+                "finished_item": talla.finished_item,
+                "talla_grupo_label": variantes[talla.finished_item].talla_grupo_label,
+                "qty_anterior": flt(talla.qty),
+                "qty_nueva": nueva_qty,
+            })
+            tocado = True
+        talla.qty = nueva_qty
+        talla.estado_cantidad = "Definida"
+        talla.costo_total = flt(talla.costo_unitario) * nueva_qty
+
+    if not tocado:
+        return []
+
+    doc.flags.ignore_permissions = True
+    doc.flags.ignore_mandatory = True
+    doc.flags.ignore_validate_update_after_submit = True
+    doc.save()
+    frappe.db.commit()
+    return cambios
+
+
 _CHILD_ROW_SYSTEM_FIELDS = ("name", "parent", "parentfield", "parenttype", "idx",
                             "creation", "modified", "modified_by", "owner", "docstatus")
 
@@ -361,8 +467,12 @@ def crear_variante_talla(costeo: str, producto_base: str, genero: str = None, ta
     # La imagen SÍ se hereda a propósito (frappe.copy_doc ya la trae) -- es la
     # misma prenda, solo cambia talla/consumo; el frontend la vuelve a jalar del
     # Artículo en cada carga (fetchItemImage), así que basta con no borrarla aquí.
+    # item_defaults (almacén/cuentas por compañía) TAMBIÉN se hereda a
+    # propósito -- es la misma prenda en el mismo almacén, solo cambia la
+    # talla; sin esto la variante quedaba sin almacén de entrega configurado
+    # para ninguna compañía y tronaba al pasarla a Cotización/Orden de Venta
+    # ("Almacén de entrega requerido para el inventario del producto...").
     nuevo_item.default_bom = None
-    nuevo_item.set("item_defaults", [])
     nuevo_item.flags.ignore_permissions = True
     nuevo_item.flags.ignore_mandatory = True
     nuevo_item.insert()
@@ -1257,7 +1367,18 @@ def validar_documento(doctype: str, name: str) -> dict:
     doc.submit()
     if doctype == "Sales Invoice" and frappe.db.has_column("Sales Invoice", "overhead_journal_entry"):
         _contabilizar_overhead_factura(doc)
-    return {"name": doc.name, "docstatus": doc.docstatus}
+
+    variantes_sincronizadas = []
+    if doctype in ("Quotation", "Sales Order") and doc.get("costeo"):
+        # Al Validar es cuando la cantidad de cada variante de talla deja de
+        # ser un borrador y se refleja en el Costeo -- ver
+        # sincronizar_qty_variantes_a_costeo. Cubre este endpoint compartido
+        # (usado por el panel de Cotización/OV embebido en CosteoDetailPage)
+        # además de submit_quotation/submit_sales_order (las pantallas
+        # independientes de Cotización/Orden de Venta).
+        variantes_sincronizadas = sincronizar_qty_variantes_a_costeo(doc)
+
+    return {"name": doc.name, "docstatus": doc.docstatus, "variantes_sincronizadas": variantes_sincronizadas}
 
 
 @frappe.whitelist()

@@ -228,6 +228,9 @@
                           <input v-if="canEdit" v-model="row.item_code" type="text" list="item-datalist" class="field-input text-xs" placeholder="Código de artículo" @change="fillItemDefaults(row)" />
                           <span v-else class="font-medium text-gray-800 text-xs block">{{ row.item_code }}</span>
                           <p v-if="row.item_name && row.item_name !== row.item_code" class="text-xs text-gray-400 truncate">{{ row.item_name }}</p>
+                          <p v-if="row.talla_grupo_label" class="inline-flex items-center gap-1 text-[10.5px] font-medium text-brand-600 bg-brand-50 border border-brand-200 rounded px-1.5 py-0.5" :title="so.docstatus === 0 ? 'Variante de talla -- la cantidad que pongas aquí se refleja en el Costeo al Validar esta orden' : 'Variante de talla'">
+                            Variante: {{ row.talla_grupo_label }}
+                          </p>
                         </div>
                       </div>
                     </td>
@@ -835,7 +838,12 @@ async function doConfirm() {
   try {
     const res = await call("costeo_yelke.api.sales_order_api.submit_sales_order", { name: so.name });
     Object.assign(so, { docstatus: res.docstatus, status: res.status });
-    showToast("Orden de venta confirmada");
+    if (res.variantes_sincronizadas?.length) {
+      const nombres = res.variantes_sincronizadas.map(v => v.talla_grupo_label || v.finished_item).join(", ");
+      showToast(`Orden de venta confirmada -- cantidad actualizada en el Costeo (${nombres})`);
+    } else {
+      showToast("Orden de venta confirmada");
+    }
   } catch (e) {
     showToast(e.message || "Error al confirmar", "error");
   } finally {
