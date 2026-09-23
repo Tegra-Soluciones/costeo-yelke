@@ -711,7 +711,7 @@
 
                   <div v-if="q.docstatus === 1 && q.status !== 'Lost'" class="pt-2 mt-1 border-t border-surface-border space-y-2">
                     <button
-                      class="w-full h-8 text-[12.5px] font-semibold text-orange-600 border border-orange-300 bg-orange-50 rounded-lg hover:bg-orange-100 disabled:opacity-50 disabled:hover:bg-orange-50 disabled:cursor-not-allowed"
+                      class="w-full h-8 text-[12.5px] font-semibold text-white bg-orange-500 rounded-lg hover:bg-orange-600 disabled:opacity-50 disabled:hover:bg-orange-500 disabled:cursor-not-allowed"
                       :disabled="precioAcordadoStatus.todos_validados"
                       :title="precioAcordadoStatus.todos_validados ? 'El precio acordado ya está validado -- no se puede volver a fijar/editar desde aquí.' : ''"
                       @click="openAcordadoModal"
