@@ -707,12 +707,6 @@
                     <button class="doc-action justify-center" @click="printDocView('Quotation', q.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>Imprimir</button>
                     <button class="doc-action justify-center" @click="openAssign('Quotation', q.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Asignar</button>
                   </div>
-                  <button
-                    v-if="q.docstatus === 0"
-                    class="doc-action justify-center w-full"
-                    title="Editar cantidades de las variantes de talla, o quitarlas por completo si el cliente no las quiere -- se abre la pantalla completa de la Cotización"
-                    @click="router.push({ name: 'CotizacionDetail', params: { name: q.name } })"
-                  ><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>Editar artículos / cantidades</button>
                   <a class="doc-action justify-center w-full" :href="`/app/quotation/${q.name}`" target="_blank"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>Abrir en ERPNext</a>
 
                   <div v-if="q.docstatus === 1 && q.status !== 'Lost'" class="pt-2 mt-1 border-t border-surface-border space-y-2">
@@ -923,13 +917,29 @@
                     <button class="doc-action justify-center" @click="printDocView('Sales Order', so.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>Imprimir</button>
                     <button class="doc-action justify-center" @click="openAssign('Sales Order', so.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Asignar</button>
                   </div>
-                  <button
-                    v-if="so.docstatus === 0"
-                    class="doc-action justify-center w-full"
-                    title="Editar cantidades de las variantes de talla, o quitarlas por completo si el cliente no las quiere -- se abre la pantalla completa de la Orden de Venta"
-                    @click="router.push({ name: 'SalesOrderDetail', params: { name: so.name } })"
-                  ><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>Editar artículos / cantidades</button>
                   <a class="doc-action justify-center w-full" :href="`/app/sales-order/${so.name}`" target="_blank"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>Abrir en ERPNext</a>
+
+                  <!-- Cantidades confirmadas por talla -- solo aquí (OV), nunca en la
+                       Cotización: es en esta etapa donde el cliente confirma las
+                       cantidades oficiales de cada variante, o las quita si no las
+                       quiere. Se refleja en el Costeo hasta Validar esta orden. -->
+                  <div v-if="so.docstatus === 0 && variantesDelCosteo.length" class="pt-3 mt-2 border-t border-surface-border">
+                    <p class="text-[12.5px] font-semibold text-ink mb-0.5">Cantidades confirmadas por talla</p>
+                    <p class="text-[11px] text-ink-muted mb-2">Ajusta la cantidad real que confirmó el cliente, o desmárcala si ya no la quiere. Se actualiza en el Costeo al Validar esta orden.</p>
+                    <div v-if="soVariantesLoading" class="text-[12px] text-ink-light py-2 text-center">Cargando…</div>
+                    <div v-else class="space-y-1.5">
+                      <label v-for="v in soVariantesForm" :key="v.item_code" class="flex items-center gap-2">
+                        <input type="checkbox" v-model="v.incluida" class="flex-shrink-0" />
+                        <span class="flex-1 text-[12.5px] text-ink truncate" :class="{ 'text-ink-light': !v.incluida }" :title="v.talla_grupo_label">{{ v.talla_grupo_label }}</span>
+                        <input v-model.number="v.qty" type="number" min="0" step="1" class="field-input w-20 text-xs py-1" :disabled="!v.incluida" />
+                      </label>
+                    </div>
+                    <button
+                      :disabled="soVariantesSaving || soVariantesLoading"
+                      class="w-full h-8 mt-2.5 text-[12.5px] font-medium text-ink border border-surface-border rounded-lg hover:bg-surface-raised disabled:opacity-50"
+                      @click="guardarVariantesOV(so)"
+                    >{{ soVariantesSaving ? "Guardando…" : "Guardar cantidades" }}</button>
+                  </div>
 
                   <div class="pt-3 mt-2 border-t border-surface-border">
                     <AttachmentsPanel doctype="Sales Order" :docname="so.name" />
@@ -2816,6 +2826,77 @@ function toggleSalesOrder(so) {
   if (expandedSOName.value === so.name) { expandedSOName.value = null; return; }
   expandedSOName.value = so.name;
   applySOToForm(so);
+  loadSoVariantesForm(so);
+}
+
+// ── Cantidades confirmadas por talla (solo en la OV, nunca en la Cotización) ──
+// Las variantes de talla de este Costeo ya están cargadas en `productos` --
+// no hace falta pedirlas aparte al servidor.
+const variantesDelCosteo = computed(() => productos.value.filter(p => p.variante_talla_de));
+const soVariantesForm = ref([]);
+const soVariantesLoading = ref(false);
+const soVariantesSaving = ref(false);
+
+async function loadSoVariantesForm(so) {
+  if (!variantesDelCosteo.value.length || so.docstatus !== 0) { soVariantesForm.value = []; return; }
+  soVariantesLoading.value = true;
+  try {
+    const data = await call("costeo_yelke.api.sales_order_api.get_sales_order", { name: so.name });
+    const porItem = Object.fromEntries((data.items || []).map(it => [it.item_code, it]));
+    soVariantesForm.value = variantesDelCosteo.value.map(p => {
+      const linea = porItem[p.finished_item];
+      return {
+        item_code: p.finished_item,
+        talla_grupo_label: p.talla_grupo_label || p.finished_item,
+        incluida: !!linea,
+        qty: linea ? linea.qty : (p.qty || 1),
+        rate: linea ? linea.rate : (p.unit_sales_price || 0),
+      };
+    });
+  } catch (e) {
+    showToast(e.message || "No se pudieron cargar las variantes de esta orden", "error");
+    soVariantesForm.value = [];
+  } finally {
+    soVariantesLoading.value = false;
+  }
+}
+
+async function guardarVariantesOV(so) {
+  soVariantesSaving.value = true;
+  try {
+    const data = await call("costeo_yelke.api.sales_order_api.get_sales_order", { name: so.name });
+    const variantCodes = new Set(soVariantesForm.value.map(v => v.item_code));
+    // Las líneas que NO son variantes se mandan tal cual venían -- esta sección
+    // solo toca las de variante, nunca el resto de los productos de la orden.
+    const items = (data.items || [])
+      .filter(it => !variantCodes.has(it.item_code))
+      .map(it => ({
+        item_code: it.item_code, item_name: it.item_name, description: it.description,
+        qty: it.qty, uom: it.uom, conversion_factor: it.conversion_factor,
+        rate: it.rate, discount_percentage: it.discount_percentage,
+        warehouse: it.warehouse, delivery_date: it.delivery_date,
+      }));
+    for (const v of soVariantesForm.value) {
+      if (!v.incluida) continue; // se deja fuera -- el cliente no la quiere
+      if (!(Number(v.qty) > 0)) {
+        showToast(`Indica una cantidad mayor a 0 para "${v.talla_grupo_label}", o desmárcala`, "error");
+        soVariantesSaving.value = false;
+        return;
+      }
+      items.push({ item_code: v.item_code, qty: v.qty, rate: v.rate });
+    }
+    await call("costeo_yelke.api.sales_order_api.save_sales_order", {
+      data: JSON.stringify({ name: so.name, items }),
+    });
+    await loadRelated();
+    previewKey.value++;
+    await loadSoVariantesForm(so);
+    showToast("Cantidades guardadas -- se reflejarán en el Costeo al Validar esta orden");
+  } catch (e) {
+    showToast(e.message || "No se pudieron guardar las cantidades", "error");
+  } finally {
+    soVariantesSaving.value = false;
+  }
 }
 // "OV activa": la que filtra Producir/Enviar/Facturar/Reportar -- por default sigue a
 // la expandida en Vender, pero se puede fijar aparte (selector en esos pasos) sin
@@ -4152,6 +4233,7 @@ async function loadRelated() {
         soAutoExpandDone = true;
         expandedSOName.value = related.sales_orders[0].name;
         applySOToForm(related.sales_orders[0]);
+        loadSoVariantesForm(related.sales_orders[0]);
       } else if (expandedSOName.value && !related.sales_orders.some(s => s.name === expandedSOName.value)) {
         expandedSOName.value = null;
       }
