@@ -55,3 +55,4 @@ costeo_yelke.patches.v0_2_30.add_doble_validacion_purchase_order
 costeo_yelke.patches.v0_2_31.add_customer_nombre_comercial
 costeo_yelke.patches.v0_2_32.add_plantilla_origen_fecha_field
 costeo_yelke.patches.v0_2_33.add_clonado_de_fields_y_backfill
+costeo_yelke.patches.v0_2_34.add_sco_referencia_entrega

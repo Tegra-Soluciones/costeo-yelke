@@ -6471,6 +6471,107 @@ def lote_abrir(plan: str, lote_ref: str, cantidades=None, schedule_date: str = N
     return {"ok": not errores, "creadas": creadas, "saltadas": saltadas, "errores": errores}
 
 
+def _ampliar_oc_raiz(po_doc, faltante):
+    """Amplía `fg_item_qty` de las líneas de la OC raíz de maquila que ya no
+    alcanzan para una entrega nueva -- `faltante` = {fg_item: cantidad_extra}.
+    `fg_item_qty` es solo un contador de seguimiento (cuántas piezas de esa
+    pieza representa la línea, ver _po_subcontratacion_lineas) -- no participa
+    en importes/impuestos, así que se escribe directo por DB en vez de pasar
+    por doc.save() (el campo no es allow_on_submit nativo de ERPNext, y no
+    hace falta re-disparar todo el validate() de la Purchase Order solo para
+    subir este contador)."""
+    for it in po_doc.items:
+        extra = faltante.get(it.fg_item)
+        if extra:
+            frappe.db.set_value(
+                "Purchase Order Item", it.name, "fg_item_qty",
+                flt(it.fg_item_qty) + extra, update_modified=False,
+            )
+
+
+@frappe.whitelist()
+def parada_registrar_entrega(plan: str, lote_ref: str, parada_id: str, cantidad: float,
+                              referencia: str = None, schedule_date: str = None) -> dict:
+    """Registra UNA ENTREGA MÁS en una parada de un lote YA abierto -- para cuando
+    un taller entrega el trabajo en VARIAS TANDAS ("olas"): cada tanda es un
+    sub-ensamblaje físico distinto (puños, mangas, cuellos, espaldas, frentes...)
+    que el usuario decide explícitamente NO registrar como Artículo/variante --
+    solo se le pone una `referencia` de texto libre para distinguirla a simple
+    vista (Subcontracting Order.referencia_entrega, ver patch v0_2_34).
+
+    A diferencia de `lote_abrir` (que crea la PRIMERA entrega de cada parada al
+    abrir el lote), esta función se puede llamar cuantas veces haga falta y en
+    cualquier momento -- cada llamada crea su PROPIA Subcontracting Order (su
+    propio envío, su propio recibo, sin pisar las anteriores; ver
+    sub_crear_sco, que ya soporta varias SCO parciales contra la misma OC).
+
+    La cantidad de una parada NO está topada a la cantidad nominal del lote --
+    una parada visitada por varias "olas" (ej. Reflejante, si por ahí pasan
+    puños + espaldas + frentes) termina procesando varias veces esa cantidad.
+    Como no se sabe de antemano cuántas olas tocarán cada parada (varía según
+    la carga real del proveedor), si la cantidad pedida excede el saldo
+    pendiente de la OC raíz para esa pieza, se AMPLÍA sola esa OC lo necesario
+    (ver _ampliar_oc_raiz) -- transparente, el usuario nunca tiene que tocar
+    la OC a mano."""
+    if not lote_ref or not parada_id:
+        frappe.throw(_("Indica el lote y la parada."))
+    cantidad = round(flt(cantidad))
+    if cantidad <= 0:
+        frappe.throw(_("Indica la cantidad de esta entrega."))
+
+    costeo = frappe.db.get_value("Production Plan", plan, "costeo")
+    if not costeo:
+        frappe.throw(_("El plan no está ligado a ningún costeo."))
+    doc = frappe.get_doc("Costeo", costeo)
+    pts = _productos_terminados_de_costeo(costeo)
+
+    # La estructura de paradas (quién es cada una, su po/fg_items/supplier) no
+    # depende de la cantidad -- se usa una cantidad de referencia (la del
+    # Costeo Producto) solo para poder resolver el grafo y encontrar la
+    # parada pedida por su id.
+    probe = {p.finished_item: (flt(p.qty) or 1) for p in doc.costeo_producto if p.finished_item}
+    paradas, faltan = _lote_paradas(doc, probe)
+    parada = next((p for p in paradas if p.parada_id == parada_id), None)
+    if not parada:
+        frappe.throw(_("No se encontró esa parada -- puede que el flujo haya cambiado desde que se abrió el lote."))
+    if any(fg in faltan for fg in parada.fg_items):
+        frappe.throw(_("Esta parada todavía no tiene una orden de compra de maquila validada."))
+
+    # Reparte la cantidad de la entrega entre los productos de la parada, en
+    # la misma proporción con la que se resolvió (normalmente un solo
+    # producto); el redondeo se ajusta en el primero para que la suma cuadre
+    # exacto con lo pedido.
+    total_probe = sum(parada.productos.values()) or 1
+    cantidades = {prod: round(cantidad * (qty / total_probe)) for prod, qty in parada.productos.items()}
+    diff = cantidad - sum(cantidades.values())
+    if diff and cantidades:
+        primero = next(iter(cantidades))
+        cantidades[primero] += diff
+
+    po_doc = frappe.get_doc("Purchase Order", parada.po)
+    saldo_fg = _po_saldo_por_fg(po_doc)
+    faltante = {}
+    for fg in parada.fg_items:
+        prod = _producto_de_fg(fg, pts)
+        necesita = cantidades.get(prod, 0)
+        disponible = flt(saldo_fg.get(fg, 0))
+        if necesita > disponible + 0.001:
+            faltante[fg] = necesita - disponible
+    if faltante:
+        _ampliar_oc_raiz(po_doc, faltante)
+
+    r = sub_crear_sco(
+        parada.po, cantidades=cantidades, fg_items=parada.fg_items,
+        schedule_date=schedule_date, lote_ref=lote_ref, validar_stock=False,
+    )
+    sub_validar_sco(r["sco"])
+    if referencia:
+        frappe.db.set_value("Subcontracting Order", r["sco"], "referencia_entrega", referencia, update_modified=False)
+
+    frappe.db.commit()
+    return {"ok": True, "sco": r["sco"], "cantidades": r.get("cantidades"), "referencia": referencia or ""}
+
+
 @frappe.whitelist()
 def sub_enviar_material(sco: str) -> dict:
     """Manda la materia prima al taller y deja listo el recibo: crea la transferencia,
