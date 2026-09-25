@@ -1568,7 +1568,12 @@
                   <div class="grid grid-cols-2 gap-x-4 gap-y-1">
                     <div v-for="p in planDetail.po_items" :key="p.item_code" class="flex items-center gap-2">
                       <span class="text-[11.5px] font-mono flex-1 truncate" :title="`de ${p.planned_qty} pzas`">{{ p.item_code }}</span>
-                      <input v-model.number="lote.piezas[p.item_code]" type="number" min="0" class="field-input w-24 text-right" @input="actualizarPreviewLotes()" />
+                      <input
+                        v-model.number="lote.piezas[p.item_code]" type="number" min="0"
+                        class="field-input w-24 text-right"
+                        :class="mrLoteProductoExcedido(p.item_code) ? 'border-red-400 ring-1 ring-red-400' : ''"
+                        @input="actualizarPreviewLotes()"
+                      />
                     </div>
                   </div>
                   <div v-if="mrLotesPreview[lote.lote_ref] && Object.keys(mrLotesPreview[lote.lote_ref]).length" class="mt-2 pt-2 border-t border-surface-border text-[11px] text-ink-light">
@@ -1578,15 +1583,22 @@
                 </div>
                 <div class="flex items-center justify-between">
                   <button class="add-link" @click="repartirMrLotesIgual">Repartir en partes iguales</button>
-                  <p class="text-[11px] text-ink-light">Pendiente sin asignar: <span v-for="(p, i) in planDetail.po_items" :key="p.item_code">{{ i > 0 ? ' · ' : '' }}{{ p.item_code }}: {{ mrLotePendiente(p.item_code) }} pzas</span></p>
+                  <p class="text-[11px]">
+                    <span class="text-ink-light">Pendiente sin asignar: </span>
+                    <span
+                      v-for="(p, i) in planDetail.po_items" :key="p.item_code"
+                      :class="mrLoteProductoExcedido(p.item_code) ? 'text-red-600 font-medium' : 'text-ink-light'"
+                    >{{ i > 0 ? ' · ' : '' }}{{ p.item_code }}: {{ mrLotePendiente(p.item_code) }} pzas</span>
+                  </p>
                 </div>
+                <p v-if="mrLotesInvalidos" class="text-[11.5px] text-red-600 mt-1">Algún producto tiene más piezas repartidas entre los lotes de las que pide el plan — ajústalo antes de validar.</p>
               </template>
             </div>
 
             <div v-if="!mrValidated" class="flex items-center gap-2">
               <div class="flex-1"></div>
               <button :disabled="advancing" class="doc-action" @click="guardarSolicitud">Guardar</button>
-              <button :disabled="advancing" class="h-8 px-3.5 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex items-center gap-1.5" @click="validarSolicitud"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>{{ mrLotes.length ? `Validar y dividir en ${mrLotes.length} lote(s)` : 'Validar solicitud' }}</button>
+              <button :disabled="advancing || mrLotesInvalidos" class="h-8 px-3.5 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex items-center gap-1.5" @click="validarSolicitud"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>{{ mrLotes.length ? `Validar y dividir en ${mrLotes.length} lote(s)` : 'Validar solicitud' }}</button>
             </div>
 
           </template>
@@ -3213,7 +3225,7 @@ const {
   mrDetail, mrItems, mrSchedule, mrResults, mrDocTab, mrValidated,
   docCompra, docCompraItems, docCompraForm, docCompraValidated, ocSelected,
   mrLotes, addMrLote, removeMrLote, repartirMrLotesIgual, mrLotePendiente,
-  mrLotesPreview, actualizarPreviewLotes,
+  mrLotesPreview, actualizarPreviewLotes, mrLoteProductoExcedido, mrLotesInvalidos,
   loadSolicitud, crearSolicitud, guardarSolicitud, validarSolicitud,
   selectOC, selectOcLote, selectRfq, selectSq, guardarDocCompra, validarDocCompra, revisarDocCompra, jalarPreciosOC,
   permisosValidacion, loadPermisosValidacion,

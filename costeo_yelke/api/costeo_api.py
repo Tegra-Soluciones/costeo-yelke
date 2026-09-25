@@ -4678,8 +4678,30 @@ def mr_dividir_en_lotes_por_piezas(mr: str, plan: str, lotes) -> dict:
     se pase del total real por ir redondeando hacia arriba en cada uno) -- las
     cantidades viajan en punto flotante; el sobrante de cada material (si las
     piezas no llenan el 100% de algún producto) lo sigue absorbiendo
-    mr_dividir_en_lotes en una fila sin lote_ref, sin cambios ahí."""
+    mr_dividir_en_lotes en una fila sin lote_ref, sin cambios ahí.
+
+    Valida que la SUMA de piezas de cada producto, entre todos los lotes, no
+    exceda su `planned_qty` en el plan -- el frontend ya lo bloquea antes de
+    llegar aquí (contorno rojo en el campo), pero esta es la validación real:
+    nunca hay que confiar solo en lo que ya filtró la pantalla."""
     lotes = json.loads(lotes) if isinstance(lotes, str) else lotes
+
+    pp = frappe.get_doc("Production Plan", plan)
+    planned_por_producto = {r.item_code: flt(r.planned_qty) for r in pp.get("po_items") or []}
+    asignado_por_producto = {}
+    for lote in lotes:
+        for producto, piezas in (lote.get("piezas") or {}).items():
+            asignado_por_producto[producto] = asignado_por_producto.get(producto, 0) + flt(piezas)
+    excesos = [
+        _("{0}: repartiste {1} piezas entre los lotes, pero el plan solo pide {2}.").format(
+            producto, round(asignado, 2), round(planned_por_producto.get(producto, 0), 2)
+        )
+        for producto, asignado in asignado_por_producto.items()
+        if asignado > planned_por_producto.get(producto, 0) + 0.001
+    ]
+    if excesos:
+        frappe.throw(_("La cantidad de algún producto excede lo que pide el plan -- {0}").format("; ".join(excesos)))
+
     materiales_por_lote = _materiales_de_lotes_por_piezas(plan, lotes)
 
     lotes_items = []

@@ -174,6 +174,20 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     const asignado = mrLotes.value.reduce((s, l) => s + (Number(l.piezas[item_code_producto]) || 0), 0);
     return Math.round((total - asignado) * 100) / 100;
   }
+  // Pendiente negativo = entre todos los lotes ya se pidieron más piezas de
+  // ese producto de las que el plan tiene -- marca en rojo TODOS los campos
+  // de ese producto (en cualquier lote) para que se note dónde ajustar, sin
+  // importar cuál de ellos fue el que hizo que se pasara.
+  function mrLoteProductoExcedido(item_code_producto) {
+    return mrLotePendiente(item_code_producto) < -0.001;
+  }
+  // Ningún lote/producto debe quedar excedido para poder validar y dividir --
+  // igual de estricto que el backend (mr_dividir_en_lotes_por_piezas), pero
+  // bloquea el botón antes de siquiera intentarlo.
+  const mrLotesInvalidos = computed(() =>
+    mrLotes.value.length > 0
+    && (planDetail.value?.po_items || []).some((p) => mrLoteProductoExcedido(p.item_code))
+  );
   // Vista previa de materiales por lote (informativa, solo lectura) -- se
   // recalcula sola cada vez que cambian las piezas capturadas; debounce corto
   // para no disparar una llamada por cada tecla mientras se escribe.
@@ -236,6 +250,10 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     finally { advancing.value = false; }
   }
   async function validarSolicitud() {
+    if (mrLotesInvalidos.value) {
+      showToast("Algún producto tiene más piezas repartidas entre los lotes de las que pide el plan -- ajústalo antes de validar", "error");
+      return;
+    }
     advancing.value = true;
     try {
       await call("costeo_yelke.api.costeo_api.guardar_solicitud_material", { mr: mrDetail.value.name, items: JSON.stringify(mrItems.value), schedule_date: mrSchedule.value || null });
@@ -1471,7 +1489,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     docCompra, docCompraItems, docCompraForm, docCompraValidated, docCompraHasRate, ocSelected,
     loteOc, abrirLoteOc, cerrarLoteOc, crearOc,
     mrLotes, addMrLote, removeMrLote, repartirMrLotesIgual, mrLotePendiente,
-    mrLotesPreview, actualizarPreviewLotes,
+    mrLotesPreview, actualizarPreviewLotes, mrLoteProductoExcedido, mrLotesInvalidos,
     loadSolicitud, crearSolicitud, guardarSolicitud, validarSolicitud,
     loadDocCompra, selectOC, selectOcLote, selectRfq, selectSq, guardarDocCompra, validarDocCompra, revisarDocCompra, jalarPreciosOC,
     // doble validación (Enviar -> Revisor -> Aprobador) -- hoy solo la Orden de Compra
