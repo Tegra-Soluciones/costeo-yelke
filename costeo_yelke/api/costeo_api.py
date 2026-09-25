@@ -4559,7 +4559,14 @@ def mr_dividir_en_lotes(mr: str, lotes) -> dict:
         if lote_ref:
             new_row["lote_ref"] = lote_ref
         if schedule_date:
-            new_row["schedule_date"] = schedule_date
+            # getdate(): la fecha llega como string (viene de JSON) -- las filas
+            # que NO se tocan aquí se quedan con la de `base`, que al venir de
+            # it.as_dict() YA es un datetime.date. Sin normalizar, ERPNext truena
+            # al validar ("'<' not supported between instances of 'datetime.date'
+            # and 'str'") en cuanto compara fechas de filas de los dos tipos --
+            # mismo patrón de bug que ya se corrigió antes en otro lado (Orden de
+            # Venta con variantes de talla).
+            new_row["schedule_date"] = getdate(schedule_date)
         doc.append("items", new_row)
 
     for lote in rows:
