@@ -133,34 +133,67 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   // en cuántas tandas y con qué fechas se va a comprar. Al validar, se generan todas
   // las OC de un jalón (mr_crear_ocs_por_lotes). Estado 100% local (no se persiste
   // hasta que se validan).
+  //
+  // Se captura por PIEZAS de cada producto terminado (igual que "Cantidad a
+  // producir" del plan) -- la materia prima de cada lote se deriva sola
+  // (mr_preview_lotes_materiales / mr_dividir_en_lotes_por_piezas, misma
+  // explosión de BOM que ya usa el Production Plan), en vez de pedirle a la
+  // persona que calcule a mano cuánta tela/cinta/botón corresponde a esa
+  // cantidad de prendas.
   const mrLotes = ref([]);
+  const mrLotesPreview = reactive({});
   let _mrLoteSeq = 0;
   function addMrLote() {
-    const cantidades = {};
-    mrItems.value.forEach((it) => { cantidades[it.item_code] = 0; });
-    mrLotes.value.push({ id: `mrlote_${++_mrLoteSeq}`, fecha_requerida: "", cantidades, lote_ref: siguienteLoteLibre() });
+    const piezas = {};
+    (planDetail.value?.po_items || []).forEach((it) => { piezas[it.item_code] = 0; });
+    mrLotes.value.push({ id: `mrlote_${++_mrLoteSeq}`, fecha_requerida: "", piezas, lote_ref: siguienteLoteLibre() });
   }
-  function removeMrLote(id) { mrLotes.value = mrLotes.value.filter((l) => l.id !== id); }
-  // Reparte el saldo de cada material en partes iguales entre los lotes ya creados;
+  function removeMrLote(id) {
+    mrLotes.value = mrLotes.value.filter((l) => l.id !== id);
+    actualizarPreviewLotes();
+  }
+  // Reparte el saldo de cada producto en partes iguales entre los lotes ya creados;
   // el ÚLTIMO lote se lleva el residuo del redondeo (para que la suma cuadre exacto).
   function repartirMrLotesIgual() {
     const n = mrLotes.value.length;
     if (!n) return;
-    mrItems.value.forEach((it) => {
-      const total = Number(it.qty) || 0;
+    (planDetail.value?.po_items || []).forEach((it) => {
+      const total = Number(it.planned_qty) || 0;
       const base = Math.floor(total / n);
       let asignado = 0;
       mrLotes.value.forEach((lote, i) => {
         const qty = i === n - 1 ? total - asignado : base;
-        lote.cantidades[it.item_code] = qty;
+        lote.piezas[it.item_code] = qty;
         asignado += qty;
       });
     });
+    actualizarPreviewLotes();
   }
-  function mrLotePendiente(item_code) {
-    const total = mrItems.value.find((it) => it.item_code === item_code)?.qty || 0;
-    const asignado = mrLotes.value.reduce((s, l) => s + (Number(l.cantidades[item_code]) || 0), 0);
+  function mrLotePendiente(item_code_producto) {
+    const total = planDetail.value?.po_items?.find((it) => it.item_code === item_code_producto)?.planned_qty || 0;
+    const asignado = mrLotes.value.reduce((s, l) => s + (Number(l.piezas[item_code_producto]) || 0), 0);
     return Math.round((total - asignado) * 100) / 100;
+  }
+  // Vista previa de materiales por lote (informativa, solo lectura) -- se
+  // recalcula sola cada vez que cambian las piezas capturadas; debounce corto
+  // para no disparar una llamada por cada tecla mientras se escribe.
+  let _previewTimer = null;
+  function actualizarPreviewLotes() {
+    clearTimeout(_previewTimer);
+    _previewTimer = setTimeout(async () => {
+      if (!planDetail.value || !mrLotes.value.length) { Object.keys(mrLotesPreview).forEach((k) => delete mrLotesPreview[k]); return; }
+      const lotes = mrLotes.value
+        .filter((l) => l.lote_ref)
+        .map((l) => ({ lote_ref: l.lote_ref, piezas: l.piezas }));
+      if (!lotes.length) return;
+      try {
+        const r = await call("costeo_yelke.api.costeo_api.mr_preview_lotes_materiales", {
+          plan: planDetail.value.name, lotes: JSON.stringify(lotes),
+        });
+        Object.keys(mrLotesPreview).forEach((k) => delete mrLotesPreview[k]);
+        Object.assign(mrLotesPreview, r);
+      } catch { /* la vista previa es informativa -- si falla, no interrumpe la captura */ }
+    }, 400);
   }
 
   async function loadSolicitud() {
@@ -210,14 +243,17 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
         .map((l) => ({
           schedule_date: l.fecha_requerida || null,
           lote_ref: l.lote_ref || null,
-          items: Object.entries(l.cantidades).filter(([, q]) => Number(q) > 0).map(([item_code, qty]) => ({ item_code, qty: Number(qty) })),
+          piezas: Object.fromEntries(Object.entries(l.piezas).filter(([, q]) => Number(q) > 0).map(([k, q]) => [k, Number(q)])),
         }))
-        .filter((l) => l.items.length);
+        .filter((l) => Object.keys(l.piezas).length);
       // Divide las líneas por lote ANTES de validar (la MR debe seguir en borrador
       // para poder reescribir sus renglones) -- no crea ninguna OC todavía, eso se
-      // dispara después, por lote, desde su propia pantalla.
+      // dispara después, por lote, desde su propia pantalla. La materia prima de
+      // cada lote se deriva sola de las piezas (mr_dividir_en_lotes_por_piezas).
       if (lotesConDatos.length) {
-        await call("costeo_yelke.api.costeo_api.mr_dividir_en_lotes", { mr: mrDetail.value.name, lotes: JSON.stringify(lotesConDatos) });
+        await call("costeo_yelke.api.costeo_api.mr_dividir_en_lotes_por_piezas", {
+          mr: mrDetail.value.name, plan: planDetail.value.name, lotes: JSON.stringify(lotesConDatos),
+        });
       }
       await call("costeo_yelke.api.costeo_api.validar_documento", { doctype: "Material Request", name: mrDetail.value.name });
       mrLotes.value = [];
@@ -1435,6 +1471,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     docCompra, docCompraItems, docCompraForm, docCompraValidated, docCompraHasRate, ocSelected,
     loteOc, abrirLoteOc, cerrarLoteOc, crearOc,
     mrLotes, addMrLote, removeMrLote, repartirMrLotesIgual, mrLotePendiente,
+    mrLotesPreview, actualizarPreviewLotes,
     loadSolicitud, crearSolicitud, guardarSolicitud, validarSolicitud,
     loadDocCompra, selectOC, selectOcLote, selectRfq, selectSq, guardarDocCompra, validarDocCompra, revisarDocCompra, jalarPreciosOC,
     // doble validación (Enviar -> Revisor -> Aprobador) -- hoy solo la Orden de Compra

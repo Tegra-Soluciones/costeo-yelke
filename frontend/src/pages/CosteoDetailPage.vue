@@ -1545,33 +1545,40 @@
 
             <!-- Lotes de entrega: se definen ANTES de validar, para que al validar se
                  generen de un jalón todas las OC ya con su fecha -- en vez de crearlas
-                 una por una después con "Nuevo lote". -->
+                 una por una después con "Nuevo lote". Se captura por PIEZAS de cada
+                 producto terminado (igual que "Cantidad a producir" arriba) -- la
+                 materia prima de cada lote se deriva sola (misma explosión de BOM que
+                 ya usa el plan), en vez de calcularla a mano material por material. -->
             <div v-if="!mrValidated" class="border-t border-surface-border pt-3">
               <div class="flex items-center justify-between mb-1.5">
                 <div>
                   <p class="section-title">Lotes de entrega (opcional)</p>
-                  <p class="text-[11px] text-ink-light">Si la compra se va a escalonar en varias fechas, defínelo aquí — al validar se crean todas las órdenes de compra de un jalón, ya con su cantidad y fecha.</p>
+                  <p class="text-[11px] text-ink-light">Si la producción se va a escalonar en varias tandas, indica aquí cuántas PRENDAS lleva cada lote — la materia prima que le corresponde se calcula sola. Al validar se crean todas las órdenes de compra de un jalón, ya con su cantidad y fecha.</p>
                 </div>
-                <button class="add-link shrink-0" @click="addMrLote"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Lote</button>
+                <button class="add-link shrink-0" @click="addMrLote(); actualizarPreviewLotes()"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Lote</button>
               </div>
               <template v-if="mrLotes.length">
                 <div v-for="lote in mrLotes" :key="lote.id" class="rounded-lg border border-surface-border p-2.5 mb-2">
                   <div class="flex items-center gap-2 mb-2">
-                    <input v-model="lote.lote_ref" class="field-input w-24 text-[11.5px] font-semibold" title="Nombre del lote — usa el mismo que su lote de subcontratación para que aparezcan juntos" />
+                    <input v-model="lote.lote_ref" class="field-input w-24 text-[11.5px] font-semibold" title="Nombre del lote — usa el mismo que su lote de subcontratación para que aparezcan juntos" @change="actualizarPreviewLotes()" />
                     <input v-model="lote.fecha_requerida" type="date" class="field-input w-40" />
                     <span class="text-[11px] text-ink-light flex-1">Fecha requerida — si no divide exacto, el último lote se queda con el registro del resto.</span>
                     <button class="del-btn" @click="removeMrLote(lote.id)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
                   </div>
                   <div class="grid grid-cols-2 gap-x-4 gap-y-1">
-                    <div v-for="it in mrItems" :key="it.item_code" class="flex items-center gap-2">
-                      <span class="text-[11.5px] font-mono flex-1 truncate">{{ it.item_code }}</span>
-                      <input v-model.number="lote.cantidades[it.item_code]" type="number" min="0" class="field-input w-24 text-right" />
+                    <div v-for="p in planDetail.po_items" :key="p.item_code" class="flex items-center gap-2">
+                      <span class="text-[11.5px] font-mono flex-1 truncate" :title="`de ${p.planned_qty} pzas`">{{ p.item_code }}</span>
+                      <input v-model.number="lote.piezas[p.item_code]" type="number" min="0" class="field-input w-24 text-right" @input="actualizarPreviewLotes()" />
                     </div>
+                  </div>
+                  <div v-if="mrLotesPreview[lote.lote_ref] && Object.keys(mrLotesPreview[lote.lote_ref]).length" class="mt-2 pt-2 border-t border-surface-border text-[11px] text-ink-light">
+                    <span class="text-ink-muted">Materiales estimados: </span>
+                    <span v-for="(qty, mat, i) in mrLotesPreview[lote.lote_ref]" :key="mat">{{ i > 0 ? ' · ' : '' }}{{ mat }}: {{ qty }}</span>
                   </div>
                 </div>
                 <div class="flex items-center justify-between">
                   <button class="add-link" @click="repartirMrLotesIgual">Repartir en partes iguales</button>
-                  <p class="text-[11px] text-ink-light">Pendiente sin asignar: <span v-for="(it, i) in mrItems" :key="it.item_code">{{ i > 0 ? ' · ' : '' }}{{ it.item_code }}: {{ mrLotePendiente(it.item_code) }}</span></p>
+                  <p class="text-[11px] text-ink-light">Pendiente sin asignar: <span v-for="(p, i) in planDetail.po_items" :key="p.item_code">{{ i > 0 ? ' · ' : '' }}{{ p.item_code }}: {{ mrLotePendiente(p.item_code) }} pzas</span></p>
                 </div>
               </template>
             </div>
@@ -3206,6 +3213,7 @@ const {
   mrDetail, mrItems, mrSchedule, mrResults, mrDocTab, mrValidated,
   docCompra, docCompraItems, docCompraForm, docCompraValidated, ocSelected,
   mrLotes, addMrLote, removeMrLote, repartirMrLotesIgual, mrLotePendiente,
+  mrLotesPreview, actualizarPreviewLotes,
   loadSolicitud, crearSolicitud, guardarSolicitud, validarSolicitud,
   selectOC, selectOcLote, selectRfq, selectSq, guardarDocCompra, validarDocCompra, revisarDocCompra, jalarPreciosOC,
   permisosValidacion, loadPermisosValidacion,

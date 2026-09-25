@@ -4583,6 +4583,119 @@ def mr_dividir_en_lotes(mr: str, lotes) -> dict:
     return {"ok": True}
 
 
+def _material_por_pieza(item_code, bom_no=None, _cache=None):
+    """{item_code_material: qty_por_pieza} de UN producto -- explosión de BOM
+    multinivel, la MISMA que ya usa Production Plan (get_items_for_material_requests)
+    para calcular cuánta materia prima hace falta comprar, verificada a mano contra
+    el plan real: reproduce exacto GABARDINA-NARANJA 1.45/pieza en el producto base,
+    2.0/pieza en la variante XXL/3XL (recetas propias, no un promedio).
+
+    - Salta los renglones de BOM marcados `do_not_explode` (enlace "redundante" --
+      ya se llega a esa pieza vía otro camino, ver upstream_redundantes /
+      "sin reducción transitiva") -- si se volvieran a explotar ahí, la materia
+      prima compartida por varios caminos se contaría de más.
+    - Los renglones de item_group "Sub-Ensamblajes" NUNCA se compran (se
+      subcontratan, ver crear_pos_subcontratacion) -- si su enlace no es
+      redundante, se explota su receta hacia abajo pero el renglón en sí no
+      entra al resultado (mismo criterio que _fill_mr_items_from_inventory).
+    - `_cache` (dict, opcional): para no re-explotar el mismo item_code varias
+      veces cuando un producto se repite en varios lotes de la misma llamada."""
+    cache = _cache if _cache is not None else {}
+    if item_code in cache:
+        return cache[item_code]
+
+    out = {}
+    bom_no = bom_no or frappe.db.get_value(
+        "BOM", {"item": item_code, "is_active": 1, "is_default": 1, "docstatus": 1}, "name"
+    )
+    if not bom_no:
+        cache[item_code] = out
+        return out
+
+    bom = frappe.get_doc("BOM", bom_no)
+    factor = 1 / flt(bom.quantity or 1)
+    for row in bom.items:
+        if row.get("do_not_explode"):
+            continue
+        qty_por_pieza = flt(row.qty) * factor
+        item_group = frappe.db.get_value("Item", row.item_code, "item_group")
+        sub_bom = frappe.db.get_value(
+            "BOM", {"item": row.item_code, "is_active": 1, "is_default": 1, "docstatus": 1}, "name"
+        )
+        if item_group == "Sub-Ensamblajes" and sub_bom:
+            for mat, qty_mat in _material_por_pieza(row.item_code, sub_bom, cache).items():
+                out[mat] = out.get(mat, 0) + qty_mat * qty_por_pieza
+        else:
+            out[row.item_code] = out.get(row.item_code, 0) + qty_por_pieza
+
+    cache[item_code] = out
+    return out
+
+
+def _materiales_de_lotes_por_piezas(plan, lotes):
+    """{lote_ref: {item_code_material: qty}} -- para cada lote (```lotes``` =
+    [{"lote_ref", "piezas": {item_code_producto: qty}}, ...]), suma piezas x
+    _material_por_pieza(producto) de todos sus productos. Comparte una sola
+    `cache` entre lotes (un mismo producto puede repetirse en varios)."""
+    pp = frappe.get_doc("Production Plan", plan)
+    bom_por_producto = {r.item_code: r.bom_no for r in pp.get("po_items") or []}
+    cache = {}
+    out = {}
+    for lote in lotes:
+        materiales = {}
+        for producto, piezas in (lote.get("piezas") or {}).items():
+            piezas = flt(piezas)
+            if piezas <= 0:
+                continue
+            for mat, qty_por_pieza in _material_por_pieza(producto, bom_por_producto.get(producto), cache).items():
+                materiales[mat] = materiales.get(mat, 0) + piezas * qty_por_pieza
+        out[lote.get("lote_ref") or ""] = materiales
+    return out
+
+
+@frappe.whitelist()
+def mr_preview_lotes_materiales(plan: str, lotes) -> dict:
+    """Vista previa (solo lectura, no guarda nada) de cuánta materia prima
+    necesitará cada lote definido por PIEZAS de producto terminado -- para
+    mostrarla mientras se captura, antes de validar la solicitud (ver
+    mr_dividir_en_lotes_por_piezas). Redondeado solo para mostrar."""
+    lotes = json.loads(lotes) if isinstance(lotes, str) else lotes
+    materiales_por_lote = _materiales_de_lotes_por_piezas(plan, lotes)
+    return {
+        lote_ref: {mat: round(qty, 2) for mat, qty in materiales.items()}
+        for lote_ref, materiales in materiales_por_lote.items()
+    }
+
+
+@frappe.whitelist()
+def mr_dividir_en_lotes_por_piezas(mr: str, plan: str, lotes) -> dict:
+    """Como mr_dividir_en_lotes, pero cada lote se define por PIEZAS de cada
+    producto terminado (```lotes``` = [{"lote_ref", "schedule_date",
+    "piezas": {item_code_producto: qty}}, ...]) en vez de por cantidad de cada
+    materia prima a mano -- la materia prima de cada lote se deriva sola
+    (_materiales_de_lotes_por_piezas, misma explosión de BOM que ya usa
+    Production Plan). Sin redondeo por lote (evita que la suma de varios lotes
+    se pase del total real por ir redondeando hacia arriba en cada uno) -- las
+    cantidades viajan en punto flotante; el sobrante de cada material (si las
+    piezas no llenan el 100% de algún producto) lo sigue absorbiendo
+    mr_dividir_en_lotes en una fila sin lote_ref, sin cambios ahí."""
+    lotes = json.loads(lotes) if isinstance(lotes, str) else lotes
+    materiales_por_lote = _materiales_de_lotes_por_piezas(plan, lotes)
+
+    lotes_items = []
+    for lote in lotes:
+        lote_ref = lote.get("lote_ref") or ""
+        materiales = materiales_por_lote.get(lote_ref) or {}
+        if not materiales:
+            continue
+        lotes_items.append({
+            "lote_ref": lote.get("lote_ref"),
+            "schedule_date": lote.get("schedule_date"),
+            "items": [{"item_code": mat, "qty": qty} for mat, qty in materiales.items() if qty > 0],
+        })
+    return mr_dividir_en_lotes(mr, lotes_items)
+
+
 @frappe.whitelist()
 def mr_generar_oc_lote(mr: str, lote_ref: str, supplier: str = None) -> dict:
     """Genera la Orden de Compra de UN lote específico, con la cantidad y fecha que
