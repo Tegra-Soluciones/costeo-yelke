@@ -181,12 +181,21 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   function mrLoteProductoExcedido(item_code_producto) {
     return mrLotePendiente(item_code_producto) < -0.001;
   }
-  // Ningún lote/producto debe quedar excedido para poder validar y dividir --
-  // igual de estricto que el backend (mr_dividir_en_lotes_por_piezas), pero
-  // bloquea el botón antes de siquiera intentarlo.
+  // Pendiente positivo = todavía queda repartir piezas de ese producto en
+  // algún lote -- no es un error (nadie escribió de más), pero mientras
+  // exista no se puede validar: los lotes tienen que cubrir el 100% del
+  // plan, no dejar un sobrante fuera del flujo de lotes.
+  function mrLoteProductoIncompleto(item_code_producto) {
+    return mrLotePendiente(item_code_producto) > 0.001;
+  }
+  // Ningún producto debe quedar excedido NI con piezas sin repartir para
+  // poder validar y dividir -- los lotes tienen que sumar EXACTO el total
+  // del plan. El backend (mr_dividir_en_lotes_por_piezas) solo hace cumplir
+  // el "no excedido"; el "completo" se exige aquí, antes de siquiera
+  // intentarlo.
   const mrLotesInvalidos = computed(() =>
     mrLotes.value.length > 0
-    && (planDetail.value?.po_items || []).some((p) => mrLoteProductoExcedido(p.item_code))
+    && (planDetail.value?.po_items || []).some((p) => mrLoteProductoExcedido(p.item_code) || mrLoteProductoIncompleto(p.item_code))
   );
   // Vista previa de materiales por lote (informativa, solo lectura) -- se
   // recalcula sola cada vez que cambian las piezas capturadas; debounce corto
@@ -251,7 +260,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   }
   async function validarSolicitud() {
     if (mrLotesInvalidos.value) {
-      showToast("Algún producto tiene más piezas repartidas entre los lotes de las que pide el plan -- ajústalo antes de validar", "error");
+      showToast("Los lotes tienen que sumar exacto el total del plan (ni de más ni de menos) antes de poder validar", "error");
       return;
     }
     advancing.value = true;
@@ -1489,7 +1498,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     docCompra, docCompraItems, docCompraForm, docCompraValidated, docCompraHasRate, ocSelected,
     loteOc, abrirLoteOc, cerrarLoteOc, crearOc,
     mrLotes, addMrLote, removeMrLote, repartirMrLotesIgual, mrLotePendiente,
-    mrLotesPreview, actualizarPreviewLotes, mrLoteProductoExcedido, mrLotesInvalidos,
+    mrLotesPreview, actualizarPreviewLotes, mrLoteProductoExcedido, mrLoteProductoIncompleto, mrLotesInvalidos,
     loadSolicitud, crearSolicitud, guardarSolicitud, validarSolicitud,
     loadDocCompra, selectOC, selectOcLote, selectRfq, selectSq, guardarDocCompra, validarDocCompra, revisarDocCompra, jalarPreciosOC,
     // doble validación (Enviar -> Revisor -> Aprobador) -- hoy solo la Orden de Compra

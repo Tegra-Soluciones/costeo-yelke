@@ -1587,11 +1587,15 @@
                     <span class="text-ink-light">Pendiente sin asignar: </span>
                     <span
                       v-for="(p, i) in planDetail.po_items" :key="p.item_code"
-                      :class="mrLoteProductoExcedido(p.item_code) ? 'text-red-600 font-medium' : 'text-ink-light'"
+                      :class="mrLoteProductoExcedido(p.item_code) ? 'text-red-600 font-medium' : (mrLoteProductoIncompleto(p.item_code) ? 'text-amber-700 font-medium' : 'text-ink-light')"
                     >{{ i > 0 ? ' · ' : '' }}{{ p.item_code }}: {{ mrLotePendiente(p.item_code) }} pzas</span>
                   </p>
                 </div>
-                <p v-if="mrLotesInvalidos" class="text-[11.5px] text-red-600 mt-1">Algún producto tiene más piezas repartidas entre los lotes de las que pide el plan — ajústalo antes de validar.</p>
+                <p v-if="mrLotesInvalidos" class="text-[11.5px] mt-1" :class="(planDetail.po_items || []).some((p) => mrLoteProductoExcedido(p.item_code)) ? 'text-red-600' : 'text-amber-700'">
+                  {{ (planDetail.po_items || []).some((p) => mrLoteProductoExcedido(p.item_code))
+                    ? 'Algún producto tiene más piezas repartidas entre los lotes de las que pide el plan — ajústalo antes de validar.'
+                    : 'Todavía quedan piezas sin repartir en ningún lote — los lotes deben sumar exacto el total del plan antes de validar.' }}
+                </p>
               </template>
             </div>
 
@@ -3225,7 +3229,7 @@ const {
   mrDetail, mrItems, mrSchedule, mrResults, mrDocTab, mrValidated,
   docCompra, docCompraItems, docCompraForm, docCompraValidated, ocSelected,
   mrLotes, addMrLote, removeMrLote, repartirMrLotesIgual, mrLotePendiente,
-  mrLotesPreview, actualizarPreviewLotes, mrLoteProductoExcedido, mrLotesInvalidos,
+  mrLotesPreview, actualizarPreviewLotes, mrLoteProductoExcedido, mrLoteProductoIncompleto, mrLotesInvalidos,
   loadSolicitud, crearSolicitud, guardarSolicitud, validarSolicitud,
   selectOC, selectOcLote, selectRfq, selectSq, guardarDocCompra, validarDocCompra, revisarDocCompra, jalarPreciosOC,
   permisosValidacion, loadPermisosValidacion,
