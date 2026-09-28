@@ -4478,6 +4478,25 @@ def mr_crear_oc(mr: str, items=None, schedule_date=None, lote_ref: str = None) -
             final_pos.append(po_name)
         pos = final_pos
 
+    # Ligar las OC al costeo ANTES de jalar precios -- _precio_para_oc necesita
+    # `po.costeo` para poder usar la regla 2 (precio con el que se costeó el
+    # material, ver _precio_costeo_material). Se hacía DESPUÉS de
+    # _aplicar_precios_oc (más abajo, "trazabilidad"), así que esa regla nunca
+    # llegaba a aplicarse aquí -- toda OC creada por esta función caía siempre
+    # a la regla 3 (lista de precios / última compra), silenciosamente, aunque
+    # el costeo tuviera un precio distinto capturado. Bug real, encontrado al
+    # ver que el precio de una OC no coincidía con el del costeo (ver
+    # historial de Version de la OC: el precio ya salía mal desde la PRIMERA
+    # versión, con el campo `costeo` todavía vacío en ese momento).
+    plan = frappe.db.get_value("Material Request Item", {"parent": mr}, "production_plan")
+    costeo = frappe.db.get_value("Production Plan", plan, "costeo") if plan else None
+    if costeo and frappe.db.has_column("Purchase Order", "costeo"):
+        for po in pos:
+            frappe.db.set_value("Purchase Order", po, "costeo", costeo, update_modified=False)
+    if lote_ref and frappe.db.has_column("Purchase Order", "lote_ref"):
+        for po in pos:
+            frappe.db.set_value("Purchase Order", po, "lote_ref", lote_ref, update_modified=False)
+
     _aplicar_precios_oc(pos)
 
     if schedule_date:
@@ -4491,15 +4510,6 @@ def mr_crear_oc(mr: str, items=None, schedule_date=None, lote_ref: str = None) -
             po.flags.ignore_permissions = True
             po.save()
 
-    # ligar las OC al costeo (trazabilidad)
-    plan = frappe.db.get_value("Material Request Item", {"parent": mr}, "production_plan")
-    costeo = frappe.db.get_value("Production Plan", plan, "costeo") if plan else None
-    if costeo and frappe.db.has_column("Purchase Order", "costeo"):
-        for po in pos:
-            frappe.db.set_value("Purchase Order", po, "costeo", costeo, update_modified=False)
-    if lote_ref and frappe.db.has_column("Purchase Order", "lote_ref"):
-        for po in pos:
-            frappe.db.set_value("Purchase Order", po, "lote_ref", lote_ref, update_modified=False)
     frappe.db.commit()
     return {"ok": True, "purchase_orders": pos}
 
