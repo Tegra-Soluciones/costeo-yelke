@@ -5227,6 +5227,17 @@ def get_lotes_produccion(plan: str) -> dict:
     mr_names = frappe.get_all("Material Request", filters={"costeo": costeo, "docstatus": 1}, pluck="name")
     has_sup = frappe.db.has_column("Material Request Item", "supplier")
     materiales_por_lote = {}
+    # Fecha de cada lote -- para poder mostrarlos siempre en el orden en que de
+    # verdad se van a entregar, sin importar en qué orden fueron llegando sus
+    # documentos (SCO, OC de material...) a la base de datos. Se toma la más
+    # antigua entre TODAS las fuentes que traigan fecha para ese lote_ref
+    # (materia prima y maquila).
+    fecha_por_lote = {}
+
+    def _marcar_fecha(lote_ref, fecha):
+        if lote_ref and fecha and (fecha_por_lote.get(lote_ref) is None or fecha < fecha_por_lote[lote_ref]):
+            fecha_por_lote[lote_ref] = fecha
+
     if mr_names and frappe.db.has_column("Material Request Item", "lote_ref"):
         mri_rows = frappe.get_all(
             "Material Request Item",
@@ -5235,6 +5246,7 @@ def get_lotes_produccion(plan: str) -> dict:
             + (["supplier"] if has_sup else []),
         )
         for r in mri_rows:
+            _marcar_fecha(r["lote_ref"], r.get("schedule_date"))
             materiales_por_lote.setdefault(r["lote_ref"], {"mr": r["parent"], "items": []})
             materiales_por_lote[r["lote_ref"]]["items"].append({
                 "item_code": r["item_code"], "item_name": r["item_name"],
@@ -5331,6 +5343,7 @@ def get_lotes_produccion(plan: str) -> dict:
     scos_by_lote = {}
     for s in scos_all:
         scos_by_lote.setdefault(s["lote_ref"] or "Sin lote", []).append(s)
+        _marcar_fecha(s["lote_ref"], s.get("schedule_date"))
 
     lote_keys = list(dict.fromkeys(
         list(scos_by_lote.keys())
@@ -5495,7 +5508,7 @@ def get_lotes_produccion(plan: str) -> dict:
         done_material = all(mp.get("receipt_validated") for mp in material_pos_lote)
         lotes_out.append({
             "lote_ref": lote_ref,
-            "schedule_date": (scos_lote[0]["schedule_date"] if scos_lote else None),
+            "schedule_date": fecha_por_lote.get(lote_ref) or (scos_lote[0]["schedule_date"] if scos_lote else None),
             "done": done_maquila and done_material,
             "productos": [
                 {"finished_item": p, "item_name": _inm(p), "qty": q, "image": _img(p)}
@@ -5508,6 +5521,12 @@ def get_lotes_produccion(plan: str) -> dict:
             "material_rfqs": rfqs_por_lote.get(lote_ref, []),
             "material_sqs": sqs_por_lote.get(lote_ref, []),
         })
+
+    # Siempre en el orden en que de verdad se van a entregar (por fecha), no en
+    # el orden incidental en que sus documentos fueron llegando a la base de
+    # datos -- un lote sin ninguna fecha capturada todavía se manda al final,
+    # no se queda al azar entre los que sí tienen.
+    lotes_out.sort(key=lambda lote: (lote["schedule_date"] is None, lote["schedule_date"]))
 
     return {
         "productos": [
