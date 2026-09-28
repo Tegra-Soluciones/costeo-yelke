@@ -4682,10 +4682,18 @@ def mr_dividir_en_lotes_por_piezas(mr: str, plan: str, lotes) -> dict:
     materia prima a mano -- la materia prima de cada lote se deriva sola
     (_materiales_de_lotes_por_piezas, misma explosión de BOM que ya usa
     Production Plan). Sin redondeo por lote (evita que la suma de varios lotes
-    se pase del total real por ir redondeando hacia arriba en cada uno) -- las
-    cantidades viajan en punto flotante; el sobrante de cada material (si las
-    piezas no llenan el 100% de algún producto) lo sigue absorbiendo
-    mr_dividir_en_lotes en una fila sin lote_ref, sin cambios ahí.
+    se pase del total real por ir redondeando hacia arriba en cada uno).
+
+    Aunque las piezas cubran el 100% de cada producto, casi siempre queda un
+    resto MINÚSCULO por material (bajo 1 unidad): la fila original de la MR ya
+    trae la cantidad total redondeada HACIA ARRIBA (ver
+    _fill_mr_items_from_inventory, margen de seguridad de compra), mientras que
+    la suma exacta de los lotes (sin ese redondeo) casi nunca cae justo en el
+    mismo número. En vez de dejar ese resto suelto en una fila SIN lote (que se
+    veía como un lote fantasma, confuso -- reportado en vivo), se suma al
+    ÚLTIMO lote de la lista, igual que ya se hace con el resto de piezas que no
+    se reparten exacto entre lotes (mr_dividir_en_lotes, "el último lote se
+    lleva el residuo").
 
     Valida que la SUMA de piezas de cada producto, entre todos los lotes, no
     exceda su `planned_qty` en el plan -- el frontend ya lo bloquea antes de
@@ -4711,10 +4719,26 @@ def mr_dividir_en_lotes_por_piezas(mr: str, plan: str, lotes) -> dict:
 
     materiales_por_lote = _materiales_de_lotes_por_piezas(plan, lotes)
 
+    # Resto de redondeo por material (ver docstring) -- se suma al ÚLTIMO lote
+    # para no dejar una fila "sin lote" fantasma.
+    qty_original_por_material = {r.item_code: flt(r.qty) for r in frappe.get_doc("Material Request", mr).items}
+    asignado_por_material = {}
+    for materiales in materiales_por_lote.values():
+        for mat, qty in materiales.items():
+            asignado_por_material[mat] = asignado_por_material.get(mat, 0) + qty
+    resto_por_material = {
+        mat: qty_original_por_material.get(mat, 0) - asignado
+        for mat, asignado in asignado_por_material.items()
+        if qty_original_por_material.get(mat, 0) - asignado > 0.001
+    }
+
     lotes_items = []
-    for lote in lotes:
+    for i, lote in enumerate(lotes):
         lote_ref = lote.get("lote_ref") or ""
-        materiales = materiales_por_lote.get(lote_ref) or {}
+        materiales = dict(materiales_por_lote.get(lote_ref) or {})
+        if i == len(lotes) - 1:
+            for mat, resto in resto_por_material.items():
+                materiales[mat] = materiales.get(mat, 0) + resto
         if not materiales:
             continue
         lotes_items.append({
