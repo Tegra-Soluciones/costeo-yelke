@@ -1,12 +1,14 @@
-# Plan — Producción por pantallas, pestañas y roles
+# Plan — Producción por pantallas, pasos y roles (diseño v2)
 
 > **Para la siguiente sesión:** este documento es la fuente de verdad. Léelo completo antes de tocar código.
 >
-> - Mockups: [`docs/mockups/produccion.html`](mockups/produccion.html). Ábrelo en el navegador; usa datos reales de la chamarra.
-> - Rama: `fix/listo-produccion`.
-> - Base: commit `27f5b59` (todo lo anterior ya commiteado).
-> - Fecha del plan: 2026-10-06.
-> - Estado: **aprobado por el usuario, sin código todavía.**
+> - **Mockup v2 (el que vale):** [`docs/mockups/produccion.html`](mockups/produccion.html). Ábrelo en el navegador: es interactivo, con datos reales de la chamarra.
+>   - Se navega con el menú izquierdo, el stepper del lote y la barra de abajo.
+>   - Abre los paneles laterales con clic en las filas.
+>   - **Copia su HTML y sus clases**: es el sistema de diseño.
+> - Rama: `fix/listo-produccion`. Base: commit `27f5b59` (todo lo anterior ya commiteado).
+> - Fecha del plan: 2026-10-06. Diseño v2 pedido por el usuario el mismo día: "app moderna y minimalista, paso a paso, acciones y siguiente siempre en el mismo lugar".
+> - Estado: **aprobado; sin código todavía.**
 
 ---
 
@@ -14,21 +16,20 @@
 
 | # | Decisión | Respuesta |
 |---|---|---|
-| 1 | La orden de manufactura (OM) sale del lote y sube a Producir; la comparten las OV del costeo y las tallas se calculan por OV | **Sí** |
+| 1 | La orden de manufactura (OM) sale del lote y sube a Producción; la comparten las OV del costeo y las tallas se calculan por OV | **Sí** |
 | 2 | Commit de lo pendiente antes de empezar | **Hecho** (`27f5b59`) |
-| 3 | Pestañas propias de **Envíos** y de **Facturas** | **Sí** |
+| 3 | Vistas propias de **Envíos** y de **Facturas** | **Sí** (a nivel Producción, como "bandejas", con filtro por lote) |
 | 4 | **Un rol por cada vista** ("pestaña padre"). Quien necesite dos vistas recibe los dos roles | **Sí** |
-| 5 | Mantener todo lo que hoy se muestra. **No omitir ningún dato ni acción** | Regla dura; ver §9, matriz de trazabilidad |
+| 5 | Mantener todo lo que hoy se muestra. **No omitir ningún dato ni acción** | Regla dura; ver §9 |
+| 6 | **Diseño v2:** app moderna, minimalista, todo paso a paso; los botones de acción y de "siguiente" siempre en el mismo lugar | **Sí**, ver §4 y el mockup |
 
-### Ajuste de diseño respecto a la primera propuesta (explicárselo al usuario si pregunta)
-**Envíos** y **Facturas** quedan a nivel **Producir** (de la OV activa), con filtro por lote, y **no** dentro de cada lote. Hay cuatro razones, todas verificadas en datos reales:
-
+### Por qué Envíos y Facturas viven a nivel Producción y no dentro del lote
+Verificado con datos reales:
 - **La factura de maquila es por taller, no por lote.** Se factura contra la OC del taller, que cubre todos sus lotes.
-  - `maquila_pendiente` es el mismo número en Lote 1 y Lote 2. Ejemplo: corte ALEJANDRO TORRES = $18,330 en ambos.
-  - Dentro de un lote se vería duplicado.
-- **El sobrante en talleres es por almacén del taller**, no por lote (`sub_saldo_talleres(costeo)`).
+  - `maquila_pendiente` es el mismo número en Lote 1 y Lote 2. Ejemplo: corte = $18,330 en ambos.
+  - Dentro del lote se vería duplicado.
+- **El sobrante es por almacén del taller** (`sub_saldo_talleres(costeo)`).
 - **Almacén trabaja por lo que hay que mover hoy**, sin importar el lote.
-- **Desde el lote no se pierde nada:** su Resumen muestra los conteos de Envíos y Facturas de ese lote, con enlace a la vista ya filtrada.
 
 ---
 
@@ -215,7 +216,7 @@ Archivo principal: `frontend/src/pages/CosteoDetailPage.vue`, de 6,471 líneas.
 - **Página — entrega y facturas:** `crearRemisionLote`, `irARemision`, `abrirFacturaFuente`, `abrirFacturaMaquila`, `crearFacturaInline`, `validarFacturaInline`, `facturaParadaHecha`, `guardarPinv`, `loadCompras`, `selectCompra`, `generarFacturaCompra`, `validarPinv`.
 - **Página — navegación:** `triggerHighlight`, `prepararProduccion`, `goStep`.
 - **`useProduccion.js`:** todo lo exportado. Plan, solicitud, lotes de entrega, compras, recibos, subcontratos, encargos, transferencias, recibos de maquila, OM, `lotesProduccion`, `loteActivoRef`, `loteParadaActiva`, `seleccionarLote`, `seleccionarParada`, `abrirNuevoLote`, `crearNuevoLote`, `crearOrdenesSeleccion`, `nuevaEntregaForm`, `talleresSaldo`, `devolverMaterialTaller`, `neteoOc`, `transAgrupado`, `prodComplete`, `materiaPrimaPct`, `subcontratacionPct`, `permisosValidacion`.
-- **Código muerto detectado:** `components/LoteCard.vue` no se usa en ninguna página. Se borra en la Fase 6.
+- **Código muerto detectado:** `components/LoteCard.vue` no se usa en ninguna página. Se borra en la Fase 7.
 
 ---
 
@@ -265,218 +266,347 @@ Revisar y filtrar igual que H1. Todos reciben `costeo`; agregar `sales_order=Non
 
 ---
 
-## 4. Nueva estructura
+## 4. Diseño v2: estructura y sistema de diseño
 
+### 4.1 Principios (obligatorios; revisar cada pantalla contra esto)
+1. **Paso a paso.** Todo lo que tiene orden se muestra como **stepper**, siempre el mismo componente:
+   - la Preparación (3 pasos);
+   - el lote (4 pasos);
+   - cada taller (4 pasos);
+   - cada documento de compra (OC → Recibo → Factura).
+
+   El paso actual va en naranja con halo; los hechos, verde con ✓; los facturados, índigo; los bloqueados, rojo.
+2. **Las acciones viven en un solo lugar:**
+   - En la página, en la **barra de acciones fija abajo**.
+   - En un panel lateral, en el **pie del panel**: misma altura y misma disposición que la barra de abajo.
+   - **No hay botones de acción principales dentro de tarjetas ni tablas.** Única excepción: acciones por fila que no avanzan el flujo, como "Registrar devolución".
+3. **El botón de la derecha siempre avanza.**
+   - Si el paso tiene algo pendiente, es esa acción ("Validar factura", "Enviar al taller").
+   - Si ya terminó, es **"Siguiente: <paso> →"**.
+   - A su izquierda, las secundarias ("Guardar", "Revisar transferencia", "Generar las 6").
+   - A la izquierda de la barra, **"← <anterior>"** y una línea de estado con su punto de color, que explica por qué el botón está como está.
+4. **Listas que solo muestran el estado; el detalle se abre en un panel lateral** (drawer, 560 px; pantalla completa en celular) para documentos sueltos, o en una sub-pantalla para trabajo de varios pasos (un taller).
+5. **Minimalismo:**
+   - Fondo `surface`, tarjetas blancas con borde de 1 px.
+   - Puntos de estado de 8 px en vez de bloques de color.
+   - El naranja de marca solo para lo principal (botón principal, paso actual, conteos urgentes).
+   - Textos de ayuda en una línea gris (`lede`/`meta`).
+   - Lo avanzado o poco usado va colapsado (`<details>`) o en "⋯".
+6. **Mismo vocabulario de estado en todas partes:**
+
+   | Color | Significado |
+   |---|---|
+   | Verde | Hecho |
+   | Índigo | Facturado |
+   | Ámbar | Pendiente o borrador |
+   | Naranja | Lo que sigue |
+   | Rojo | Bloqueado o falta |
+   | Gris | En espera |
+
+7. **Nada se pierde:** todo dato o acción actual tiene lugar (§9). Lo que no cabe a la vista va en `<details>`, en "⋯" o en el panel.
+
+### 4.2 Estructura de pantalla (Producción, paso 5 del costeo)
 ```
-Stepper:  Costear · Cotizar · Vender · Alta · Flujo · PRODUCCIÓN · Enviar · Facturar · Reportar
-                                                       └ riel: Lote 1 · Lote 2 · +   (se queda igual)
-
-PRODUCCIÓN  (paso 5)
-┌───────────────────────────────────────────────────────────────────────┐
-│ OV activa: SAL-ORD-2026-00009 ▾        [barra de avance MP / maquila] │  ← fijo arriba
-├───────────────────────────────────────────────────────────────────────┤
-│ Tablero │ Preparación │ Orden de manufactura │ Envíos (3) │ Facturas (12) │  ← sub-navegación
-└───────────────────────────────────────────────────────────────────────┘
-     o, con un lote abierto (desde el riel o una tarjeta del Tablero):
-┌ ← Producción   Lote 1 · 01/10/2026 · Chamarra 1,440 · XXL-3XL 87 ─────┐
-│ Resumen │ Materia prima ✓ │ Flujo │ Talleres 2 │ Entrega               │
-└───────────────────────────────────────────────────────────────────────┘
+┌ encabezado de la app ─────────────────────────────────────────────────────┐
+├ stepper del costeo (sin cambios): Costear · … · PRODUCCIÓN · Enviar · …  ┤
+├──────────────┬────────────────────────────────────────────────────────────┤
+│ MENÚ (248px) │  eyebrow  · título · una línea de ayuda                    │
+│ [OV activa ▾]│  [stepper de la vista, si aplica]                         │
+│ Tablero      │                                                            │
+│ PREPARAR     │  contenido (listas, tablas, formularios)                   │
+│ ● Preparación│                                                            │
+│ ● OM         │                                                            │
+│ LOTES        │                                                            │
+│ ● Lote 1     │                                                            │
+│ ● Lote 2     │                                                            │
+│ + Nuevo lote │                                                            │
+│ BANDEJAS     ├────────────────────────────────────────────────────────────┤
+│ Envíos   (1) │ ← Anterior   ● estado en una línea     [secundaria] [PRIMARIA →] │ ← barra fija
+│ Facturas(12) │                                                            │
+└──────────────┴────────────────────────────────────────────────────────────┘
 ```
 
-**Navegación:**
-- **Sub-navegación de Producción** (sin lote abierto): Tablero · Preparación · Orden de manufactura · Envíos · Facturas.
-- **Lotes:** se abren desde el riel del stepper (sin cambios) o desde las tarjetas del Tablero. No hay pestaña "Lotes" aparte.
-- **Pestañas del lote:** Resumen · Materia prima · Flujo · Talleres · Entrega. El "← Producción" regresa a la sub-vista anterior.
+**Menú izquierdo** (`ProduccionMenu.vue`). Reemplaza la sub-navegación, el `ActiveSOSelector` de este paso y el riel de lotes del stepper. Contiene:
+- **Tarjeta "Orden de venta"** arriba: nombre, cantidades por producto, número de lotes y ⌄ para cambiar. Es el `ActiveSOSelector` rediseñado; en los pasos 6–8 se queda como está hoy.
+- **Tablero.**
+- **Preparar:** Preparación (n/3) · Orden de manufactura (n capturadas / total).
+- **Lotes:** uno por renglón, con su punto de estado y a la derecha el paso actual ("1 · Materia prima" o "entregado"); **+ Nuevo lote** abre un panel lateral.
+- **Bandejas:** Envíos y Facturas, con conteo naranja de pendientes.
+- Solo muestra lo que el rol permite (§6).
+- **Celular** (<1024 px): el menú se vuelve un `<select>` arriba del contenido.
+- **El riel de lotes del stepper del costeo (`CosteoStepper`) se quita**, porque ahora vive en el menú. El paso "Producción" del stepper sigue igual.
 
-**Indicadores en pestañas:**
-- ✓ verde: todo hecho.
-- Número: pendientes de esa pestaña.
-- ⚠ ámbar: bloqueado o requiere atención.
-- Índigo: facturado.
+**Barra de acciones** (`BarraAcciones.vue`, sticky abajo del área principal, 64 px):
+- **Izquierda:** botón fantasma "← <anterior>". Se oculta si no hay anterior.
+- **Centro:** punto de color + una línea de estado (truncada; oculta en celular).
+- **Derecha:** 0–2 secundarias + 1 primaria.
+- **La configuración la da cada vista** con un computed `barra = { atras:{texto, ir}, estado:{color, texto}, acciones:[{texto, tipo, deshabilitado, motivo, accion}] }`. Ver la tabla §4.6.
 
-**Pestaña por defecto:**
-- Producción: **Tablero**. Si el usuario no tiene ese rol, la primera vista que sí tenga.
-- Lote: **Resumen**.
-- Si el plan no existe o no está validado, Producción abre en **Preparación**, igual que hoy.
+**Panel lateral** (`PanelLateral.vue`):
+- **Encabezado:** eyebrow, título, meta, pill de estado, "⋯" (acciones raras) y ✕.
+- **Stepper opcional** del documento.
+- **Cuerpo** con scroll.
+- **Pie de 64 px:** a la izquierda, enlaces (Vista previa, Descargar, Imprimir, ERPNext ↗); a la derecha, secundaria + primaria.
+- Esc o clic fuera lo cierra. Uno a la vez.
+- **Adentro va el contenido actual de `PurchaseDocPanel` / `FacturaCompraPanel`, sin sus botones:** los botones se suben al pie del panel. Agregar a esos componentes una prop `sinAcciones` y exponer sus acciones con eventos. No duplicar lógica.
 
-### 4.1 URL (query params, sin tocar el router)
+### 4.3 Componentes nuevos (todos en `frontend/src/components/produccion/`)
+
+| Componente | Qué es |
+|---|---|
+| `ProduccionLayout.vue` | Menú + área principal + barra de acciones; slot por vista |
+| `ProduccionMenu.vue` | §4.2 |
+| `BarraAcciones.vue` | §4.2 |
+| `PanelLateral.vue` | §4.2 |
+| `Pasos.vue` | Stepper genérico: `pasos=[{clave, texto, estado: hecho/facturado/actual/bloqueado/espera}]`, `seleccionado`, `navegable` (emite `ir`). Modo compacto (solo números) para filas de lista |
+| `FilaLista.vue` | Punto de estado · título + meta · slot derecho (pasos compactos o pills) · chevron. Clic = abrir |
+| `Segmentado.vue` | Control segmentado (filtros de lote o producto, secciones de bandejas) |
+| `EstadoPunto.vue` / `Pill.vue` | Vocabulario de §4.1.6 |
+| `VacioEstado.vue` | Icono gris + título + una línea |
+
+Las clases base están en el `<style>` del mockup:
+- `.panel`, `.row`, `.eyebrow`, `.h1`, `.lede`, `.meta`, `.btn-*`, `.seg`, `.pill-*`, `.dot-*`, `.step*`, `.field`, `.ro`, `.tbl`.
+- Pasarlas a `style.css` dentro de `@layer components` **con prefijo `p-`** (`.p-panel`, `.p-row`…) para no chocar con `.field-input` y las demás clases existentes.
+
+### 4.4 Mapa de vistas
+
+| Vista (clave URL) | Dónde en el menú | Stepper | Rol (§6) |
+|---|---|---|---|
+| `tablero` | Tablero | — | Tablero |
+| `preparacion` | Preparar · Preparación | Plan · Materia prima · Órdenes a talleres | Preparación |
+| `om` | Preparar · Orden de manufactura | — (sub-menú de secciones) | OM |
+| `lote` + `paso=materia` | Lotes · Lote N | **1 Materia prima** · 2 Flujo · 3 Talleres · 4 Entrega | Materia Prima |
+| `lote` + `paso=flujo` | 〃 | 1 · **2 Flujo** · 3 · 4 | Flujo |
+| `lote` + `paso=talleres` | 〃 | 1 · 2 · **3 Talleres** · 4 | Talleres |
+| `lote` + `paso=talleres` + `parada=` | 〃 (sub-pantalla) | Encargo · Envío · Recibo · Factura | Talleres |
+| `lote` + `paso=entrega` | 〃 | 1 · 2 · 3 · **4 Entrega** | Entrega |
+| `envios` | Bandejas · Envíos | — (segmentado) | Envíos |
+| `facturas` | Bandejas · Facturas | — (segmentado) | Facturas |
+
+**Ya no hay pestaña "Resumen" del lote.** Sus piezas se repartieron:
+- El "siguiente paso del lote" lo dice la barra de acciones.
+- El avance lo da el stepper del lote.
+- Los accesos a Envíos y Facturas están en el menú con sus conteos.
+- El panorama de todos los lotes está en el Tablero.
+
+**Al abrir un lote** se cae en su **paso actual** (el primero no terminado).
+
+### 4.5 URL (query params, sin tocar el router)
 ```
-?step=5&ov=SAL-ORD-2026-00009&vista=tablero|preparacion|om|envios|facturas
-?step=5&ov=…&lote=Lote%201&tab=resumen|materia|flujo|talleres|entrega
-        &prov=<supplier>&doc=rfq|sq|oc|recibo|factura          (materia prima: proveedor y documento abiertos)
-        &parada=<parada_id>&pieza=<pieza>&paso=oc|sco|transfer|recibo|factura|om   (talleres)
-        &filtro_lote=Lote%201                                    (envíos y facturas)
+?step=5&ov=SAL-ORD-2026-00009&vista=tablero|preparacion|om|envios|facturas|lote
+   &prep=1|2|3                                   (preparación)
+   &lote=Lote%202&paso=materia|flujo|talleres|entrega
+   &parada=<parada_id>&pieza=<pieza>&tpaso=encargo|envio|recibo|factura   (taller)
+   &panel=<tipo>:<nombre>                         (panel lateral abierto, p. ej. oc:PUR-ORD-2026-00246)
+   &filtro_lote=Lote%201&seg=salidas              (bandejas)
 ```
-- Crear un composable **`useProduccionRuta.js`**: lee y escribe estos parámetros con `router.replace`, sin agregar historial por cada clic. Aplica el estado al montar.
-- **`?ov=`** manda sobre la OV por defecto, si pertenece al costeo.
-- **`localStorage`:** pasa a `costeo_ultimo_lote_<costeo>_<ov>` y se agrega `costeo_ultima_vista_<costeo>`.
-- **Al cambiar de OV:** limpiar `lote`, `tab`, `parada` y `prov`, e ir al Tablero.
-- `?highlight=` sigue funcionando. Ver H4 y la tabla en §7.3.
+- Composable `useProduccionRuta.js`: lee y escribe con `router.replace`.
+- `?ov=` manda si pertenece al costeo.
+- `localStorage`: `costeo_ultima_vista_<costeo>_<ov>`.
+- Al cambiar de OV: ir al Tablero y limpiar lote, paso, parada y panel.
+- `?highlight=` según §7.3.
 
-### 4.2 Varios productos
-- **Encabezado del lote:** chips por producto con cantidad. Ya existe el texto; se pasa a chips.
-- **Filtro de producto** (chips "Todos · Chamarra · XXL-3XL") en **Flujo**, **Talleres** y **Envíos**, solo si el lote tiene más de un producto.
-  - Filtra paradas y celdas por `productos[].finished_item` con qty > 0.
-  - Las paradas compartidas se ven en cualquier filtro que incluya alguno de sus productos.
-- **Materia prima:** sin filtro (es compartida). Cada material muestra "para: Chamarra, XXL" cuando se puede deducir. Si no se puede sin trabajo extra en el backend, se omite: no inventar.
-- **OM:** una tarjeta por producto base (ya es así); la variante se incluye.
-- **Tablero:** las tarjetas de lote muestran las cantidades por producto.
+### 4.6 Barra de acciones por vista (estados; textos exactos)
+La primaria siempre a la derecha. "→" solo cuando navega.
+
+| Vista / estado | ← Anterior | Estado (punto) | Secundarias | Primaria |
+|---|---|---|---|---|
+| Tablero | — | primer pendiente de "Por hacer" (su color) | — | "Ir a <primer pendiente> →" |
+| Preparación · Plan sin validar | Tablero | ámbar "Plan en borrador" | Obtener materias primas · Guardar | Validar plan |
+| Preparación · Plan validado | Tablero | verde | Orden de trabajo (si se usa) | Siguiente: Materia prima → |
+| Preparación · Solicitud sin crear | Plan | ámbar | — | Crear solicitud de material |
+| Preparación · Solicitud en borrador | Plan | ámbar o rojo si `mrLotesInvalidos` (texto del aviso actual) | Guardar | "Validar solicitud" o "Validar y dividir en N lotes" (deshabilitada si lotes inválidos) |
+| Preparación · Solicitud validada | Plan | verde | — | Siguiente: Órdenes a talleres → |
+| Preparación · Sin OC de taller | Materia prima | ámbar | — | Crear órdenes a talleres |
+| Preparación · OC de taller sin validar | Materia prima | ámbar "Faltan N por validar" | — | Abrir la siguiente → (panel) |
+| Preparación · Todo listo, sin lotes | Materia prima | verde | — | Abrir primer lote → (panel Nuevo lote) |
+| Preparación · Todo listo, con lotes | Materia prima | verde | — | Siguiente: Orden de manufactura → |
+| OM | Preparación | ámbar "Cambios sin guardar" / verde "Guardada" | Ver cómo la recibe un taller | Guardar · o Siguiente: Lote N → si ya está guardada |
+| Lote · Materia prima | Tablero | "N proveedores sin orden" / "N por recibir" / "N facturas en borrador" | Generar las N (si hay más de 1 sin OC) | la acción del primer proveedor pendiente (abre su panel) · o Siguiente: Flujo → |
+| Lote · Flujo, sin selección | Materia prima | "N listas para encargar" / "Nada listo: esperan a X" | — | Siguiente: Talleres → |
+| Lote · Flujo, con selección | Materia prima | "N piezas en M talleres" | Limpiar | Crear M órdenes |
+| Lote · Flujo, confección lista | Materia prima | verde "Todas las piezas listas" | — | Encargar confección |
+| Lote · Talleres (lista) | Flujo | lo del primer taller pendiente | — | Abrir <taller pendiente> → |
+| Taller · Encargo (sin encargo) | Talleres | — | — | Encargar a <taller> · o, con piezas: "Elige las piezas en Flujo →" |
+| Taller · Encargo (borrador) | Talleres | ámbar | Guardar | Validar encargo |
+| Taller · Envío | Talleres | rojo "No alcanza X" / naranja | Revisar transferencia | Enviar al taller (deshabilitado con motivo si falta, **ver decisión pendiente §10**) |
+| Taller · Envío, transferencia en borrador | Talleres | ámbar | Guardar | Validar envío |
+| Taller · Recibo | Talleres | ámbar "Costos adicionales obligatorios" si faltan | Guardar | Validar recibo |
+| Taller · Factura | Talleres | "Por facturar $X" | Guardar | Crear factura / Validar factura |
+| Taller · Todo hecho | Talleres | verde | — | Siguiente taller → · o Siguiente: Entrega → si era el último |
+| Lote · Entrega | Talleres | "Esperando fin de producción" / "N prendas por entregar" / verde "Todo en remisión" | Ver remisión (si existe) | Crear remisión del Lote N (deshabilitada si no está lista) · o Siguiente: Lote N+1 → |
+| Envíos | Tablero | "N salidas, M entradas…" | — | Atender el primero → |
+| Facturas | Tablero | "N pendientes" | — | Capturar la siguiente → (abre panel) |
+| Panel · OC material | (pie) Vista previa · ERPNext | — | Jalar precios · Guardar | Enviar a revisión / Revisar / Validar (según la doble validación y `permisosValidacion`) |
+| Panel · Recibo de compra | (pie) | — | Guardar | Validar recibo (exige costo de envío) |
+| Panel · Factura | (pie) Descargar · Imprimir · ERPNext | — | Guardar | Validar factura · o Crear factura |
+| Panel · Nuevo lote | — | — | Cancelar | Abrir lote |
+
+### 4.7 Varios productos
+- **Filtro de producto** (`Segmentado`: Todos · Producto A · Producto B) a la derecha del título del lote. Solo aparece si el lote tiene más de un producto con cantidad > 0.
+- Afecta a **Flujo**, **Talleres** y **Entrega**. Materia prima no (es compartida).
+- **Menú y Tablero:** cantidades por producto en la meta ("Chamarra 1,440 · XXL-3XL 88").
+- **OM:** una tarjeta por producto base, como hoy.
 
 ---
 
 ## 5. Especificación por vista
+> Cada vista indica:
+> - **Contenido**, con referencia al bloque actual (§2). Todos los textos de ayuda actuales se conservan, en `lede`/`meta` o en `<details>`.
+> - **Estado vacío.**
+> - **Detalle de la barra** (§4.6).
 
-> Formato:
-> - **Rol**: el que da acceso a la vista.
-> - **Muestra**: incluye la referencia al bloque actual (§2).
-> - **Acciones**.
-> - **Estados vacíos**.
-> - **Indicador**: cómo se calcula el de la pestaña.
->
-> Todos los textos de ayuda actuales se conservan.
+### 5.1 Tablero
+- **Encabezado:** "Producción" / "Tablero" / "Todo lo de esta orden de venta…".
+- **Tres indicadores** (rejilla de 3, separadores de 1 px): materia prima recibida (`materiaPrimaPct`), maquila recibida (`subcontratacionPct` + "N de M encargos" de `prodComplete`), entregado (`related.delivery_per_delivered`, hoy solo visible en el paso 6). Reemplazan a `ProductionProgressBar` en este paso.
+- **Lotes:** `FilaLista` por lote. Punto de estado, "Lote N · fecha", cantidades por producto, `Pasos` compacto (4) y pill del paso actual. Clic: abre el lote en su paso actual.
+- **Por hacer:** hasta 8 `FilaLista`, cada una con destino exacto (vista, lote, paso, parada, panel). Se calculan en el frontend:
+  - Proveedores sin OC o con OC sin validar.
+  - Recibos pendientes.
+  - Celdas listas para encargar.
+  - Encargos sin enviar (marcados en rojo si `materialesSco` tiene `falta`).
+  - Enviados sin recibir.
+  - Facturas en borrador.
+  - Maquila por facturar (una por taller).
+  - Lotes listos para remisión.
+  - Sobrantes con la producción terminada.
+- **Vacío** (sin plan): `VacioEstado` "Aún no has creado el plan de producción" + primaria "Ir a Preparación →".
 
-### 5.1 Producción · **Tablero**
-- **Rol:** `Producción Tablero Yelke`. Solo lectura.
-- **Muestra:**
-  - G1 (selector de OV) y G2 (barra de avance), arriba y comunes a toda la Producción. **Nuevo en G2:** pasar también `envio-pct` (`related.delivery_per_delivered`), que hoy solo se muestra en el paso 6.
-  - **PROPUESTA, confirmar con el usuario antes de implementar:** "Enviar al taller" deshabilitado (tooltip "No alcanza el material") cuando algún material del encargo tiene `falta` (`materialesSco`). Hoy el botón se deja pulsar y el backend ajusta a la existencia (`_ajustar_a_existencia`), así que deshabilitarlo podría impedir envíos parciales legítimos. Si el usuario no lo confirma, se deja como hoy (habilitado + aviso rojo). El mockup lo muestra deshabilitado solo como propuesta.
-  - Una **tarjeta por lote** (de `lotesProduccion`):
-    - Nombre y fecha; productos y cantidades.
-    - Mini-barras: **materia prima** (OC del lote recibidas / total de proveedores), **maquila** (paradas recibidas / total), **entregado** (`entrega.producido` vs entregado).
-    - Chip de estado: En compras / En maquila / Listo para entregar / Entregado.
-    - Clic → abre el lote en Resumen.
-  - Tarjeta **"+ Nuevo lote"**: misma acción que el + del riel, `abrirNuevoLote`. Lleva a Preparación §5.2-d.
-  - **Por hacer** (máximo 8 renglones, con enlace directo). Se calcula en el frontend a partir de `lotesProduccion`, `compras` y `talleresSaldo`:
-    - OC de material sin validar, por proveedor y lote.
-    - Recibo de compra pendiente (OC validada sin recibo validado).
-    - Celdas o paradas "listas para encargar".
-    - Encargos sin enviar (`encargado`).
-    - Encargos enviados sin recibir.
-    - Maquila por facturar (`maquila_pendiente` > 0 por taller, una vez por taller).
-    - Facturas de compra en borrador.
-    - Lotes listos para remisión (`entrega.lista`).
-    - Sobrante en talleres con la producción terminada.
-- **Vacío:** sin plan → tarjeta "Aún no has creado el plan de producción" con el botón **Ir a Preparación**.
+### 5.2 Preparación (stepper de 3 pasos; navegable)
+- **Paso 1 · Plan:** G4 (vacío con "Preparar producción", que va a la primaria), G3 (resultado de la preparación, solo después de prepararla) y G5 completo.
+  - Datos de G5: almacén editable, OV, total, cantidad a producir (+5% con borde rojo), materias primas a comprar, producción interna (Orden de trabajo).
+  - **Los botones de G5 se van a la barra:** Obtener materias primas · Guardar · Validar plan.
+  - Validado: tarjeta compacta con todo en solo lectura.
+- **Paso 2 · Materia prima:**
+  - **G6** (solicitud completa: fecha editable, tabla con ±5% y proveedor editable, textos "±5%" y "UDM y precio en la OC").
+  - **G7** (lotes de entrega, el editor completo mientras no se valide; validada, tarjetas compactas por lote).
+  - Botones de G6 y G7 a la barra: Crear solicitud · Guardar · Validar / Validar y dividir en N lotes.
+  - Las acciones de edición de G7 ("+ Lote", quitar, "Repartir en partes iguales") se quedan dentro del editor: son edición, no avance.
+- **Paso 3 · Órdenes a talleres:**
+  - Lista de OC de maquila (`FilaLista`): taller, OC, total, estado.
+  - Clic → panel lateral con la OC (`PurchaseDocPanel` sin botones; doble validación, enviar, vista previa) y, debajo, **la OM que recibe ese taller** (`OmTallerView`, o `OrdenManufacturaForm` legacy si no hay OM general).
+  - Sin OC: primaria "Crear órdenes a talleres" (`crearSubcontratos` + revisar/validar, igual que `crearSubcontratosDesdeLote`).
+- **G8 "Continuar a producción"** desaparece como tarjeta: es la primaria del paso 3 ("Abrir primer lote →").
+- **Panel "Nuevo lote"** (G9-d): cantidades por producto con "pendiente N" o "Valida antes la 1ª OC de este producto", fecha, avisos de stock y "Revisando materia prima…".
+  - Pie: Cancelar · **Abrir lote**.
+  - Se abre desde el menú (+ Nuevo lote), desde la primaria de Preparación y desde el Tablero.
+  - G9-a (cargando) se muestra dentro del panel.
+  - G9-b y G9-c (faltan OC de taller) **mandan a Preparación · paso 3** con un mensaje, en vez de duplicar esa pantalla.
 
-### 5.2 Producción · **Preparación**
-- **Rol:** `Producción Preparación Yelke`.
-- **Muestra, sin omitir nada:**
-  - **G3** (resultado de la preparación) y **G4** (estado vacío, botón **Preparar producción**).
-  - **G5** (plan): conserva el colapso automático al validarse.
-  - **G6** (solicitud de material) y **G7** (lotes de entrega).
-  - **G8** ("Continuar a producción").
-  - **G9** (nuevo lote), con sus 4 sub-estados:
-    - (c) prerrequisito "valida la OC de maquila de cada taller": `PurchaseDocPanel`, más la OM del taller.
-    - (d) formulario de cantidades y fecha.
-- **Orden vertical:** igual que hoy, G3 → G9.
-- **Indicador:** ✓ si plan validado + solicitud validada + todas las OC de maquila validadas. ⚠ si falta algo para abrir el primer lote.
+### 5.3 Orden de manufactura
+- Encabezado + una tarjeta por producto base (nombre, "incluye variantes", "N talleres · N prendas en esta OV", pill Capturada / Sin capturar).
+- **Editor dentro de la tarjeta, con sub-menú de secciones a la izquierda** (General · Tallas · Procesos · Observaciones · Tablas de medidas · Diagramas); el clic hace scroll a la sección.
+  - Los 9 campos y las 4 marcas van como pills seleccionables.
+  - Tallas en solo lectura, como fichas.
+  - Procesos, observaciones, tablas (plantilla o en blanco, columnas y filas) y diagramas (subir, miniatura, descripción), cada uno con "Para" (`ParaTalleres`).
+- Aviso azul si hay más de una OV: "La ficha la comparten las N órdenes de venta; las tallas son las de la OV activa".
+- **"Ver cómo la recibe un taller"** (secundaria): panel con `OmTallerView` del taller elegido.
+- **Guardar** es la primaria de la barra; hoy el botón está dentro del editor.
 
-### 5.3 Producción · **Orden de manufactura**
-- **Rol:** `Producción Orden de Manufactura Yelke`.
-- **Muestra:** `OmGeneralEditor` tal cual, movido desde L3. Cambios:
-  - Aviso arriba: *"La ficha (modelo, tela, procesos, archivos) la comparten las N órdenes de venta de este costeo. Las tallas son las de la OV activa."* Solo si hay más de una OV.
-  - Las tallas vienen de `get_oms_generales(costeo, sales_order)` (H3).
-  - Debajo de cada producto: los talleres que la reciben, como chips de solo lectura (ya hay `talleres`).
-  - Botón **"Ver cómo la recibe un taller"**: selector de taller → `OmTallerView` con `om_de_oc(po del taller)`. Sirve para verificar el "Para" antes de imprimir.
-- **Indicador:** número de productos sin capturar; ✓ si todos capturados.
+### 5.4 Lote · encabezado común
+- eyebrow "Producción · Lotes", título "Lote N", meta "fecha · cantidades por producto".
+- Filtro de producto a la derecha (§4.7).
+- **Stepper navegable** de 4 pasos con su estado:
+  - **Materia prima:** hecho si todas las OC del lote tienen recibo validado.
+  - **Flujo:** hecho si no quedan celdas ni tarjetas sin encargar.
+  - **Talleres:** hecho si todas las paradas tienen recibo validado. Índigo si además todo está facturado.
+  - **Entrega:** hecho si `entrega.pendiente == 0` y `producido > 0`.
+- **El paso "actual" (naranja)** es el primero no hecho. El "seleccionado" es el que se ve.
 
-### 5.4 Lote · **Resumen**
-- **Rol:** visible si el usuario tiene **cualquiera** de: Tablero, Materia Prima, Flujo, Talleres, Entrega, Envíos, Facturas.
-- **Muestra:**
-  - L0 (encabezado con chips de producto).
-  - **Siguiente paso del lote**: una sola tarjeta con el mismo formato que `guiaParada` (título, detalle, acción). Se calcula en este orden y se toma lo primero pendiente:
-    1. Materia prima sin OC o con OC sin validar → "Generar/validar OC de PROVEEDOR" → Materia prima.
-    2. Recibo de compra pendiente → "Recibir material de PROVEEDOR" → Materia prima (recibo).
-    3. Celdas o paradas listas → "Encargar X a TALLER" → Flujo.
-    4. Encargo sin enviar → "Enviar material a TALLER" → Talleres (transfer).
-    5. Enviado sin recibir → "Confirmar lo que entregó TALLER" → Talleres (recibo).
-    6. Lote producido con pendiente por entregar → "Crear remisión del Lote N" → Entrega.
-    7. Todo listo → "Lote terminado" + resumen.
-  - **Avance por etapa:** fila de chips por `rama_etapas` + `cadenaFinal`, con el estado agregado (recibido / encargado / listo / en espera) y el conteo de piezas. El clic lleva a Talleres con esa parada.
-  - **Accesos rápidos:** "Envíos de este lote: N pendientes" → Envíos con `filtro_lote`; "Facturas de este lote: N en borrador" → Facturas con `filtro_lote`; "Material en talleres: N talleres con sobrante" → Envíos.
-- **Indicador:** ninguno; es la pestaña por defecto.
+### 5.5 Lote · 1 Materia prima
+- Una línea de ayuda.
+- **Aviso azul de neteo** (`neteoOc`), una línea por material, con su texto.
+- **Lista de proveedores** (`proveedoresLote`), cada uno en una `FilaLista`:
+  - Punto de estado.
+  - Proveedor.
+  - Meta con materiales ("Gabardina naranja · 2,871.55 m"; si son varios, separados con "·").
+  - A la derecha, mini-camino "Orden de compra › Recibo › Factura" con el actual en pill.
+- **Clic → panel lateral** del proveedor:
+  - **Stepper:** OC · Recibo · Factura. Navegable a pasos hechos o actuales.
+  - **Cuerpo:** `PurchaseDocPanel` de la OC (proveedor y UDM editables, Jalar precios, ayuda de la OC, doble validación, vista previa) / del recibo (almacén, costo de envío obligatorio, texto de IVA) / `FacturaCompraPanel`.
+  - **Menú "⋯":** "Pedir cotización" (solicitud de cotización) y "Registrar presupuesto del proveedor" (`toggleLoteDoc` 'rfq' / 'sq'). Si ya existen, se ven como enlaces en la meta del panel.
+  - **Sin el rol Facturas**, el paso Factura se ve en solo lectura y el pie dice "La captura la hace Facturas".
+- La lógica de abrir y crear es la de `toggleLoteDoc` (crea el documento si no existe). La primaria de la barra = la acción del primer proveedor pendiente. Secundaria "Generar las N" (crea todas las OC de los proveedores sin OC, en secuencia con `generarOcLote`).
 
-### 5.5 Lote · **Materia prima**
-- **Rol:** `Producción Materia Prima Yelke`.
-- **Muestra:** todo L2, reorganizado:
-  - Aviso azul de neteo (`neteoOc`), igual.
-  - **Tabla con una fila por proveedor:**
-    - Columnas: Proveedor; Materiales (lista compacta "código × cantidad UDM", expandible si son más de 3); **Solicitud de cotización** (chip, solo si existe; si no, en "Más"); **Presupuesto** (igual); **OC** (chip: nombre / "Generar", verde si validada, "· enviado"); **Recibo** (chip); **Factura** (chip índigo / ámbar borrador / gris).
-    - Clic en un chip → **panel lateral derecho** (drawer, ~560 px; pantalla completa en celular) con el mismo contenido que hoy: `PurchaseDocPanel` o `FacturaCompraPanel`, con las mismas props.
-  - Menú **"Más ▾"** por fila: "Pedir cotización" (`toggleLoteDoc(...,'rfq')`) y "Registrar presupuesto del proveedor" (`'sq'`), para no perder estas dos acciones.
-- **Reglas de los chips:** las mismas que los botones actuales, incluidos los deshabilitados con tooltip ("Primero valida el recibo de compra").
-- **El drawer usa `loteDocOpen`** (proveedor + documento). Cerrarlo limpia `loteDocOpen`. Cambiar de pestaña lo cierra.
-- **Factura:** si el usuario no tiene el rol Facturas, el chip se ve con su estado pero el panel abre en **solo lectura** (sin Crear/Guardar/Validar) con el texto "La captura la hace Facturas".
-- **Recibo:** acción permitida a Materia Prima **o** Envíos (§6).
-- **Indicador:** número de proveedores con algo pendiente (sin OC validada o sin recibo validado); ✓ si todos recibidos.
+### 5.6 Lote · 2 Flujo
+- Una línea de ayuda y pills de contadores (`contadoresRamas`).
+- **Matriz** dentro de un panel con `overflow-x-auto`.
+  - **Columnas:** número, título, taller, "$ por prenda" y botón "Listas (N)" / "Quitar".
+  - **Filas:** pieza, "N pzas" o "×N · total".
+  - **Celdas:**
 
-### 5.6 Lote · **Flujo**
-- **Rol:** `Producción Flujo Yelke`.
-- **Muestra:** todo L4:
-  - Matriz, contadores, "Listas (N)" / "Quitar", celdas con todos sus estados.
-  - Barra de selección con **Crear orden / Crear N órdenes**.
-  - Cadena final con sus botones.
-  - Versión sin piezas (`tracksLote`).
-- **Cambio de comportamiento:** el clic en una celda **no** lista o el botón "Ver encargo" de la cadena **navega a Talleres** con `parada`, `pieza` y `paso` (usa `abrirCelda`; abre el paso que corresponde según `subStepDefaultFor`/estado). Ya no despliega el detalle debajo.
-- **"Encargar confección"** (`abrirConfeccion` con estado listo) crea el encargo desde aquí, como hoy, y deja al usuario en Talleres con esa parada.
-- Filtro de producto (§4.2).
-- **Indicador:** número de celdas o tarjetas "listas para encargar".
+    | Estado | Cómo se ve |
+    |---|---|
+    | No aplica | "—" |
+    | Lista | Casilla |
+    | Encargada / enviada | Fondo naranja suave con punto |
+    | Recibida | Verde |
+    | Facturada | Índigo |
+    | En espera | Borde punteado |
 
-### 5.7 Lote · **Talleres** (subcontratación)
-- **Rol:** `Producción Talleres Yelke`.
-- **Lista** (izquierda o arriba): una fila por **parada** (`loteActivo.paradas`, ordenadas por nivel y orden).
-  - Columnas: orden, título, taller, productos (`paradaProductosTexto`), piezas (de `piezasDeParada`), $ por prenda.
-  - **Chips de pasos:** OC ✓ / Encargo ✓ (N encargos) / Envío ✓ / Recibo ✓ / Factura (índigo si facturado, `$ pendiente` si `maquila_pendiente` > 0 y recibido).
-  - Ejemplo de fila: "1 · Servicio De Corte +1 · ALEJANDRO TORRES AGUILERA · 9 piezas · $9.00/prenda".
-- **Detalle** (derecha o abajo) de la parada seleccionada; lo mismo que hoy en L6:
-  - **Siguiente paso** (`guiaParada`), con las mismas acciones.
-  - **Sub-pestañas:** **Orden de compra · OM del taller · Encargos · Envío · Recibo · Factura**.
-    - **Orden de compra:** `PurchaseDocPanel` de la OC del taller.
-    - **OM del taller:** `OmTallerView`, o `OrdenManufacturaForm` legacy si `origen != general`. Se separa del panel de la OC para que no quede escondida.
-    - **Encargos:** lista de encargos, + Otro encargo, checklist de sub-ensamblajes, `EncargoResumen`, tarjeta SCO con sus 6 campos, costos anteriores, Guardar/Validar; estados vacíos (con o sin piezas, sin cantidad).
-    - **Envío:** todo el bloque de transferencia (almacenes, tabla agrupada, avisos, costos con transportista, Guardar/Validar).
-    - **Recibo:** todo el bloque de recibo (3 almacenes, aceptado/rechazado, costos obligatorios, Validar recibo).
-    - **Factura:** `FacturaCompraPanel` de maquila. En solo lectura si no tiene el rol Facturas.
-  - Si se llega con `pieza` desde Flujo: la celda abierta (`celdaRef`) manda sobre los ✓ y la guía, como hoy (`pasoHecho`).
-  - Aviso: la parada es compartida entre piezas (cuello y puños con el mismo taller). Mostrar "Viendo: Cuello" con selector de las piezas de esa parada (`piezasDeParada`) para cambiar de celda.
-- **L7** (lote sin paradas): estado vacío con **Crear órdenes de subcontrato**.
-- Filtro de producto (§4.2).
-- **Indicador:** número de paradas con acción pendiente (encargo sin enviar o enviado sin recibir).
+  - **Al marcar celdas** la barra cambia a "Limpiar" + "Crear M órdenes" (`crearOrdenesSeleccion`). Muestra "N piezas en M talleres" en el estado.
+  - El detalle por taller de la selección actual (`gruposSel`: "taller · etapa · piezas") va en la línea de estado o en un popover sobre la barra.
+- **"Después de las piezas"** (`cadenaFinal`): `FilaLista` estáticas con número, título, "arma la prenda", taller, barra "N de M piezas listas" o "recibe la prenda armada de X", y pill de estado.
+  - El botón de la tarjeta de hoy se vuelve la primaria de la barra cuando su estado es "listo" ("Encargar confección").
+  - En los demás estados, clic en la fila → taller.
+- **Clic en una celda o fila no lista** → sub-pantalla del taller con esa pieza (`abrirCelda`).
+- **Sin piezas** (`tracksLote`): carriles por producto con tarjetas de parada y el producto terminado al final (imagen, nombre, cantidad, Terminado / En proceso). Clic → taller.
 
-### 5.8 Lote · **Entrega**
-- **Rol:** `Producción Entrega Yelke`.
-- **Muestra:** todo L5:
-  - Tabla producto / producido / ya en remisión / por entregar.
-  - Chips de remisiones → paso 6.
-  - Botón con 3 estados → `crearRemisionLote`, que salta al paso 6 como hoy.
-- **Agregar:** almacén donde quedaron las prendas (`entrega.productos[item].almacen`, ya viene del backend; hoy no se muestra).
-- **Indicador:** ✓ si todo entregado; número de prendas por entregar si `lista`.
+### 5.7 Lote · 3 Talleres
+- **Lista** de paradas (`FilaLista`):
+  - Número de orden, título, meta "taller · N piezas · N prendas".
+  - `Pasos` compacto (Encargo, Envío, Recibo, Factura).
+  - Pill del estado actual ("Falta material" rojo / "Por enviar" / "Por recibir" / "Por facturar $X" / "Facturado" / "En espera").
+- **Sub-pantalla de un taller** (clic en la fila):
+  - eyebrow "Lote N · Talleres · i de N", título "<Etapa> · <TALLER>", meta "piezas · prendas · servicios $ por prenda".
+  - A la derecha, botones secundarios **Orden de compra** y **Orden de manufactura** (abren panel).
+  - **"Viendo"** (segmentado): Todas las piezas / cada pieza de la parada (`piezasDeParada`). Cambia la celda abierta (`celdaRef`), igual que hoy.
+  - **Stepper:** Encargo · Envío · Recibo · Factura, con estado según `pasoHecho()`. Navegable.
+  - **Encargo:**
+    - Lista de encargos (referencia, folio, prendas, estado) y "+ Otro encargo" (formulario actual) como enlace.
+    - Chips de sub-ensamblajes.
+    - `EncargoResumen`.
+    - Los 6 campos del encargo, colapsados en `<details>` "Datos del encargo".
+    - "Costos adicionales (registro anterior)" en `<details>`.
+    - Estados vacíos actuales: con piezas → "Elige las piezas en Flujo" con enlace; sin piezas → primaria "Encargar a X"; sin cantidad → campo de cantidad sugerida + aviso.
+  - **Envío:**
+    - Tarjeta "Se le manda al taller" (origen → destino, tabla material / a enviar / UDM / disponible, rojo si falta) + aviso de pie.
+    - `<details>` "Detalle de la transferencia" con TODO lo actual: origen por defecto + "Usar recomendado en todas" + "Aplicar a todas las filas", destino, tabla agrupada editable con almacén por fila y "Ya en el taller", avisos ámbar y rojo, costos adicionales con transportista y "distribuir por".
+    - Si ya hay transferencia en borrador, el `<details>` arranca abierto.
+  - **Recibo:** almacenes aceptado / rechazado / del taller, tabla aceptado / rechazado / UOM, costos adicionales obligatorios con transportista y "distribuir por". Todo visible: es el paso de captura.
+  - **Factura:** `FacturaCompraPanel` sin botones; pendiente = `maquila_pendiente`.
+  - Lo que hoy dice `guiaParada` (título y detalle) va en la línea de estado de la barra, y su acción en la primaria; la "alterna" va como secundaria.
 
-### 5.9 Producción · **Envíos** (almacén)
-- **Rol:** `Producción Envíos Yelke`.
-- **Filtro:** lote (Todos / Lote 1 / Lote 2…, por defecto Todos o `filtro_lote`) y producto.
-- **Secciones**, en este orden; cada fila con lote, taller o proveedor, documento, cantidades y acción:
-  1. **Por recibir de proveedores (entradas):** OC de material validadas sin recibo validado. Acción **Recibir** → drawer con `PurchaseDocPanel` del recibo (el mismo de Materia prima, con costo de envío obligatorio).
-  2. **Por enviar a talleres (salidas):** encargos validados sin transferencia validada. Muestra lo que se le manda (`EncargoResumen`, sección "Se le manda al taller", con "No alcanza" en rojo). Acciones **Enviar al taller** (`enviarMaterialTaller`) y **Revisar transferencia** (drawer con el bloque de transferencia completo).
-  3. **Enviado, por recibir del taller (regresos):** transferencia validada sin recibo de maquila validado. Acción **Recibir del taller** → drawer con el bloque de recibo completo.
-  4. **Material en talleres (sobrantes):** L1 completo, con avisos y **Registrar devolución**.
-  5. **Historial** (colapsado): movimientos ya validados (recibos de compra, transferencias y recibos de maquila) con fecha y enlace.
-- **Datos:**
-  - Todo sale de `lotesProduccion` (`material_pos`, `paradas[].entregas[]` con `transfer_done`/`receipt_validated`) y `talleresSaldo`.
-  - **No crear endpoint nuevo** salvo que falte la fecha del movimiento. Si falta, agregar `fecha` a `entregas[]` y `receipt` en `get_lotes_produccion`, sin tocar `_lote_paradas`; si vive dentro de `_lote_paradas`, preguntar.
-  - El drawer reutiliza `selectSco`/`loadTrans`/`loadScr` (cargan **un** documento a la vez; al abrir otro se reemplaza).
-- **Indicador:** número total de filas en las secciones 1–3.
+### 5.8 Lote · 4 Entrega
+- **Tabla:** Producto · Almacén (`entrega.productos[item].almacen`; hoy no se muestra) · Producido · En remisión · Por entregar.
+- **"Remisiones"** como pills con enlace al paso 6.
+- **Vacío:** `VacioEstado` "Todavía no hay prendas terminadas · faltan N talleres".
+- **Lote entregado:** tarjeta de éxito arriba ("Lote terminado y entregado · N prendas · remisión X validada").
+- **Primaria:** "Crear remisión del Lote N (X prendas)" (`crearRemisionLote`, lleva al paso 6 como hoy) / deshabilitada "Esperando fin de producción" / "Siguiente: Lote N+1 →".
 
-### 5.10 Producción · **Facturas** (de compra)
-- **Rol:** `Producción Facturas Yelke`.
-- **Filtro:** lote (afecta a materiales; la maquila muestra "cubre Lote 1, Lote 2"), tipo (Material / Maquila) y estado (Sin factura / Borrador / Validada).
-- **Tablas:**
-  - **Material** (`compras.materiales`): proveedor, recibo de compra, **lote** (de la OC; se agrega `lote_ref` en `get_facturas_compra`), subtotal (`base_net_total`), factura (nombre / borrador / validada índigo), acción.
-  - **Maquila** (`compras.maquila`): taller, OC, total de la OC, **lotes que cubre**, **pendiente por facturar** (`pendiente_facturar`), facturas (lista `invoices`), acción.
-- **Acción:** clic → drawer con `FacturaCompraPanel`, con las mismas props que hoy: folio, fecha, vencimiento, condiciones, subtotal/total, Guardar/Validar, descargar/imprimir/ampliar/ERPNext, vista previa y aviso "trabajo recibido sin facturar".
-- **Totales al pie:** subtotal facturado, en borrador y por facturar.
-- **Datos:** `get_facturas_compra(costeo, sales_order)` (H2) más `lote_ref` por fila de material y `lotes` por OC de maquila.
-- **Indicador:** número en borrador + sin factura con recibo validado.
+### 5.9 Envíos (bandeja)
+- **Segmentado de secciones**, cada una con su conteo:
+  - **Entradas:** OC de material validadas sin recibo validado → panel de recibo.
+  - **Salidas:** encargos validados sin transferencia validada → sub-pantalla del taller en el paso Envío.
+  - **Regresos:** transferidos sin recibo de maquila → taller, paso Recibo.
+  - **Sobrantes:** L1 completo: avisos y "Registrar devolución" por taller.
+  - **Historial:** movimientos validados con lote, documento, taller o proveedor y enlace.
+- **Segmentado de lote:** Todos / Lote N.
+- **Al entrar**, se elige la primera sección con pendientes.
+- **Datos:** `lotesProduccion` + `talleresSaldo`. Para el Historial, agregar la fecha del documento en `get_lotes_produccion` **sin tocar `_lote_paradas`**; si la fecha vive ahí, preguntar.
+
+### 5.10 Facturas (bandeja)
+- **Tres indicadores:** Por facturar (maquila recibida) · En borrador · Validadas, con importes.
+- **Segmentados:** Pendientes / Validadas / Todas · Todo / Material / Maquila · filtro de lote.
+- **Una sola lista ordenada por importe** (`FilaLista`):
+  - Material: "Proveedor · Material · Lote N · recibo X".
+  - Maquila: "Taller · Maquila · servicio · Lotes 1 y 2 · OC".
+  - Importe y pill (Borrador / Sin factura / Validada índigo).
+- **Clic → panel** con `FacturaCompraPanel`:
+  - Stepper OC ✓ · Recibo ✓ · Factura (material).
+  - Aviso "trabajo recibido sin facturar" (maquila).
+  - Pie: Descargar · Imprimir · ERPNext ↗ | Guardar · Validar factura (o Crear factura).
+- **Datos:** `get_facturas_compra(costeo, sales_order)` + `lote_ref` (material) + `lotes` (maquila) (Fase 0).
 
 ---
 
@@ -499,7 +629,7 @@ Se agregan en `costeo_yelke/roles.py` como **`ROLES_VISTA_PRODUCCION`**, que pas
 
 **Pase libre** (ven y hacen todo): `System Manager`, `Director Yelke` y `Supervisor Yelke`.
 
-**El Resumen del lote** no tiene rol propio: se ve con cualquiera de los anteriores.
+**Ya no existe un "Resumen" del lote** (diseño v2, §4.4). Un lote aparece en el menú si el usuario tiene al menos una de las 4 vistas de lote.
 
 ### 6.2 Backend
 - **En `roles.py`:**
@@ -546,14 +676,16 @@ Se agregan en `costeo_yelke/roles.py` como **`ROLES_VISTA_PRODUCCION`**, que pas
   - `validarDocCompra` llama a `crear_recibo_oc` después de validar la OC: con `materia` basta, porque `crear_recibo_oc` acepta `materia`.
 
 ### 6.3 Frontend
-- `permisosValidacion.vistas` (array).
-- Helper `puedeVer(clave)`. `tieneAlgunaVista` para el Resumen.
-- **Sub-navegación y pestañas:** solo se muestran las vistas permitidas.
-- **Acceso por URL a una vista sin permiso:** pantalla "No tienes acceso a esta vista" con el nombre del rol que falta y botón a la primera vista permitida.
-- **Acciones que viven en una vista pero requieren otro rol:** por ejemplo, Factura dentro de Materia prima o de Talleres. Se muestran en **solo lectura** con una nota.
-- **Riel de lotes del stepper:** visible si tiene alguna vista de lote.
-- **Paso 5 completo:** oculto si el usuario no tiene ninguna vista de Producción.
-- **El backend es la autoridad;** el frontend solo evita botones que van a fallar.
+- `permisosValidacion.vistas` (array) → helper `puedeVer(clave)`.
+- **Menú izquierdo:**
+  - Solo muestra las vistas permitidas.
+  - Los lotes aparecen si el usuario tiene **alguna** vista de lote (materia, flujo, talleres, entrega).
+  - **Al abrir un lote, el stepper muestra los 4 pasos**, pero los no permitidos se ven con candado y no son navegables.
+  - El lote se abre en el primer paso permitido que esté pendiente.
+- **Acceso por URL a una vista sin permiso:** `VacioEstado` "No tienes acceso a <vista>" con el rol que falta; primaria "Ir a <primera vista permitida> →".
+- **Pasos que pertenecen a otra vista** (Factura dentro de Materia prima o de un taller; Recibo de compra para quien solo tiene Envíos, etc.): se ven en **solo lectura** y la barra o el pie dicen "La captura la hace <vista>" sin botones.
+- **Paso 5 del stepper del costeo:** oculto si el usuario no tiene ninguna vista de Producción.
+- **El backend es la autoridad.**
 
 ### 6.4 Relación con los roles de proceso existentes
 - `roles.py` ya tiene `ROLES_PROCESO`: Comprador, Almacenista, Coordinador de Maquila, Planeador, Embarques, Facturador… **Hoy no controlan nada.**
@@ -576,84 +708,66 @@ Se agregan en `costeo_yelke/roles.py` como **`ROLES_VISTA_PRODUCCION`**, que pas
 
 > Cada fase termina con:
 > - `vite build` sin errores.
-> - Recorrido manual en sandbox (§8).
-> - Foto de regresión: comparar `get_lotes_produccion`, `get_facturas_compra` y `get_oms_generales` antes y después para todos los costeos de YP, ignorando el orden.
+> - Recorrido en sandbox (§8) **comparando contra el mockup**.
+> - Foto de regresión de `get_lotes_produccion`, `get_facturas_compra` y `get_oms_generales` (todos los costeos de YP, sin importar el orden).
+> - Aviso corto al usuario.
 >
-> Sin commits salvo que el usuario lo pida. Al terminar cada fase, avisar al usuario con un resumen corto.
+> Sin commits salvo que el usuario lo pida.
 
 ### Fase 0 — Backend: OV y tallas (H1–H4)
 1. `get_lotes_produccion`: filtro por plan, con respaldo de OV única (H1).
-2. `get_facturas_compra(costeo, sales_order=None)`: filtro + `lote_ref` en materiales + `lotes` en maquila (H2, §5.10).
+2. `get_facturas_compra(costeo, sales_order=None)`: filtro + `lote_ref` (material) + `lotes` (maquila) (H2).
 3. `get_oms_generales(costeo, sales_order=None)` y `om_de_oc`: tallas por OV (H3).
-4. Frontend mínimo: mandar `activeSOName` a esos endpoints (`loadCompras`, `OmGeneralEditor`).
-5. Prueba con 2 OV (§3). Desmontar.
-- **Criterio de aceptación:** con dos OV, cada una ve solo lo suyo. Con una OV, la foto es idéntica a la de antes.
+4. Frontend mínimo: mandar `activeSOName` a esos endpoints.
+5. Prueba con 2 OV (§3) y desmontarla.
+- **Criterio de aceptación:** con dos OV, cada una ve solo lo suyo; con una OV, la foto es idéntica.
 
-### Fase 1 — Roles (backend + frontend mínimo)
+### Fase 1 — Roles
 1. `roles.py` (§6.1–6.2), patch `v0_2_47`, `get_permisos_validacion_yelke` con `vistas`.
-2. Guardas en los endpoints de la tabla §6.2.
-3. Prueba:
-   - Usuario de prueba de YP con solo `Producción Envíos Yelke` (crearlo con contraseña de prueba guardada en un fixture o script de la carpeta del proyecto; no repetirla en el chat).
-   - Debe poder transferir y recibir del taller; no puede crear una OC de material (PermissionError con mensaje en español).
-   - Con todos los roles, el flujo sigue igual.
-- **Criterio de aceptación:** ningún usuario actual pierde acceso tras el patch.
+2. Guardas en los endpoints (§6.2).
+3. Prueba con un usuario de YP que tenga solo Envíos. Crearlo con contraseña de prueba guardada en un script del proyecto; no repetirla en el chat.
+- **Criterio de aceptación:** nadie pierde acceso tras el patch; el usuario de un solo rol queda limitado y ve mensajes en español.
 
-### Fase 2 — Esqueleto de navegación (sin cambiar contenido)
-1. Crear `frontend/src/components/produccion/`:
-   - `ProduccionShell.vue`: OV, barra de avance, sub-navegación con indicadores, `<slot>`. Si hay lote abierto, el encabezado del lote con pestañas.
-   - `ProduccionNav.vue`: pestañas genéricas con indicador `{clave, etiqueta, badge, estado}`.
-   - `DrawerPanel.vue`: panel lateral reutilizable (título, cerrar, slot; Esc cierra; ancho completo en celular).
-2. `composables/useProduccionRuta.js` (§4.1).
-3. Mover cada bloque actual **tal cual** a su vista, como componentes que reciben el estado por props/provide:
+### Fase 2 — Sistema de diseño y armazón
+1. Clases `p-*` en `style.css` (§4.3), copiadas del mockup.
+2. Componentes base: `Pasos`, `FilaLista`, `Segmentado`, `EstadoPunto`, `Pill`, `VacioEstado`, `PanelLateral`, `BarraAcciones`.
+3. `ProduccionLayout` + `ProduccionMenu` + `useProduccionRuta`.
+4. `CosteoDetailPage.vue`: el paso 5 pasa a ser `<ProduccionLayout>`; se quita el riel de lotes de `CosteoStepper` (emit `select-lote`/`create-lote` ya no se usa en el paso 5).
+5. **Estado compartido:** `provide('produccion', {...})` desde la página con el objeto de `useProduccion` más las funciones de página de §2.5. Ver el riesgo de los watchers en §10.
+6. En esta fase cada vista puede montar **los bloques actuales tal cual** dentro del layout nuevo, para que todo siga funcionando mientras se rediseñan una por una.
+- **Criterio de aceptación:** la navegación (menú, URL, cambio de OV, abrir lote en su paso actual) funciona y todo lo de hoy sigue accesible.
 
-   | Componente | Contenido |
-   |---|---|
-   | `ProduccionTablero.vue` | Nuevo, §5.1 |
-   | `ProduccionPreparacion.vue` | G3–G9 |
-   | `ProduccionOm.vue` | `OmGeneralEditor` |
-   | `ProduccionEnvios.vue` | §5.9; en esta fase puede empezar solo con L1 y las secciones 2–3 |
-   | `ProduccionFacturas.vue` | §5.10 |
-   | `LoteResumen.vue` | Nuevo |
-   | `LoteMateriaPrima.vue` | L2 |
-   | `LoteFlujo.vue` | L4 |
-   | `LoteTalleres.vue` | L6 + L7 |
-   | `LoteEntrega.vue` | L5 |
+### Fase 3 — Preparación, OM y Nuevo lote
+- §5.2 y §5.3, el panel "Nuevo lote" y la barra por estado (§4.6).
+- `PurchaseDocPanel` y `FacturaCompraPanel` con la prop `sinAcciones` + eventos, para que sus botones vivan en el pie del panel.
 
-   - **Estado compartido:** usar `provide('produccion', {...})` desde la página con el objeto de `useProduccion` más las funciones de página listadas en §2.5, para no pasar 80 props.
-   - Las funciones que hoy viven en la página y se usan solo en una vista **se pueden mover** a esa vista o a un composable `useLoteVista.js`. Sin cambiar su lógica.
-4. `CosteoDetailPage.vue`: el bloque `activeStep === 5` queda como `<ProduccionShell>` con la vista activa. Debe bajar ~1,100 líneas.
-5. `triggerHighlight`: actualizar a vistas y pestañas (tabla §7.3).
-- **Criterio de aceptación:** recorrer la chamarra (Lote 1 completo, Lote 2 en curso) y la camisola de YP; todo lo de la §9 aparece y funciona; recargar la página conserva la vista.
+### Fase 4 — Lote: Materia prima, Flujo, Entrega
+- §5.4–§5.6 y §5.8.
 
-### Fase 3 — Lote: Resumen, Materia prima (tabla + drawer), Flujo
-- `LoteResumen` con siguiente paso del lote, avance y accesos (§5.4).
-- `LoteMateriaPrima` como tabla con chips + drawer + menú "Más" (§5.5).
-- `LoteFlujo` con navegación a Talleres en vez de despliegue (§5.6).
+### Fase 5 — Talleres
+- §5.7: lista + sub-pantalla con stepper, "Viendo", y los `<details>` de transferencia y encargo.
 
-### Fase 4 — Talleres
-- Lista de paradas con chips + detalle con sub-pestañas, incluida la OM del taller separada (§5.7).
-- Selector de pieza dentro de una parada compartida.
+### Fase 6 — Bandejas y Tablero
+- §5.9, §5.10, §5.1 ("Por hacer" con destinos exactos) y los conteos del menú.
 
-### Fase 5 — Envíos, Facturas, Entrega y Tablero completo
-- §5.9, §5.10, §5.8 y la lista "Por hacer" del Tablero (§5.1).
-- Indicadores de todas las pestañas.
-
-### Fase 6 — Pulido
-- Filtro de producto (§4.2), celular (drawer a pantalla completa, tablas con `overflow-x-auto`), borrar `LoteCard.vue`.
-- Actualizar el manual (`erp.yelke.com.mx/manual-costeo`; ver la memoria `manual-costeo-yelke-artifact`): sección de Producción y sección 10 de roles.
+### Fase 7 — Pulido
+- Celular: menú como `<select>`, panel a pantalla completa, tablas con scroll.
+- Teclado: Esc cierra el panel; foco visible.
+- Borrar código muerto (`LoteCard.vue`, la sub-navegación vieja, el riel de lotes del stepper y los bloques ya migrados de `CosteoDetailPage.vue`).
+- Actualizar el manual (`erp.yelke.com.mx/manual-costeo`): Producción y roles.
 
 ### 7.3 Tabla de highlight (`?highlight=&doctype=`)
 
 | Doctype | Destino |
 |---|---|
-| Purchase Order de material | Lote · Materia prima, drawer de la OC de ese proveedor |
-| Purchase Order de maquila | Lote · Talleres, parada de esa OC, sub-pestaña Orden de compra (el lote es el primero que la usa) |
-| Purchase Receipt | Lote · Materia prima, drawer del recibo |
-| Material Request | Producción · Preparación |
-| Subcontracting Order | Lote del encargo (`lote_ref`) · Talleres · parada · Encargos con ese encargo |
-| Stock Entry (envío a subcontratista) | Lote · Talleres · Envío |
-| Subcontracting Receipt | Lote · Talleres · Recibo |
-| Purchase Invoice | Producción · Facturas, drawer de esa factura |
+| Purchase Order de material | Lote · Materia prima + panel del proveedor en el paso OC |
+| Purchase Order de maquila | Preparación · paso 3 + panel de esa OC |
+| Purchase Receipt | Lote · Materia prima + panel del proveedor en el paso Recibo |
+| Material Request | Preparación · paso 2 |
+| Subcontracting Order | Lote (`lote_ref`) · Talleres · sub-pantalla de la parada · paso Encargo con ese encargo |
+| Stock Entry (envío a subcontratista) | 〃 · paso Envío |
+| Subcontracting Receipt | 〃 · paso Recibo |
+| Purchase Invoice | Facturas + panel de esa factura |
 | Delivery Note | Paso 6 (sin cambio) |
 
 ---
@@ -673,39 +787,42 @@ Se agregan en `costeo_yelke/roles.py` como **`ROLES_VISTA_PRODUCCION`**, que pas
 ---
 
 ## 9. Matriz de trazabilidad (que no se pierda nada)
-Al terminar la Fase 5, recorrer esta lista y marcar cada elemento en su nuevo lugar.
+Al terminar la Fase 6, recorrer esta lista y marcar cada elemento en su nuevo lugar.
 
 | Elemento actual | Nuevo lugar |
 |---|---|
-| G1 selector OV | Shell (todas las vistas de Producción) |
-| G2 barra de avance | Shell |
-| G3 resultado de la preparación | Preparación |
-| G4 estado vacío + Preparar producción | Preparación (y aviso en el Tablero) |
-| G5 plan completo (almacén, OV, total, cantidades +5%, materias primas, Obtener / Guardar / Validar, Orden de trabajo) | Preparación |
-| G6 solicitud de material completa (fecha, tabla ±5%, proveedor, textos, Guardar / Validar) | Preparación |
-| G7 lotes de entrega (nombre, fecha, piezas, materiales estimados, pendiente, repartir) | Preparación |
-| G8 Continuar a producción | Preparación |
-| G9 nuevo lote (4 sub-estados, OC de taller + OM, formulario) | Preparación (+ "Nuevo lote" en el Tablero y el + del riel) |
-| Riel de lotes del stepper | Sin cambio |
-| L0 encabezado del lote | Encabezado del lote (chips) |
-| L1 material en talleres + devolución | Envíos §4 (+ acceso en el Resumen) |
-| L2 neteo | Materia prima |
-| L2 grupos por proveedor + 5 documentos + paneles | Materia prima (tabla + drawer + Más) |
+| G1 selector de OV | Tarjeta "Orden de venta" del menú |
+| G2 barra de avance | Tablero (3 indicadores; se suma el % de entregado) |
+| G3 resultado de la preparación | Preparación · paso 1 |
+| G4 estado vacío + Preparar producción | Preparación · paso 1 (primaria) + vacío del Tablero |
+| G5 plan (almacén, OV, total, cantidades +5%, materias primas, Obtener / Guardar / Validar, Orden de trabajo) | Preparación · paso 1 (botones en la barra) |
+| G6 solicitud (fecha, tabla ±5%, proveedor, textos, Crear / Guardar / Validar) | Preparación · paso 2 (botones en la barra) |
+| G7 lotes de entrega (editor completo, materiales estimados, pendiente, repartir, avisos) | Preparación · paso 2 |
+| G8 Continuar a producción | Primaria de Preparación · paso 3 ("Abrir primer lote →") |
+| G9-a cargando | Panel Nuevo lote |
+| G9-b/c faltan OC de taller (OC + OM del taller) | Preparación · paso 3 (lista + panel con OC y OM) |
+| G9-d cantidades, fecha y avisos | Panel Nuevo lote |
+| Riel de lotes del stepper + "+" | Menú · Lotes + "Nuevo lote" |
+| L0 encabezado del lote | Encabezado común del lote (§5.4) |
+| L1 material en talleres + devolución | Envíos · Sobrantes (+ "Por hacer" del Tablero) |
+| L2 neteo | Lote · Materia prima (aviso azul) |
+| L2 grupos por proveedor + Solicitud de cotización / Presupuesto / OC / Recibo / Factura + paneles | Lote · Materia prima (lista + panel con stepper; cotización y presupuesto en "⋯") |
 | L3 OM general | Orden de manufactura |
-| L4 matriz, contadores, Listas / Quitar, selección, Crear órdenes, cadena final, carriles sin piezas | Flujo |
-| L5 entrega del lote | Entrega |
-| L6 siguiente paso | Talleres (detalle) + Resumen (versión de lote) |
-| L6 OC del taller + OM del taller | Talleres · Orden de compra / OM del taller |
-| L6 encargos, + Otro encargo, sub-ensamblajes, estados vacíos, cantidad sugerida | Talleres · Encargos |
-| L6 `EncargoResumen` + tarjeta SCO (6 campos) + costos anteriores + Guardar / Validar | Talleres · Encargos |
-| L6 transferencia completa | Talleres · Envío (+ Envíos §2 en drawer) |
-| L6 recibo de maquila completo | Talleres · Recibo (+ Envíos §3 en drawer) |
-| L6 factura de maquila | Talleres · Factura (solo lectura sin rol) + Facturas |
-| Factura de material | Materia prima (chip / drawer) + Facturas |
-| Recibo de compra | Materia prima (chip / drawer) + Envíos §1 |
-| L7 sin paradas | Talleres (estado vacío) |
+| L4 matriz completa, contadores, Listas / Quitar, selección, Crear órdenes | Lote · Flujo (crear en la barra) |
+| L4 cadena final con sus estados y botón | Lote · Flujo, "Después de las piezas" (botón en la barra) |
+| L4 carriles sin piezas + producto terminado | Lote · Flujo (variante sin piezas) |
+| L5 entrega del lote | Lote · Entrega (+ columna Almacén) |
+| L6 siguiente paso (`guiaParada`) | Barra de acciones de la sub-pantalla del taller |
+| L6 OC del taller + OM del taller | Botones "Orden de compra" / "Orden de manufactura" del taller (panel) |
+| L6 encargos, + Otro encargo, sub-ensamblajes, `EncargoResumen`, 6 campos, costos anteriores, estados vacíos, cantidad sugerida | Taller · Encargo |
+| L6 transferencia completa | Taller · Envío (tarjeta + `<details>`) |
+| L6 recibo de maquila completo | Taller · Recibo |
+| L6 factura de maquila | Taller · Factura + bandeja Facturas |
+| L7 lote sin paradas | Preparación · paso 3 / vacío de Talleres con enlace |
+| Factura de material | Panel del proveedor · paso Factura + bandeja Facturas |
+| Recibo de compra | Panel del proveedor · paso Recibo + Envíos · Entradas |
 | Highlight por doctype | §7.3 |
-| `localStorage` último lote | Por costeo + OV, + última vista |
+| `localStorage` último lote | Última vista por costeo + OV |
 
 ---
 
@@ -720,7 +837,8 @@ Al terminar la Fase 5, recorrer esta lista y marcar cada elemento en su nuevo lu
 
   Al mover código a componentes, **mover también el watcher** o dejarlo en la página. Probar el caso "cuello vs puños, mismo taller" (memoria `flujo-por-pieza-probado`).
 - **El paso 6 depende de `crearRemisionLote`** (`activeStep = 6` + `selectDn`): mantener.
-- **`abrirNuevoLote`** se dispara desde 3 lugares (riel +, Continuar, Tablero): un solo punto que además cambie `vista=preparacion`.
+- **`abrirNuevoLote`** se dispara desde 3 lugares (menú "+ Nuevo lote", primaria de Preparación · paso 3, Tablero). Un solo punto que abre el panel "Nuevo lote". Si faltan OC de taller (G9-b/c), manda a Preparación · paso 3.
+- **Botones movidos a la barra o al pie del panel:** la lógica sigue en las mismas funciones (`guardarPlan`, `validarSolicitud`, `validarDocCompra`, etc.). Solo cambia dónde está el botón. No duplicar handlers.
 - **Rendimiento:** no recargar `get_lotes_produccion` al cambiar de pestaña; solo después de acciones, como hoy.
 - **Despliegue a producción** (cuando el usuario lo pida; memoria `deploy-produccion-qnap`):
   1. Fase 0 (backend, corrige bugs).
@@ -730,7 +848,7 @@ Al terminar la Fase 5, recorrer esta lista y marcar cada elemento en su nuevo lu
 ---
 
 ## 11. Al iniciar la siguiente sesión
-1. Leer este plan y abrir los mockups `docs/mockups/produccion.html`.
-2. `git log --oneline -3`: debe aparecer `27f5b59` o posteriores.
+1. Leer este plan completo y abrir el mockup v2 `docs/mockups/produccion.html` en el navegador (panel de navegador: `file://` o arrastrar el archivo). Recorrer todas las vistas y abrir los paneles laterales.
+2. `git log --oneline -3`: debe aparecer el commit del plan v2 (posterior a `27f5b59`).
 3. Revisar la memoria: `plan-ui-produccion`, `om-general-por-producto`, `punto-de-ensamble`, `flujo-por-pieza-probado`, `materia-prima-por-lote-editable-oc`, `roles-y-flujos-aprobacion`.
 4. Empezar por la **Fase 0** y avisar al usuario al cerrar cada fase.
