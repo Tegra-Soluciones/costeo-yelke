@@ -1,0 +1,579 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockups · Producción por pantallas</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = { theme: { extend: {
+  colors: {
+    brand: { 50:"#fff4ef",100:"#ffe4d4",200:"#ffcaaa",300:"#ffa575",400:"#ff7a3d",500:"#ff6b15",600:"#f05208",700:"#c73e05",800:"#9e320b",900:"#7f2c0c" },
+    ink: { DEFAULT:"#111111", muted:"#6b7280", light:"#9ca3af", xlight:"#d1d5db" },
+    surface: { DEFAULT:"#fafafa", white:"#ffffff", raised:"#f4f4f5", border:"#e4e4e7" },
+  },
+  fontFamily: { sans: ['"Inter"', "-apple-system", "BlinkMacSystemFont", '"Segoe UI"', "sans-serif"] },
+} } };
+</script>
+<style type="text/tailwindcss">
+  html { font-size: 14px; }
+  body { font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:#fafafa; color:#111; -webkit-font-smoothing:antialiased; letter-spacing:-0.006em; }
+  .section-title { @apply text-[11px] font-semibold text-ink-light uppercase tracking-wider; }
+  .field-label { @apply text-xs font-medium text-ink-muted block mb-1; }
+  .field-input { @apply w-full text-sm border border-surface-border rounded-lg px-3 py-2 bg-white; }
+  .add-link { @apply inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 px-2.5 py-1.5 rounded-md hover:bg-brand-50; }
+  .doc-action { @apply h-8 px-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-ink-muted border border-surface-border rounded-lg bg-white hover:bg-surface-raised; }
+  .card { @apply bg-white rounded-xl border border-surface-border p-4; }
+  .btn { @apply h-9 px-4 inline-flex items-center gap-1.5 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600; }
+  .chip { @apply inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full ring-1 whitespace-nowrap; }
+  .c-ok { @apply bg-green-50 text-green-700 ring-green-200; }
+  .c-fac { @apply bg-indigo-50 text-indigo-700 ring-indigo-200; }
+  .c-wait { @apply bg-amber-50 text-amber-700 ring-amber-200; }
+  .c-open { @apply bg-brand-50 text-brand-700 ring-brand-200; }
+  .c-off { @apply bg-surface-raised text-ink-light ring-surface-border; }
+  .c-red { @apply bg-red-50 text-red-700 ring-red-200; }
+  .tab { @apply relative px-3 py-2 text-[13px] font-medium text-ink-muted border-b-2 border-transparent whitespace-nowrap flex items-center gap-1.5; }
+  .tab.on { @apply text-ink border-brand-500; }
+  .badge { @apply text-[10.5px] font-semibold min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center; }
+  .note { @apply text-[11.5px] leading-relaxed bg-yellow-50 ring-1 ring-yellow-300 text-yellow-900 rounded-lg px-3 py-2; }
+  .tbl th { @apply text-left text-[11px] font-semibold text-ink-light py-1.5 border-b border-surface-border; }
+  .tbl td { @apply py-1.5 pr-2 text-[12.5px] border-b border-surface-border/60 align-top; }
+  .screen { display:none; }
+  .screen.on { display:block; }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- Selector de mockup (no es parte de la app) -->
+<div class="sticky top-0 z-30 bg-ink text-white px-4 py-2 flex items-center gap-2 flex-wrap text-[12px]">
+  <span class="font-semibold mr-2">Mockups Producción</span>
+  <button data-go="tablero" class="go px-2 py-1 rounded hover:bg-white/10">1 · Tablero</button>
+  <button data-go="preparacion" class="go px-2 py-1 rounded hover:bg-white/10">2 · Preparación</button>
+  <button data-go="om" class="go px-2 py-1 rounded hover:bg-white/10">3 · Orden de manufactura</button>
+  <button data-go="envios" class="go px-2 py-1 rounded hover:bg-white/10">4 · Envíos</button>
+  <button data-go="facturas" class="go px-2 py-1 rounded hover:bg-white/10">5 · Facturas</button>
+  <span class="opacity-40">|</span>
+  <button data-go="resumen" class="go px-2 py-1 rounded hover:bg-white/10">6 · Lote · Resumen</button>
+  <button data-go="materia" class="go px-2 py-1 rounded hover:bg-white/10">7 · Lote · Materia prima</button>
+  <button data-go="flujo" class="go px-2 py-1 rounded hover:bg-white/10">8 · Lote · Flujo</button>
+  <button data-go="talleres" class="go px-2 py-1 rounded hover:bg-white/10">9 · Lote · Talleres</button>
+  <button data-go="entrega" class="go px-2 py-1 rounded hover:bg-white/10">10 · Lote · Entrega</button>
+  <span class="opacity-40">|</span>
+  <button data-go="roles" class="go px-2 py-1 rounded hover:bg-white/10">11 · Roles / sin acceso</button>
+</div>
+
+<!-- Stepper (sin cambios, abreviado) -->
+<div class="bg-white border-b border-surface-border px-6 py-3">
+  <div class="max-w-5xl mx-auto">
+    <div class="flex items-center gap-3 text-[11px] text-ink-muted overflow-x-auto">
+      <span>✓ Costear</span><span>—</span><span>✓ Cotizar</span><span>—</span><span>✓ Vender</span><span>—</span><span>✓ Alta</span><span>—</span><span>✓ Flujo</span><span>—</span>
+      <span class="px-2 py-1 rounded-full bg-brand-500 text-white font-semibold">Producción</span><span>—</span><span>Enviar</span><span>—</span><span>Facturar</span><span>—</span><span>Reportar</span>
+    </div>
+    <div class="flex items-center gap-1.5 mt-2 pl-[330px] max-md:pl-0">
+      <span class="w-4 h-4 border-l-2 border-b-2 border-surface-border rounded-bl-md -mt-2"></span>
+      <span class="chip c-ok">✓ Lote 1</span>
+      <span class="chip c-open">Lote 2</span>
+      <span class="w-6 h-6 rounded-full border border-dashed border-brand-300 text-brand-500 flex items-center justify-center">+</span>
+      <span class="text-[10.5px] text-ink-light ml-2">riel de lotes: se queda igual</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═════════════ SHELL DE PRODUCCIÓN (vistas sin lote) ═════════════ -->
+<div id="shell-prod" class="max-w-5xl mx-auto px-5 pt-4">
+  <div class="flex items-center gap-2 bg-brand-50 ring-1 ring-brand-200 rounded-lg px-3 py-2 mb-3">
+    <span class="text-[11.5px] font-semibold text-brand-700">OV activa:</span>
+    <span class="text-[12.5px] text-ink font-medium">SAL-ORD-2026-00009</span>
+    <span class="text-[11px] text-ink-muted">· FERROCARRIL MEXICANO · 2,880 + 175 XXL-3XL</span>
+    <span class="ml-auto text-[11px] text-ink-light">▾ cambiar</span>
+  </div>
+  <div class="card mb-3 py-3">
+    <div class="grid grid-cols-3 gap-4 text-[11.5px]">
+      <div><div class="flex justify-between mb-1"><span class="text-ink-muted">Materia prima recibida</span><span class="font-semibold">55%</span></div><div class="h-1.5 bg-surface-raised rounded"><div class="h-full w-[55%] bg-green-500 rounded"></div></div></div>
+      <div><div class="flex justify-between mb-1"><span class="text-ink-muted">Maquila</span><span class="font-semibold">48% · 8/9 lotes recibidos</span></div><div class="h-1.5 bg-surface-raised rounded"><div class="h-full w-[48%] bg-brand-500 rounded"></div></div></div>
+      <div><div class="flex justify-between mb-1"><span class="text-ink-muted">Entregado</span><span class="font-semibold">50%</span></div><div class="h-1.5 bg-surface-raised rounded"><div class="h-full w-1/2 bg-blue-500 rounded"></div></div></div>
+    </div>
+  </div>
+  <div class="flex items-end border-b border-surface-border mb-4 overflow-x-auto">
+    <button data-go="tablero" class="go tab" data-tab="tablero">Tablero</button>
+    <button data-go="preparacion" class="go tab" data-tab="preparacion">Preparación <span class="badge bg-green-50 text-green-700">✓</span></button>
+    <button data-go="om" class="go tab" data-tab="om">Orden de manufactura <span class="badge bg-amber-50 text-amber-700">1</span></button>
+    <button data-go="envios" class="go tab" data-tab="envios">Envíos <span class="badge bg-brand-50 text-brand-700">1</span></button>
+    <button data-go="facturas" class="go tab" data-tab="facturas">Facturas <span class="badge bg-brand-50 text-brand-700">12</span></button>
+  </div>
+</div>
+
+<!-- ═════════════ SHELL DEL LOTE ═════════════ -->
+<div id="shell-lote" class="max-w-5xl mx-auto px-5 pt-4 hidden">
+  <div class="flex items-center gap-2 bg-brand-50 ring-1 ring-brand-200 rounded-lg px-3 py-2 mb-3">
+    <span class="text-[11.5px] font-semibold text-brand-700">OV activa:</span>
+    <span class="text-[12.5px] text-ink font-medium">SAL-ORD-2026-00009</span>
+  </div>
+  <button class="text-[12.5px] text-ink-muted hover:text-ink mb-2">← Producción</button>
+  <div class="card pb-0">
+    <div class="flex items-start justify-between gap-3 flex-wrap">
+      <div>
+        <p class="text-[15px] font-semibold text-ink"><span id="lote-nombre">Lote 2</span> <span class="font-normal text-ink-muted text-[13px]">· 01/10/2026</span></p>
+        <div class="flex gap-1.5 mt-1.5 flex-wrap" id="lote-chips">
+          <span class="chip c-off">Chamarra industrial · 1,440</span>
+          <span class="chip c-off">Chamarra XXL-3XL · 88</span>
+        </div>
+      </div>
+      <span class="chip c-open" id="lote-estado">En maquila</span>
+    </div>
+    <div class="flex items-end mt-3 -mx-4 px-2 overflow-x-auto">
+      <button data-go="resumen" class="go tab" data-tab="resumen">Resumen</button>
+      <button data-go="materia" class="go tab" data-tab="materia">Materia prima <span class="badge bg-amber-50 text-amber-700">⚠ 6</span></button>
+      <button data-go="flujo" class="go tab" data-tab="flujo">Flujo</button>
+      <button data-go="talleres" class="go tab" data-tab="talleres">Talleres <span class="badge bg-brand-50 text-brand-700">1</span></button>
+      <button data-go="entrega" class="go tab" data-tab="entrega">Entrega</button>
+    </div>
+  </div>
+  <div class="h-4"></div>
+</div>
+
+<main class="max-w-5xl mx-auto px-5 pb-24">
+
+<!-- ───────────── 1 · TABLERO ───────────── -->
+<section id="s-tablero" class="screen space-y-4">
+  <div class="note"><b>Plan §5.1.</b> Rol <i>Producción Tablero Yelke</i>. Solo lectura. Las tarjetas abren el lote en Resumen. "Por hacer" se calcula en el frontend con <code>lotesProduccion</code>, <code>compras</code> y <code>talleresSaldo</code>.</div>
+  <div class="grid md:grid-cols-3 gap-3">
+    <div class="card hover:shadow-md cursor-pointer">
+      <div class="flex items-center justify-between"><p class="text-[13px] font-semibold">Lote 1 <span class="font-normal text-ink-muted">· 01/10</span></p><span class="chip c-ok">Entregado</span></div>
+      <p class="text-[11.5px] text-ink-muted mt-0.5">Chamarra 1,440 · XXL-3XL 87</p>
+      <div class="space-y-1.5 mt-3 text-[11px]">
+        <div><div class="flex justify-between"><span class="text-ink-muted">Materia prima</span><span>6/6 recibidas</span></div><div class="h-1 bg-surface-raised rounded"><div class="h-full w-full bg-green-500 rounded"></div></div></div>
+        <div><div class="flex justify-between"><span class="text-ink-muted">Maquila</span><span>7/7 paradas</span></div><div class="h-1 bg-surface-raised rounded"><div class="h-full w-full bg-green-500 rounded"></div></div></div>
+        <div><div class="flex justify-between"><span class="text-ink-muted">Entregado</span><span>1,527/1,527</span></div><div class="h-1 bg-surface-raised rounded"><div class="h-full w-full bg-blue-500 rounded"></div></div></div>
+      </div>
+      <p class="text-[11px] text-indigo-700 mt-2">6 facturas de material en borrador · maquila sin facturar</p>
+    </div>
+    <div class="card hover:shadow-md cursor-pointer ring-2 ring-brand-200">
+      <div class="flex items-center justify-between"><p class="text-[13px] font-semibold">Lote 2 <span class="font-normal text-ink-muted">· 01/10</span></p><span class="chip c-open">En maquila</span></div>
+      <p class="text-[11.5px] text-ink-muted mt-0.5">Chamarra 1,440 · XXL-3XL 88</p>
+      <div class="space-y-1.5 mt-3 text-[11px]">
+        <div><div class="flex justify-between"><span class="text-ink-muted">Materia prima</span><span class="text-amber-700">0/6 · sin OC</span></div><div class="h-1 bg-surface-raised rounded"></div></div>
+        <div><div class="flex justify-between"><span class="text-ink-muted">Maquila</span><span>0/7 · corte encargado</span></div><div class="h-1 bg-surface-raised rounded"><div class="h-full w-[6%] bg-brand-500 rounded"></div></div></div>
+        <div><div class="flex justify-between"><span class="text-ink-muted">Entregado</span><span>0/1,528</span></div><div class="h-1 bg-surface-raised rounded"></div></div>
+      </div>
+    </div>
+    <div class="rounded-xl border-2 border-dashed border-brand-200 flex flex-col items-center justify-center text-brand-600 text-[13px] font-medium min-h-[150px] cursor-pointer hover:bg-brand-50">
+      <span class="text-2xl leading-none">+</span>Nuevo lote
+      <span class="text-[11px] text-ink-light font-normal mt-1">mismo que el + del riel → Preparación</span>
+    </div>
+  </div>
+  <div class="card">
+    <p class="section-title mb-2">Por hacer</p>
+    <div class="divide-y divide-surface-border/70">
+      <div class="flex items-center gap-3 py-2"><span class="chip c-wait">Materia prima</span><span class="text-[12.5px] flex-1">Lote 2 — generar 6 órdenes de compra (GRUPO FILAFIL, Textiles del Bajío, MOROTEX…)</span><a class="add-link">Ir →</a></div>
+      <div class="flex items-center gap-3 py-2"><span class="chip c-red">Envío</span><span class="text-[12.5px] flex-1">Lote 2 — enviar material a ALEJANDRO TORRES AGUILERA (corte) · <span class="text-red-600">no alcanza: gabardina 31 m de 968 m</span></span><a class="add-link">Ir →</a></div>
+      <div class="flex items-center gap-3 py-2"><span class="chip c-fac">Factura</span><span class="text-[12.5px] flex-1">6 facturas de material en borrador (ACC-PINV-2026-00011 … 00016)</span><a class="add-link">Ir →</a></div>
+      <div class="flex items-center gap-3 py-2"><span class="chip c-fac">Factura</span><span class="text-[12.5px] flex-1">Maquila por facturar: 6 talleres · $185,295.00</span><a class="add-link">Ir →</a></div>
+      <div class="flex items-center gap-3 py-2"><span class="chip c-wait">Sobrante</span><span class="text-[12.5px] flex-1">2 talleres con material libre (ALFREDO ORTEGA 0.92 m reflejante; ALEJANDRO TORRES 0.551 m gabardina, 0.448 m forro)</span><a class="add-link">Ir →</a></div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── 2 · PREPARACIÓN ───────────── -->
+<section id="s-preparacion" class="screen space-y-4">
+  <div class="note"><b>Plan §5.2.</b> Rol <i>Producción Preparación Yelke</i>. Son los bloques G3–G9 actuales, <b>tal cual</b> y en el mismo orden. Aquí se ven ya validados (colapsados); antes de validar se ven exactamente como hoy (cantidades ±5%, lotes de entrega con materiales estimados, etc.).</div>
+  <div class="card">
+    <p class="section-title mb-2">Resultado de la preparación</p>
+    <div class="text-[13px] space-y-1">
+      <div class="flex gap-2"><span class="text-green-600">✓</span><span class="flex-1">Sub-ensamblajes</span><span class="text-xs text-ink-muted">0 creado(s)</span></div>
+      <div class="flex gap-2"><span class="text-green-600">✓</span><span class="flex-1">BOMs</span><span class="text-xs text-ink-muted">38 creado(s)</span></div>
+      <div class="flex gap-2"><span class="text-green-600">✓</span><span class="flex-1">Subcontracting BOMs</span><span class="text-xs text-ink-muted">38 creado(s)</span></div>
+      <div class="flex gap-2"><span class="text-green-600">✓</span><span class="flex-1">Plan de producción</span><span class="text-xs text-ink-muted">1 creado(s)</span></div>
+    </div>
+  </div>
+  <div class="card flex items-center justify-between"><div class="flex items-center gap-2.5"><span class="text-ink-light">›</span><p class="text-sm font-semibold">Plan de producción</p><span class="text-[12px] text-ink-muted">MFG-PP-2026-00010</span></div><span class="chip c-ok">Validado</span></div>
+  <div class="card space-y-3">
+    <div class="flex items-center justify-between"><p class="text-[13px] font-semibold">Materia prima · MAT-MR-2026-00005</p><span class="chip c-ok">Validada</span></div>
+    <div class="grid grid-cols-3 gap-3">
+      <div><label class="field-label">Tipo</label><div class="field-input bg-surface-raised/60">Purchase</div></div>
+      <div><label class="field-label">Fecha requerida</label><div class="field-input bg-surface-raised/60">02/10/2026</div></div>
+      <div><label class="field-label">Estatus</label><div class="field-input bg-surface-raised/60">Partially Ordered</div></div>
+    </div>
+    <table class="tbl w-full"><thead><tr><th>Artículo</th><th class="text-right">Cantidad</th><th>UOM</th><th>Proveedor</th></tr></thead><tbody>
+      <tr><td class="font-mono text-[12px]">GABARDINA-NARANJA</td><td class="text-right">5,740</td><td>MTR</td><td>GRUPO FILAFIL</td></tr>
+      <tr><td class="font-mono text-[12px]">CINTA REFLEJANTE GRIS</td><td class="text-right">14,176</td><td>MTR</td><td>MOROTEX</td></tr>
+      <tr><td class="font-mono text-[12px]">TELA-FORRO-POLIESTER-NEGRO</td><td class="text-right">4,033</td><td>MTR</td><td>Textiles del Bajío</td></tr>
+      <tr><td colspan="4" class="text-ink-light">… (todos los renglones, igual que hoy)</td></tr>
+    </tbody></table>
+  </div>
+  <div class="card space-y-3">
+    <p class="text-[13px] font-semibold">Nuevo lote de producción</p>
+    <div class="space-y-1.5">
+      <div class="flex items-center gap-2"><span class="text-[12.5px] flex-1">CHAMARRA INDUSTRIAL PRUEBA</span><input class="field-input w-28" value="0"><span class="text-[11px] text-ink-light w-24">pendiente 0</span></div>
+      <div class="flex items-center gap-2"><span class="text-[12.5px] flex-1">CHAMARRA INDUSTRIAL PRUEBA XXL-3XL</span><input class="field-input w-28" value="0"><span class="text-[11px] text-ink-light w-24">pendiente 0</span></div>
+    </div>
+    <div class="flex items-center gap-2"><input type="date" class="field-input w-40"><button class="doc-action">Cancelar</button><button class="btn h-8">Abrir lote</button></div>
+    <p class="text-[11.5px] text-ink-muted">Un lote = un encargo por proveedor. Indica cuánto de cada producto entra en este lote (0 = no entra). Un producto sin pendiente no aparece. La materia prima se envía después, taller por taller.</p>
+  </div>
+</section>
+
+<!-- ───────────── 3 · ORDEN DE MANUFACTURA ───────────── -->
+<section id="s-om" class="screen space-y-4">
+  <div class="note"><b>Plan §5.3.</b> Rol <i>Producción Orden de Manufactura Yelke</i>. Es <code>OmGeneralEditor</code> tal cual, movido desde el lote. Las tallas son las de la OV activa (H3). Nuevo: aviso de OV compartida (solo si hay más de una OV), chips de talleres y "Ver cómo la recibe un taller".</div>
+  <div class="rounded-lg bg-blue-50 ring-1 ring-blue-200 px-3 py-2 text-[12px] text-blue-900">La ficha (modelo, tela, procesos, archivos) la comparten las <b>2</b> órdenes de venta de este costeo. Las tallas son las de la OV activa.</div>
+  <div class="card">
+    <p class="section-title">Órdenes de manufactura</p>
+    <p class="text-[11.5px] text-ink-muted mb-2">Una por producto. La info general y las tallas van a todos los talleres; lo demás, solo a los talleres que marques en "Para".</p>
+    <div class="flex items-center gap-3 flex-wrap py-2">
+      <div class="flex-1 min-w-0"><p class="text-[12.5px] font-medium">CHAMARRA INDUSTRIAL PRUEBA <span class="font-normal text-ink-light">· incluye CHAMARRA-INDUSTRIAL-PRUEBA-XXL</span></p><p class="text-[11px] text-ink-light">6 talleres · 3,055 prendas</p></div>
+      <span class="chip c-wait">Sin capturar</span><button class="doc-action">Cerrar</button>
+    </div>
+    <div class="flex flex-wrap gap-1 mb-3"><span class="text-[10.5px] text-ink-light mr-1">La reciben:</span>
+      <span class="chip c-off">ALEJANDRO TORRES AGUILERA</span><span class="chip c-off">Serigrafía Creativa CDMX</span><span class="chip c-off">MANUEL LEMUS FLORES</span><span class="chip c-off">ALFREDO ORTEGA ZAVALA</span><span class="chip c-off">JESUS MOLINA TAPIA</span><span class="chip c-off">MAQUILA SUR CONFECCION PRUEBA</span>
+    </div>
+    <div class="space-y-4 border-t border-surface-border pt-3">
+      <div>
+        <p class="text-[11px] font-semibold text-ink-muted uppercase tracking-wider mb-2">Info general <span class="normal-case font-normal text-ink-light">· para todos los talleres</span></p>
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div><label class="field-label">Modelo</label><input class="field-input" value="CHAMARRA IND"></div>
+          <div><label class="field-label">Tela</label><input class="field-input" value="GABARDINA NARANJA"></div>
+          <div><label class="field-label">Color</label><input class="field-input" value="NARANJA"></div>
+          <div><label class="field-label">Color principal</label><input class="field-input"></div>
+          <div><label class="field-label">Forro</label><input class="field-input" value="POLIÉSTER NEGRO"></div>
+          <div><label class="field-label">Combinación</label><input class="field-input"></div>
+          <div><label class="field-label">Ubicación</label><input class="field-input"></div>
+          <div><label class="field-label">Aberturas</label><input class="field-input" value="0"></div>
+          <div><label class="field-label">Fecha requerida</label><input type="date" class="field-input"></div>
+        </div>
+        <div class="flex gap-4 mt-2 text-[13px]"><label><input type="checkbox" checked> Bordado</label><label><input type="checkbox" checked> Estampado</label><label><input type="checkbox"> Sublimado</label><label><input type="checkbox" checked> Reflejante</label></div>
+      </div>
+      <div>
+        <p class="text-[11px] font-semibold text-ink-muted uppercase tracking-wider mb-1">Tallas <span class="normal-case font-normal text-ink-light">· de la OV activa, para todos los talleres</span></p>
+        <table class="text-[12.5px]"><tr class="text-[10.5px] text-ink-light"><th class="pr-6 text-left">Género</th><th class="pr-6 text-left">Talla</th><th class="pr-6 text-left">Producto</th><th class="text-right">Cantidad</th></tr>
+          <tr><td class="pr-6">—</td><td class="pr-6">Sin desglose</td><td class="pr-6 text-ink-muted text-[11.5px]">CHAMARRA-INDUSTRIAL-PRUEBA</td><td class="text-right">2,880</td></tr>
+          <tr><td class="pr-6">CABALLERO</td><td class="pr-6">XXL, 3XL</td><td class="pr-6 text-ink-muted text-[11.5px]">CHAMARRA-INDUSTRIAL-PRUEBA-XXL</td><td class="text-right">175</td></tr>
+          <tr class="border-t border-surface-border"><td colspan="3" class="text-ink-muted">Total</td><td class="text-right font-medium">3,055</td></tr></table>
+      </div>
+      <div>
+        <div class="flex items-center justify-between mb-1"><p class="text-[11px] font-semibold text-ink-muted uppercase tracking-wider">Observaciones</p><span class="add-link">+ Observación</span></div>
+        <div class="rounded-lg ring-1 ring-surface-border p-2"><textarea class="field-input mb-1.5" rows="2">Bordado Ferromex al pecho izquierdo, 8 cm.</textarea>
+          <div class="flex items-center gap-1"><span class="text-[10.5px] text-ink-light">Para:</span><span class="chip c-off">Todos</span><span class="chip bg-brand-500 text-white ring-brand-400">MANUEL LEMUS FLORES</span><span class="chip c-off">ALFREDO ORTEGA ZAVALA</span><span class="text-ink-light text-[11px]">…</span></div></div>
+      </div>
+      <p class="text-[12px] text-ink-light">Procesos · Tablas de medidas · Diagramas/imágenes: igual que hoy (cada uno con "Para").</p>
+      <div class="flex justify-between items-center flex-wrap gap-2">
+        <div class="flex items-center gap-2"><span class="text-[12px] text-ink-muted">Ver cómo la recibe un taller:</span><select class="field-input w-64 py-1"><option>MANUEL LEMUS FLORES</option></select></div>
+        <button class="btn">Guardar orden de manufactura</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── 4 · ENVÍOS ───────────── -->
+<section id="s-envios" class="screen space-y-4">
+  <div class="note"><b>Plan §5.9.</b> Rol <i>Producción Envíos Yelke</i>. Es la vista del almacén para todos los lotes de la OV, con filtro por lote y producto. Las acciones abren un panel lateral (drawer) con el mismo contenido que hoy: recibo de compra, transferencia completa o recibo de maquila. Incluye "Material en talleres" (L1).</div>
+  <div class="flex items-center gap-2 flex-wrap">
+    <span class="text-[12px] text-ink-muted">Lote:</span><span class="chip c-open">Todos</span><span class="chip c-off">Lote 1</span><span class="chip c-off">Lote 2</span>
+    <span class="text-[12px] text-ink-muted ml-3">Producto:</span><span class="chip c-open">Todos</span><span class="chip c-off">Chamarra</span><span class="chip c-off">XXL-3XL</span>
+  </div>
+  <div class="card">
+    <p class="section-title mb-2">1 · Por recibir de proveedores <span class="normal-case font-normal">(entradas)</span></p>
+    <p class="text-[12px] text-ink-light">Nada pendiente. Lote 2 aún no tiene órdenes de compra de material.</p>
+  </div>
+  <div class="card">
+    <p class="section-title mb-2">2 · Por enviar a talleres <span class="normal-case font-normal">(salidas)</span></p>
+    <div class="rounded-lg ring-1 ring-surface-border p-3">
+      <div class="flex items-start gap-3 flex-wrap">
+        <div class="flex-1 min-w-0">
+          <p class="text-[12.5px] font-semibold">Lote 2 · Servicio De Corte +1 → ALEJANDRO TORRES AGUILERA</p>
+          <p class="text-[11px] text-ink-muted">SC-ORD-2026-00102 · 9 piezas · 1,440 + 88 prendas · destino ALEJANDRO TORRES AGUILERA - YP</p>
+        </div>
+        <button class="doc-action">Revisar transferencia</button><button class="btn opacity-50 cursor-not-allowed" title="No alcanza el material">Enviar al taller</button>
+      </div>
+      <table class="tbl w-full mt-2"><thead><tr><th>Material</th><th class="text-right">Cantidad</th><th>UDM</th><th>Sale de</th><th class="text-right">Disponible</th></tr></thead><tbody>
+        <tr><td>GABARDINA NARANJA</td><td class="text-right">968.728</td><td>MTR</td><td>MATERIA PRIMA - YP</td><td class="text-right text-red-600 font-semibold">31</td></tr>
+        <tr><td>TELA FORRO POLIESTER NEGRO</td><td class="text-right">680.728</td><td>MTR</td><td>MATERIA PRIMA - YP</td><td class="text-right">984</td></tr>
+        <tr><td>ENTRETELA FUSIONABLE BLANCA</td><td class="text-right">183.272</td><td>MTR</td><td>MATERIA PRIMA - YP</td><td class="text-right text-red-600 font-semibold">0</td></tr>
+      </tbody></table>
+      <p class="text-[11.5px] text-red-600 mt-1.5">No alcanza lo que hay en el almacén de origen para todo el encargo — recibe la materia prima o la etapa anterior antes de enviar.</p>
+    </div>
+  </div>
+  <div class="card">
+    <p class="section-title mb-2">3 · Enviado, por recibir del taller <span class="normal-case font-normal">(regresos)</span></p>
+    <p class="text-[12px] text-ink-light">Nada pendiente.</p>
+  </div>
+  <div class="card">
+    <p class="section-title mb-2">4 · Material en talleres</p>
+    <p class="text-[11.5px] text-ink-light mb-2">Sobró al redondear las transferencias. Mientras queden prendas por hacer, el taller lo usa en la siguiente transferencia (se descuenta solo); al terminar, registra la devolución para que vuelva a tu inventario.</p>
+    <div class="grid md:grid-cols-2 gap-2">
+      <div class="rounded-lg ring-1 ring-surface-border px-3 py-2"><div class="flex justify-between mb-1"><span class="text-[12.5px] font-medium">ALFREDO ORTEGA ZAVALA</span><span class="text-[11.5px] text-brand-600">Registrar devolución</span></div><div class="flex justify-between text-[12px] text-ink-muted"><span>CINTA REFLEJANTE GRIS</span><span>0.92 MTR - Metro</span></div></div>
+      <div class="rounded-lg ring-1 ring-surface-border px-3 py-2"><div class="flex justify-between mb-1"><span class="text-[12.5px] font-medium">ALEJANDRO TORRES AGUILERA</span><span class="text-[11.5px] text-brand-600">Registrar devolución</span></div><div class="flex justify-between text-[12px] text-ink-muted"><span>GABARDINA NARANJA</span><span>0.551 MTR - Metro</span></div><div class="flex justify-between text-[12px] text-ink-muted"><span>TELA FORRO POLIESTER NEGRO</span><span>0.448 MTR - Metro</span></div></div>
+    </div>
+  </div>
+  <details class="card"><summary class="section-title cursor-pointer">5 · Historial (movimientos validados)</summary>
+    <table class="tbl w-full mt-2"><tbody>
+      <tr><td>Lote 1</td><td>Recibo de compra MAT-PRE-2026-00056</td><td>GRUPO FILAFIL</td><td class="text-right text-ink-muted">abrir ↗</td></tr>
+      <tr><td>Lote 1</td><td>Transferencia (corte)</td><td>ALEJANDRO TORRES AGUILERA</td><td class="text-right text-ink-muted">abrir ↗</td></tr>
+      <tr><td>Lote 1</td><td>Recibo de maquila MAT-SCR-2026-00095</td><td>ALEJANDRO TORRES AGUILERA</td><td class="text-right text-ink-muted">abrir ↗</td></tr>
+    </tbody></table>
+  </details>
+</section>
+
+<!-- ───────────── 5 · FACTURAS ───────────── -->
+<section id="s-facturas" class="screen space-y-4">
+  <div class="note"><b>Plan §5.10.</b> Rol <i>Producción Facturas Yelke</i>. Datos de <code>get_facturas_compra(costeo, sales_order)</code> más <code>lote_ref</code> en material y los lotes que cubre cada OC de maquila. El clic abre el drawer con <code>FacturaCompraPanel</code>, idéntico al de hoy. La maquila es por taller y cubre varios lotes; por eso esta vista vive a nivel Producción.</div>
+  <div class="flex items-center gap-2 flex-wrap">
+    <span class="text-[12px] text-ink-muted">Lote:</span><span class="chip c-open">Todos</span><span class="chip c-off">Lote 1</span><span class="chip c-off">Lote 2</span>
+    <span class="text-[12px] text-ink-muted ml-3">Estado:</span><span class="chip c-open">Todos</span><span class="chip c-off">Sin factura</span><span class="chip c-wait">Borrador</span><span class="chip c-fac">Validada</span>
+  </div>
+  <div class="grid grid-cols-3 gap-3">
+    <div class="card py-3"><p class="text-[11px] text-ink-muted">Facturado (validado)</p><p class="text-lg font-semibold tabular-nums">$0.00</p></div>
+    <div class="card py-3"><p class="text-[11px] text-ink-muted">En borrador</p><p class="text-lg font-semibold tabular-nums text-amber-700">$329,352.25</p></div>
+    <div class="card py-3"><p class="text-[11px] text-ink-muted">Por facturar (maquila recibida)</p><p class="text-lg font-semibold tabular-nums text-brand-700">$185,295.00</p></div>
+  </div>
+  <div class="card overflow-x-auto">
+    <p class="section-title mb-2">Material</p>
+    <table class="tbl w-full"><thead><tr><th>Proveedor</th><th>Lote</th><th>Recibo de compra</th><th class="text-right">Subtotal</th><th>Factura</th><th></th></tr></thead><tbody>
+      <tr><td>GRUPO FILAFIL</td><td>Lote 1</td><td>MAT-PRE-2026-00056</td><td class="text-right tabular-nums">$182,700.00</td><td><span class="chip c-wait">ACC-PINV-2026-00016 · borrador</span></td><td class="text-right"><span class="add-link">Abrir</span></td></tr>
+      <tr><td>Textiles del Bajío</td><td>Lote 1</td><td>MAT-PRE-2026-00052</td><td class="text-right tabular-nums">$84,000.00</td><td><span class="chip c-wait">ACC-PINV-2026-00012 · borrador</span></td><td class="text-right"><span class="add-link">Abrir</span></td></tr>
+      <tr><td>MOROTEX</td><td>Lote 1</td><td>MAT-PRE-2026-00055</td><td class="text-right tabular-nums">$41,961.00</td><td><span class="chip c-wait">ACC-PINV-2026-00015 · borrador</span></td><td class="text-right"><span class="add-link">Abrir</span></td></tr>
+      <tr><td>INSUMOS Y AVIOS PRUEBA</td><td>Lote 1</td><td>MAT-PRE-2026-00051</td><td class="text-right tabular-nums">$9,792.00</td><td><span class="chip c-wait">ACC-PINV-2026-00011 · borrador</span></td><td class="text-right"><span class="add-link">Abrir</span></td></tr>
+      <tr><td>Insumos y Avíos Monterrey</td><td>Lote 1</td><td>MAT-PRE-2026-00054</td><td class="text-right tabular-nums">$9,698.40</td><td><span class="chip c-wait">ACC-PINV-2026-00014 · borrador</span></td><td class="text-right"><span class="add-link">Abrir</span></td></tr>
+      <tr><td>RUBEN OROZCO LARA</td><td>Lote 1</td><td>MAT-PRE-2026-00053</td><td class="text-right tabular-nums">$1,200.85</td><td><span class="chip c-wait">ACC-PINV-2026-00013 · borrador</span></td><td class="text-right"><span class="add-link">Abrir</span></td></tr>
+    </tbody></table>
+  </div>
+  <div class="card overflow-x-auto">
+    <p class="section-title mb-2">Maquila <span class="normal-case font-normal">(una OC por taller; cubre todos sus lotes)</span></p>
+    <table class="tbl w-full"><thead><tr><th>Taller</th><th>OC</th><th>Lotes</th><th class="text-right">Total OC</th><th class="text-right">Por facturar</th><th>Facturas</th><th></th></tr></thead><tbody>
+      <tr><td>JESUS MOLINA TAPIA</td><td>PUR-ORD-2026-00251</td><td>1, 2</td><td class="text-right">$190,460.00</td><td class="text-right font-medium text-brand-700">$95,196.00</td><td><span class="chip c-off">Sin factura</span></td><td class="text-right"><span class="add-link">Crear</span></td></tr>
+      <tr><td>MANUEL LEMUS FLORES</td><td>PUR-ORD-2026-00249</td><td>1, 2</td><td class="text-right">$45,825.00</td><td class="text-right font-medium text-brand-700">$22,905.00</td><td><span class="chip c-off">Sin factura</span></td><td class="text-right"><span class="add-link">Crear</span></td></tr>
+      <tr><td>Serigrafía Creativa CDMX</td><td>PUR-ORD-2026-00248</td><td>1, 2</td><td class="text-right">$42,770.00</td><td class="text-right font-medium text-brand-700">$21,378.00</td><td><span class="chip c-off">Sin factura</span></td><td class="text-right"><span class="add-link">Crear</span></td></tr>
+      <tr><td>ALEJANDRO TORRES AGUILERA</td><td>PUR-ORD-2026-00247</td><td>1, 2</td><td class="text-right">$36,660.00</td><td class="text-right font-medium text-brand-700">$18,330.00</td><td><span class="chip c-off">Sin factura</span></td><td class="text-right"><span class="add-link">Crear</span></td></tr>
+      <tr><td>ALFREDO ORTEGA ZAVALA</td><td>PUR-ORD-2026-00250</td><td>1, 2</td><td class="text-right">$33,605.00</td><td class="text-right font-medium text-brand-700">$16,797.00</td><td><span class="chip c-off">Sin factura</span></td><td class="text-right"><span class="add-link">Crear</span></td></tr>
+      <tr><td>MAQUILA SUR CONFECCION PRUEBA</td><td>PUR-ORD-2026-00252</td><td>1, 2</td><td class="text-right">$21,385.00</td><td class="text-right font-medium text-brand-700">$10,689.00</td><td><span class="chip c-off">Sin factura</span></td><td class="text-right"><span class="add-link">Crear</span></td></tr>
+    </tbody></table>
+  </div>
+  <!-- Drawer de ejemplo -->
+  <div class="relative rounded-xl ring-2 ring-dashed ring-ink-xlight p-3">
+    <p class="text-[11px] text-ink-light mb-2">↓ Así se ve el panel lateral (drawer) al abrir una factura. Contenido = <code>FacturaCompraPanel</code> de hoy.</p>
+    <div class="card max-w-xl ml-auto shadow-xl">
+      <div class="flex items-center justify-between mb-3"><span class="text-sm font-semibold">ACC-PINV-2026-00016 <span class="font-normal text-ink-muted">· GRUPO FILAFIL</span></span><span class="chip c-wait">Borrador</span><span class="text-ink-light">✕</span></div>
+      <div class="grid sm:grid-cols-2 gap-x-4">
+        <div><label class="field-label">Folio del proveedor (factura)</label><input class="field-input mb-3" placeholder="Nº de factura del proveedor"></div>
+        <div><label class="field-label">Fecha de factura</label><input type="date" class="field-input mb-3"></div>
+        <div><label class="field-label">Vencimiento</label><input type="date" class="field-input mb-3"></div>
+        <div><label class="field-label">Condiciones de pago</label><select class="field-input mb-3"><option>— Sin plantilla —</option></select></div>
+      </div>
+      <div class="border-t border-surface-border pt-2.5 mb-3 flex gap-6 text-[13px]"><span class="text-ink-muted">Subtotal <b class="text-ink">$182,700.00</b></span><span class="text-ink-muted">Total con impuestos <b class="text-ink">$212,032.00</b></span></div>
+      <div class="flex flex-wrap gap-2"><button class="doc-action">Guardar cambios</button><button class="btn h-8">Validar factura</button><button class="doc-action">Descargar</button><button class="doc-action">Imprimir</button><button class="doc-action">Abrir en ERPNext</button></div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── 6 · LOTE · RESUMEN ───────────── -->
+<section id="s-resumen" class="screen space-y-4">
+  <div class="note"><b>Plan §5.4.</b> Se ve con cualquier rol de Producción. Muestra el "Siguiente paso" del lote (el primer pendiente, en orden: materia prima → recibo → encargar → enviar → recibir → remisión), el avance por etapa y accesos rápidos a Envíos y Facturas ya filtrados por este lote.</div>
+  <div class="rounded-lg px-4 py-3 flex items-center gap-3 flex-wrap bg-amber-50 ring-1 ring-amber-200">
+    <div class="flex-1 min-w-0"><p class="text-[13px] font-semibold">Siguiente: generar las órdenes de compra de materia prima del Lote 2</p><p class="text-[12px] text-ink-muted">6 proveedores sin OC. El corte ya está encargado, pero no alcanza la gabardina (31 m de 968 m) ni la entretela para enviarle.</p></div>
+    <button class="btn">Ir a Materia prima</button>
+  </div>
+  <div class="card">
+    <p class="section-title mb-2">Avance por etapa</p>
+    <div class="flex flex-wrap gap-2">
+      <div class="rounded-lg ring-1 ring-brand-200 bg-brand-50/60 px-3 py-2 w-52"><p class="text-[12px] font-semibold">1 · Servicio De Corte +1</p><p class="text-[11px] text-ink-muted">ALEJANDRO TORRES AGUILERA</p><p class="text-[11px] text-brand-700 mt-0.5">9 piezas · encargo creado</p></div>
+      <div class="rounded-lg ring-1 ring-surface-border px-3 py-2 w-52"><p class="text-[12px] font-semibold">2 · Serigrafía logo espalda</p><p class="text-[11px] text-ink-muted">Serigrafía Creativa CDMX</p><p class="text-[11px] text-ink-light mt-0.5">1 pieza · en espera</p></div>
+      <div class="rounded-lg ring-1 ring-surface-border px-3 py-2 w-52"><p class="text-[12px] font-semibold">3 · Bordado frente izq.</p><p class="text-[11px] text-ink-muted">MANUEL LEMUS FLORES</p><p class="text-[11px] text-ink-light mt-0.5">1 pieza · en espera</p></div>
+      <div class="rounded-lg ring-1 ring-surface-border px-3 py-2 w-52"><p class="text-[12px] font-semibold">4 · Colocación de reflejante</p><p class="text-[11px] text-ink-muted">ALFREDO ORTEGA ZAVALA</p><p class="text-[11px] text-ink-light mt-0.5">5 piezas · en espera</p></div>
+      <div class="rounded-lg ring-1 ring-surface-border px-3 py-2 w-52"><p class="text-[12px] font-semibold">5 · Bordado manga der.</p><p class="text-[11px] text-ink-muted">MANUEL LEMUS FLORES</p><p class="text-[11px] text-ink-light mt-0.5">1 pieza · en espera</p></div>
+      <div class="rounded-lg ring-1 ring-surface-border px-3 py-2 w-52"><p class="text-[12px] font-semibold">6 · Confección <span class="chip c-off ml-1">arma la prenda</span></p><p class="text-[11px] text-ink-muted">JESUS MOLINA TAPIA</p><p class="text-[11px] text-ink-light mt-0.5">0 de 9 piezas listas</p></div>
+      <div class="rounded-lg ring-1 ring-surface-border px-3 py-2 w-52"><p class="text-[12px] font-semibold">7 · Acabado ojal, botón y empaque</p><p class="text-[11px] text-ink-muted">MAQUILA SUR CONFECCION PRUEBA</p><p class="text-[11px] text-ink-light mt-0.5">espera la prenda armada</p></div>
+    </div>
+  </div>
+  <div class="grid md:grid-cols-3 gap-3">
+    <a class="card hover:shadow-md"><p class="text-[11px] text-ink-muted">Envíos de este lote</p><p class="text-[14px] font-semibold">1 por enviar</p><p class="text-[11px] text-red-600">no alcanza el material</p></a>
+    <a class="card hover:shadow-md"><p class="text-[11px] text-ink-muted">Facturas de este lote</p><p class="text-[14px] font-semibold">0</p><p class="text-[11px] text-ink-light">la maquila se factura por taller</p></a>
+    <a class="card hover:shadow-md"><p class="text-[11px] text-ink-muted">Material en talleres</p><p class="text-[14px] font-semibold">2 talleres con sobrante</p><p class="text-[11px] text-ink-light">se descuenta solo en la siguiente transferencia</p></a>
+  </div>
+</section>
+
+<!-- ───────────── 7 · LOTE · MATERIA PRIMA ───────────── -->
+<section id="s-materia" class="screen space-y-4">
+  <div class="note"><b>Plan §5.5.</b> Rol <i>Producción Materia Prima Yelke</i>. Ejemplo con <b>Lote 1</b> (todo recibido, facturas en borrador). Hay una fila por proveedor con chips de cada documento; el clic abre el drawer con <code>PurchaseDocPanel</code> o <code>FacturaCompraPanel</code>. "Más ▾" conserva Solicitud de cotización y Presupuesto. Las reglas de habilitado son las de hoy. El aviso azul de neteo se queda arriba cuando aplica.</div>
+  <div class="rounded-lg bg-blue-50 ring-1 ring-blue-200 px-3 py-2">
+    <p class="text-[12px] font-medium text-blue-900 mb-1">Se descontó lo que ya tienes en almacén <span class="font-normal">(ejemplo de cómo se ve cuando aplica)</span></p>
+    <p class="text-[11.5px] text-blue-900">TELA-FORRO-POLIESTER-NEGRO — la solicitud pide 2,015.55 · ya tienes 984 · <b>se compran 1,031.55 MTR</b></p>
+  </div>
+  <div class="card overflow-x-auto">
+    <table class="tbl w-full min-w-[760px]"><thead><tr><th>Proveedor</th><th>Materiales</th><th>Orden de compra</th><th>Recibo</th><th>Factura</th><th></th></tr></thead><tbody>
+      <tr><td class="font-medium">GRUPO FILAFIL</td><td class="font-mono text-[11.5px]">GABARDINA-NARANJA × 2,868.45 MTR</td><td><span class="chip c-ok">✓ PUR-ORD-2026-00246</span></td><td><span class="chip c-ok">✓ MAT-PRE-2026-00056</span></td><td><span class="chip c-wait">ACC-PINV-2026-00016 · borrador</span></td><td class="text-ink-light">Más ▾</td></tr>
+      <tr><td class="font-medium">MOROTEX</td><td class="font-mono text-[11.5px]">CINTA REFLEJANTE GRIS × 7,085.1 MTR</td><td><span class="chip c-ok">✓ PUR-ORD-2026-00245</span></td><td><span class="chip c-ok">✓ MAT-PRE-2026-00055</span></td><td><span class="chip c-wait">ACC-PINV-2026-00015 · borrador</span></td><td class="text-ink-light">Más ▾</td></tr>
+      <tr><td class="font-medium">Textiles del Bajío</td><td class="font-mono text-[11.5px]">TELA-FORRO-POLIESTER-NEGRO × 2,015.55 MTR</td><td><span class="chip c-ok">✓ PUR-ORD-2026-00237</span></td><td><span class="chip c-ok">✓ MAT-PRE-2026-00052</span></td><td><span class="chip c-wait">ACC-PINV-2026-00012 · borrador</span></td><td class="text-ink-light">Más ▾</td></tr>
+      <tr><td class="font-medium">INSUMOS Y AVIOS PRUEBA</td><td class="font-mono text-[11.5px]">CIERRE-NYLON-SEPARABLE-70-CM × 87 Pieza<br>ETIQUETA-TEJIDA-MARCA-Y-TALLA × 3,054 Pieza<br>CIERRE-NYLON-SEPARABLE-60-CM × 1,440 Pieza</td><td><span class="chip c-ok">✓ PUR-ORD-2026-00235</span></td><td><span class="chip c-ok">✓ MAT-PRE-2026-00051</span></td><td><span class="chip c-wait">ACC-PINV-2026-00011 · borrador</span></td><td class="text-ink-light">Más ▾</td></tr>
+      <tr><td class="font-medium">Insumos y Avíos Monterrey</td><td class="font-mono text-[11.5px]">ENTRETELA-FUSIONABLE-BLANCA × 538.8 MTR</td><td><span class="chip c-ok">✓ PUR-ORD-2026-00243</span></td><td><span class="chip c-ok">✓ MAT-PRE-2026-00054</span></td><td><span class="chip c-wait">ACC-PINV-2026-00014 · borrador</span></td><td class="text-ink-light">Más ▾</td></tr>
+      <tr><td class="font-medium">RUBEN OROZCO LARA</td><td class="font-mono text-[11.5px]">BOTON-PASTA-18L-PZA × 7 Mazo</td><td><span class="chip c-ok">✓ PUR-ORD-2026-00241</span></td><td><span class="chip c-ok">✓ MAT-PRE-2026-00053</span></td><td><span class="chip c-wait">ACC-PINV-2026-00013 · borrador</span></td><td class="text-ink-light">Más ▾</td></tr>
+    </tbody></table>
+    <p class="text-[11px] text-ink-light mt-2">En Lote 2 los chips de OC dicen <span class="chip c-open">Generar orden de compra</span>; Recibo y Factura quedan grises y deshabilitados con tooltip ("Primero valida…"), igual que hoy.</p>
+  </div>
+  <div class="rounded-xl ring-2 ring-dashed ring-ink-xlight p-3">
+    <p class="text-[11px] text-ink-light mb-2">↓ Drawer al pulsar el chip de OC (contenido = <code>PurchaseDocPanel</code> de hoy: proveedor y UDM editables, Jalar precios, doble validación Revisor → Aprobador, Enviar, vista previa en línea, texto de ayuda de la OC).</p>
+    <div class="card max-w-2xl ml-auto shadow-xl">
+      <div class="flex items-center justify-between mb-2"><span class="text-sm font-semibold">PUR-ORD-2026-00246 <span class="font-normal text-ink-muted">· GRUPO FILAFIL · Lote 1</span></span><span class="chip c-ok">Validada</span><span class="text-ink-light">✕</span></div>
+      <table class="tbl w-full"><thead><tr><th>Artículo</th><th class="text-right">Cantidad</th><th>UDM</th><th class="text-right">Precio</th></tr></thead><tbody><tr><td>GABARDINA-NARANJA</td><td class="text-right">29</td><td>Rollo</td><td class="text-right">$6,300.00</td></tr></tbody></table>
+      <p class="text-[11px] text-ink-light mt-2">Proveedor, precio y UDM se ajustan aquí. Por defecto trae el precio del costeo… (texto actual completo)</p>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── 8 · LOTE · FLUJO ───────────── -->
+<section id="s-flujo" class="screen space-y-4">
+  <div class="note"><b>Plan §5.6.</b> Rol <i>Producción Flujo Yelke</i>. Es la matriz actual sin cambios, con contadores, "Listas (N)", selección y "Crear orden(es)", más la cadena final. <b>Cambio:</b> el clic en una celda ya encargada (o en "Ver encargo") <b>navega a Talleres</b> con esa parada y pieza, en vez de desplegar el detalle debajo. Ejemplo con <b>Lote 2</b>.</div>
+  <div class="card space-y-3">
+    <div class="flex items-start justify-between gap-4 flex-wrap">
+      <p class="text-[12px] font-semibold">Chamarra 1440 · CHAMARRA INDUSTRIAL PRUEBA XXL-3XL 88</p>
+      <div class="flex gap-1.5"><span class="chip c-open">9 encargadas</span><span class="chip c-off">10 en espera</span></div>
+    </div>
+    <div class="flex gap-2 items-center"><span class="text-[12px] text-ink-muted">Producto:</span><span class="chip c-open">Todos</span><span class="chip c-off">Chamarra</span><span class="chip c-off">XXL-3XL</span></div>
+    <div class="overflow-x-auto"><div class="w-max">
+      <div class="flex gap-2.5 items-end pb-1.5">
+        <div class="w-32 text-[11px] font-semibold text-ink-light uppercase">Pieza</div>
+        <div class="w-48 border-b-2 border-surface-border pb-1.5"><p class="text-[12.5px] font-semibold"><span class="font-mono text-ink-xlight mr-1">1</span>Servicio De Corte +1</p><p class="text-[11px] text-ink-muted">ALEJANDRO TORRES AGUILERA</p><p class="text-[10.5px] text-ink-light">$9.00 por prenda</p></div>
+        <div class="w-48 border-b-2 border-surface-border pb-1.5"><p class="text-[12.5px] font-semibold"><span class="font-mono text-ink-xlight mr-1">2</span>SERIGRAFIA LOGO ESPALDA</p><p class="text-[11px] text-ink-muted">Serigrafía Creativa CDMX</p></div>
+        <div class="w-48 border-b-2 border-surface-border pb-1.5"><p class="text-[12.5px] font-semibold"><span class="font-mono text-ink-xlight mr-1">3</span>Bordado Frente Izq</p><p class="text-[11px] text-ink-muted">MANUEL LEMUS FLORES</p></div>
+        <div class="w-48 border-b-2 border-surface-border pb-1.5"><p class="text-[12.5px] font-semibold"><span class="font-mono text-ink-xlight mr-1">4</span>Colocación De Reflejante</p><p class="text-[11px] text-ink-muted">ALFREDO ORTEGA ZAVALA</p></div>
+      </div>
+      <div class="flex gap-2.5 py-1 border-b border-surface-border/50"><div class="w-32"><p class="text-[13px] font-semibold">Espalda</p><p class="text-[10.5px] text-ink-muted">1,528 pzas</p></div>
+        <div class="w-48 rounded-lg px-2.5 py-2 bg-brand-50/60 border border-brand-200"><p class="text-[11.5px] font-semibold">Servicio de corte</p><p class="text-[10.5px] text-brand-700">Encargo creado</p></div>
+        <div class="w-48 rounded-lg px-2.5 py-2 border border-dashed border-surface-border"><p class="text-[11.5px] font-semibold">Serigrafía</p><p class="text-[10.5px] text-ink-light">Espera el paso anterior</p></div>
+        <div class="w-48 flex items-center text-[11px] text-ink-xlight">— no aplica —</div>
+        <div class="w-48 rounded-lg px-2.5 py-2 border border-dashed border-surface-border"><p class="text-[11.5px] font-semibold">Reflejante</p><p class="text-[10.5px] text-ink-light">Espera el paso anterior</p></div>
+      </div>
+      <div class="flex gap-2.5 py-1 border-b border-surface-border/50"><div class="w-32"><p class="text-[13px] font-semibold">Frente Izquierdo</p><p class="text-[10.5px] text-ink-muted">1,528 pzas</p></div>
+        <div class="w-48 rounded-lg px-2.5 py-2 bg-brand-50/60 border border-brand-200"><p class="text-[11.5px] font-semibold">Servicio de corte</p><p class="text-[10.5px] text-brand-700">Encargo creado</p></div>
+        <div class="w-48 flex items-center text-[11px] text-ink-xlight">— no aplica —</div>
+        <div class="w-48 rounded-lg px-2.5 py-2 border border-dashed border-surface-border"><p class="text-[11.5px] font-semibold">Bordado</p><p class="text-[10.5px] text-ink-light">Espera el paso anterior</p></div>
+        <div class="w-48 rounded-lg px-2.5 py-2 border border-dashed border-surface-border"><p class="text-[11.5px] font-semibold">Reflejante</p><p class="text-[10.5px] text-ink-light">Espera el paso anterior</p></div>
+      </div>
+      <div class="flex gap-2.5 py-1"><div class="w-32"><p class="text-[13px] font-semibold">Puños</p><p class="text-[10.5px] text-ink-muted">×2 por prenda · 3,056 pzas</p></div>
+        <div class="w-48 rounded-lg px-2.5 py-2 bg-brand-50/60 border border-brand-200"><p class="text-[11.5px] font-semibold">Servicio de corte</p><p class="text-[10.5px] text-brand-700">Encargo creado</p></div>
+        <div class="w-48 flex items-center text-[11px] text-ink-xlight">— no aplica —</div><div class="w-48 flex items-center text-[11px] text-ink-xlight">— no aplica —</div><div class="w-48 flex items-center text-[11px] text-ink-xlight">— no aplica —</div>
+      </div>
+      <p class="text-[11px] text-ink-light py-1">… las 9 piezas y las 5 columnas, igual que hoy</p>
+    </div></div>
+    <p class="text-[11.5px] text-ink-muted">Marca las piezas listas — de uno o varios talleres — para generar sus órdenes de subcontratación.</p>
+    <div class="rounded-lg border border-surface-border p-3 flex items-center gap-4 flex-wrap">
+      <div><p class="text-[12.5px] font-semibold"><span class="font-mono text-ink-xlight mr-1">6</span>Servicio De Confeccion</p><p class="text-[11px] text-ink-muted">JESUS MOLINA TAPIA</p></div>
+      <div class="flex-1 min-w-[160px]"><p class="text-[11.5px] font-medium mb-1">0 de 9 piezas listas</p><div class="h-1.5 rounded bg-surface-raised"></div></div>
+      <button class="h-9 px-4 text-[13px] font-semibold rounded-lg text-ink-muted bg-surface-raised">Faltan 9 piezas</button>
+    </div>
+    <div class="rounded-lg border border-surface-border p-3 flex items-center gap-4 flex-wrap">
+      <div><p class="text-[12.5px] font-semibold"><span class="font-mono text-ink-xlight mr-1">7</span>ACABADO OJAL BOTON Y EMPAQUE</p><p class="text-[11px] text-ink-muted">MAQUILA SUR CONFECCION PRUEBA</p></div>
+      <p class="flex-1 text-[11.5px] text-ink-muted">Recibe la prenda armada de JESUS MOLINA TAPIA</p>
+      <button class="h-9 px-4 text-[13px] font-semibold rounded-lg text-ink-muted bg-surface-raised">Espera el paso anterior</button>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── 9 · LOTE · TALLERES ───────────── -->
+<section id="s-talleres" class="screen space-y-4">
+  <div class="note"><b>Plan §5.7.</b> Rol <i>Producción Talleres Yelke</i>. Lista de paradas con chips de pasos + detalle con sub-pestañas (Orden de compra · OM del taller · Encargos · Envío · Recibo · Factura). Arriba queda el "Siguiente paso" (<code>guiaParada</code>) con las mismas acciones de hoy. Si la parada es compartida entre piezas, el selector "Viendo:" cambia de celda. Ejemplo: Lote 2, corte, pestaña Envío.</div>
+  <div class="grid lg:grid-cols-[320px_1fr] gap-4 items-start">
+    <div class="card p-2 space-y-1">
+      <div class="rounded-lg bg-brand-50 ring-1 ring-brand-200 px-2.5 py-2">
+        <p class="text-[12.5px] font-semibold">1 · Servicio De Corte +1</p><p class="text-[11px] text-ink-muted">ALEJANDRO TORRES AGUILERA · 9 piezas · $9.00/prenda</p>
+        <div class="flex flex-wrap gap-1 mt-1.5"><span class="chip c-ok">OC ✓</span><span class="chip c-ok">Encargo ✓</span><span class="chip c-wait">Envío</span><span class="chip c-off">Recibo</span><span class="chip c-off">Factura</span></div>
+      </div>
+      <div class="rounded-lg px-2.5 py-2 hover:bg-surface-raised"><p class="text-[12.5px] font-semibold">2 · Serigrafía logo espalda</p><p class="text-[11px] text-ink-muted">Serigrafía Creativa CDMX · 1 pieza</p><div class="flex gap-1 mt-1.5"><span class="chip c-ok">OC ✓</span><span class="chip c-off">en espera</span></div></div>
+      <div class="rounded-lg px-2.5 py-2 hover:bg-surface-raised"><p class="text-[12.5px] font-semibold">3 · Bordado frente izq.</p><p class="text-[11px] text-ink-muted">MANUEL LEMUS FLORES · 1 pieza</p><div class="flex gap-1 mt-1.5"><span class="chip c-ok">OC ✓</span><span class="chip c-off">en espera</span></div></div>
+      <div class="rounded-lg px-2.5 py-2 hover:bg-surface-raised"><p class="text-[12.5px] font-semibold">4 · Colocación de reflejante</p><p class="text-[11px] text-ink-muted">ALFREDO ORTEGA ZAVALA · 5 piezas</p><div class="flex gap-1 mt-1.5"><span class="chip c-ok">OC ✓</span><span class="chip c-off">en espera</span></div></div>
+      <div class="rounded-lg px-2.5 py-2 hover:bg-surface-raised"><p class="text-[12.5px] font-semibold">5 · Bordado manga der.</p><p class="text-[11px] text-ink-muted">MANUEL LEMUS FLORES · 1 pieza</p><div class="flex gap-1 mt-1.5"><span class="chip c-ok">OC ✓</span><span class="chip c-off">en espera</span></div></div>
+      <div class="rounded-lg px-2.5 py-2 hover:bg-surface-raised"><p class="text-[12.5px] font-semibold">6 · Confección</p><p class="text-[11px] text-ink-muted">JESUS MOLINA TAPIA · arma la prenda</p><div class="flex gap-1 mt-1.5"><span class="chip c-ok">OC ✓</span><span class="chip c-off">en espera</span></div></div>
+      <div class="rounded-lg px-2.5 py-2 hover:bg-surface-raised"><p class="text-[12.5px] font-semibold">7 · Acabado</p><p class="text-[11px] text-ink-muted">MAQUILA SUR CONFECCION PRUEBA · terminal</p><div class="flex gap-1 mt-1.5"><span class="chip c-ok">OC ✓</span><span class="chip c-off">en espera</span></div></div>
+      <p class="text-[10.5px] text-ink-light px-2 pt-1">En Lote 1 todos dirían Recibo ✓ y Factura <span class="text-brand-700">$ pendiente</span>.</p>
+    </div>
+    <div class="space-y-3">
+      <div class="flex items-center gap-2 text-[12px]"><span class="text-ink-muted">Viendo:</span><select class="field-input w-48 py-1"><option>Todas las piezas (9)</option><option>Espalda</option><option>Cuello</option><option>Puños</option></select></div>
+      <div class="rounded-lg px-3 py-2.5 flex items-center gap-3 flex-wrap bg-brand-50 ring-1 ring-brand-200">
+        <div class="flex-1"><p class="text-[12.5px] font-semibold">Siguiente: enviar el material a ALEJANDRO TORRES AGUILERA</p><p class="text-[11.5px] text-ink-muted">Sale de tu almacén al del taller y deja el recibo listo para cuando entregue.</p></div>
+        <button class="btn opacity-50 cursor-not-allowed" title="No alcanza el material">Enviar al taller</button><span class="text-[12px] text-brand-600">Revisar la transferencia antes</span>
+      </div>
+      <div class="flex border-b border-surface-border overflow-x-auto">
+        <span class="tab">Orden de compra ✓</span><span class="tab">OM del taller</span><span class="tab">Encargos ✓</span><span class="tab on">Envío</span><span class="tab">Recibo</span><span class="tab">Factura</span>
+      </div>
+      <div class="card space-y-3">
+        <p class="text-[12px] text-ink-muted">Crea el movimiento de materia prima (Stock Entry · Enviar a subcontratista) hacia el almacén del taller. Se crea en <b>borrador</b> aquí mismo para que ajustes almacenes y lo valides.</p>
+        <p class="section-title">Se le manda al taller <span class="normal-case font-normal">→ ALEJANDRO TORRES AGUILERA - YP</span></p>
+        <table class="tbl w-full"><thead><tr><th>Material o pieza</th><th class="text-right">Cantidad</th><th>UDM</th><th>Sale de</th><th class="text-right">Disponible</th></tr></thead><tbody>
+          <tr><td>GABARDINA NARANJA</td><td class="text-right">968.728</td><td>MTR</td><td>MATERIA PRIMA - YP</td><td class="text-right text-red-600 font-semibold">31</td></tr>
+          <tr><td>TELA FORRO POLIESTER NEGRO</td><td class="text-right">680.728</td><td>MTR</td><td>MATERIA PRIMA - YP</td><td class="text-right">984</td></tr>
+          <tr><td>ENTRETELA FUSIONABLE BLANCA</td><td class="text-right">183.272</td><td>MTR</td><td>MATERIA PRIMA - YP</td><td class="text-right text-red-600 font-semibold">0</td></tr>
+        </tbody></table>
+        <p class="text-[11.5px] text-red-600">No alcanza lo que hay en el almacén de origen para todo el encargo — recibe la materia prima o la etapa anterior antes de enviar.</p>
+        <p class="text-[11px] text-ink-light">Con la transferencia ya creada se ve todo lo de hoy: almacén de origen (Usar recomendado en todas / Aplicar a todas las filas), destino, tabla agrupada por material con cantidad editable y almacén por fila, "Ya en el taller", avisos, Costos adicionales con transportista, Guardar / Validar.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── 10 · LOTE · ENTREGA ───────────── -->
+<section id="s-entrega" class="screen space-y-4">
+  <div class="note"><b>Plan §5.8.</b> Rol <i>Producción Entrega Yelke</i>. Es el bloque L5 actual, más la columna de almacén (ya viene del backend). Crear la remisión lleva al paso 6 · Enviar, como hoy. Ejemplo con <b>Lote 1</b>.</div>
+  <div class="card">
+    <p class="text-[13px] font-semibold mb-2">Entrega del Lote 1 al cliente</p>
+    <table class="tbl"><thead><tr><th class="pr-6">Producto</th><th class="pr-6">Almacén</th><th class="text-right pr-6">Producido</th><th class="text-right pr-6">Ya en remisión</th><th class="text-right">Por entregar</th></tr></thead><tbody>
+      <tr><td class="pr-6">CHAMARRA-INDUSTRIAL-PRUEBA</td><td class="pr-6 text-ink-muted">PRODUCTO TERMINADO - YP</td><td class="text-right pr-6">1,440</td><td class="text-right pr-6 text-ink-muted">1,440</td><td class="text-right text-ink-light">0</td></tr>
+      <tr><td class="pr-6">CHAMARRA-INDUSTRIAL-PRUEBA-XXL</td><td class="pr-6 text-ink-muted">PRODUCTO TERMINADO - YP</td><td class="text-right pr-6">87</td><td class="text-right pr-6 text-ink-muted">87</td><td class="text-right text-ink-light">0</td></tr>
+    </tbody></table>
+    <div class="flex items-center gap-1.5 mt-3"><span class="text-[11px] text-ink-light">Remisiones de este lote:</span><span class="chip c-ok">MAT-DN-2026-00008 · validada</span></div>
+    <button class="mt-3 h-9 px-4 text-[13px] font-semibold rounded-lg text-ink-muted bg-surface-raised">Todo el lote ya está en remisión</button>
+    <p class="text-[11px] text-ink-light mt-2">Estados del botón: "Crear remisión del Lote N (X prendas)" · "Todo el lote ya está en remisión" · "Esperando fin de producción".</p>
+  </div>
+</section>
+
+<!-- ───────────── 11 · ROLES ───────────── -->
+<section id="s-roles" class="screen space-y-4">
+  <div class="note"><b>Plan §6.</b> Un rol por vista. Pase libre para System Manager, Director Yelke y Supervisor Yelke. El patch asigna los 9 roles a todos los usuarios actuales para no dejar a nadie fuera; luego se quitan los que no correspondan.</div>
+  <div class="card overflow-x-auto">
+    <table class="tbl w-full"><thead><tr><th>Vista</th><th>Rol</th><th>Acciones que protege (backend)</th></tr></thead><tbody>
+      <tr><td>Tablero</td><td>Producción Tablero Yelke</td><td class="text-ink-muted">solo lectura</td></tr>
+      <tr><td>Preparación</td><td>Producción Preparación Yelke</td><td class="text-ink-muted">plan, solicitud de material, lotes de entrega, OC de maquila, abrir lote</td></tr>
+      <tr><td>Orden de manufactura</td><td>Producción Orden de Manufactura Yelke</td><td class="text-ink-muted">guardar OM general</td></tr>
+      <tr><td>Lote · Materia prima</td><td>Producción Materia Prima Yelke</td><td class="text-ink-muted">solicitud de cotización, presupuesto, OC de material, jalar precios, recibo (compartido con Envíos)</td></tr>
+      <tr><td>Lote · Flujo</td><td>Producción Flujo Yelke</td><td class="text-ink-muted">crear encargos desde la matriz</td></tr>
+      <tr><td>Lote · Talleres</td><td>Producción Talleres Yelke</td><td class="text-ink-muted">encargos (SCO), transferencia y recibo de maquila (compartidos con Envíos)</td></tr>
+      <tr><td>Lote · Entrega</td><td>Producción Entrega Yelke</td><td class="text-ink-muted">crear remisión del lote</td></tr>
+      <tr><td>Envíos</td><td>Producción Envíos Yelke</td><td class="text-ink-muted">recibo de compra, transferencia, recibo de maquila, devolución de sobrante</td></tr>
+      <tr><td>Facturas</td><td>Producción Facturas Yelke</td><td class="text-ink-muted">crear, guardar y validar facturas de compra</td></tr>
+      <tr><td>Lote · Resumen</td><td class="text-ink-muted">cualquiera de los anteriores</td><td></td></tr>
+    </tbody></table>
+  </div>
+  <div class="card text-center py-10">
+    <p class="text-[14px] font-semibold">No tienes acceso a esta vista</p>
+    <p class="text-[12.5px] text-ink-muted mt-1">Para ver <b>Facturas</b> necesitas el rol <b>Producción Facturas Yelke</b>. Pídeselo a tu administrador.</p>
+    <button class="btn mt-4">Ir a Envíos</button>
+  </div>
+  <div class="card">
+    <p class="text-[12.5px] font-semibold mb-1">Acción de otra vista en solo lectura</p>
+    <p class="text-[12px] text-ink-muted">Ejemplo: alguien con <i>Materia Prima</i> pero sin <i>Facturas</i> ve el chip de factura y abre el panel <b>sin</b> Crear/Guardar/Validar, con la nota "La captura la hace Facturas".</p>
+  </div>
+</section>
+
+</main>
+
+<script>
+const LOTE = ["resumen","materia","flujo","talleres","entrega"];
+function go(k){
+  document.querySelectorAll(".screen").forEach(s=>s.classList.toggle("on", s.id==="s-"+k));
+  const enLote = LOTE.includes(k);
+  document.getElementById("shell-prod").classList.toggle("hidden", enLote || k==="roles");
+  document.getElementById("shell-lote").classList.toggle("hidden", !enLote);
+  document.querySelectorAll(".tab[data-tab]").forEach(t=>t.classList.toggle("on", t.dataset.tab===k));
+  document.querySelectorAll("button.go").forEach(b=>{ if(!b.dataset.tab) b.classList.toggle("bg-white/20", b.dataset.go===k); });
+  const l1 = ["materia","entrega"].includes(k);
+  document.getElementById("lote-nombre").textContent = l1 ? "Lote 1" : "Lote 2";
+  document.getElementById("lote-estado").textContent = l1 ? "Entregado" : "En maquila";
+  document.getElementById("lote-estado").className = "chip " + (l1 ? "c-ok" : "c-open");
+  document.getElementById("lote-chips").innerHTML = l1
+    ? '<span class="chip c-off">Chamarra industrial · 1,440</span><span class="chip c-off">Chamarra XXL-3XL · 87</span>'
+    : '<span class="chip c-off">Chamarra industrial · 1,440</span><span class="chip c-off">Chamarra XXL-3XL · 88</span>';
+  history.replaceState(null,"","#"+k);
+  window.scrollTo(0,0);
+}
+document.querySelectorAll(".go").forEach(b=>b.addEventListener("click",()=>go(b.dataset.go)));
+go((location.hash||"#tablero").slice(1));
+</script>
+</body>
+</html>
