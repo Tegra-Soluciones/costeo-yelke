@@ -86,6 +86,19 @@
             </svg>
             Buscando…
           </div>
+
+          <!-- Acción extra fija hasta abajo (igual que "+ Crear nuevo X" nativo de
+               ERPNext) -- siempre visible, con resultados o sin ellos, para acciones
+               como "+ Agregar múltiplo de compra" que no dependen de la búsqueda. -->
+          <button
+            v-if="extraActionLabel"
+            type="button"
+            class="w-full text-left px-3 py-2 text-xs font-medium text-brand-600 hover:bg-brand-50 border-t border-gray-100 flex items-center gap-1.5"
+            @mousedown.prevent="onExtraAction"
+          >
+            <svg class="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+            {{ extraActionLabel }}
+          </button>
         </div>
       </Transition>
     </Teleport>
@@ -103,9 +116,25 @@ const props = defineProps({
   placeholder:{ type: String, default: "" },
   readonly:   { type: Boolean, default: false },
   error:      { type: Boolean, default: false },
+  // Botón fijo hasta abajo del desplegable (ver template) -- opcional, para una
+  // acción que no es "elegir un resultado" (ej. abrir un modal para dar de alta
+  // algo relacionado). Vacío = sin botón, comportamiento de siempre.
+  extraActionLabel: { type: String, default: "" },
+  // Lista fija de candidatos (ej. solo las UDM que YA tiene dadas de alta un
+  // artículo, ver PurchaseDocPanel/get_item_uoms) -- cuando se pasa, NO se busca
+  // en el servidor (frappe.desk.search.search_link busca en TODO el catálogo del
+  // doctype); el filtro de texto se hace en el navegador sobre esta lista. Cada
+  // elemento es un string (value == description) o {value, description}. `null`
+  // (default) conserva el comportamiento de siempre: buscar en el servidor.
+  options: { type: Array, default: null },
 });
 
-const emit = defineEmits(["update:modelValue"]);
+const emit = defineEmits(["update:modelValue", "extra-action"]);
+
+function onExtraAction() {
+  showDrop.value = false;
+  emit("extra-action");
+}
 
 const inputEl    = ref(null);
 const results    = ref([]);
@@ -157,11 +186,22 @@ onBeforeUnmount(() => {
 // ── Search ────────────────────────────────────────────────────────────────────
 async function doSearch(txt) {
   lastQuery.value = txt;
-  loading.value   = true;
   showDrop.value  = true;
   highlighted.value = -1;
   updateDropPosition();
 
+  // Lista fija (ver prop `options`) -- filtro local, sin ir al servidor.
+  if (props.options) {
+    loading.value = false;
+    const norm = (txt || "").trim().toLowerCase();
+    const all = props.options.map((o) => (typeof o === "string" ? { value: o, description: o } : o));
+    results.value = norm
+      ? all.filter((o) => o.value.toLowerCase().includes(norm) || (o.description || "").toLowerCase().includes(norm))
+      : all;
+    return;
+  }
+
+  loading.value = true;
   const req = ++currentReq;
   try {
     const res = await searchLink(props.doctype, txt, props.filters);

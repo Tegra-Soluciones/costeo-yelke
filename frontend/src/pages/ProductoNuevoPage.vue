@@ -244,6 +244,16 @@
                       class="field-input"
                     />
                   </div>
+                  <!-- Paquete completo -- no se puede pedir una fracción a un proveedor
+                       en esta UDM (ej. Rollo de una tela que se compra suelta por
+                       metro); ver costeo_api._es_compra_por_paquete -->
+                  <div class="w-36 pt-4">
+                    <label class="flex items-center gap-1.5 text-[11.5px] text-gray-500 leading-tight">
+                      <input v-model="row.compra_por_paquete_completo" type="checkbox" class="rounded" />
+                      Paquete completo
+                    </label>
+                  </div>
+
                   <!-- Delete -->
                   <button
                     class="mt-4 w-7 h-7 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-red-50 hover:text-red-400 text-gray-300 transition-all flex-shrink-0"
@@ -800,7 +810,7 @@ function addSupplier() {
 }
 
 function addUomConversion() {
-  form.uom_conversions.push({ uom: "", conversion_factor: 1 });
+  form.uom_conversions.push({ uom: "", conversion_factor: 1, compra_por_paquete_completo: false });
 }
 
 // ── Validate ──────────────────────────────────────────────────────────────────

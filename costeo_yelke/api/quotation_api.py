@@ -445,12 +445,6 @@ def send_quotation_email(name, recipients, subject, message, print_format=None, 
 
 
 def _get_sales_tax_template(company):
-    return frappe.db.get_value(
-        "Sales Taxes and Charges Template",
-        {"company": company, "is_default": 1},
-        "name",
-    ) or frappe.db.get_value(
-        "Sales Taxes and Charges Template",
-        {"company": company},
-        "name",
-    )
+    # Misma lógica que costeo_api._get_sales_tax_template: nunca una plantilla desactivada.
+    from costeo_yelke.api.costeo_api import _get_sales_tax_template as _base
+    return _base(company)

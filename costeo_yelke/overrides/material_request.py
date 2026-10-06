@@ -3,7 +3,7 @@ import json
 import frappe
 from frappe import _
 from frappe.model.mapper import get_mapped_doc
-from frappe.utils import flt
+from frappe.utils import flt, nowdate
 
 from erpnext.stock.doctype.material_request import material_request as erpnext_material_request
 
@@ -49,6 +49,17 @@ def _make_supplier_purchase_order(material_request_name, supplier, row_names):
     def postprocess(source, target_doc):
         target_doc.supplier = supplier
         erpnext_material_request.set_missing_values(source, target_doc)
+        # ERPNext descarta la fecha requerida de cada renglón si ya pasó
+        # (material_request.update_item). Cuando TODAS las del lote están vencidas
+        # --un lote capturado hace semanas que apenas se va a comprar-- la orden se
+        # queda sin ninguna y ERPNext la rechaza al validar con un escueto "Please
+        # enter Reqd by Date", sin decir dónde ponerla. Se usa hoy, que es la
+        # primera fecha válida, y queda editable en la orden.
+        if not any(it.get("schedule_date") for it in target_doc.get("items") or []):
+            hoy = nowdate()
+            target_doc.schedule_date = hoy
+            for it in target_doc.get("items") or []:
+                it.schedule_date = hoy
 
     po_doc = get_mapped_doc(
         "Material Request",

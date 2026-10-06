@@ -13,7 +13,15 @@
       </div>
 
       <div class="grid grid-cols-2 gap-3">
-        <div v-if="doc.supplier"><label class="field-label">Proveedor</label><div class="field-input bg-surface-raised/60 truncate">{{ doc.supplier }}</div></div>
+        <div v-if="doc.supplier">
+          <label class="field-label">Proveedor</label>
+          <LinkInput
+            v-if="!isValidated && editableSupplier"
+            :model-value="form.supplier" doctype="Supplier" placeholder="Proveedor" class="text-xs"
+            @update:model-value="onSupplierChange"
+          />
+          <div v-else class="field-input bg-surface-raised/60 truncate">{{ doc.supplier }}</div>
+        </div>
         <div v-if="doc.transaction_date"><label class="field-label">Fecha</label><div class="field-input bg-surface-raised/60">{{ doc.transaction_date }}</div></div>
         <div v-if="doc.has_posting_date">
           <label class="field-label">Fecha de recepción</label>
@@ -55,14 +63,24 @@
       <table class="w-full text-sm mt-3">
         <thead><tr class="text-left text-xs font-semibold text-ink-light border-b border-surface-border"><th class="py-2">Artículo</th><th class="py-2 w-20 text-right">Cant.</th><th class="py-2 w-16">UOM</th><th v-if="hasRate" class="py-2 w-24 text-right">Precio</th><th v-if="showWarehouse" class="py-2">Almacén</th></tr></thead>
         <tbody>
-          <tr v-for="it in items" :key="it.name" class="border-b border-surface-border/60">
-            <td class="py-1.5 pr-2 font-mono text-[12px]">{{ it.item_code }}</td>
-            <td class="py-1.5 pr-2"><input v-if="!isValidated" v-model.number="it.qty" type="number" min="0" class="field-input text-right" /><span v-else class="block text-right">{{ it.qty }}</span></td>
+          <tr v-for="it in filas" :key="it.name" class="border-b border-surface-border/60">
+            <td class="py-1.5 pr-2 font-mono text-[12px]">
+              {{ it.item_code }}
+              <span v-if="it._piezas > 1" class="ml-1.5 font-sans text-[11px] text-ink-muted">· {{ it._piezas }} piezas</span>
+            </td>
+            <td class="py-1.5 pr-2"><input v-if="!isValidated && editableQty && !agrupaPiezas" v-model.number="it.qty" type="number" min="0" class="field-input text-right" /><span v-else class="block text-right">{{ it.qty }}</span></td>
             <td class="py-1.5 pr-2">
-              <LinkInput v-if="!isValidated && editableUom" v-model="it.uom" doctype="UOM" placeholder="UDM" class="w-24 text-xs" />
+              <LinkInput
+                v-if="!isValidated && editableUom && !agrupaPiezas"
+                :model-value="it.uom" doctype="UOM" placeholder="UDM" class="w-24 text-xs"
+                :options="uomOptionsPorItem[it.item_code] || []"
+                extra-action-label="+ Agregar múltiplo de compra"
+                @update:model-value="onUomChange(it, $event)"
+                @extra-action="abrirMultiploCompra(it)"
+              />
               <span v-else class="text-ink-muted text-xs">{{ it.uom }}</span>
             </td>
-            <td v-if="hasRate" class="py-1.5 pr-2"><input v-if="!isValidated && it.has_rate" v-model.number="it.rate" type="number" min="0" step="0.01" class="field-input text-right" /><span v-else class="block text-right">{{ it.rate }}</span></td>
+            <td v-if="hasRate" class="py-1.5 pr-2"><input v-if="!isValidated && it.has_rate && !agrupaPiezas" v-model.number="it.rate" type="number" min="0" step="0.01" class="field-input text-right" /><span v-else class="block text-right">{{ it.rate }}</span></td>
             <td v-if="showWarehouse" class="py-1.5 pr-2 text-ink-muted text-xs">{{ it.warehouse }}</td>
           </tr>
         </tbody>
@@ -104,12 +122,20 @@
       </div>
     </div>
   </div>
+
+  <MultiploCompraModal
+    :open="multiploModal.open" :item-code="multiploModal.itemCode"
+    @cancel="multiploModal.open = false"
+    @saved="onMultiploGuardado"
+  />
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, reactive, watch } from "vue";
 import DocStatusPill from "./DocStatusPill.vue";
 import LinkInput from "./LinkInput.vue";
+import MultiploCompraModal from "./MultiploCompraModal.vue";
+import { call } from "@/utils/frappe.js";
 
 // Panel genérico para ver/editar CUALQUIER documento de compra-producción (OC, RFQ,
 // Presupuesto de proveedor, Recibo de compra, OC de subcontratación...) -- todos
@@ -135,6 +161,18 @@ const props = defineProps({
   // RFQ, Presupuesto de proveedor, Recibo y las órdenes de subcontratación (que usan
   // este mismo panel) se quedan en el valor por defecto y siguen de solo lectura.
   editableUom: { type: Boolean, default: false },
+  // Igual que editableUom: solo la Orden de Compra de materia prima la pone en true --
+  // puede hacer falta cambiar de proveedor sobre la marcha (ej. el proveedor del lote 2
+  // no tiene material). Al guardar, el precio de cada línea se recalcula solo para el
+  // proveedor nuevo (ver guardar_documento_compra / _precio_para_oc).
+  editableSupplier: { type: Boolean, default: false },
+  // Solo la Orden de Compra de materia prima la pone en false -- ahí la cantidad
+  // YA viene bien calculada sola (redondeo a paquete completo + reparto del
+  // sobrante entre lotes, ver mr_crear_oc/_es_compra_por_paquete) y respeta el
+  // saldo de la Solicitud de Material; editarla a mano aquí se lo saltaría sin que
+  // nada lo detecte. El resto de documentos (RFQ, Presupuesto, Recibo,
+  // subcontratación) siguen editables como siempre.
+  editableQty: { type: Boolean, default: true },
   helpText: { type: String, default: "" },
   validateLabel: { type: String, default: "Validar" },
   validatedText: { type: String, default: "Validada" },
@@ -158,6 +196,36 @@ const emit = defineEmits(["save", "validate", "review", "pull-prices", "send", "
 
 const isValidated = computed(() => Number(props.doc.docstatus) === 1);
 const hasRate = computed(() => props.items.some((i) => i.has_rate));
+
+// Maquila por pieza: el documento lleva un renglón por PIEZA (frente, espalda,
+// puños...) porque es lo que permite moverlas por separado, pero el precio del
+// servicio se cobra una sola vez por prenda y viaja completo en una de ellas.
+// Mostrar los renglones crudos deja la pantalla con el mismo servicio repetido y
+// casi todos en $0. Aquí se agrupan igual que el formato impreso del taller: un
+// renglón por servicio y producto, cantidad en PRENDAS y precio por prenda.
+// Solo aplica cuando el backend mandó `prendas` (OC de subcontratación).
+const agrupaPiezas = computed(() => props.items.some((i) => Number(i.prendas) > 0));
+const filas = computed(() => {
+  if (!agrupaPiezas.value) return props.items;
+  const grupos = new Map();
+  for (const it of props.items) {
+    const prendas = Number(it.prendas) || 0;
+    if (!prendas) { grupos.set(`solo:${it.name}`, { ...it, _piezas: 0 }); continue; }
+    const k = `${it.item_code}||${it.producto_terminado || ""}`;
+    const g = grupos.get(k);
+    if (g) { g._importe += Number(it.amount) || 0; g._piezas += 1; }
+    else {
+      grupos.set(k, {
+        ...it, name: k, qty: prendas, uom: "prendas",
+        _importe: Number(it.amount) || 0, _piezas: 1,
+      });
+    }
+  }
+  return [...grupos.values()].map((g) => ({
+    ...g,
+    rate: g._piezas ? Math.round((g._importe / (Number(g.qty) || 1)) * 100) / 100 : g.rate,
+  }));
+});
 const shippingCaptured = computed(() => props.form.shipping_cost !== null && props.form.shipping_cost !== "" && props.form.shipping_cost !== undefined);
 const validateDisabledReason = computed(() => {
   if (!props.requiresReview) return "";
@@ -181,4 +249,88 @@ const validLabel = computed(() => {
   if (!isValidated.value) return "Borrador";
   return props.doc.enviado_el ? "Enviado" : "Validado";
 });
+
+// El selector de UDM de una línea SOLO debe ofrecer las UDM que ese artículo ya
+// tiene dadas de alta (get_item_uoms) -- no el catálogo completo de UDM del
+// sistema (ver LinkInput `options`, que desactiva la búsqueda en servidor). Un
+// artículo nuevo en la lista dispara la carga sola (watch de abajo); "+ Agregar
+// múltiplo de compra" la refresca al agregar una.
+const uomOptionsPorItem = reactive({});
+async function cargarUomsItem(itemCode, forzar = false) {
+  if (!itemCode || (!forzar && uomOptionsPorItem[itemCode])) return;
+  try {
+    const r = await call("costeo_yelke.api.item_api.get_item_uoms", { item_code: itemCode });
+    uomOptionsPorItem[itemCode] = (r.uoms || []).map((u) => ({ value: u.uom, description: u.uom }));
+  } catch {
+    uomOptionsPorItem[itemCode] = [];
+  }
+}
+watch(() => props.items, (items) => {
+  (items || []).forEach((it) => cargarUomsItem(it.item_code));
+}, { immediate: true, deep: false });
+
+// Recálculo instantáneo al cambiar UDM o proveedor -- sin esto había que dar clic
+// en Guardar para ver la cantidad/precio nuevos (guardar_documento_compra hacía la
+// cuenta, pero solo al guardar). preview_conversion_uom_oc usa exactamente la
+// misma lógica que el guardado real (_convertir_uom_compra / _precio_para_oc), así
+// que lo que se ve aquí es lo mismo que va a quedar guardado.
+// Hace la conversión de verdad (llama al servidor) y aplica el resultado a la fila
+// -- separado de onUomChange para que también se pueda forzar SIN el atajo de
+// "misma UDM que ya tenía" (ver onMultiploGuardado: corregir el factor de un
+// múltiplo que la fila YA tiene seleccionado también debe recalcular, aunque la
+// UDM en sí no haya cambiado de nombre -- si no, la fila se quedaba con la
+// cantidad vieja calculada con el factor equivocado).
+async function aplicarPreviewUom(row, nuevoUom) {
+  row.uom = nuevoUom; // se ve el cambio de inmediato; se corrige abajo si hace falta
+  try {
+    const r = await call("costeo_yelke.api.costeo_api.preview_conversion_uom_oc", {
+      item_code: row.item_code, qty: row.qty, conversion_factor_actual: row.conversion_factor || 1,
+      nuevo_uom: nuevoUom, supplier: props.form.supplier || props.doc.supplier,
+      company: props.doc.company, costeo: props.doc.costeo,
+    });
+    row.qty = r.qty;
+    row.conversion_factor = r.conversion_factor;
+    if (r.rate !== null && r.rate !== undefined && filaTienePrecio(row)) row.rate = r.rate;
+  } catch { /* si falla la vista previa, se recalcula igual de bien al Guardar */ }
+}
+async function onUomChange(row, nuevoUom) {
+  if (!nuevoUom || nuevoUom === row.uom) { row.uom = nuevoUom; return; }
+  await aplicarPreviewUom(row, nuevoUom);
+}
+function filaTienePrecio(row) { return row.has_rate !== false; }
+
+// Cambiar de proveedor recalcula el precio sugerido de TODAS las líneas (la
+// cantidad no depende del proveedor, solo el precio) -- misma razón que arriba.
+async function onSupplierChange(nuevoSupplier) {
+  props.form.supplier = nuevoSupplier;
+  if (!nuevoSupplier) return;
+  for (const row of props.items) {
+    if (!filaTienePrecio(row)) continue;
+    try {
+      const r = await call("costeo_yelke.api.costeo_api.preview_conversion_uom_oc", {
+        item_code: row.item_code, qty: row.qty, conversion_factor_actual: row.conversion_factor || 1,
+        nuevo_uom: row.uom, supplier: nuevoSupplier, company: props.doc.company, costeo: props.doc.costeo,
+      });
+      if (r.rate !== null && r.rate !== undefined) row.rate = r.rate;
+    } catch { /* se recalcula igual de bien al Guardar */ }
+  }
+}
+
+// "+ Agregar múltiplo de compra" (ver LinkInput extra-action-label) -- abre el
+// modal para dar de alta una conversión de UDM que se le haya pasado al artículo,
+// sin salir de la OC. Al guardar, esa línea se queda seleccionada en la UDM nueva.
+const multiploModal = reactive({ open: false, itemCode: "", row: null });
+function abrirMultiploCompra(row) {
+  multiploModal.itemCode = row.item_code;
+  multiploModal.row = row;
+  multiploModal.open = true;
+}
+function onMultiploGuardado(nuevaUom) {
+  cargarUomsItem(multiploModal.itemCode, true); // refresca la lista con la recién agregada
+  // Siempre recalcula, aunque la fila ya estuviera en esta misma UDM -- lo que
+  // cambió es el FACTOR del múltiplo (ej. el usuario lo corrigió), no el nombre
+  // de la UDM, así que el atajo de onUomChange no debe aplicar aquí.
+  if (multiploModal.row) aplicarPreviewUom(multiploModal.row, nuevaUom);
+  multiploModal.open = false;
+}
 </script>

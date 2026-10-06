@@ -650,9 +650,35 @@ def get_recordatorios(estado=None, limit=200):
     return rows
 
 
+# Margen (%) que se le da a Item.over_delivery_receipt_allowance cuando alguna UDM
+# del artículo se marca "paquete completo" -- ver _asegurar_allowance_si_paquete.
+ALLOWANCE_PAQUETE_COMPLETO = 100
+
+
+def _asegurar_allowance_si_paquete(doc, uoms_rows):
+    """Si alguna UDM de este artículo se marcó "se compra en paquetes completos"
+    (ver UOM Conversion Detail.compra_por_paquete_completo / costeo_api.
+    _es_compra_por_paquete), asegura que Item.over_delivery_receipt_allowance deje
+    margen para el redondeo -- si no, en cuanto la OC redondeada pida más que la
+    línea de la Solicitud de Material que la originó, ERPNext bloquea el Validar
+    con "This document is over limit" (ver mr_crear_oc / guardar_documento_compra,
+    que ya redondean, pero no pueden hacer nada contra este candado nativo). Nunca
+    lo baja si ya estaba en algo mayor -- solo sube el mínimo necesario."""
+    if any(r.get("compra_por_paquete_completo") for r in (uoms_rows or [])):
+        if flt(doc.get("over_delivery_receipt_allowance")) < ALLOWANCE_PAQUETE_COMPLETO:
+            doc.over_delivery_receipt_allowance = ALLOWANCE_PAQUETE_COMPLETO
+
+
 @frappe.whitelist()
 def save_item_uoms(item_code, uoms):
-    """Replace the UOM conversion table (Item.uoms child) for an item."""
+    """Replace the UOM conversion table (Item.uoms child) for an item.
+
+    Cada fila puede traer `compra_por_paquete_completo` (opcional, default False) --
+    ver UOM Conversion Detail.compra_por_paquete_completo / costeo_api.
+    _es_compra_por_paquete: marca esa UDM puntual como paquete completo (no se puede
+    pedir una fracción, ej. Rollo de una cinta que normalmente se compra suelta) --
+    ver también _asegurar_allowance_si_paquete, que deja el margen nativo de
+    ERPNext listo para que el redondeo no bloquee la OC después."""
     import json
     if isinstance(uoms, str):
         uoms = json.loads(uoms)
@@ -665,7 +691,11 @@ def save_item_uoms(item_code, uoms):
         uom = row.get("uom") or ""
         factor = float(row.get("conversion_factor") or 1)
         if uom and uom != doc.stock_uom:
-            doc.append("uoms", {"uom": uom, "conversion_factor": factor})
+            doc.append("uoms", {
+                "uom": uom, "conversion_factor": factor,
+                "compra_por_paquete_completo": 1 if row.get("compra_por_paquete_completo") else 0,
+            })
+    _asegurar_allowance_si_paquete(doc, uoms)
 
     doc.flags.ignore_permissions = True
     doc.flags.ignore_links       = True
@@ -681,22 +711,31 @@ def get_item_uoms(item_code: str) -> dict:
     conversiones que ya se dieron de alta en 'Alta de Productos' (Item.uoms, ver
     save_item_uoms) -- para pickers de "cambiar UDM" en Solicitud de Material / Plan
     de Producción que NO deben ofrecer cualquier UDM del catálogo, solo las que este
-    artículo en particular ya tiene una conversión conocida."""
-    stock_uom = frappe.db.get_value("Item", item_code, "stock_uom")
+    artículo en particular ya tiene una conversión conocida. Cada UDM trae también
+    `compra_por_paquete_completo` (ver costeo_api._es_compra_por_paquete): para la
+    stock_uom viene de Item.compra_por_paquete_completo (no tiene fila propia en
+    UOM Conversion Detail), para las demás de su propia fila."""
+    item = frappe.db.get_value("Item", item_code, ["stock_uom", "compra_por_paquete_completo"], as_dict=True) or {}
+    stock_uom = item.get("stock_uom")
     conversiones = frappe.get_all(
         "UOM Conversion Detail", filters={"parent": item_code, "parenttype": "Item"},
-        fields=["uom", "conversion_factor"], order_by="idx asc",
+        fields=["uom", "conversion_factor", "compra_por_paquete_completo"], order_by="idx asc",
     )
     # stock_uom siempre factor 1, sin importar qué haya quedado guardado en el renglón
     # -- algunos artículos arrastran un renglón redundante para su propia stock_uom
     # (dado de alta antes de que existiera el guard en save_item_uoms), así que se
     # dedup aquí en vez de confiar en que la tabla nunca la repita.
-    uoms = {stock_uom: 1.0}
+    uoms = {stock_uom: {"conversion_factor": 1.0, "compra_por_paquete_completo": bool(item.get("compra_por_paquete_completo"))}}
     for c in conversiones:
-        uoms[c.uom] = 1.0 if c.uom == stock_uom else flt(c.conversion_factor)
+        if c.uom == stock_uom:
+            continue
+        uoms[c.uom] = {
+            "conversion_factor": flt(c.conversion_factor),
+            "compra_por_paquete_completo": bool(c.compra_por_paquete_completo),
+        }
     return {
         "stock_uom": stock_uom,
-        "uoms": [{"uom": u, "conversion_factor": f} for u, f in uoms.items()],
+        "uoms": [{"uom": u, **v} for u, v in uoms.items()],
     }
 
 
@@ -726,7 +765,10 @@ def get_item(item_code):
 
     # UOM Conversion Table (child: doc.uoms)
     uom_conversions = [
-        {"uom": r.uom, "conversion_factor": float(r.conversion_factor or 1)}
+        {
+            "uom": r.uom, "conversion_factor": float(r.conversion_factor or 1),
+            "compra_por_paquete_completo": bool(r.get("compra_por_paquete_completo")),
+        }
         for r in doc.uoms
     ]
 
@@ -919,7 +961,11 @@ def create_item(data, ignore_mandatory=False):
         uom = row.get("uom") or ""
         factor = float(row.get("conversion_factor") or 1)
         if uom and uom != data.get("stock_uom"):
-            doc.append("uoms", {"uom": uom, "conversion_factor": factor})
+            doc.append("uoms", {
+                "uom": uom, "conversion_factor": factor,
+                "compra_por_paquete_completo": 1 if row.get("compra_por_paquete_completo") else 0,
+            })
+    _asegurar_allowance_si_paquete(doc, data.get("uom_conversions"))
 
     # Taxes child table
     for row in data.get("taxes") or []:
@@ -1014,3 +1060,26 @@ def create_item(data, ignore_mandatory=False):
     if price_errors:
         result["price_warnings"] = price_errors
     return result
+
+
+def limpiar_almacen_de_otra_compania(doc, method=None):
+    """doc_events: Item before_validate.
+
+    Frappe llena el almacén de cada fila de "Item Defaults" que llega vacía con el
+    almacén predeterminado GLOBAL (Stock Settings: "Sucursales - T", de Tegra), y
+    ERPNext rechaza después el artículo si ese almacén no es de la compañía de la
+    fila. Pasaba al dar de alta un servicio (no lleva almacén) en cualquier otra
+    compañía. Se reemplaza por el almacén que el grupo de artículo tiene para esa
+    compañía (lo mismo que ERPNext usaría sin filas propias), o se deja vacío."""
+    for row in doc.get("item_defaults") or []:
+        wh = row.get("default_warehouse")
+        if not wh or not row.get("company"):
+            continue
+        if frappe.db.get_value("Warehouse", wh, "company", cache=True) == row.company:
+            continue
+        row.default_warehouse = frappe.db.get_value(
+            "Item Default",
+            {"parenttype": "Item Group", "parent": doc.item_group, "company": row.company},
+            "default_warehouse",
+        ) or None
+

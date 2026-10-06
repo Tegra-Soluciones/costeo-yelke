@@ -332,6 +332,20 @@
                   />
                 </div>
 
+                <!-- Paquete completo -- no se puede pedir una fracción a un proveedor
+                     en esta UDM (ej. Rollo de una tela que se compra suelta por metro);
+                     ver costeo_api._es_compra_por_paquete -->
+                <div class="w-36 pt-4">
+                  <label class="flex items-center gap-1.5 text-[11.5px] text-gray-500 leading-tight">
+                    <input
+                      v-model="row.compra_por_paquete_completo"
+                      type="checkbox" class="rounded"
+                      @change="row._dirty = true"
+                    />
+                    Paquete completo
+                  </label>
+                </div>
+
                 <!-- Delete -->
                 <button
                   class="mt-4 w-7 h-7 flex items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-50 hover:text-red-500 text-gray-300 transition-all flex-shrink-0"
@@ -767,7 +781,7 @@ function fmtDate(s) {
 
 // ── UOM conversion table ──────────────────────────────────────────────────────
 function addUomRow() {
-  itemUomRows.value.push({ uom: "", conversion_factor: 1, _dirty: true });
+  itemUomRows.value.push({ uom: "", conversion_factor: 1, compra_por_paquete_completo: false, _dirty: true });
 }
 function removeUomRow(idx) {
   itemUomRows.value.splice(idx, 1);
@@ -778,7 +792,10 @@ async function saveUoms() {
   try {
     const payload = itemUomRows.value
       .filter(r => r.uom)
-      .map(r => ({ uom: r.uom, conversion_factor: r.conversion_factor || 1 }));
+      .map(r => ({
+        uom: r.uom, conversion_factor: r.conversion_factor || 1,
+        compra_por_paquete_completo: !!r.compra_por_paquete_completo,
+      }));
     await call("costeo_yelke.api.item_api.save_item_uoms", {
       item_code: props.name,
       uoms: JSON.stringify(payload),

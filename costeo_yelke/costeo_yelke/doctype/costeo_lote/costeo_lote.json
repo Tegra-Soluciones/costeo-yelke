@@ -1,0 +1,68 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-09-29 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "lote_ref",
+  "producto_terminado",
+  "piezas",
+  "schedule_date"
+ ],
+ "fields": [
+  {
+   "allow_on_submit": 1,
+   "columns": 2,
+   "description": "Etiqueta del lote de entrega (\"Lote 1\") -- la misma que llevan los renglones de la Solicitud de Material y las Subcontracting Order de ese lote.",
+   "fieldname": "lote_ref",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Lote",
+   "reqd": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "columns": 4,
+   "fieldname": "producto_terminado",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Producto Terminado",
+   "reqd": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "columns": 2,
+   "description": "Prendas terminadas de ese producto que le tocan a este lote -- es lo que la persona capturó al dividir la Solicitud de Material por piezas.",
+   "fieldname": "piezas",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Piezas",
+   "precision": "3"
+  },
+  {
+   "allow_on_submit": 1,
+   "columns": 2,
+   "fieldname": "schedule_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Fecha de entrega"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-29 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Costeo Yelke",
+ "name": "Costeo Lote",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

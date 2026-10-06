@@ -1,0 +1,211 @@
+{
+ "actions": [],
+ "autoname": "OM-.#####",
+ "creation": "2026-10-05 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "costeo",
+  "producto",
+  "sec_general",
+  "om_modelo",
+  "om_tela",
+  "om_color",
+  "om_color_principal",
+  "om_forro",
+  "col_general",
+  "om_combinacion",
+  "om_ubicacion",
+  "om_aberturas",
+  "om_fecha_requerida",
+  "om_bordado",
+  "om_estampado",
+  "om_sublimado",
+  "om_reflejante",
+  "sec_tallas",
+  "om_tallas",
+  "sec_procesos",
+  "om_procesos",
+  "sec_obs",
+  "om_observaciones",
+  "sec_tablas",
+  "om_tablas_flexibles",
+  "sec_archivos",
+  "om_archivos"
+ ],
+ "fields": [
+  {
+   "fieldname": "costeo",
+   "fieldtype": "Link",
+   "options": "Costeo",
+   "label": "Costeo",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "producto",
+   "fieldtype": "Data",
+   "label": "Producto",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "sec_general",
+   "fieldtype": "Section Break",
+   "label": "Info general"
+  },
+  {
+   "fieldname": "om_modelo",
+   "fieldtype": "Data",
+   "label": "Modelo"
+  },
+  {
+   "fieldname": "om_tela",
+   "fieldtype": "Data",
+   "label": "Tela"
+  },
+  {
+   "fieldname": "om_color",
+   "fieldtype": "Data",
+   "label": "Color"
+  },
+  {
+   "fieldname": "om_color_principal",
+   "fieldtype": "Data",
+   "label": "Color principal"
+  },
+  {
+   "fieldname": "om_forro",
+   "fieldtype": "Data",
+   "label": "Forro"
+  },
+  {
+   "fieldname": "col_general",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "om_combinacion",
+   "fieldtype": "Small Text",
+   "label": "Combinación"
+  },
+  {
+   "fieldname": "om_ubicacion",
+   "fieldtype": "Small Text",
+   "label": "Ubicación"
+  },
+  {
+   "fieldname": "om_aberturas",
+   "fieldtype": "Int",
+   "label": "Aberturas"
+  },
+  {
+   "fieldname": "om_fecha_requerida",
+   "fieldtype": "Date",
+   "label": "Fecha requerida"
+  },
+  {
+   "fieldname": "om_bordado",
+   "fieldtype": "Check",
+   "label": "Bordado"
+  },
+  {
+   "fieldname": "om_estampado",
+   "fieldtype": "Check",
+   "label": "Estampado"
+  },
+  {
+   "fieldname": "om_sublimado",
+   "fieldtype": "Check",
+   "label": "Sublimado"
+  },
+  {
+   "fieldname": "om_reflejante",
+   "fieldtype": "Check",
+   "label": "Reflejante"
+  },
+  {
+   "fieldname": "sec_tallas",
+   "fieldtype": "Section Break",
+   "label": "Tallas (del costeo)"
+  },
+  {
+   "fieldname": "om_tallas",
+   "fieldtype": "Table",
+   "options": "Orden Manufactura Talla",
+   "label": "Tallas",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sec_procesos",
+   "fieldtype": "Section Break",
+   "label": "Procesos"
+  },
+  {
+   "fieldname": "om_procesos",
+   "fieldtype": "Table",
+   "options": "Orden Manufactura Proceso",
+   "label": "Procesos"
+  },
+  {
+   "fieldname": "sec_obs",
+   "fieldtype": "Section Break",
+   "label": "Observaciones"
+  },
+  {
+   "fieldname": "om_observaciones",
+   "fieldtype": "Table",
+   "options": "Orden Manufactura Observacion",
+   "label": "Observaciones"
+  },
+  {
+   "fieldname": "sec_tablas",
+   "fieldtype": "Section Break",
+   "label": "Tablas de medidas"
+  },
+  {
+   "fieldname": "om_tablas_flexibles",
+   "fieldtype": "Table",
+   "options": "Orden Manufactura Tabla Flexible",
+   "label": "Tablas de medidas"
+  },
+  {
+   "fieldname": "sec_archivos",
+   "fieldtype": "Section Break",
+   "label": "Diagramas / imágenes"
+  },
+  {
+   "fieldname": "om_archivos",
+   "fieldtype": "Table",
+   "options": "Orden Manufactura Archivo",
+   "label": "Archivos"
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-05 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Costeo Yelke",
+ "name": "Orden Manufactura",
+ "owner": "Administrator",
+ "title_field": "producto",
+ "track_changes": 1,
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

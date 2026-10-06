@@ -69,15 +69,21 @@
           <button v-if="!form.uomConversions.length" class="text-[11px] font-medium text-brand-600 hover:text-brand-700" @click="addConversion">+ Agregar</button>
         </div>
         <p class="text-[11px] text-ink-light mb-2">Si el proveedor surte en una unidad distinta a "{{ form.stock_uom || 'UOM base' }}" (ej. rollos, cajas).</p>
-        <div v-for="(row, idx) in form.uomConversions" :key="idx" class="grid grid-cols-[1fr_1fr_28px] gap-2 items-center mb-1.5">
-          <LinkInput v-model="row.uom" doctype="UOM" placeholder="UOM proveedor…" />
-          <div class="flex items-center border border-surface-border rounded-lg bg-white min-w-0">
-            <span class="pl-2 text-[11px] text-ink-light select-none whitespace-nowrap">1 {{ row.uom || '?' }} =</span>
-            <input v-model.number="row.conversion_factor" type="number" min="0.0001" step="0.001" class="flex-1 min-w-0 py-2 pr-2 pl-1 text-sm focus:outline-none bg-transparent" />
+        <div v-for="(row, idx) in form.uomConversions" :key="idx" class="mb-2">
+          <div class="grid grid-cols-[1fr_1fr_28px] gap-2 items-center mb-1">
+            <LinkInput v-model="row.uom" doctype="UOM" placeholder="UOM proveedor…" />
+            <div class="flex items-center border border-surface-border rounded-lg bg-white min-w-0">
+              <span class="pl-2 text-[11px] text-ink-light select-none whitespace-nowrap">1 {{ row.uom || '?' }} =</span>
+              <input v-model.number="row.conversion_factor" type="number" min="0.0001" step="0.001" class="flex-1 min-w-0 py-2 pr-2 pl-1 text-sm focus:outline-none bg-transparent" />
+            </div>
+            <button class="h-7 w-7 flex items-center justify-center text-ink-muted hover:bg-red-50 hover:text-red-500 rounded-lg" @click="form.uomConversions.splice(idx, 1)">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            </button>
           </div>
-          <button class="h-7 w-7 flex items-center justify-center text-ink-muted hover:bg-red-50 hover:text-red-500 rounded-lg" @click="form.uomConversions.splice(idx, 1)">
-            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-          </button>
+          <label class="flex items-center gap-1.5 text-[11px] text-ink-light pl-0.5">
+            <input v-model="row.compra_por_paquete_completo" type="checkbox" class="rounded" />
+            Paquete completo (no se puede pedir una fracción -- se redondea hacia arriba)
+          </label>
         </div>
         <button v-if="form.uomConversions.length" class="text-[11px] font-medium text-brand-600 hover:text-brand-700" @click="addConversion">+ Otra conversión</button>
       </div>
@@ -155,7 +161,7 @@ function suggestCode(text) {
 }
 
 function addConversion() {
-  form.uomConversions.push({ uom: "", conversion_factor: 1 });
+  form.uomConversions.push({ uom: "", conversion_factor: 1, compra_por_paquete_completo: false });
 }
 
 // Mismo conversor $/kg -> $/m que ya existe en Costear (telaConvertModal en

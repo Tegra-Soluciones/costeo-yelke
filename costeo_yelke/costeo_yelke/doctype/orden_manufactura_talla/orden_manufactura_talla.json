@@ -1,0 +1,51 @@
+{
+ "actions": [],
+ "creation": "2026-10-05 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "producto",
+  "genero",
+  "talla",
+  "cantidad"
+ ],
+ "fields": [
+  {
+   "fieldname": "producto",
+   "fieldtype": "Data",
+   "label": "Producto",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "genero",
+   "fieldtype": "Data",
+   "label": "Género",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "talla",
+   "fieldtype": "Data",
+   "label": "Talla",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "cantidad",
+   "fieldtype": "Float",
+   "label": "Cantidad",
+   "in_list_view": 1
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-05 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Costeo Yelke",
+ "name": "Orden Manufactura Talla",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

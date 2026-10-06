@@ -14,16 +14,33 @@ export function useDocumentActions(showToast) {
   const sendModal = reactive({ open: false, doctype: "", name: "", recipients: "", subject: "", message: "", sending: false });
   const assignModal = reactive({ open: false, doctype: "", name: "", selected: [], sending: false });
 
-  async function ensurePrintFmt(doctype) {
-    if (doctype in printFmtMap) return printFmtMap[doctype];
-    printFmtMap[doctype] = "Standard"; // placeholder para evitar fetch duplicado
-    printFmtMap[doctype] = await defaultPrintFormat(doctype);
+  // El formato se resuelve por DOCUMENTO: en Orden de Compra depende del propio
+  // documento (subcontratación -> "Orden de Maquila", normal -> "Orden de Compra
+  // Yelke"), no solo del doctype.
+  const fmtKey = (doctype, name) => (name ? `${doctype}|${name}` : doctype);
+
+  async function ensurePrintFmt(doctype, name) {
+    const k = fmtKey(doctype, name);
+    if (k in printFmtMap) return printFmtMap[k];
+    printFmtMap[k] = "Standard"; // placeholder para evitar fetch duplicado
+    printFmtMap[k] = await defaultPrintFormat(doctype, name);
     previewKey.value++; // recarga los iframes con el formato correcto
-    return printFmtMap[doctype];
+    return printFmtMap[k];
   }
 
+  // printUrl se llama desde los templates (src de los iframes), que es síncrono:
+  // si el formato aún no está resuelto dispara la consulta en segundo plano y
+  // devuelve "Standard" por esta vez; al llegar la respuesta sube previewKey y
+  // el iframe se recarga ya con el formato correcto.
   function printUrl(doctype, name) {
-    return `/printview?doctype=${encodeURIComponent(doctype)}&name=${encodeURIComponent(name)}&format=${encodeURIComponent(printFmtMap[doctype] || "Standard")}&no_letterhead=0&trigger_print=0&_v=${previewKey.value}`;
+    const k = fmtKey(doctype, name);
+    // Varias pantallas precalientan el formato por doctype (ensurePrintFmt("Sales
+    // Order")); ese valor sirve para todo salvo Orden de Compra, donde el formato
+    // es por documento y hay que resolverlo sí o sí.
+    const porDoctype = doctype === "Purchase Order" ? null : printFmtMap[doctype];
+    if (!(k in printFmtMap) && !porDoctype) ensurePrintFmt(doctype, name);
+    const fmt = printFmtMap[k] || porDoctype || "Standard";
+    return `/printview?doctype=${encodeURIComponent(doctype)}&name=${encodeURIComponent(name)}&format=${encodeURIComponent(fmt)}&no_letterhead=0&trigger_print=0&_v=${previewKey.value}`;
   }
   function printDocView(doctype, name) {
     window.open(printUrl(doctype, name).replace("trigger_print=0", "trigger_print=1"), "_blank");
@@ -35,7 +52,7 @@ export function useDocumentActions(showToast) {
 
   async function openPdf(doctype, name) {
     pdfModal.doctype = doctype; pdfModal.name = name;
-    await ensurePrintFmt(doctype);
+    await ensurePrintFmt(doctype, name);
     previewKey.value++; pdfModal.open = true;
   }
 
@@ -62,7 +79,7 @@ export function useDocumentActions(showToast) {
   function sendWhatsAppGeneric() {
     const phone = (waModal.phone || "").replace(/[^0-9]/g, "");
     if (!phone) { showToast("Ingresa un número de WhatsApp", "error"); return; }
-    const printFormat = printFmtMap[waModal.doctype] || "Standard";
+    const printFormat = printFmtMap[fmtKey(waModal.doctype, waModal.name)] || "Standard";
     const pdfUrl = `/api/method/frappe.utils.print_format.download_pdf?doctype=${encodeURIComponent(waModal.doctype)}&name=${encodeURIComponent(waModal.name)}&format=${encodeURIComponent(printFormat)}&no_letterhead=0`;
     const a = document.createElement("a");
     a.href = pdfUrl; a.download = `${waModal.name}.pdf`; a.click();

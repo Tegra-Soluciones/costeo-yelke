@@ -195,6 +195,17 @@ class Costeo(Document):
                 [t for t in self.get("tabla_tallas_costeo") if t.finished_item in valid_items],
             )
 
+        # Reparto de materiales por etapa: se liga por material_id/stage_id, no por
+        # producto, así que al borrar un producto (o una variante de talla) sus filas
+        # quedaban apuntando a materiales/etapas que ya no existen.
+        if self.get("tabla_materiales_etapa"):
+            mats = {d.material_id for d in (self.get("costeo_producto_detalle") or []) if d.material_id}
+            etapas = {e.stage_id for e in (self.get("tabla_etapas_costeo") or []) if e.stage_id}
+            self.set(
+                "tabla_materiales_etapa",
+                [r for r in self.get("tabla_materiales_etapa") if r.material_id in mats and r.stage_id in etapas],
+            )
+
 
 def _as_dict(doc):
     if isinstance(doc, str):
@@ -843,8 +854,7 @@ def _resolve_production_operations(etapas, producto=None):
     taken = set()
     for op in resolved:
         # Nombre SIEMPRE automático: "{producto} · {palabra del servicio}" -- el
-        # usuario ya no lo edita, se generó tedio sin valor. El campo 'subensamblaje'
-        # de las etapas se ignora aquí (puede traer restos de capturas viejas).
+        # usuario ya no lo edita, se generó tedio sin valor.
         if op.is_terminal:
             op.output_item = op.producto_terminado
         else:
@@ -863,45 +873,454 @@ def _resolve_production_operations(etapas, producto=None):
     return resolved
 
 
-def _multiplicador_por_operacion(sub_ensamblajes, ops):
-    """{op_key: multiplicador} para dimensionar la OC raíz de cada operación
-    (ver Costeo Sub Ensamblaje / _build_stage_subcontracting_rows).
+# --------------------------------------------------------------------------- #
+# Estados de pieza (ver plan "inventario por pieza")
+#
+# La ruta de producción NO pertenece a la etapa sino a cada PIEZA física: el
+# frente pasa por corte -> reflejante -> bordado, la espalda solo por corte, y
+# cada paso que TRANSFORMA una pieza produce un artículo semiterminado propio.
+# Modelar una operación como un solo artículo (op.output_item) mete piezas
+# distintas en un bote fungible, y de ahí salían la cantidad inflada de la OC
+# raíz, el precio mal repartido y los BOM forzosamente 1:1.
+# --------------------------------------------------------------------------- #
 
-    Sin sub-ensamblajes declarados (``sub_ensamblajes`` vacío/None) cada
-    operación regresa 1 -- comportamiento de siempre, cero cambio para
-    cualquier costeo que no use esto.
+def _piezas_de_producto(source, producto):
+    """Piezas declaradas (Costeo Sub Ensamblaje) de un producto, ya normalizadas.
+    ``cantidad`` es cuántas de esa pieza lleva UNA prenda (2 puños, 1 frente)."""
+    out = []
+    for row in source.get("tabla_subensamblajes_costeo") or []:
+        if (row.get("producto_terminado") or "") != producto:
+            continue
+        nombre = (row.get("nombre") or "").strip()
+        if not nombre:
+            continue
+        out.append(
+            frappe._dict(
+                nombre=nombre,
+                stage_ids={x.strip() for x in (row.get("stage_ids") or "").split(",") if x.strip()},
+                cantidad=flt(row.get("multiplicador")) or 1.0,
+            )
+        )
+    return out
 
-    Con sub-ensamblajes declarados: cada operación NO terminal acumula el
-    ``multiplicador`` (normalmente 1) de todo sub-ensamblaje cuyo
-    ``stage_ids`` intersecte el ``member_stage_keys`` de esa operación --
-    ej. una operación de Reflejante tocada por 3 sub-ensamblajes (puños,
-    espaldas, frentes) acumula multiplicador 3, así su OC raíz nace
-    dimensionada para 3x la cantidad del lote en vez de 1x, y nunca se queda
-    sin saldo a media entrega (probado en vivo que ampliar una OC de
-    subcontratación in-place NO es viable con ERPNext una vez que tiene
-    alguna Subcontracting Order creada).
 
-    La operación TERMINAL SIEMPRE es 1 -- por más sub-ensamblajes que la
-    toquen (para eso están, para juntarse ahí), el taller de confección
-    arma UNA prenda terminada por cada pieza del lote, no una vez por cada
-    sub-ensamblaje que recibe (a diferencia de una operación intermedia,
-    que sí repite su servicio una vez por cada ola que le toca). Que un
-    sub-ensamblaje "siempre llegue" a la operación terminal es un asunto de
-    membresía/validación (ver _parada_stage_ids en costeo_api.py), no de
-    tamaño de OC."""
-    if not sub_ensamblajes:
-        return {op.op_key: 1.0 for op in ops}
-    filas = []
-    for s in sub_ensamblajes:
-        ids = {x.strip() for x in (s.get("stage_ids") or "").split(",") if x.strip()}
-        filas.append((ids, flt(s.get("multiplicador")) or 1.0))
-    out = {}
+def _slug_pieza(nombre):
+    """Nombre de pieza normalizado para incrustarlo en un item_code.
+
+    Se pasa a ASCII sin acentos ("Puños" -> PUNOS): el código de artículo viaja a
+    reportes, exportaciones y documentos del proveedor, y ahí un carácter acentuado
+    se presta a problemas de codificación. El nombre que ve la persona conserva su
+    ortografía -- esto solo afecta la clave.
+
+    MAYÚSCULAS por el mismo motivo que op.output_item (ver
+    _resolve_production_operations): el hook de homologación fuerza item_code a
+    mayúsculas al crear el Item, así que generarlo en minúsculas rompería el match
+    la próxima vez que se recalcule el nombre."""
+    base = unicodedata.normalize("NFKD", (nombre or "").strip())
+    base = "".join(c for c in base if not unicodedata.combining(c))
+    return re.sub(r"[^0-9A-Za-z]+", "-", base).strip("-").upper()
+
+
+def _op_letras_candidatas(op):
+    """Letras candidatas para el sufijo de estado de una operación, en orden de
+    preferencia: la inicial de cada palabra significativa de su slug (corte -> C,
+    'colocacion reflejante' -> C, R; bordado -> B) y luego las demás letras de la
+    primera palabra, como respaldo ante colisiones."""
+    palabras = [w for w in _op_slug(op.servicios, op.supplier).split() if w]
+    cands = []
+    for w in palabras:
+        c = w[0].upper()
+        if c not in cands:
+            cands.append(c)
+    for ch in (palabras[0][1:] if palabras else ""):
+        c = ch.upper()
+        if c.isalnum() and c not in cands:
+            cands.append(c)
+    return cands or ["X"]
+
+
+def _sufijos_de_operacion(ops, rutas):
+    """{op_key: letra} para armar los sufijos acumulados del item_code (FRENTE-C ->
+    FRENTE-CR -> FRENTE-CRB).
+
+    Dos operaciones pueden COMPARTIR letra mientras ninguna pieza pase por las dos:
+    el item_code sigue siendo único porque lleva el nombre de la pieza (los bordados
+    de manga derecha e izquierda son ambos "B", y dan MANGA-DER-CB y MANGA-IZQ-CB).
+    Sin esa holgura, el segundo bordado tendría que caer a una letra arbitraria.
+
+    Se asigna recorriendo ``ops`` en orden topológico, así que el resultado es
+    determinista: el mismo flujo siempre produce los mismos nombres."""
+    conflicto = {op.op_key: set() for op in ops}
+    for ruta in rutas.values():
+        for a in ruta:
+            for b in ruta:
+                if a != b and a in conflicto:
+                    conflicto[a].add(b)
+
+    asignada = {}
     for op in ops:
         if op.is_terminal:
-            out[op.op_key] = 1.0
-        else:
-            out[op.op_key] = sum(m for ids, m in filas if ids & op.member_stage_keys) or 1.0
-    return out
+            continue
+        usadas = {asignada[o] for o in conflicto.get(op.op_key, ()) if o in asignada}
+        candidatas = _op_letras_candidatas(op)
+        letra = next((c for c in candidatas if c not in usadas), None)
+        if letra is None:
+            base, i = candidatas[0], 2
+            while f"{base}{i}" in usadas:
+                i += 1
+            letra = f"{base}{i}"
+        asignada[op.op_key] = letra
+    return asignada
+
+
+def _fg_items_de_operacion(op, ps):
+    """Artículos resultantes de esta operación, UNO POR PIEZA -- son los renglones
+    que va a tener su orden de subcontratación.
+
+    ÚNICO lugar donde se decide, porque tienen que coincidir sí o sí la OC
+    (_build_stage_subcontracting_rows), el Subcontracting BOM
+    (crear_subcontracting_bom) y la resolución de paradas: si divergen, ERPNext no
+    encuentra el BOM del servicio y la transferencia al taller se queda vacía.
+
+    Un renglón por pieza es lo que permite avanzar cada una por su cuenta (mandar
+    las mangas hoy y los frentes cuando estén). Antes había un KIT por operación,
+    que forzaba al taller a entregar todo junto.
+
+    - Operación terminal -> el producto terminado (una sola entrada).
+    - Producto sin piezas declaradas -> el output_item de siempre (una sola entrada).
+    """
+    if op.is_terminal:
+        return [op.output_item]
+    salidas = ps.salidas_por_op.get(op.op_key) or []
+    return [e.item for e in salidas] or [op.output_item]
+
+
+def _resolve_piece_states(ops, piezas, producto_terminado):
+    """Descompone las operaciones en ESTADOS DE PIEZA.
+
+    Cada vez que una operación transforma una pieza sale un artículo propio, y su
+    insumo es el estado ANTERIOR DE LA MISMA PIEZA -- no el de la operación anterior
+    del flujo. Por eso una pieza que se brinca etapas (la espalda, que no pasa por
+    reflejante) no necesita ningún caso especial: simplemente no tiene estado ahí y
+    la siguiente operación toma el último que exista.
+
+    SIN piezas declaradas regresa una pieza implícita única cuyo item es exactamente
+    ``op.output_item`` de siempre, y cuyos insumos son los ``upstream_keys`` tal cual
+    -- comportamiento idéntico al anterior para todo costeo que no use piezas.
+
+    KIT: la OC de subcontratación de ERPNext admite UN solo artículo resultante por
+    renglón, y el proveedor debe seguir viendo un renglón por servicio a precio por
+    prenda (no el desglose interno de piezas). Así que una operación cuyo resultado
+    natural NO es "una unidad por prenda" -- porque produce varias piezas, o una
+    pieza que va 2 veces por prenda -- produce un KIT (un juego por prenda) que
+    después se desarma en sus piezas con un Stock Entry de re-empaque. Una operación
+    que produce exactamente una pieza ×1 no lleva kit: su pieza es el fg_item directo.
+
+    Regresa un ``frappe._dict``:
+        estados            [ {op_key, pieza, item, cantidad, insumos:[(item, qty)]} ]
+                           en orden topológico, solo operaciones NO terminales
+        salidas_por_op     {op_key: [estado, ...]}
+        lineas_por_op      {op_key: [{service_item, pieza, item, cantidad,
+                                      precio_unitario}]} -- los renglones de su OC
+        finales            {pieza: item_code}  -- último estado de cada pieza
+        cantidades         {pieza: cantidad por prenda}
+        terminal_insumos   [(item, qty)] -- lo que consume el producto terminado
+        hay_piezas         bool
+        avisos             [str]
+    """
+    no_terminales = [op for op in ops if not op.is_terminal]
+    terminal = next((op for op in ops if op.is_terminal), None)
+    por_key = {op.op_key: op for op in ops}
+    avisos = []
+
+    # ---- Qué piezas pasa cada operación ----
+    # La matriz (Costeo Sub Ensamblaje.stage_ids) se marca POR SERVICIO: cada
+    # stage_id es una fila de Etapas Costeo, o sea un servicio concreto. Una pieza
+    # pasa por una operación si marcó alguno de sus servicios.
+    #
+    # Ese grano es el que permite que un taller con varios servicios distintos viva
+    # en UNA sola tarjeta y aun así se sepa cuál es de cuál pieza -- "bordado manga
+    # der" lo marcó solo la manga derecha, así que su precio va íntegro ahí.
+    if piezas:
+        nombres = {p.nombre for p in piezas}
+        piezas_de_op = {
+            op.op_key: {p.nombre for p in piezas if p.stage_ids & op.member_stage_keys}
+            for op in no_terminales
+        }
+
+        # Punto de ensamble: la primera operación intermedia donde ya se unieron
+        # todas las piezas (ver _ops_prenda_armada). De ahí en adelante se trabaja
+        # la prenda armada como una sola unidad, no pieza por pieza.
+        ops_armada = _ops_prenda_armada(no_terminales, ops, piezas_de_op, avisos, producto_terminado)
+        for k in ops_armada:
+            piezas_de_op.pop(k, None)
+
+        # Una operación intermedia sin NINGUNA pieza sería un paso que desaparece del
+        # flujo (y cortaría la cadena de BOM). Se interpreta como "pasan todas" -- el
+        # default más seguro -- pero se avisa, porque casi siempre falta una casilla.
+        for op in no_terminales:
+            if op.op_key in ops_armada:
+                continue
+            if not piezas_de_op[op.op_key]:
+                avisos.append(
+                    f'Ninguna pieza de "{producto_terminado}" está marcada en el paso '
+                    f'"{_op_slug(op.servicios, op.supplier)}" -- se asume que pasan todas.'
+                )
+                piezas_de_op[op.op_key] = set(nombres)
+
+        orden = {op.op_key: i for i, op in enumerate(no_terminales)}
+        rutas = {
+            p.nombre: sorted(
+                [op.op_key for op in no_terminales if p.nombre in piezas_de_op.get(op.op_key, ())],
+                key=lambda k: orden.get(k, 0),
+            )
+            for p in piezas
+        }
+        cantidades = {p.nombre: p.cantidad for p in piezas}
+    else:
+        # Pieza implícita: el producto entero recorre todas las operaciones. Su item
+        # en cada paso es el output_item de siempre.
+        rutas = {None: [op.op_key for op in no_terminales]}
+        cantidades = {None: 1.0}
+        ops_armada = []
+
+    # La prenda armada cuenta como una ruta más para repartir letras: así sus pasos
+    # no repiten letra entre sí (ARMADA-K -> ARMADA-KA).
+    sufijos = _sufijos_de_operacion(ops, {**rutas, "__armada__": ops_armada}) if piezas else {}
+
+    # ---- Estados, encadenando cada pieza consigo misma ----
+    estados, salidas_por_op, finales = [], {}, {}
+    estado_por_pieza_op = {}
+    for nombre, ruta in rutas.items():
+        anterior, acumulado = None, ""
+        for op_key in ruta:
+            if piezas:
+                acumulado += sufijos.get(op_key, "?")
+                item = f"{producto_terminado} · {_slug_pieza(nombre)}-{acumulado}"
+            else:
+                item = por_key[op_key].output_item
+            # Con piezas, el insumo es el estado ANTERIOR DE ESTA MISMA PIEZA (su
+            # propia ruta). Sin piezas NO hay cadena por pieza: cada operación toma
+            # sus upstream_keys tal cual -- pueden ser varias (procesos en paralelo
+            # que convergen) y no son necesariamente la operación anterior en el
+            # orden topológico. Encadenar a ciegas aquí rompía el grafo real.
+            if piezas and anterior:
+                insumos = [(anterior, 1.0)]
+            else:
+                insumos = [
+                    (por_key[u].output_item, 1.0)
+                    for u in por_key[op_key].upstream_keys
+                    if u in por_key
+                ]
+            est = frappe._dict(
+                op_key=op_key,
+                pieza=nombre,
+                item=item,
+                cantidad=cantidades.get(nombre, 1.0),
+                insumos=insumos,
+            )
+            estados.append(est)
+            salidas_por_op.setdefault(op_key, []).append(est)
+            estado_por_pieza_op[(nombre, op_key)] = est
+            anterior = item
+        if anterior:
+            finales[nombre] = anterior
+
+    # ---- Prenda armada: un solo artículo por prenda desde el punto de ensamble ----
+    # El primer paso consume la última versión de CADA pieza con su cantidad por
+    # prenda (puños x2...); los siguientes, la prenda armada del paso anterior.
+    # `pieza` va en None: no es ninguna pieza, y así no aparece como opción de
+    # "qué pieza entrega" (ver costeo_api._parada_subensamblajes).
+    armada_final = None
+    if ops_armada:
+        acumulado = ""
+        for i, op_key in enumerate(ops_armada):
+            acumulado += sufijos.get(op_key, "?")
+            item = f"{producto_terminado} · ARMADA-{acumulado}"
+            insumos = ([(finales[n], flt(cantidades.get(n, 1.0))) for n in sorted(finales)]
+                       if i == 0 else [(armada_final, 1.0)])
+            est = frappe._dict(op_key=op_key, pieza=None, item=item, cantidad=1.0,
+                               insumos=insumos, armada=True)
+            estados.append(est)
+            salidas_por_op.setdefault(op_key, []).append(est)
+            armada_final = item
+
+    # Reordena los estados al orden topológico de operaciones (las rutas se armaron
+    # pieza por pieza, así que venían agrupados por pieza).
+    orden_op = {op.op_key: i for i, op in enumerate(no_terminales)}
+    estados.sort(key=lambda e: (orden_op.get(e.op_key, 0), str(e.pieza or "")))
+
+    # ---- Renglones de OC de cada operación: servicio × pieza con su precio ----
+    # Un renglón por pieza, siempre (es lo que permite avanzar cada una por su
+    # cuenta). Lo único que cambia es de dónde sale el precio:
+    #
+    #  - servicio que NOMBRA sus piezas en la matriz -> aplica solo a ésas
+    #    (bordado manga der: la manga derecha, punto);
+    #  - servicio que no nombra ninguna -> cubre todas las piezas de la operación.
+    #
+    # En ambos casos el precio del servicio se cobra UNA sola vez por prenda: va
+    # completo en una pieza portadora y las demás van en $0 (ver abajo el porqué).
+    # La suma sobre las piezas reproduce exacto el precio por prenda del costeo,
+    # que es la condición que no se puede romper: es lo que el taller cobra.
+    piezas_por_nombre = {p.nombre: set(p.stage_ids) for p in piezas} if piezas else {}
+    lineas_por_op = {}
+    for op in no_terminales:
+        salidas = salidas_por_op.get(op.op_key) or []
+        if not salidas:
+            continue
+        por_pieza = {e.pieza: e for e in salidas}
+        servicios = [sv for sv in op.servicios if sv.get("service_item")]
+        unidades = sum(flt(e.cantidad) for e in salidas) or 1.0
+
+        # A qué piezas aplica CADA servicio: las que marcaron SU casilla en la
+        # matriz (stage_ids es por servicio, no por tarjeta). Un servicio marcado
+        # por una sola pieza le cobra su precio íntegro; uno marcado por varias
+        # -- o por ninguna, que se interpreta como "cubre todas"-- lo reparte.
+        por_servicio = {}
+        for sv in servicios:
+            sid = sv.get("stage_id")
+            suyas = [e for e in salidas if sid and sid in (piezas_por_nombre.get(e.pieza) or set())]
+            por_servicio[sv["service_item"]] = suyas or list(salidas)
+
+        lineas = []
+        for sv in servicios:
+            suyas = por_servicio[sv["service_item"]]
+            # El precio NO se reparte entre las piezas: viaja completo en UNA de
+            # ellas y las demás van en $0. Repartirlo obliga a un precio unitario
+            # como $5/7 = $0.714286, y `rate` en ERPNext tiene 2 decimales: se
+            # guardaba $0.71 y sobre decenas de miles de unidades se perdían
+            # cientos de pesos frente al costeo (medido: -$227.82 en una sola OC
+            # de corte). Concentrarlo da el total exacto al centavo.
+            #
+            # Lo que el taller cobra no cambia -- el formato "Orden de Maquila"
+            # agrupa por servicio y divide entre prendas, así que sigue leyendo
+            # "7,494 × $5.00". Lo que sí cambia es la valuación del inventario
+            # intermedio: la pieza portadora carga todo el costo del servicio y
+            # las demás solo su material. Decisión del usuario (2026-09-30): a
+            # Yelke le importa la valuación de materia prima y mermas, no la de
+            # los sub-ensamblajes.
+            portadora = min(suyas, key=lambda e: (flt(e.cantidad) or 1.0, e.pieza))
+            c = flt(portadora.cantidad) or 1.0
+            precio = flt(sv["price"]) / c
+            if round(precio, 2) != round(precio, 6):
+                # Solo pasa si NINGUNA pieza del servicio va 1 por prenda y el
+                # precio no se divide en centavos exactos. Raro, pero hay que
+                # verlo venir en vez de perder dinero en silencio.
+                avisos.append(
+                    _("El precio de «{0}» ({1}) no se divide en centavos exactos entre "
+                      "las {2} unidades de «{3}»; la orden puede quedar con una "
+                      "diferencia de centavos.").format(
+                          sv["service_item"], flt(sv["price"]), c, portadora.pieza))
+            for est in suyas:
+                lineas.append(frappe._dict(
+                    service_item=sv["service_item"], pieza=est.pieza, item=est.item,
+                    cantidad=flt(est.cantidad) or 1.0,
+                    precio_unitario=precio if est is portadora else 0.0))
+        lineas_por_op[op.op_key] = lineas
+
+    # ---- Lo que consume el producto terminado ----
+    if armada_final:
+        terminal_insumos = [(armada_final, 1.0)]
+    elif piezas:
+        terminal_insumos = [(finales[n], flt(cantidades.get(n, 1.0))) for n in sorted(finales)]
+    elif terminal:
+        terminal_insumos = [
+            (por_key[u].output_item, 1.0) for u in terminal.upstream_keys if u in por_key
+        ]
+    else:
+        terminal_insumos = []
+
+    return frappe._dict(
+        estados=estados,
+        salidas_por_op=salidas_por_op,
+        lineas_por_op=lineas_por_op,
+        finales=finales,
+        cantidades=cantidades,
+        terminal_insumos=terminal_insumos,
+        hay_piezas=bool(piezas),
+        avisos=avisos,
+        # Operaciones que trabajan la prenda ya armada, en orden; la primera es
+        # donde se une todo (punto de ensamble). Vacía si se arma en la final.
+        ops_armada=list(ops_armada),
+        items_armada={e.item for e in estados if e.get("armada")},
+    )
+
+
+def _ops_prenda_armada(no_terminales, ops, piezas_de_op, avisos, producto_terminado):
+    """Operaciones intermedias que trabajan la prenda YA ARMADA, en orden.
+
+    Una operación es el punto de ensamble si es la PRIMERA (en orden topológico)
+    que cumple las tres condiciones:
+      1. ninguna pieza la marca (no es trabajo sobre una pieza en particular);
+      2. después de ella ya no hay trabajo por pieza: ninguna operación marcada por
+         alguna pieza queda aguas abajo;
+      3. le llegan todas las piezas: la última operación de cada pieza está aguas
+         arriba de ella en el flujo. Aguas arriba y no "recibe de" directo: el flujo
+         por default es lineal (cada paso recibe del anterior) y la ruta real de cada
+         pieza la da la matriz de piezas, no las flechas -- el forro se corta y llega
+         a confección aunque confección "reciba de" bordado manga.
+    Las intermedias que siguen (acabado, lavado...) también cumplen las tres, por
+    eso cuenta solo la primera: ésa une, las demás reciben la prenda armada.
+
+    Una operación sin piezas marcadas que tiene trabajo por pieza DESPUÉS no es un
+    ensamble sino una casilla olvidada: se queda con el aviso de "pasan todas" de
+    siempre. Sin ensamble intermedio regresa [] y la operación final arma, como
+    siempre."""
+    por_key = {op.op_key: op for op in ops}
+    hijos = {k: set() for k in por_key}
+    for op in ops:
+        for u in op.upstream_keys:
+            if u in hijos:
+                hijos[u].add(op.op_key)
+    memo = {}
+
+    def abajo(k):
+        if k not in memo:
+            memo[k] = set()
+            for h in hijos.get(k, ()):
+                memo[k] |= {h} | abajo(h)
+        return memo[k]
+
+    marcadas = [op.op_key for op in no_terminales if piezas_de_op.get(op.op_key)]
+    if not marcadas:
+        return []
+    ultima_de_pieza = {}
+    for op in no_terminales:  # vienen en orden topológico
+        for nombre in piezas_de_op.get(op.op_key) or ():
+            ultima_de_pieza[nombre] = op.op_key
+
+    # Primera operación sin piezas y sin trabajo por pieza después (condiciones 1 y 2).
+    ensamble = next((
+        op.op_key for op in no_terminales
+        if not piezas_de_op.get(op.op_key)
+        and not (abajo(op.op_key) & set(marcadas))
+    ), None)
+    if not ensamble:
+        return []
+    # Condición 3: si no le llegan todas, no se adivina -- se dice cuáles faltan y
+    # la operación se queda como hoy ("pasan todas").
+    faltan = sorted(n for n, u in ultima_de_pieza.items() if ensamble not in abajo(u))
+    if faltan:
+        op = por_key[ensamble]
+        avisos.append(
+            f'"{producto_terminado}": el paso "{_op_slug(op.servicios, op.supplier)}" parece ser donde '
+            f'se arma la prenda, pero no le llega {", ".join(faltan)} -- conéctala(s) en "recibe de" '
+            f'o márcala(s) en ese paso.'
+        )
+        return []
+
+    despues = [op.op_key for op in no_terminales if op.op_key in abajo(ensamble)]
+    cadena = [ensamble] + despues
+    # La prenda armada es UNA: no puede estar en dos talleres a la vez.
+    for a, b in zip(cadena, cadena[1:]):
+        if b not in abajo(a):
+            avisos.append(
+                f'"{producto_terminado}": después de armar la prenda, los pasos deben ir uno '
+                f'tras otro -- "{_op_slug(por_key[a].servicios, por_key[a].supplier)}" y '
+                f'"{_op_slug(por_key[b].servicios, por_key[b].supplier)}" quedaron en paralelo.'
+            )
+            break
+    return cadena
 
 
 def _get_finished_qty_map(source):
@@ -990,9 +1409,27 @@ def _crear_almacen_proveedor(company, supplier):
         return None
 
 
-def _get_purchase_tax_template(company):
+def _get_purchase_tax_template(company, supplier=None):
     if not company:
         return None
+
+    # Plantilla según el tipo de proveedor (formal / con retención / informal): la
+    # resuelve la Tax Rule nativa de ERPNext a partir de la categoría de impuesto del
+    # proveedor. Sin regla aplicable (o sin proveedor) sigue la lógica de siempre.
+    if supplier:
+        from erpnext.accounts.party import set_taxes
+
+        try:
+            por_proveedor = set_taxes(
+                supplier, "Supplier", nowdate(), company,
+                tax_category=frappe.db.get_value("Supplier", supplier, "tax_category"),
+            )
+        except Exception:
+            por_proveedor = None
+        if por_proveedor and frappe.db.get_value(
+            "Purchase Taxes and Charges Template", {"name": por_proveedor, "company": company, "disabled": 0}
+        ):
+            return por_proveedor
 
     template = frappe.db.get_value(
         "Purchase Taxes and Charges Template",
@@ -1118,15 +1555,6 @@ def _build_stage_subcontracting_rows(source, qty_map_override=None):
         if producto:
             etapas_por_producto.setdefault(producto, []).append(frappe._dict(row))
 
-    # Sub-ensamblajes declarados por producto (ver Costeo Sub Ensamblaje) -- sin
-    # ninguno, _multiplicador_por_operacion regresa 1 para toda operación
-    # (comportamiento de siempre).
-    subensamblajes_por_producto = {}
-    for row in source.get("tabla_subensamblajes_costeo") or []:
-        producto = row.get("producto_terminado")
-        if producto:
-            subensamblajes_por_producto.setdefault(producto, []).append(row)
-
     for producto_terminado, etapas in etapas_por_producto.items():
         if qty_map_override is not None and producto_terminado not in qty_map_override:
             # Con override (plan de una OV específica), un producto que no está en el
@@ -1135,21 +1563,13 @@ def _build_stage_subcontracting_rows(source, qty_map_override=None):
             continue
         fg_qty_base = qty_map.get(producto_terminado) or 1
         operaciones = _resolve_production_operations(etapas, producto_terminado)
-        multiplicadores = _multiplicador_por_operacion(
-            subensamblajes_por_producto.get(producto_terminado), operaciones
-        )
+        piezas = _piezas_de_producto(source, producto_terminado)
+        piece_states = _resolve_piece_states(operaciones, piezas, producto_terminado)
 
         for op in operaciones:
             servicios = [s for s in op.servicios if s.get("service_item")]
             if not op.supplier or not servicios:
                 continue
-
-            # Una operación tocada por varios sub-ensamblajes (ej. Reflejante por
-            # puños+espaldas+frentes) necesita su OC raíz dimensionada para TODAS
-            # esas olas de una vez -- ver _multiplicador_por_operacion.
-            fg_qty = fg_qty_base * multiplicadores.get(op.op_key, 1.0)
-
-            finished_good = op.output_item
 
             if op.is_terminal:
                 target_warehouse = (
@@ -1159,45 +1579,76 @@ def _build_stage_subcontracting_rows(source, qty_map_override=None):
                     or wip_warehouse
                 )
             else:
-                target_warehouse = wip_warehouse or _get_item_default_warehouse(finished_good, company)
+                target_warehouse = None  # se resuelve por pieza más abajo
 
-            # Cuando la operación agrupa VARIOS servicios del mismo proveedor sobre
-            # UNA pieza (ver _resolve_production_operations), cada servicio es un
-            # renglón facturable propio, pero la pieza que se recibe se reparte entre
-            # ellos para que el total producido sea UNO, no k. finished_good_qty lleva
-            # esa porción; el precio de cada renglón queda completo (se factura el
-            # servicio entero). Con un solo servicio esto es exactamente el valor de
-            # antes.
-            k = len(servicios)
-            total_fg = fg_qty
-            # Reparto EXACTO: las k porciones suman total_fg sin drift (la última
-            # absorbe el residuo), para que la pieza producida y su facturación
-            # cuadren. Una porción puede quedar fraccionaria (5000/3) -- es una pieza
-            # interna de WIP, no se cuenta física.
-            shares, acum = [], 0.0
-            for i in range(k):
-                nuevo = total_fg if i == k - 1 else round(total_fg * (i + 1) / k, 6)
-                shares.append(round(nuevo - acum, 6))
-                acum = nuevo
-            for i, svc in enumerate(servicios):
-                stage_rows.append(
-                    frappe._dict(
-                        {
-                            "producto_terminado": producto_terminado,
-                            "op_key": op.op_key,
-                            "supplier": op.supplier,
-                            "service_item": svc["service_item"],
-                            "service_price": flt(svc["price"]),
-                            "finished_good": finished_good,
-                            "finished_good_qty": shares[i],
-                            "fg_qty_total": total_fg,
-                            "num_servicios": k,
-                            "is_root": not op.upstream_keys,
-                            "target_warehouse": target_warehouse,
-                            "schedule_date": default_schedule_date,
-                        }
-                    )
-                )
+            salidas = piece_states.salidas_por_op.get(op.op_key) or []
+
+            # ── Etapa terminal: produce el artículo vendible, no piezas ──
+            if op.is_terminal:
+                k = len(servicios)
+                shares, acum = [], 0.0
+                for i in range(k):
+                    nv = fg_qty_base if i == k - 1 else round(fg_qty_base * (i + 1) / k, 6)
+                    shares.append(round(nv - acum, 6))
+                    acum = nv
+                for i, svc in enumerate(servicios):
+                    stage_rows.append(frappe._dict({
+                        "producto_terminado": producto_terminado,
+                        "op_key": op.op_key,
+                        "supplier": op.supplier,
+                        "service_item": svc["service_item"],
+                        "service_price": flt(svc["price"]),
+                        "finished_good": op.output_item,
+                        "finished_good_qty": shares[i],
+                        "fg_qty_total": fg_qty_base,
+                        "num_servicios": k,
+                        "is_root": not op.upstream_keys,
+                        "target_warehouse": target_warehouse,
+                        "schedule_date": default_schedule_date,
+                        "piezas_prenda": 1.0,
+                    }))
+                continue
+
+            # ── Etapas intermedias: un renglón por (servicio, pieza) ──
+            # El precio de cada uno ya viene resuelto en _resolve_piece_states: el
+            # servicio que nombra su pieza cobra íntegro, el que cubre varias se
+            # reparte. Aquí solo se traduce a cantidades del lote.
+            #
+            # Si VARIOS servicios de la misma tarjeta tocan la MISMA pieza (corte y
+            # fusionado del mismo taller sobre el cuello), sus renglones comparten
+            # fg_item: igual que en la etapa final, cada uno lleva una PORCIÓN de la
+            # pieza (num_servicios = k) para que ERPNext produzca la pieza una vez y
+            # no k veces -- el servicio se sigue cobrando por la cantidad completa
+            # (fg_qty_total). Sin esto la OC pedía 5,760 cuellos para 2,880 prendas.
+            lineas_op = piece_states.lineas_por_op.get(op.op_key) or []
+            k_por_item = {}
+            for ln in lineas_op:
+                k_por_item[ln.item] = k_por_item.get(ln.item, 0) + 1
+            visto_por_item, acum_por_item = {}, {}
+            for ln in lineas_op:
+                total_pieza = fg_qty_base * flt(ln.cantidad)
+                k = k_por_item[ln.item]
+                i = visto_por_item.get(ln.item, 0)
+                visto_por_item[ln.item] = i + 1
+                nv = total_pieza if i == k - 1 else round(total_pieza * (i + 1) / k, 6)
+                porcion = round(nv - acum_por_item.get(ln.item, 0.0), 6)
+                acum_por_item[ln.item] = nv
+                stage_rows.append(frappe._dict({
+                    "producto_terminado": producto_terminado,
+                    "op_key": op.op_key,
+                    "supplier": op.supplier,
+                    "service_item": ln.service_item,
+                    "service_price": ln.precio_unitario,
+                    "finished_good": ln.item,
+                    "finished_good_qty": porcion,
+                    "fg_qty_total": total_pieza,
+                    "num_servicios": k,
+                    "is_root": not op.upstream_keys,
+                    "target_warehouse": wip_warehouse or _get_item_default_warehouse(
+                        ln.item, company),
+                    "schedule_date": default_schedule_date,
+                    "piezas_prenda": flt(ln.cantidad) or 1.0,
+                }))
 
     return stage_rows
 
@@ -1235,7 +1686,7 @@ def _create_subcontracting_pos_from_stages(source, stage_rows, sales_order=None)
         return so_item_cache[item_code]
 
     bom_map = _get_subcontracting_bom_map([row.finished_good for row in stage_rows])
-    taxes_template = _get_purchase_tax_template(company)
+    taxes_template = _get_purchase_tax_template(company)  # aviso de "sin plantilla" (abajo)
 
     # Agrupa por proveedor preservando el orden de aparición (Python 3.7+: dict
     # mantiene orden de inserción) -- así la primera etapa de cada proveedor decide
@@ -1272,9 +1723,11 @@ def _create_subcontracting_pos_from_stages(source, stage_rows, sales_order=None)
         # "Almacén (aceptado)" en el SPA mostraba ese default en vez del correcto.
         po.set_warehouse = rows[0].target_warehouse
 
-        if taxes_template:
-            po.taxes_and_charges = taxes_template
+        plantilla_proveedor = _get_purchase_tax_template(company, supplier)
+        if plantilla_proveedor:
+            po.taxes_and_charges = plantilla_proveedor
 
+        rates_esperados = []  # por índice de renglón; se reimpone tras set_missing_values
         for row in rows:
             if not row.finished_good:
                 frappe.throw(
@@ -1320,6 +1773,12 @@ def _create_subcontracting_pos_from_stages(source, stage_rows, sales_order=None)
             item_row = {
                 "fg_item": row.finished_good,
                 "fg_item_qty": fg_qty,
+                # Para el formato impreso, que agrupa los renglones por servicio y
+                # cobra por PRENDA (ver patch v0_2_41). No se puede deducir del
+                # renglón: los puños van 2 por prenda, así que su cantidad no son
+                # prendas.
+                "prendas": flt(row.get("fg_qty_total")) / (flt(row.get("piezas_prenda")) or 1),
+                "producto_terminado": row.producto_terminado,
                 "item_code": service_item,
                 "qty": service_qty,
                 "uom": service_uom,
@@ -1345,11 +1804,34 @@ def _create_subcontracting_pos_from_stages(source, stage_rows, sales_order=None)
                     _soi_ya_asignado.add(row.finished_good)
 
             po.append("items", item_row)
+            rates_esperados.append(flt(row.service_price))
 
         po.flags.ignore_permissions = 1
         po.set_missing_values()
-        if taxes_template:
-            po.taxes_and_charges = taxes_template
+
+        # set_missing_values() rellena `rate` desde la Lista de Precios cuando el
+        # renglón viene en 0, y nuestros renglones en $0 son INTENCIONALES: el
+        # precio de un servicio viaja completo en una sola pieza y las demás van
+        # en cero (ver _resolve_piece_states). Sin esto, cada pieza volvía a cobrar
+        # el precio íntegro y la OC de corte salía 7x -- $265,790 en vez de $37,970.
+        # Se reimpone el precio del costeo, que es la única fuente válida.
+        #
+        # Hay que fijar SIEMPRE `price_list_rate`, aunque `rate` ya venga bien: si
+        # se deja vacío, el validate() de insert() lo trae de la lista y de ahí
+        # recalcula `rate` (accounts_controller.py:1136). Ponerlo en 0 explícito
+        # -- 0 no es None -- es lo que corta esa cadena.
+        for idx, it in enumerate(po.items):
+            esperado = flt(rates_esperados[idx])
+            it.rate = esperado
+            it.price_list_rate = esperado
+            it.discount_percentage = 0
+            it.discount_amount = 0
+            it.margin_type = ""
+            it.margin_rate_or_amount = 0
+            it.rate_with_margin = 0
+
+        if plantilla_proveedor:
+            po.taxes_and_charges = plantilla_proveedor
         po.calculate_taxes_and_totals()
         po.insert()
         purchase_orders.append(po.name)

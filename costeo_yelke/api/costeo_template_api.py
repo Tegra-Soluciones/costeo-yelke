@@ -32,35 +32,75 @@ from frappe.utils import cint, flt, nowdate
 # ---------------------------------------------------------------------------
 # Precios
 # ---------------------------------------------------------------------------
-def _get_buying_rate(item_code, supplier=None):
+def item_price_oficial_proveedor(item_code, supplier, uom=None):
+    """Precio "oficial" ya registrado para ESTE artículo con ESTE proveedor puntual
+    (Item Price de compra con `supplier` seteado) -- se vuelve oficial cuando se
+    valida una primera OC con ese proveedor (ver overrides/purchase_order.py,
+    registrar_precios_oficiales, que escribe/actualiza esta misma fila en cada
+    validación) o cuando alguien lo captura a mano en ERPNext. Es la fuente
+    PREFERIDA para _precio_para_oc, antes que el precio del costeo.
+
+    Si se pasa `uom`, se prefiere una fila con esa UDM; si ninguna coincide, no se
+    usa esta fuente (mismo criterio que _precio_costeo_material: un precio por
+    unidad no aplica si la unidad cambió). Regresa (rate, uom) o (None, None)."""
+    if not item_code or not supplier:
+        return None, None
+    rows = frappe.get_all(
+        "Item Price",
+        filters={"item_code": item_code, "buying": 1, "supplier": supplier},
+        fields=["price_list_rate", "uom"],
+        order_by="valid_from desc, modified desc",
+    )
+    if not rows:
+        return None, None
+    if uom:
+        for r in rows:
+            if r.uom == uom and r.price_list_rate:
+                return flt(r.price_list_rate), r.uom
+        return None, None
+    for r in rows:
+        if r.price_list_rate:
+            return flt(r.price_list_rate), r.uom
+    return None, None
+
+
+def _get_buying_rate(item_code, supplier=None, uom=None):
     """Mejor precio de compra conocido para un item.
 
     Prioridad: Item Price (buying) del proveedor -> Item Price (buying) cualquiera
     -> ultima tarifa de compra del Item.
-    """
+
+    Si se indica `uom`, se exige que el Item Price encontrado sea de ESA UDM --
+    un precio de lista capturado en Metro no es el mismo número en Rollo, así que
+    no se usa tal cual solo porque es "el único que hay" (bug real: un precio de
+    $65/Metro se aplicó igual a una línea en Rollo, 100x más barato de lo real).
+    Sin `uom` (llamadas que no vienen de una línea de compra con UDM específica,
+    ej. refrescar precios del costeo en su propia internal_uom) se conserva el
+    comportamiento de siempre: cualquier UDM sirve."""
     if not item_code:
         return None
 
     if supplier:
-        rows = frappe.get_all(
-            "Item Price",
-            filters={"item_code": item_code, "buying": 1, "supplier": supplier},
-            fields=["price_list_rate"],
-            order_by="valid_from desc, modified desc",
-            limit=1,
-        )
-        if rows and rows[0].price_list_rate:
-            return flt(rows[0].price_list_rate)
+        rate, _uom = item_price_oficial_proveedor(item_code, supplier, uom=uom)
+        if rate:
+            return rate
 
+    filters = {"item_code": item_code, "buying": 1}
+    if uom:
+        filters["uom"] = uom
     rows = frappe.get_all(
         "Item Price",
-        filters={"item_code": item_code, "buying": 1},
+        filters=filters,
         fields=["price_list_rate"],
         order_by="valid_from desc, modified desc",
         limit=1,
     )
     if rows and rows[0].price_list_rate:
         return flt(rows[0].price_list_rate)
+    if uom:
+        # Ya se pidió una UDM puntual y no hay ningún precio capturado en ESA UDM --
+        # mejor no resolver que resolver mal con el precio de otra unidad.
+        return None
 
     last_rate = frappe.db.get_value("Item", item_code, "last_purchase_rate")
     return flt(last_rate) if last_rate else None

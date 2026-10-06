@@ -103,16 +103,21 @@ export async function uploadFile(file, { doctype, docname, folder = "Home", isPr
   return (await res.json()).message;
 }
 
+// La caché va por DOCUMENTO, no por doctype: en Orden de Compra el formato
+// depende del documento (una OC de subcontratación se imprime agrupada por
+// servicio, una normal no), así que cachear por doctype le daba a la OC de
+// maquila el formato de la primera OC que se hubiera abierto en la sesión.
 const _printFmtCache = {};
-export async function defaultPrintFormat(doctype) {
-  if (_printFmtCache[doctype]) return _printFmtCache[doctype];
+export async function defaultPrintFormat(doctype, name) {
+  const clave = name ? `${doctype}|${name}` : doctype;
+  if (_printFmtCache[clave]) return _printFmtCache[clave];
   try {
-    const r = await call("costeo_yelke.api.costeo_api.get_default_print_format", { doctype });
-    _printFmtCache[doctype] = r?.format || "Standard";
+    const r = await call("costeo_yelke.api.costeo_api.get_default_print_format", { doctype, name });
+    _printFmtCache[clave] = r?.format || "Standard";
   } catch {
     return "Standard";
   }
-  return _printFmtCache[doctype];
+  return _printFmtCache[clave];
 }
 
 export function openDesk(doctype, name) {

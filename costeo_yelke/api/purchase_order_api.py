@@ -125,6 +125,12 @@ def get_purchase_order(name):
             "schedule_date": str(r.schedule_date) if r.schedule_date else "",
             "warehouse": r.warehouse or "",
             "image": image,
+            # No se muestran en la UI -- solo viajan de ida y vuelta con save_purchase_order
+            # para que guardar la OC (ej. cambiar proveedor/UDM/precio) no borre en
+            # silencio el vínculo con la Solicitud de Material (ver saldo comprometido
+            # en costeo_api.mr_crear_oc, que depende de este campo).
+            "material_request": r.material_request or "",
+            "material_request_item": r.material_request_item or "",
         })
 
     taxes = []
@@ -219,6 +225,12 @@ def save_purchase_order(data):
         row.discount_percentage = float(r.get("discount_percentage") or 0)
         row.warehouse         = r.get("warehouse") or ""
         row.schedule_date     = r.get("schedule_date") or schedule_date
+        # Preservar el vínculo con la Solicitud de Material si la fila ya lo traía --
+        # sin esto, cualquier guardado (ej. cambiar proveedor/UDM/precio) lo borraba en
+        # silencio y el saldo comprometido de mr_crear_oc dejaba de contar esta línea.
+        if r.get("material_request_item"):
+            row.material_request = r.get("material_request") or ""
+            row.material_request_item = r.get("material_request_item")
 
     doc.flags.ignore_permissions = True
     doc.flags.ignore_mandatory   = True
@@ -233,6 +245,31 @@ def save_purchase_order(data):
 
     frappe.db.commit()
     return get_purchase_order(doc.name)
+
+
+@frappe.whitelist()
+def sugerir_precios_oc(po, supplier=None):
+    """Precio sugerido por línea para un proveedor (ver costeo_api._precio_para_oc:
+    Presupuesto de Proveedor validado -> precio oficial con ese proveedor -> precio
+    del costeo -> lista de precios/última compra). NO guarda nada -- solo sugiere,
+    para usarse ej. al cambiar de proveedor en una OC en borrador (`canEdit`) y
+    decidir si conviene refrescar el precio de cada línea antes de guardar."""
+    from costeo_yelke.api.costeo_api import _precio_para_oc
+
+    doc = frappe.get_doc("Purchase Order", po)
+    supplier = supplier or doc.supplier
+    if not supplier:
+        return {}
+    costeo = doc.get("costeo") if doc.meta.get_field("costeo") else None
+
+    sugerencias = {}
+    for it in doc.items:
+        if not it.item_code:
+            continue
+        precio = _precio_para_oc(it.item_code, supplier, doc.company, costeo=costeo, uom=it.uom)
+        if precio is not None:
+            sugerencias[it.item_code] = float(precio)
+    return sugerencias
 
 
 @frappe.whitelist()

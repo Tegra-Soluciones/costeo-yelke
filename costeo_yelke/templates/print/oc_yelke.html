@@ -1,0 +1,630 @@
+{#- ===================================================================
+    Diseño compartido de las órdenes de compra de Yelke.
+
+    Lo usan DOS formatos de impresión que solo se diferencian en la tabla de
+    artículos (ver costeo_yelke/print_format/):
+
+      · "Orden de Compra Yelke" -- compra normal, un renglón por artículo.
+      · "Orden de Maquila"      -- subcontratación, renglones agrupados por
+                                   servicio y producto, cobrados por prenda.
+
+    El resto (estilos, encabezado, totales, términos, firmas, pie) vive aquí
+    una sola vez: cambiar el color de la marca o la firma del CEO se hace en un
+    solo lugar y los dos formatos quedan iguales.
+    =================================================================== -#}
+
+{%- macro estilos() -%}
+<style>
+/* ========================= */
+/* CONFIGURACIÓN GENERAL Y FUENTES */
+/* ========================= */
+* {
+    overflow: visible !important;
+}
+
+.pdf-container {
+    font-family: 'Poppins', sans-serif;
+    font-size: 10px;
+    color: #444;
+    line-height: 1.3;
+    padding-top: 20px;
+    width: 100%;
+    overflow: visible !important;
+}
+
+/* ========================= */
+/* BLOQUE DE INFORMACIÓN */
+/* ========================= */
+.info-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 10px;
+    margin-bottom: 20px;
+    table-layout: fixed;
+    page-break-inside: avoid;
+}
+
+.info-table td {
+    vertical-align: top;
+    padding: 0 10px;
+}
+
+/* Lado Izquierdo: Proveedor - COLOR NARANJA */
+.supplier-section {
+    background-color: #fdfdfd;
+    padding: 10px;
+    border-left: 3px solid #FF6B15;
+}
+
+/* Lado Derecho: Orden - SIN FRANJA */
+.order-details {
+    background-color: #fdfdfd;
+    padding: 10px;
+    text-align: right;
+}
+
+.section-title {
+    font-weight: 700;
+    font-size: 11px;
+    color: #222;
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 5px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 3px;
+}
+
+.info-line {
+    margin: 3px 0;
+    font-size: 10px;
+}
+
+/* ESTILOS DE DIRECCIÓN */
+.supplier-address {
+    margin-top: 8px;
+    padding: 5px;
+    background: #fff;
+    border: 1px solid #eee;
+    border-radius: 4px;
+}
+
+.supplier-address strong {
+    color: #FF6B15;
+    font-size: 10px;
+    display: block;
+    margin-bottom: 3px;
+}
+
+.supplier-address .address-line {
+    color: #555;
+    font-size: 10px;
+    line-height: 1.4;
+    display: block;
+}
+
+/* ========================= */
+/* TABLA DE PRODUCTOS */
+/* ========================= */
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    font-size: 10px;
+    page-break-inside: auto;
+}
+
+.table thead {
+    display: table-header-group;
+}
+
+.table tbody {
+    display: table-row-group;
+}
+
+.table thead th {
+    background-color: #FF6B15;
+    color: #ffffff;
+    font-weight: 600;
+    padding: 6px 4px;
+    text-transform: uppercase;
+    font-size: 9px;
+    border: none;
+}
+
+.table tbody tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+}
+
+.table tbody td {
+    padding: 8px 4px;
+    border-bottom: 1px solid #f0f0f0;
+    vertical-align: top;
+    color: #333;
+}
+
+/* Estilos de Items - IMÁGENES MÁS GRANDES */
+.item-image-cell {
+    padding: 8px;
+}
+
+.item-image {
+    max-width: 80px;
+    max-height: 80px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    display: block;
+    margin: 0 auto;
+}
+
+.item-title {
+    display: block;
+    color: #000;
+    margin-bottom: 2px;
+}
+
+.item-code {
+    font-size: 9px;
+    color: #888;
+}
+
+.item-fiscal-code {
+    font-size: 9px;
+    color: #FF6B15;
+    margin-top: 2px;
+    font-weight: 600;
+}
+
+.item-description {
+    font-size: 9px;
+    color: #666;
+    margin-top: 2px;
+    font-style: italic;
+}
+
+/* Piezas que cubre un renglón de maquila (solo Orden de Maquila) */
+.item-pieces {
+    font-size: 9px;
+    color: #666;
+    margin-top: 3px;
+}
+
+.item-pieces strong {
+    color: #FF6B15;
+}
+
+/* ========================= */
+/* SECCIÓN DE TOTALES (INDEPENDIENTE) */
+/* ========================= */
+.totals-section {
+    width: 100%;
+    margin-top: 15px;
+    page-break-inside: avoid;
+}
+
+.totals-table {
+    width: 45%;
+    float: right;
+    border-collapse: collapse;
+}
+
+.totals-table td {
+    padding: 4px 8px;
+    text-align: right;
+}
+
+.total-label {
+    font-weight: 600;
+    color: #666;
+    font-size: 10px;
+}
+
+.total-value {
+    font-weight: 400;
+    color: #333;
+    font-size: 10px;
+    width: 100px;
+}
+
+/* Total Final Destacado - EN NEGRO */
+.grand-total-row td {
+    border-top: 2px solid #333;
+    padding-top: 8px;
+    margin-top: 4px;
+}
+
+.big-label {
+    font-size: 12px;
+    color: #000;
+    font-weight: 700;
+}
+
+.big-value {
+    font-size: 12px;
+    color: #000;
+    font-weight: 700;
+}
+
+/* Limpiar floats */
+.clearfix:after {
+    content: "";
+    display: table;
+    clear: both;
+}
+
+/* ========================= */
+/* MONTO EN PALABRAS */
+/* ========================= */
+.amount-in-words {
+    clear: both;
+    margin-top: 15px;
+    padding: 10px;
+    background-color: #f9f9f9;
+    border-left: 3px solid #FF6B15;
+    font-size: 10px;
+    color: #333;
+}
+
+.amount-in-words strong {
+    color: #FF6B15;
+}
+
+/* ========================= */
+/* TÉRMINOS DE PAGO - ESTILO TABLA PRODUCTOS */
+/* ========================= */
+.payment-terms {
+    clear: both;
+    padding-top: 20px;
+    page-break-inside: avoid;
+}
+
+.payment-terms-title {
+    font-size: 11px;
+    color: #222;
+    font-weight: 700;
+    margin: 0 0 10px 0;
+    text-transform: uppercase;
+}
+
+.payment-table {
+    margin-top: 0;
+    page-break-inside: auto;
+}
+
+.payment-table thead {
+    display: table-header-group;
+}
+
+.payment-table tbody {
+    display: table-row-group;
+}
+
+.payment-table thead th {
+    background-color: #FF6B15;
+    color: #ffffff;
+    font-weight: 600;
+    padding: 6px 8px;
+    text-transform: uppercase;
+    font-size: 9px;
+    border: none;
+}
+
+.payment-table tbody tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+}
+
+.payment-table tbody td {
+    padding: 8px;
+    border-bottom: 1px solid #f0f0f0;
+    color: #333;
+    font-size: 10px;
+}
+
+/* ========================= */
+/* TÉRMINOS Y CONDICIONES - FORZAR VISIBLE */
+/* ========================= */
+.terms {
+    margin-top: 20px;
+    padding: 0;
+    background: none;
+    border: none;
+    font-size: 9px;
+    color: #666;
+    width: 100%;
+    max-width: 100%;
+    overflow: visible !important;
+    page-break-inside: auto;
+    height: auto !important;
+    max-height: none !important;
+}
+
+.terms-title {
+    font-weight: 700;
+    display: block;
+    margin-bottom: 8px;
+    color: #222;
+    font-size: 11px;
+    text-transform: uppercase;
+}
+
+.terms-content {
+    text-align: justify;
+    line-height: 1.5;
+    color: #666;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    white-space: normal;
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+}
+
+/* ========================= */
+/* SECCIÓN DE FIRMAS */
+/* ========================= */
+.signature-section {
+    margin-top: 40px;
+    margin-bottom: 30px;
+    display: table;
+    width: 100%;
+    page-break-inside: avoid;
+}
+
+.signature-box {
+    display: table-cell;
+    width: 45%;
+    padding: 0 20px;
+    vertical-align: bottom;
+}
+
+.signature-box-ceo {
+    position: relative;
+}
+
+.ceo-signature-img {
+    max-width: 220px;
+    max-height: 90px;
+    width: auto;
+    height: auto;
+    display: block;
+    margin: 0 auto -5px auto;
+    object-fit: contain;
+}
+
+.signature-line {
+    border-top: 2px solid #333;
+    margin-bottom: 8px;
+    margin-top: 10px;
+}
+
+.signature-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: #333;
+    text-align: center;
+    margin-bottom: 3px;
+}
+
+.signature-info {
+    font-size: 9px;
+    color: #666;
+    text-align: center;
+    font-weight: 600;
+}
+
+.signature-date {
+    font-size: 9px;
+    color: #888;
+    text-align: center;
+    margin-top: 5px;
+    font-style: italic;
+}
+
+.signature-role {
+    font-size: 9px;
+    color: #FF6B15;
+    text-align: center;
+    font-weight: 600;
+    margin-top: 2px;
+}
+
+/* ========================= */
+/* FOOTER */
+/* ========================= */
+.pdf-footer {
+    margin-top: 30px;
+    text-align: center;
+    color: #999;
+    font-size: 9px;
+}
+
+.divider {
+    border: 0;
+    border-top: 1px solid #eee;
+    margin-bottom: 5px;
+}
+
+.text-right { text-align: right; }
+.text-center { text-align: center; }
+</style>
+{%- endmacro -%}
+
+
+{#- Encabezado: proveedor a la izquierda, datos de la orden a la derecha.
+    `titulo_orden` cambia entre "Orden de Compra" y "Orden de Maquila".
+    `mostrar_almacen` saca el almacén del proveedor, que solo importa en maquila. -#}
+{%- macro encabezado(doc, titulo_orden="Detalles de Orden de Compra", mostrar_almacen=false) -%}
+<table class="info-table">
+    <tr>
+        <td class="supplier-section">
+            <span class="section-title">Información del Proveedor</span>
+            <div class="info-line">
+                <strong>Proveedor:</strong> {{ doc.supplier_name or doc.supplier }}
+            </div>
+
+            {% if doc.supplier_address %}
+                {% set supplier_address = frappe.get_doc("Address", doc.supplier_address) %}
+                <div class="supplier-address">
+                    <strong>Dirección del Proveedor:</strong>
+                    {% if supplier_address.address_line1 %}
+                        <div class="address-line">{{ supplier_address.address_line1 }}</div>
+                    {% endif %}
+                    {% if supplier_address.address_line2 %}
+                        <div class="address-line">{{ supplier_address.address_line2 }}</div>
+                    {% endif %}
+                    <div class="address-line">
+                        {% if supplier_address.city %}{{ supplier_address.city }}{% endif %}
+                        {% if supplier_address.state and supplier_address.city %}, {% endif %}
+                        {% if supplier_address.state %}{{ supplier_address.state }}{% endif %}
+                    </div>
+                    <div class="address-line">
+                        {% if supplier_address.pincode %}C.P. {{ supplier_address.pincode }}{% endif %}
+                        {% if supplier_address.country and supplier_address.pincode %}, {% endif %}
+                        {% if supplier_address.country %}{{ supplier_address.country }}{% endif %}
+                    </div>
+                </div>
+            {% endif %}
+
+            {% if doc.contact_display %}
+                <div class="info-line"><strong>Contacto:</strong> {{ doc.contact_display }}</div>
+            {% endif %}
+        </td>
+
+        <td class="order-details">
+            <span class="section-title">{{ titulo_orden }}</span>
+            <div class="info-line"><strong>Orden #:</strong> {{ doc.name }}</div>
+            <div class="info-line">
+                <strong>Fecha:</strong> {{ doc.get_formatted("transaction_date") or frappe.format_date(doc.transaction_date) }}
+            </div>
+            {% if doc.schedule_date %}
+                <div class="info-line">
+                    <strong>Requerido para:</strong> {{ doc.get_formatted("schedule_date") or frappe.format_date(doc.schedule_date) }}
+                </div>
+            {% endif %}
+            {% if mostrar_almacen and doc.get("set_warehouse") %}
+                <div class="info-line"><strong>Entregar en:</strong> {{ doc.set_warehouse }}</div>
+            {% endif %}
+            {% if doc.cost_center %}
+                <div class="info-line"><strong>Centro de costos:</strong> {{ doc.cost_center }}</div>
+            {% endif %}
+            {% if doc.currency %}
+                <div class="info-line"><strong>Moneda:</strong> {{ doc.currency }}</div>
+            {% endif %}
+        </td>
+    </tr>
+</table>
+{%- endmacro -%}
+
+
+{%- macro totales(doc) -%}
+<div class="totals-section">
+    <table class="totals-table">
+        <tr>
+            <td class="total-label">Total:</td>
+            <td class="total-value">
+                {{ doc.get_formatted("base_total") or frappe.utils.fmt_money(doc.base_total, currency=doc.currency) }}
+            </td>
+        </tr>
+
+        {% if doc.base_net_total and doc.base_net_total != doc.base_total %}
+        <tr>
+            <td class="total-label">Total neto:</td>
+            <td class="total-value">
+                {{ doc.get_formatted("base_net_total") or frappe.utils.fmt_money(doc.base_net_total, currency=doc.currency) }}
+            </td>
+        </tr>
+        {% endif %}
+
+        {% for tax in doc.taxes %}
+        <tr>
+            <td class="total-label">{{ tax.description or tax.account_head }}</td>
+            <td class="total-value">
+                {{ tax.get_formatted("tax_amount", doc) or frappe.utils.fmt_money(tax.tax_amount, currency=doc.currency) }}
+            </td>
+        </tr>
+        {% endfor %}
+
+        <tr class="grand-total-row">
+            <td class="total-label big-label">TOTAL:</td>
+            <td class="total-value big-value">
+                {{ doc.get_formatted("grand_total") or frappe.utils.fmt_money(doc.grand_total, currency=doc.currency) }}
+            </td>
+        </tr>
+    </table>
+    <div style="clear: both;"></div>
+</div>
+
+{% if doc.in_words %}
+<div class="amount-in-words">
+    <strong>En palabras:</strong> {{ doc.in_words }}
+</div>
+{% endif %}
+{%- endmacro -%}
+
+
+{#- Términos de pago, términos y condiciones, firmas y pie. -#}
+{%- macro cierre(doc) -%}
+{% if doc.payment_schedule %}
+<div class="payment-terms">
+    <h4 class="payment-terms-title">Términos de Pago</h4>
+    <table class="table payment-table">
+        <thead>
+            <tr>
+                <th width="50%">Plazo de pago</th>
+                <th class="text-center" width="10%">%</th>
+                <th class="text-center" width="20%">Vencimiento</th>
+                <th class="text-right" width="20%">Importe</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for term in doc.payment_schedule %}
+            <tr>
+                <td>{{ term.payment_term }}</td>
+                <td class="text-center">{{ "{:,.2f}".format(term.invoice_portion or 0) }}%</td>
+                <td class="text-center">{{ frappe.format_date(term.due_date) if term.due_date else "-" }}</td>
+                <td class="text-right">
+                    <strong>{{ doc.currency }} {{ "{:,.2f}".format(term.payment_amount or 0) }}</strong>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if doc.terms %}
+<div class="terms">
+    <span class="terms-title">Términos y Condiciones:</span>
+    <div class="terms-content">
+        {{ doc.terms.replace("FOLIO_DOC", doc.name).replace("EMPRESA_ACTUAL", doc.company).replace("MONEDA_DOC", currency=doc.currency) }}
+    </div>
+</div>
+{% endif %}
+
+<div class="signature-section">
+    <div class="signature-box">
+        <div class="signature-line"></div>
+        <div class="signature-label">Firma del Proveedor</div>
+        <div class="signature-info">{{ doc.supplier_name or doc.supplier }}</div>
+        <div class="signature-date">Fecha: ____/____/________</div>
+    </div>
+    <div class="signature-box signature-box-ceo">
+        {#- Solo si el archivo existe: en un sitio sin /files/signature.png
+            (una instalación nueva, el sandbox) la imagen rota se vería en el PDF. -#}
+        {% if doc.docstatus == 1 and frappe.db.exists("File", {"file_url": "/files/signature.png"}) %}
+            <img src="/files/signature.png" alt="Firma Autorizada" class="ceo-signature-img" />
+        {% endif %}
+        <div class="signature-line"></div>
+        <div class="signature-label">Autorizado por</div>
+        <div class="signature-info">Juan Manuel Cuéllar Rojas</div>
+        <div class="signature-role">CEO</div>
+    </div>
+</div>
+
+<div class="pdf-footer">
+    <hr class="divider" />
+    <p>Gracias por su colaboración.</p>
+</div>
+{%- endmacro -%}

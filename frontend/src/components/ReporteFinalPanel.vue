@@ -119,11 +119,23 @@
         <table class="w-full text-sm">
           <thead><tr class="text-left text-xs font-semibold text-ink-light border-b border-surface-border"><th class="py-1.5">Concepto</th><th class="py-1.5 text-right">Estimado</th><th class="py-1.5 text-right">Real</th><th class="py-1.5 text-right">Variación</th></tr></thead>
           <tbody>
+            <tr v-if="r.real.material_sobrante" class="border-b border-surface-border/60 text-ink-muted">
+              <td class="py-1.5 pl-3 text-[12px]">Materia prima comprada</td>
+              <td class="py-1.5 text-right text-ink-light">—</td>
+              <td class="py-1.5 text-right text-[12px]">{{ fmtC(r.real.material_directo) }}</td>
+              <td class="py-1.5 text-right text-ink-light">—</td>
+            </tr>
+            <tr v-if="r.real.material_sobrante" class="border-b border-surface-border/60 text-ink-muted">
+              <td class="py-1.5 pl-3 text-[12px]" title="Material que no se consumió y sigue siendo inventario de la empresa (devuelto de los talleres o aún libre allá) -- no es costo de este pedido">− Sobrante que sigue en inventario</td>
+              <td class="py-1.5 text-right text-ink-light">—</td>
+              <td class="py-1.5 text-right text-[12px]">{{ signedC(-r.real.material_sobrante) }}</td>
+              <td class="py-1.5 text-right text-ink-light">—</td>
+            </tr>
             <tr class="border-b border-surface-border/60">
-              <td class="py-1.5">Materia prima</td>
+              <td class="py-1.5">Materia prima{{ r.real.material_sobrante ? ' consumida' : '' }}</td>
               <td class="py-1.5 text-right">{{ fmtC(r.estimado.materiales_total) }}</td>
-              <td class="py-1.5 text-right">{{ fmtC(r.real.material_directo) }}</td>
-              <td class="py-1.5 text-right" :class="varClass(r.real.material_directo - r.estimado.materiales_total, true)">{{ signedC(r.real.material_directo - r.estimado.materiales_total) }}</td>
+              <td class="py-1.5 text-right">{{ fmtC(matReal(r.real)) }}</td>
+              <td class="py-1.5 text-right" :class="varClass(matReal(r.real) - r.estimado.materiales_total, true)">{{ signedC(matReal(r.real) - r.estimado.materiales_total) }}</td>
             </tr>
             <tr class="border-b border-surface-border/60">
               <td class="py-1.5">Flete de materia prima (compra)</td>
@@ -267,6 +279,9 @@ function fmtC(v) { return new Intl.NumberFormat("es-MX", { style: "currency", cu
 function pct(v) { return `${(v || 0).toFixed(1)}%`; }
 function signed(v, dec = 0) { const n = v || 0; return `${n >= 0 ? "+" : ""}${n.toFixed(dec)}`; }
 function signedC(v) { const n = v || 0; return `${n >= 0 ? "+" : ""}${fmtC(n)}`; }
+// Materia prima que de verdad se fue en este pedido: lo comprado menos lo que sobró y
+// sigue en inventario (reportes viejos no traen material_consumido).
+function matReal(real) { return real.material_consumido ?? real.material_directo; }
 // Para métricas de rentabilidad, más alto = mejor (verde). Para costos, más alto = peor
 // (rojo) -- por eso `varClass` recibe `invert` para los renglones de costo.
 function varClass(v, invert = false) {
@@ -283,7 +298,7 @@ const categorias = computed(() => {
   const { estimado: e, real } = props.r;
   const fleteRealTotal = (real.flete_materiales || 0) + (real.flete_taller_ida || 0) + (real.flete_taller_regreso || 0) + (real.flete_cliente || 0);
   return [
-    { label: "Materia prima", est: e.materiales_total, real: real.material_directo },
+    { label: "Materia prima", est: e.materiales_total, real: matReal(real) },
     { label: "Servicios de subcontratación", est: e.servicios_total, real: real.servicio_directo },
     { label: "Fletes (materiales + taller + cliente)", est: e.shipping_total, real: fleteRealTotal },
     { label: "Overhead", est: e.overhead_total, real: real.overhead },
@@ -297,7 +312,7 @@ const composicionReal = computed(() => {
   const { real } = props.r;
   const fleteRealTotal = (real.flete_materiales || 0) + (real.flete_taller_ida || 0) + (real.flete_taller_regreso || 0) + (real.flete_cliente || 0);
   const segs = [
-    { label: "Materia prima", value: real.material_directo, color: "bg-blue-400" },
+    { label: "Materia prima", value: matReal(real), color: "bg-blue-400" },
     { label: "Servicios", value: real.servicio_directo, color: "bg-purple-400" },
     { label: "Fletes", value: fleteRealTotal, color: "bg-orange-400" },
     { label: "Overhead", value: real.overhead, color: "bg-gray-400" },

@@ -93,6 +93,10 @@ doctype_js = {
 # 	"methods": "costeo_yelke.utils.jinja_methods",
 # 	"filters": "costeo_yelke.utils.jinja_filters"
 # }
+jinja = {
+	# OM de cada taller dentro del formato "Orden de Maquila".
+	"methods": ["costeo_yelke.api.om_general.om_de_oc"],
+}
 
 # Installation
 # ------------
@@ -154,15 +158,42 @@ after_install = "costeo_yelke.install.after_install"
 
 doc_events = {
 	"Purchase Receipt": {
+		"validate": "costeo_yelke.api.contabilidad.validar_recepcion_contra_oc",
 		"before_submit": "costeo_yelke.api.costeo_api.validar_envio_capturado_recibo",
 	},
 	"Subcontracting Receipt": {
-		"before_submit": "costeo_yelke.api.costeo_api.validar_envio_capturado_recibo",
+		"validate": [
+			"costeo_yelke.api.costeo_api.ajustar_consumo_a_existencia_taller",
+			"costeo_yelke.api.contabilidad.cuenta_servicio_recibo_taller",
+		],
+		"before_submit": [
+			"costeo_yelke.api.costeo_api.validar_envio_capturado_recibo",
+			"costeo_yelke.api.contabilidad.validar_proveedor_flete",
+		],
+		"on_submit": "costeo_yelke.api.contabilidad.despues_de_validar_recibo_taller",
+		"on_cancel": "costeo_yelke.api.contabilidad.al_cancelar_recibo_taller",
+	},
+	"Stock Entry": {
+		"before_submit": "costeo_yelke.api.contabilidad.validar_proveedor_flete",
+		"on_submit": "costeo_yelke.api.contabilidad.al_validar_transferencia",
+		"on_cancel": "costeo_yelke.api.contabilidad.al_cancelar_transferencia",
 	},
 	"Subcontracting Order": {
 		"validate": "costeo_yelke.api.costeo_api.redondear_materia_prima_sco",
 	},
+	"Purchase Order": {
+		"on_submit": "costeo_yelke.overrides.purchase_order.registrar_precios_oficiales",
+	},
 }
+
+# Un documento contable/de inventario CANCELADO no se borra: Frappe libera el folio
+# del último de la serie y el siguiente documento lo reutilizaría (ver
+# costeo_yelke.api.contabilidad.bloquear_borrado_cancelado).
+for _dt in (
+	"Stock Entry", "Subcontracting Receipt", "Purchase Receipt", "Purchase Invoice",
+	"Delivery Note", "Sales Invoice", "Journal Entry",
+):
+	doc_events.setdefault(_dt, {})["on_trash"] = "costeo_yelke.api.contabilidad.bloquear_borrado_cancelado"
 
 # Homologación a MAYÚSCULAS de los campos de nombre/código de los datos maestros
 # (ver costeo_yelke/overrides/uppercase_master.py). before_insert corre antes del
@@ -175,6 +206,13 @@ for _dt in (
 		"before_insert": "costeo_yelke.overrides.uppercase_master.upper",
 		"before_validate": "costeo_yelke.overrides.uppercase_master.upper",
 	}
+
+# El almacén default GLOBAL (de otra compañía) se cuela en los Item Defaults vacíos
+# (ver costeo_yelke.api.item_api.limpiar_almacen_de_otra_compania).
+doc_events["Item"]["before_validate"] = [
+	"costeo_yelke.overrides.uppercase_master.upper",
+	"costeo_yelke.api.item_api.limpiar_almacen_de_otra_compania",
+]
 
 # Scheduled Tasks
 # ---------------

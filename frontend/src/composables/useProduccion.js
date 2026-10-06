@@ -111,7 +111,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
 
   const docCompra = ref(null);
   const docCompraItems = ref([]);
-  const docCompraForm = reactive({ schedule_date: "", valid_till: "", payment_terms_template: "", tc_name: "", shipping_cost: 0 });
+  const docCompraForm = reactive({ schedule_date: "", valid_till: "", payment_terms_template: "", tc_name: "", shipping_cost: 0, supplier: "" });
   const docCompraValidated = computed(() => docCompra.value?.docstatus === 1);
   const docCompraHasRate = computed(() => docCompraItems.value.some((i) => i.has_rate));
   const ocSelected = ref("");
@@ -197,6 +197,16 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     mrLotes.value.length > 0
     && (planDetail.value?.po_items || []).some((p) => mrLoteProductoExcedido(p.item_code) || mrLoteProductoIncompleto(p.item_code))
   );
+  // Las cantidades de la solicitud salen de multiplicar consumo x piezas y sumar,
+  // así que arrastran ruido de coma flotante: 29 llega como 28.99999998 y en
+  // pantalla se ve sucio. Se limpia al RECIBIR el dato (no al pintarlo) para que el
+  // valor que se reenvía al guardar también vaya limpio. 6 decimales deja intactas
+  // las cantidades finas de verdad (0.007523 Mazo por prenda) y solo mata el ruido.
+  function limpiaNum(v) {
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.round(n * 1e6) / 1e6 : v;
+  }
+
   // Vista previa de materiales por lote (informativa, solo lectura) -- se
   // recalcula sola cada vez que cambian las piezas capturadas; debounce corto
   // para no disparar una llamada por cada tecla mientras se escribe.
@@ -214,6 +224,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
           plan: planDetail.value.name, lotes: JSON.stringify(lotes),
         });
         Object.keys(mrLotesPreview).forEach((k) => delete mrLotesPreview[k]);
+        // La vista previa ya viene redondeada del servidor (mr_preview_lotes_materiales).
         Object.assign(mrLotesPreview, r);
       } catch { /* la vista previa es informativa -- si falla, no interrumpe la captura */ }
     }, 400);
@@ -230,7 +241,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
       const r = await call("costeo_yelke.api.costeo_api.get_solicitud_material", { plan: planDetail.value.name });
       mrDetail.value = r.detail;
       if (r.detail) {
-        mrItems.value = r.detail.items.map((i) => ({ ...i }));
+        mrItems.value = r.detail.items.map((i) => ({ ...i, qty: limpiaNum(i.qty) }));
         mrSchedule.value = r.detail.schedule_date || "";
         mrResults.value = { ocs: r.detail.linked_ocs || [] };
       } else {
@@ -319,7 +330,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
         reciboOcSel.value = nuevo; reciboPr.value = null; // OC nueva: aún sin recibo
         await selectOcLote(nuevo);
       }
-      showToast(lote ? "Nuevo lote de OC creado" : "Orden de compra creada");
+      showToast((lote ? "Nuevo lote de OC creado" : "Orden de compra creada") + _mensajeRedondeos(r.redondeos));
       return r.purchase_orders || [];
     } catch (e) { showToast(e.message || "Error", "error"); return []; }
     finally { advancing.value = false; }
@@ -367,13 +378,14 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   async function loadDocCompra(doctype, name) {
     const r = await call("costeo_yelke.api.costeo_api.get_documento_compra", { doctype, name });
     docCompra.value = r;
-    ensurePrintFmt(doctype);
+    ensurePrintFmt(doctype, name);
     docCompraItems.value = (r.items || []).map((i) => ({ ...i }));
     docCompraForm.schedule_date = r.schedule_date || "";
     docCompraForm.valid_till = r.valid_till || "";
     docCompraForm.payment_terms_template = r.payment_terms_template || "";
     docCompraForm.tc_name = r.tc_name || "";
     docCompraForm.shipping_cost = r.shipping_cost || 0;
+    docCompraForm.supplier = r.supplier || "";
     previewKey.value++;
   }
   async function selectOC(po) { ocSelected.value = po; advancing.value = true; try { await loadDocCompra("Purchase Order", po); } finally { advancing.value = false; } }
@@ -394,6 +406,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
         payment_terms_template: docCompraForm.payment_terms_template || null, tc_name: docCompraForm.tc_name || null,
         items: JSON.stringify(docCompraItems.value),
         shipping_cost: docCompra.value.has_shipping ? (docCompraForm.shipping_cost || 0) : null,
+        supplier: docCompraForm.supplier || null,
       });
       await loadDocCompra(docCompra.value.doctype, docCompra.value.name);
       showToast("Guardado");
@@ -412,6 +425,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
         payment_terms_template: docCompraForm.payment_terms_template || null, tc_name: docCompraForm.tc_name || null,
         items: JSON.stringify(docCompraItems.value),
         shipping_cost: docCompra.value.has_shipping ? (docCompraForm.shipping_cost || 0) : null,
+        supplier: docCompraForm.supplier || null,
       });
       await call("costeo_yelke.api.costeo_api.validar_documento", { doctype: docCompra.value.doctype, name: docCompra.value.name });
       const poName = docCompra.value.doctype === "Purchase Order" ? docCompra.value.name : null;
@@ -464,12 +478,17 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   const reciboItems = ref([]);
   const reciboForm = reactive({ posting_date: "", shipping_cost: null });
   const reciboValidated = computed(() => reciboPr.value?.docstatus === 1);
+  // % de avance de materia prima -- ya calculado en el backend contra el total de
+  // TODA la Solicitud de Material (los 3 lotes, aunque sus OC individuales no
+  // existan todavía), ver get_recibos. null = todavía no hay Solicitud validada.
+  const pctRecibidoMateriaPrima = ref(null);
 
   async function loadRecibos() {
     if (!planDetail.value) return;
     try {
       const r = await call("costeo_yelke.api.costeo_api.get_recibos", { plan: planDetail.value.name });
       reciboOcs.value = r.ocs || [];
+      pctRecibidoMateriaPrima.value = r.pct_recibido ?? null;
       if (!reciboOcs.value.some((o) => o.name === reciboOcSel.value)) reciboOcSel.value = reciboOcs.value[0]?.name || "";
       const sel = reciboOcs.value.find((o) => o.name === reciboOcSel.value);
       if (sel && sel.receipts.length) await loadRecibo(sel.receipts[sel.receipts.length - 1]);
@@ -575,6 +594,41 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   const scoActivo = ref("");
   const scoSel = computed(() => flujo.scos.find((s) => s.name === scoActivo.value) || null);
   const scoValidated = computed(() => scoSel.value?.docstatus === 1);
+
+  // Materia prima de la SCO agrupada POR MATERIAL. Con el modelo por pieza el mismo
+  // material aparece una vez por cada pieza que lo usa (6 renglones de gabardina en
+  // el corte), y lo que de verdad se le entrega al taller es un solo montón. El
+  // redondeo hacia arriba también es sobre el total (ver
+  // _redondear_arriba_por_material), así que esta suma es exactamente lo que va a
+  // decir la transferencia.
+  const materialesSco = computed(() => {
+    const g = new Map();
+    for (const m of scoSel.value?.supplied_items || []) {
+      const k = m.rm_item_code;
+      const prev = g.get(k);
+      if (prev) { prev.required_qty += Number(m.required_qty) || 0; prev.piezas += 1; }
+      else g.set(k, { ...m, required_qty: Number(m.required_qty) || 0, piezas: 1 });
+    }
+    return [...g.values()].map((m) => ({
+      ...m, required_qty: Math.round(m.required_qty * 1e6) / 1e6,
+      // Disponible es por almacén (no por renglón): el mismo material sale de un solo lugar.
+      falta: m.disponible !== null && m.disponible !== undefined && Number(m.disponible) < Math.round(m.required_qty * 1e6) / 1e6 - 1e-6,
+    }));
+  });
+  // Lo que el taller va a ENTREGAR, agrupado por artículo (el cuello que pasa por
+  // dos servicios viene en dos renglones de porción).
+  const piezasSco = computed(() => {
+    const g = new Map();
+    for (const it of scoSel.value?.items || []) {
+      const prev = g.get(it.item_code);
+      if (prev) { prev.qty += Number(it.qty) || 0; prev.received_qty += Number(it.received_qty) || 0; }
+      else g.set(it.item_code, { ...it, qty: Number(it.qty) || 0, received_qty: Number(it.received_qty) || 0 });
+    }
+    return [...g.values()];
+  });
+  // Lo que se le paga: servicio × pieza con su cantidad, precio e importe.
+  const serviciosSco = computed(() => (scoSel.value?.service_items || []).filter((s) => Number(s.amount) > 0 || Number(s.rate) > 0));
+  const importeSco = computed(() => (scoSel.value?.service_items || []).reduce((a, s) => a + (Number(s.amount) || 0), 0));
   const scoForm = reactive({ supplier_warehouse: "", set_warehouse: "", supplier_address: "", contact_person: "", shipping_address: "", distribute_additional_costs_based_on: "Qty" });
   const scoCostos = ref([]);
 
@@ -596,15 +650,12 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   const omTablas = ref([]);
   const omArchivos = ref([]);
   const omUploading = ref(false);
-  // Sólo la OC "maestra" (la primera etapa de subcontratación creada) puede editar la
-  // Orden de Manufactura -- las demás la reciben ya hecha (se replica sola al
-  // guardar, ver guardar_om) y se muestran de solo lectura para que quede claro que
-  // hay una sola ficha técnica por proyecto, no una por etapa. Arranca en `false`
-  // (no editable) a propósito -- así, mientras se resuelve loadOm() de la etapa que
-  // se acaba de abrir, el formulario nunca aparece editable "de más" ni por un
-  // instante (mejor pecar de bloqueado que dejar escribir algo que el backend luego
-  // va a rechazar).
-  const omEsMaestra = ref(false);
+  // La Orden de Manufactura se edita desde CUALQUIER etapa: hay una sola ficha por
+  // proyecto y al guardar se replica a todas las demás OC de subcontratación (ver
+  // guardar_om). Solo deja de ser editable si la OC está cancelada. Arranca en
+  // `false` a propósito -- mientras se resuelve loadOm() de la etapa recién abierta,
+  // el formulario no aparece editable "de más" ni por un instante.
+  const omEditable = ref(false);
 
   async function loadSubcontratos() {
     if (!planDetail.value) return;
@@ -650,13 +701,19 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
       if (!flujo.scos.some((s) => s.name === scoActivo.value)) {
         scoActivo.value = flujo.scos[flujo.scos.length - 1]?.name || "";
       }
-      await selectSco(scoActivo.value);
+      await selectSco(scoActivo.value, true);
     } catch { /* ignore */ }
   }
-  async function selectSco(name) {
+  async function selectSco(name, _recargado = false) {
     scoActivo.value = name;
     const s = flujo.scos.find((x) => x.name === name);
-    if (!s) { scr.value = null; transDoc.value = null; return; }
+    // Un encargo recién creado (desde la matriz) todavía no está en la lista del
+    // taller: se vuelve a pedir una vez en vez de dejar el detalle en blanco.
+    if (!s && name && !_recargado && subPo.value?.name) {
+      await loadFlujo(subPo.value.name);
+      if (flujo.scos.some((x) => x.name === name)) return selectSco(name, true);
+    }
+    if (!s && !flujo.scos.some((x) => x.name === name)) { scr.value = null; transDoc.value = null; return; }
     scoForm.supplier_warehouse = s.supplier_warehouse || "";
     scoForm.set_warehouse = s.set_warehouse || "";
     scoForm.supplier_address = s.supplier_address || "";
@@ -679,6 +736,32 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
       transForm.distribute_additional_costs_based_on = r.distribute_additional_costs_based_on || "Qty";
       transCostos.value = (r.additional_costs || []).map((c) => ({ ...c }));
     } catch { /* ignore */ }
+  }
+
+  // El taller puede haberse quedado con material de una tanda anterior (sobrante de
+  // redondeo, ver sub_saldo_talleres). Esto baja cada renglón por lo que ya tiene,
+  // para no mandarle de más. Es MANUAL a propósito: el sobrante puede quedarse con
+  // él o regresar al almacén, y solo la persona sabe cuál de las dos pasó.
+
+  const talleresSaldo = ref([]);
+  async function loadSaldoTalleres() {
+    if (!planCosteoName.value) return;
+    try {
+      const r = await call("costeo_yelke.api.costeo_api.sub_saldo_talleres", { costeo: planCosteoName.value });
+      talleresSaldo.value = r.talleres || [];
+    } catch { talleresSaldo.value = []; }
+  }
+  async function devolverMaterialTaller(taller) {
+    advancing.value = true;
+    try {
+      const r = await call("costeo_yelke.api.costeo_api.sub_devolver_material", {
+        costeo: planCosteoName.value, warehouse: taller.warehouse,
+      });
+      const docs = r.stock_entries?.length ? r.stock_entries.join(", ") : r.stock_entry;
+      showToast(`Devolución creada en borrador (${docs}) — revísala y valídala`);
+      await loadSaldoTalleres();
+    } catch (e) { showToast(e.message || "No se pudo crear la devolución", "error"); }
+    finally { advancing.value = false; }
   }
 
   async function guardarSco() {
@@ -707,21 +790,33 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   }
   function addCosto() { scoCostos.value.push({ description: "", amount: 0, expense_account: "" }); }
   function removeCosto(i) { scoCostos.value.splice(i, 1); }
-  function addCostoTrans() { transCostos.value.push({ description: "", amount: 0, expense_account: "" }); }
+  function addCostoTrans() { transCostos.value.push({ description: "", amount: 0, expense_account: "", proveedor_flete: "" }); }
   function removeCostoTrans(i) { transCostos.value.splice(i, 1); }
   // Descripción default "Envío" -- si el usuario deja la fila sin tocar y guarda, no se
   // pierde en silencio (el backend descarta filas sin descripción) y de una vez cubre
   // el caso más común (el costo obligatorio de este recibo es justo el de envío).
-  function addCostoScr() { scrCostos.value.push({ description: "Envío", amount: 0, expense_account: "" }); }
+  function addCostoScr() { scrCostos.value.push({ description: "Envío", amount: 0, expense_account: "", proveedor_flete: "" }); }
   function removeCostoScr(i) { scrCostos.value.splice(i, 1); }
+
+  // Cuando lo único que sobraba era el redondeo hacia arriba, el backend recorta a
+  // la existencia real en vez de bloquear por un faltante inexistente
+  // (_ajustar_a_existencia). Se dice, para que nadie se pregunte por qué salió un
+  // número distinto al de la orden.
+  function _mensajeAjusteExistencia(r) {
+    const a = r?.ajustado_a_existencia || (r?.transferencia && r.transferencia.ajustado_a_existencia);
+    const keys = a ? Object.keys(a) : [];
+    if (!keys.length) return "";
+    return " · se ajustó a la existencia por redondeo (" +
+      keys.map((k) => `${k} -${a[k]}`).join(", ") + ")";
+  }
 
   async function transferirMaterial() {
     if (!scoSel.value) return;
     advancing.value = true;
     try {
-      await call("costeo_yelke.api.costeo_api.sub_transferir_material", { sco: scoSel.value.name });
+      const r = await call("costeo_yelke.api.costeo_api.sub_transferir_material", { sco: scoSel.value.name });
       await loadFlujo(subPo.value.name);
-      showToast("Transferencia creada en borrador · revisa almacenes y valida");
+      showToast("Transferencia creada en borrador · revisa almacenes y valida" + _mensajeAjusteExistencia(r));
     } catch (e) { showToast(e.message || "No se pudo crear la transferencia", "error"); }
     finally { advancing.value = false; }
   }
@@ -746,6 +841,10 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   }
   async function validarTransferencia() {
     if (!transDoc.value) return;
+    if (transCostos.value.some((c) => Number(c.amount) > 0 && !c.proveedor_flete)) {
+      showToast("Indica el transportista de cada costo adicional con importe", "error");
+      return;
+    }
     advancing.value = true;
     try {
       await call("costeo_yelke.api.costeo_api.sub_guardar_transferencia", {
@@ -808,6 +907,10 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
       showToast("Registra al menos un costo adicional antes de validar (pon 0 si no hubo)", "error");
       return;
     }
+    if (scrCostos.value.some((c) => Number(c.amount) > 0 && !c.proveedor_flete)) {
+      showToast("Indica el transportista de cada costo adicional con importe", "error");
+      return;
+    }
     advancing.value = true;
     try {
       await call("costeo_yelke.api.costeo_api.sub_guardar_recibo", { scr: scr.value.name, set_warehouse: scrForm.set_warehouse || null, rejected_warehouse: scrForm.rejected_warehouse || null, supplier_warehouse: scrForm.supplier_warehouse || null, items: JSON.stringify(scr.value.items), costos: JSON.stringify(scrCostos.value), distribute_additional_costs_based_on: scrForm.distribute_additional_costs_based_on });
@@ -822,7 +925,14 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     finally { advancing.value = false; }
   }
 
+  // OM de esta orden de maquila armada desde la OM general del producto (un registro
+  // por producto, solo lo asignado a este taller). Vacía = costeo sin OM general: se
+  // usa el formulario de siempre, capturado directo en la orden de compra.
+  const omDeOc = ref([]);
   async function loadOm(po) {
+    try {
+      omDeOc.value = await call("costeo_yelke.api.om_general.om_de_oc", { po });
+    } catch { omDeOc.value = []; }
     try {
       const r = await call("costeo_yelke.api.costeo_api.get_om", { po });
       Object.assign(omGeneral, r.general);
@@ -831,7 +941,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
       omProc.value = r.procesos || [];
       omTablas.value = r.tablas || [];
       omArchivos.value = r.archivos || [];
-      omEsMaestra.value = r.es_maestra !== false;
+      omEditable.value = r.editable !== false;
     } catch { /* ignore */ }
   }
   function addProceso() { omProc.value.push({ proceso: "", nombre_proceso: "", ubicacion: "", colores: "" }); }
@@ -1000,6 +1110,11 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     },
   ];
   const medidasTemplates = MEDIDAS_PLANTILLAS.map(t => ({ key: t.key, label: t.label }));
+  // Copia de las tablas de una plantilla, para el editor de la OM general.
+  function tablasDePlantilla(key) {
+    const tpl = MEDIDAS_PLANTILLAS.find(t => t.key === key);
+    return tpl ? JSON.parse(JSON.stringify(tpl.tablas)) : [];
+  }
   function addTablaPlantilla(key) {
     const tpl = MEDIDAS_PLANTILLAS.find(t => t.key === key);
     if (!tpl) return;
@@ -1045,21 +1160,32 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   function removeArchivo(i) { omArchivos.value.splice(i, 1); }
 
   async function _guardarSubDatos() {
-    await call("costeo_yelke.api.costeo_api.guardar_documento_compra", {
-      doctype: "Purchase Order", name: subPo.value.name,
-      schedule_date: subForm.schedule_date || null, payment_terms_template: subForm.payment_terms_template || null,
-      tc_name: subForm.tc_name || null, items: JSON.stringify(subItems.value),
-      shipping_cost: subPo.value.has_shipping ? (subForm.shipping_cost || 0) : null,
-    });
+    // Si la OC de maquila ya se validó sola (ver abrirNuevoLote/lote_abrir --
+    // se auto-valida por conveniencia), ya no hay nada que guardar AHÍ (fecha,
+    // items, envío son términos comerciales, no se pueden tocar post-validación)
+    // -- pero eso no debe impedir guardar la Orden de Manufactura de abajo, que
+    // SÍ se permite editar aunque la OC ya esté validada (ver guardar_om /
+    // _guardar_om_una, om_* con allow_on_submit). Antes esta llamada tronaba
+    // ("El documento ya está validado") y ni siquiera llegaba a intentar
+    // guardar_om -- por eso no dejaba capturar la ficha técnica en una OC que
+    // se abrió y validó sola al abrir el lote.
+    if (subPo.value.docstatus === 0) {
+      await call("costeo_yelke.api.costeo_api.guardar_documento_compra", {
+        doctype: "Purchase Order", name: subPo.value.name,
+        schedule_date: subForm.schedule_date || null, payment_terms_template: subForm.payment_terms_template || null,
+        tc_name: subForm.tc_name || null, items: JSON.stringify(subItems.value),
+        shipping_cost: subPo.value.has_shipping ? (subForm.shipping_cost || 0) : null,
+      });
+    }
     // Sólo la OC maestra puede escribir la Orden de Manufactura -- en las demás el
     // formulario ya está deshabilitado (nada que guardar) y el backend la rechazaría.
     // Este intento va en SU PROPIO try/catch, separado del guardado de la OC de
-    // arriba: si por lo que sea (omEsMaestra desactualizado, dos pestañas abiertas...)
+    // arriba: si por lo que sea (omEditable desactualizado, dos pestañas abiertas...)
     // el backend lo rechaza, que NO tumbe el guardado/validado de la OC misma -- antes
     // ambos pasos compartían el mismo try, así que un rechazo de la OM aparecía como
     // "no se pudo guardar/validar" la orden completa, aunque sus propios cambios
     // (fecha, items, etc.) sí eran válidos.
-    if (omEsMaestra.value) {
+    if (omEditable.value) {
       try {
         await call("costeo_yelke.api.costeo_api.guardar_om", {
           po: subPo.value.name, general: JSON.stringify(omGeneral),
@@ -1150,9 +1276,17 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     if (!planDetail.value) return;
     try {
       const r = await call("costeo_yelke.api.costeo_api.get_lotes_produccion", { plan: planDetail.value.name });
-      lotesProduccion.value = r.lotes || [];
+      // Mismo ruido de coma flotante que en la solicitud (ver limpiaNum): estas
+      // cantidades salen de repartir el material entre lotes. Se limpian aquí
+      // porque no solo se pintan -- también son el qty que se manda al crear la
+      // solicitud de cotización y la orden de compra de ese lote.
+      lotesProduccion.value = (r.lotes || []).map((l) => ({
+        ...l,
+        material_items: (l.material_items || []).map((m) => ({ ...m, qty: limpiaNum(m.qty) })),
+      }));
       productosCosteo.value = r.productos || [];
     } catch { /* ignore */ }
+    await loadSaldoTalleres();
   }
   function paradaEstado(p) {
     if (p.receipt_validated) return "done";
@@ -1181,7 +1315,16 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     await seleccionarParada(obj);
   }
   async function seleccionarParada(parada) {
+    if (loteParadaActiva.value !== parada.parada_id) { piezasSel.value = []; piezaFoco.value = null; }
     loteParadaActiva.value = parada.parada_id;
+    // Primera entrega de la parada: la cantidad ya está decidida -- son las prendas
+    // que este lote declaró al dividir la Solicitud de Material. Se prellena en vez
+    // de pedirla otra vez. En las entregas siguientes se deja vacía a propósito:
+    // ahí sí la decide la persona (el tamaño de la tanda que va a mandar).
+    if (!parada.sco) {
+      const q = prendasDelLoteParaParada(parada);
+      if (q > 0) nuevaEntregaForm.cantidad = q;
+    }
     if (!parada.po) return;
     advancing.value = true;
     try {
@@ -1306,10 +1449,10 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     if (!name) return;
     advancing.value = true;
     try {
-      await call("costeo_yelke.api.costeo_api.sub_enviar_material", { sco: name });
+      const r = await call("costeo_yelke.api.costeo_api.sub_enviar_material", { sco: name });
       if (subPo.value?.name) await loadFlujo(subPo.value.name);
       await loadLotesProduccion();
-      showToast("Material enviado al taller · recibo listo para confirmar cantidad");
+      showToast("Material enviado al taller · recibo listo para confirmar cantidad" + _mensajeAjusteExistencia(r));
     } catch (e) {
       showToast(
         /negativ|no.*suficiente|necesar/i.test(e.message || "")
@@ -1322,6 +1465,79 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   // Genera la OC de materia prima de UN proveedor de un lote (ya dividido al
   // validar la solicitud) -- por su propio botón, junto a los de Solicitud de
   // cotización / Presupuesto, no automáticamente ni junta a otros proveedores.
+  // Mensaje corto cuando mr_crear_oc redondeó algún material a paquete completo
+  // (Mazo/Gruesa/Pieza...) -- para que el ajuste no sea una sorpresa silenciosa.
+  function _mensajeRedondeos(redondeos) {
+    const entries = Object.entries(redondeos || {});
+    if (!entries.length) return "";
+    return " · redondeado a paquete completo: " + entries
+      .map(([item, r]) => `${item} a ${r.ajustada} ${r.uom}`)
+      .join(", ");
+  }
+  // Ajuste por existencias propias del último "Generar orden de compra":
+  // [{item_code, solicitud, comprar, ya_tienes, uom}]. Se limpia al cambiar de lote.
+  const neteoOc = ref([]);
+
+  // ---- Transferencia al taller, vista por MATERIAL -------------------------
+  // El documento lleva un renglón por PIEZA que consume el material (ERPNext liga
+  // cada uno a su `subcontracted_item` para llevar la cuenta de lo entregado y
+  // consumido, así que no se pueden fusionar en el documento). Pero lo que de
+  // verdad se le entrega al taller es un montón por material, así que la pantalla
+  // muestra uno por material y los cambios se reparten hacia abajo.
+  const transAgrupado = computed(() => {
+    const g = new Map();
+    for (const it of transDoc.value?.items || []) {
+      const prev = g.get(it.item_code);
+      if (prev) {
+        prev.qty += Number(it.qty) || 0;
+        prev.ya_en_taller += Number(it.ya_en_taller) || 0;
+        if (prev.s_warehouse !== it.s_warehouse) prev.s_warehouse = "";
+        if (it.available !== null && it.available !== undefined) {
+          prev.available = prev.available === null ? it.available
+            : Math.min(prev.available, it.available);
+        }
+        prev.filas.push(it);
+      } else {
+        g.set(it.item_code, {
+          item_code: it.item_code, item_name: it.item_name, uom: it.uom,
+          qty: Number(it.qty) || 0, available: it.available ?? null,
+          ya_en_taller: Number(it.ya_en_taller) || 0,
+          s_warehouse: it.s_warehouse, filas: [it],
+        });
+      }
+    }
+    return [...g.values()].map((x) => ({ ...x, qty: Math.round(x.qty * 1e6) / 1e6 }));
+  });
+
+  // Cambiar el total de un material lo reparte entre sus renglones en la misma
+  // proporción que traían -- esa proporción es cuánto consume cada pieza, y hay
+  // que conservarla o la conciliación por pieza de ERPNext deja de cuadrar. El
+  // residuo del redondeo se carga al renglón más grande para que la suma dé exacta.
+  function cambiarCantidadMaterial(grupo, nuevoTotal) {
+    const total = Number(nuevoTotal);
+    if (!Number.isFinite(total) || total < 0) return;
+    const filas = grupo.filas;
+    const actual = filas.reduce((a, f) => a + (Number(f.qty) || 0), 0);
+    if (!filas.length) return;
+    if (actual <= 0) { filas[0].qty = Math.round(total * 1e6) / 1e6; return; }
+    let acum = 0;
+    const mayor = filas.reduce((a, b) => ((Number(b.qty) || 0) > (Number(a.qty) || 0) ? b : a));
+    for (const f of filas) {
+      if (f === mayor) continue;
+      const v = Math.round(((Number(f.qty) || 0) * total / actual) * 1e6) / 1e6;
+      f.qty = v; acum += v;
+    }
+    mayor.qty = Math.round((total - acum) * 1e6) / 1e6;
+  }
+
+  // El almacén de origen se fija por material, no por pieza: todas las filas del
+  // grupo salen del mismo lugar. Devuelve la primera fila para que la pantalla
+  // refresque la existencia (ese cálculo vive allá, junto al resto de la vista).
+  function cambiarAlmacenMaterial(grupo, warehouse) {
+    for (const f of grupo.filas) f.s_warehouse = warehouse;
+    return grupo.filas[0];
+  }
+
   async function generarOcLote(lote, supplier) {
     if (!lote?.material_mr) return;
     advancing.value = true;
@@ -1332,7 +1548,10 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
       await loadLotesProduccion();
       const po = (r.purchase_orders || [])[0];
       if (po) { mrDocTab.value = "oc"; ocSelected.value = po; await loadDocCompra("Purchase Order", po); }
-      showToast("Orden de compra generada");
+      // Lo que se descontó por existencias propias queda visible como aviso: la OC
+      // está en borrador y la cantidad es editable por si el remanente no sirve.
+      neteoOc.value = r.neteo || [];
+      showToast("Orden de compra generada" + _mensajeRedondeos(r.redondeos));
     } catch (e) { showToast(e.message || "No se pudo generar la orden de compra", "error"); }
     finally { advancing.value = false; }
   }
@@ -1394,6 +1613,160 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   // o, si no declaró ninguno, con solo una referencia de texto libre. Crea su
   // PROPIA Subcontracting Order -- no toca las anteriores.
   const nuevaEntregaForm = reactive({ open: false, cantidad: null, sub_ensamblaje: "", referencia: "", loading: false });
+
+  // ---- Ramas por pieza -----------------------------------------------------
+  // Piezas SELECCIONADAS para el próximo encargo. Es una lista porque un taller
+  // puede recibir varias de un jalón (las dos mangas hoy, el frente cuando vuelva
+  // de reflejante) -- antes solo se podía encargar una por vez.
+  const piezasSel = ref([]);
+
+  // Estado de cada pieza EN una parada concreta, sacado de las ramas del lote.
+  function piezasDeParada(paradaId) {
+    const out = [];
+    for (const r of loteActivo.value?.ramas || []) {
+      const paso = (r.pasos || []).find((p) => p.parada_id === paradaId);
+      if (paso) out.push({ nombre: r.pieza, por_prenda: r.por_prenda, ...paso });
+    }
+    return out;
+  }
+  // Las que se pueden encargar ahora mismo en esa parada.
+  function piezasListas(paradaId) {
+    return piezasDeParada(paradaId).filter((p) => p.estado === "listo");
+  }
+  function togglePiezaSel(nombre) {
+    const i = piezasSel.value.indexOf(nombre);
+    if (i >= 0) piezasSel.value.splice(i, 1);
+    else piezasSel.value.push(nombre);
+  }
+  // Pieza sobre la que se hizo clic. Se guarda aparte de `piezasSel` para poder
+  // resaltar también un paso que NO se puede encargar (uno ya recibido, o uno
+  // bloqueado): se consulta igual, aunque no entre en la selección.
+  const piezaFoco = ref(null);
+
+  // Entrar a un paso desde su rama: selecciona la parada y deja marcada esa pieza.
+  // Marca SOLO la que se pulsó -- varias piezas comparten proveedor y parada, y
+  // resaltar por parada pintaba todas las de ese taller de golpe.
+  async function irAPasoDePieza(paso, pieza) {
+    const parada = (loteActivo.value?.paradas || []).find((x) => x.parada_id === paso.parada_id);
+    if (!parada) return;
+    piezaFoco.value = pieza;
+    await seleccionarParada(parada);
+    piezasSel.value = paso.estado === "listo" && pieza ? [pieza] : [];
+  }
+
+  // ¿Este paso va resaltado? Solo si es de la parada abierta Y su pieza está
+  // seleccionada (o es la que se pulsó, cuando no hay nada seleccionable).
+  function pasoSeleccionado(paso, pieza) {
+    if (loteParadaActiva.value !== paso.parada_id) return false;
+    if (piezasSel.value.length) return piezasSel.value.includes(pieza);
+    return piezaFoco.value === pieza;
+  }
+
+  // ---- Matriz pieza × etapa ------------------------------------------------
+  // La selección es por CELDA y puede cruzar etapas y talleres: marcas las dos
+  // mangas del bordado y los puños del reflejante, y salen dos órdenes, una por
+  // taller. `celdasSel` guarda "pieza|parada_id".
+  const celdasSel = ref([]);
+  const celdaKey = (pieza, paradaId) => `${pieza}|${paradaId}`;
+  const celdaSeleccionada = (pieza, paradaId) => celdasSel.value.includes(celdaKey(pieza, paradaId));
+
+  function toggleCelda(pieza, paradaId) {
+    const k = celdaKey(pieza, paradaId);
+    const i = celdasSel.value.indexOf(k);
+    if (i >= 0) celdasSel.value.splice(i, 1);
+    else celdasSel.value.push(k);
+  }
+  function limpiarCeldas() { celdasSel.value = []; }
+
+  // La celda de una pieza en una etapa, o null si esa pieza se brinca la etapa.
+  function celdaDe(rama, paradaId) {
+    return (rama.pasos || []).find((p) => p.parada_id === paradaId) || null;
+  }
+  // "Seleccionar listas" de una columna: marca (o desmarca) sus celdas listas.
+  function toggleColumna(etapa) {
+    const listas = (loteActivo.value?.ramas || [])
+      .map((r) => celdaDe(r, etapa.parada_id) && celdaDe(r, etapa.parada_id).estado === "listo" ? r.pieza : null)
+      .filter(Boolean);
+    const todas = listas.length > 0 && listas.every((pz) => celdaSeleccionada(pz, etapa.parada_id));
+    for (const pz of listas) {
+      const k = celdaKey(pz, etapa.parada_id);
+      const i = celdasSel.value.indexOf(k);
+      if (todas && i >= 0) celdasSel.value.splice(i, 1);
+      else if (!todas && i < 0) celdasSel.value.push(k);
+    }
+  }
+  function columnaTodaSel(etapa) {
+    const listas = (loteActivo.value?.ramas || [])
+      .filter((r) => { const c = celdaDe(r, etapa.parada_id); return c && c.estado === "listo"; });
+    return listas.length > 0 && listas.every((r) => celdaSeleccionada(r.pieza, etapa.parada_id));
+  }
+
+  // Lo seleccionado, agrupado por TALLER: una orden por proveedor.
+  const gruposSel = computed(() => {
+    const porParada = new Map();
+    for (const k of celdasSel.value) {
+      const [pieza, paradaId] = k.split("|");
+      const rama = (loteActivo.value?.ramas || []).find((r) => r.pieza === pieza);
+      const etapa = (loteActivo.value?.rama_etapas || []).find((e) => e.parada_id === paradaId);
+      const celda = rama && celdaDe(rama, paradaId);
+      if (!rama || !etapa || !celda) continue;
+      const g = porParada.get(paradaId) || {
+        parada_id: paradaId, titulo: etapa.titulo, supplier: etapa.supplier,
+        piezas: [], prendas: prendasDelLote(),
+      };
+      g.piezas.push(rama.por_prenda > 1 ? `${pieza} ×${rama.por_prenda}` : pieza);
+      g.nombres = (g.nombres || []).concat([pieza]);
+      porParada.set(paradaId, g);
+    }
+    return [...porParada.values()];
+  });
+
+  function prendasDelLote() {
+    return (loteActivo.value?.productos || []).reduce((a, p) => a + (Number(p.qty) || 0), 0);
+  }
+
+  // Crea una orden POR TALLER con las piezas marcadas de ese taller.
+  async function crearOrdenesSeleccion() {
+    const grupos = gruposSel.value;
+    if (!grupos.length || !loteActivo.value) return;
+    advancing.value = true;
+    const hechas = [];
+    try {
+      for (const g of grupos) {
+        // Secuencial a propósito: cada llamada valida saldo contra ERPNext, y si
+        // una falla hay que poder decir exactamente cuáles sí se crearon.
+        await call("costeo_yelke.api.costeo_api.parada_registrar_entrega", {
+          plan: planDetail.value.name, lote_ref: loteActivo.value.lote_ref,
+          parada_id: g.parada_id, cantidad: g.prendas,
+          sub_ensamblaje: JSON.stringify(g.nombres),
+        });
+        hechas.push(g.titulo);
+      }
+      limpiarCeldas();
+      await loadLotesProduccion();
+      if (subPo.value?.name) await loadFlujo(subPo.value.name);
+      showToast(hechas.length > 1
+        ? `Se generaron ${hechas.length} órdenes, una por taller · sigue enviar material`
+        : "Orden de subcontratación generada · sigue enviar material");
+    } catch (e) {
+      await loadLotesProduccion();
+      showToast(hechas.length
+        ? `Se crearon ${hechas.length} (${hechas.join(", ")}) y falló la siguiente: ${e.message}`
+        : (e.message || "No se pudieron crear las órdenes"), "error");
+    } finally { advancing.value = false; }
+  }
+
+  // Prendas que este lote declaró para los productos que pasan por esta parada.
+  // Sale de lo capturado al dividir la Solicitud de Material (Costeo Lote), no de
+  // la orden de compra: la OC cubre TODO el costeo y se va consumiendo lote a lote.
+  function prendasDelLoteParaParada(parada) {
+    const lote = loteActivo.value;
+    if (!lote || !parada) return 0;
+    const porProducto = Object.fromEntries(
+      (lote.productos || []).map((p) => [p.finished_item, Number(p.qty) || 0]));
+    return (parada.productos || []).reduce(
+      (acc, p) => acc + (porProducto[p.finished_item] || 0), 0);
+  }
   function abrirNuevaEntrega() {
     Object.assign(nuevaEntregaForm, { open: true, cantidad: null, sub_ensamblaje: "", referencia: "", loading: false });
   }
@@ -1408,19 +1781,26 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
       showToast("Indica la cantidad de esta entrega", "error");
       return;
     }
+    // Sin pieza elegida la entrega cubre TODAS las de la parada, que es lo normal
+    // (del mismo tendido de tela salen las seis piezas del corte). Antes esto se
+    // bloqueaba porque una entrega sin nombre no marcaba nada en el checklist; eso
+    // ya no pasa: el checklist se mide sobre los renglones reales de la SCO, no
+    // sobre el texto de la referencia (ver get_lotes_produccion).
     nuevaEntregaForm.loading = true;
     try {
       await call("costeo_yelke.api.costeo_api.parada_registrar_entrega", {
         plan: planDetail.value.name, lote_ref: lote.lote_ref, parada_id: parada.parada_id,
         cantidad: nuevaEntregaForm.cantidad,
-        sub_ensamblaje: nuevaEntregaForm.sub_ensamblaje || null,
-        referencia: nuevaEntregaForm.sub_ensamblaje ? null : (nuevaEntregaForm.referencia || null),
+        // Lista: el taller puede recibir varias piezas en el mismo encargo.
+        sub_ensamblaje: piezasSel.value.length ? JSON.stringify(piezasSel.value) : null,
+        referencia: piezasSel.value.length ? null : (nuevaEntregaForm.referencia || null),
       });
       cerrarNuevaEntrega();
+      piezasSel.value = [];
       await loadLotesProduccion();
       const p2 = loteActivo.value?.paradas.find((x) => x.parada_id === parada.parada_id);
       if (p2) await seleccionarParada(p2);
-      showToast("Entrega registrada");
+      showToast("Encargo registrado");
     } catch (e) { showToast(e.message || "No se pudo registrar la entrega", "error"); }
     finally { nuevaEntregaForm.loading = false; }
   }
@@ -1448,19 +1828,15 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     } catch { /* ignore */ }
   }
 
-  // Porcentaje de materia prima recibida: ponderado por el importe de cada OC (no por
-  // "número de OCs completas") -- si contáramos OCs completas nomás, la barra brincaba
-  // a trozos del tamaño de 1/N en cuanto se validaba UN recibo, sin importar si esa OC
-  // era chica o era la mayoría del material; y una OC parcialmente recibida no sumaba
-  // nada hasta llegar al 100%. Así, la barra sube suave conforme entra CUALQUIER
-  // recibo (parcial o completo), proporcional a lo que de verdad representa cada OC.
+  // Porcentaje de materia prima recibida -- ya viene calculado del backend
+  // (get_recibos) contra el total de TODA la Solicitud de Material (los 3 lotes,
+  // aunque sus OC individuales todavía no existan). Antes se ponderaba solo contra
+  // las OC que YA existían (reciboOcs) -- en cuanto se recibía la primera OC del
+  // lote 1, la barra saltaba a ~100% aunque faltaran 2 lotes más sin generar
+  // siquiera su OC (bug real, reportado en vivo).
   const materiaPrimaPct = computed(() => {
-    const ocs = reciboOcs.value || [];
-    if (!ocs.length) return mrValidated.value ? 0 : null;
-    const totalValor = ocs.reduce((s, o) => s + (o.grand_total || 0), 0);
-    if (!totalValor) return 0;
-    const recibidoValor = ocs.reduce((s, o) => s + (o.grand_total || 0) * (Math.min(o.per_received || 0, 100) / 100), 0);
-    return Math.round((recibidoValor / totalValor) * 100);
+    if (pctRecibidoMateriaPrima.value !== null) return pctRecibidoMateriaPrima.value;
+    return mrValidated.value ? 0 : null;
   });
   // Porcentaje de subcontratación (maquila) recibida: igual que materiaPrimaPct,
   // ponderado por el IMPORTE de cada OC de etapa -- así un producto con 2+ etapas
@@ -1509,9 +1885,10 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     // subcontratación
     subOcs, subSel, subPo, subItems, subForm, subValidated, subHasRate, subDone,
     loadSubcontratos, crearSubcontratos, selectSub, loadSub, guardarSub, validarSub, revisarSub,
-    flujo, scoActivo, scoSel, scoValidated, scoForm, scoCostos,
+    flujo, scoActivo, scoSel, scoValidated, materialesSco, piezasSco, serviciosSco, importeSco, scoForm, scoCostos,
     loadFlujo, selectSco, guardarSco, validarSco, addCosto, removeCosto,
     transDoc, transForm, transCostos, transValidated, transferDone, loadTrans, transferirMaterial, guardarTrans, validarTransferencia, enviarMaterialTaller,
+    talleresSaldo, loadSaldoTalleres, devolverMaterialTaller,
     addCostoTrans, removeCostoTrans,
     scr, scrForm, scrCostos, scrValidated, crearReciboSub, loadScr, guardarScr, validarScr,
     addCostoScr, removeCostoScr,
@@ -1519,13 +1896,18 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     lotesProduccion, productosCosteo, loteActivoRef, loteParadaActiva, nuevoLoteForm,
     loteActivo, paradaActiva, tracksLote, paradaEstado,
     loadLotesProduccion, seleccionarLote, seleccionarParada, verParadaPo,
-    abrirNuevoLote, cerrarNuevoLote, crearNuevoLote, abrirParada, siguienteParadaPendiente, generarOcLote,
+    abrirNuevoLote, cerrarNuevoLote, crearNuevoLote, abrirParada, siguienteParadaPendiente, generarOcLote, neteoOc,
+    transAgrupado, cambiarCantidadMaterial, cambiarAlmacenMaterial,
     nuevaEntregaForm, abrirNuevaEntrega, cerrarNuevaEntrega, confirmarNuevaEntrega, verEntrega,
+    piezasSel, piezasDeParada, piezasListas, togglePiezaSel, irAPasoDePieza,
+    piezaFoco, pasoSeleccionado,
+    celdasSel, celdaSeleccionada, toggleCelda, limpiarCeldas, celdaDe,
+    toggleColumna, columnaTodaSel, gruposSel, crearOrdenesSeleccion, prendasDelLote,
     primeraEtapaQty, primeraEtapaLoading, primeraEtapaLimitado, sugerirPrimeraEtapaQty,
     crearRfqLote, crearSqLote,
-    omGeneral, omCab, omDama, omProc, omTablas, omArchivos, omUploading, omEsMaestra,
+    omGeneral, omCab, omDama, omProc, omTablas, omArchivos, omUploading, omEditable,
     addProceso, removeProceso, addTabla, removeTabla, addColumna, removeColumna, addFila, removeFila,
-    medidasTemplates, addTablaPlantilla,
+    medidasTemplates, addTablaPlantilla, tablasDePlantilla, omDeOc,
     tallaTotal, onOmFile, removeArchivo, loadOm,
     // progreso
     prodComplete, loadProdComplete, materiaPrimaPct, subcontratacionPct, mpLotes,

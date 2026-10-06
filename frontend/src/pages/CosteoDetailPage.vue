@@ -194,6 +194,14 @@
             <svg class="w-4 h-4 flex-shrink-0 mt-px" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.71-3l-6.93-12a2 2 0 00-3.42 0l-6.93 12a2 2 0 001.71 3z"/></svg>
             No encontramos los almacenes de esta compañía por su nombre — elígelos aquí arriba para poder guardar.
           </p>
+          <!-- Configuración contable incompleta de la compañía (ver compania_setup.diagnostico_compania):
+               solo avisa, no bloquea -- con esto el inventario/maquila no se reflejan bien en contabilidad. -->
+          <div v-if="form.compania && diagCompania.faltantes.length" class="mx-5 mb-4 mt-1 text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            <p class="font-semibold mb-0.5">La configuración contable de {{ form.compania }} está incompleta</p>
+            <ul class="list-disc pl-4 space-y-0.5">
+              <li v-for="f in diagCompania.faltantes" :key="f">{{ f }}</li>
+            </ul>
+          </div>
         </section>
 
         <section class="bg-white rounded-xl border border-surface-border">
@@ -343,7 +351,7 @@
 
                       <!-- Servicios de este punto -->
                       <table class="w-full table-fixed text-sm mt-2">
-                        <thead><tr class="text-left text-xs font-semibold text-ink-light"><th class="py-1.5 pl-3">Servicio</th><th class="py-1.5 w-28">UDM</th><th class="py-1.5 w-20 text-right">Cantidad</th><th class="py-1.5 w-24 text-right">Costo</th><th class="py-1.5 w-24 text-right pr-3">Total</th><th class="w-7"></th></tr></thead>
+                        <thead><tr class="text-left text-xs font-semibold text-ink-light"><th class="py-1.5 pl-3">Servicio</th><th class="py-1.5 w-28">UDM</th><th class="py-1.5 w-24 text-right" title="Cuántas veces se cobra el servicio por cada prenda (normalmente 1)">Operaciones por prenda</th><th class="py-1.5 w-24 text-right">Costo</th><th class="py-1.5 w-24 text-right pr-3">Total</th><th class="w-7"></th></tr></thead>
                         <tbody>
                           <tr v-for="e in punto.servicios" :key="e._tid" class="align-top">
                             <td class="py-1 pl-3 pr-2"><LinkInput v-model="e.servicio" doctype="Item" :filters="ITEM_FILTERS.servicio" placeholder="Servicio…" @update:model-value="onEtapaServicioChange(e, prod)" /></td>
@@ -1171,9 +1179,9 @@
          El usuario solo puede: reordenar los pasos (arrastrando la tarjeta) y decir
          de qué paso recibe el material cada uno. El nombre de la pieza es automático.
          Nada de servicio/proveedor/precio aquí -- eso vive en Costear. -->
-    <div v-else-if="activeStep === 4" class="px-5 py-7 pb-24 max-w-xl mx-auto w-full">
+    <div v-else-if="activeStep === 4" class="px-5 py-7 pb-24 max-w-6xl mx-auto w-full">
       <h2 class="text-[15px] font-semibold text-ink">Flujo de Producción</h2>
-      <p class="text-[12.5px] text-ink-muted mt-1 leading-relaxed">
+      <p class="text-[12.5px] text-ink-muted mt-1 leading-relaxed max-w-3xl">
         Ya viene armado desde el costeo. Arrastra un paso para reordenarlo y ajusta <span class="text-ink-muted">"recibe de"</span> solo si el material sale de otro paso.
       </p>
 
@@ -1192,9 +1200,13 @@
           <span class="text-[11.5px] text-ink-light flex-shrink-0 ml-3">{{ (prod.qty || 0).toLocaleString('es-MX') }} pzas</span>
         </div>
 
+        <div v-if="(prod.avisos || []).length" class="mb-2 text-[11.5px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 space-y-0.5">
+          <p v-for="(a, i) in prod.avisos" :key="i">{{ a }}</p>
+        </div>
+
         <p v-if="!prod.operaciones.length" class="text-[12px] text-ink-light py-2">Sin servicios de manufactura en el costeo.</p>
 
-        <div v-else class="lg:grid lg:gap-6 lg:items-start" :class="prod.operaciones.length > 1 ? 'lg:grid-cols-[1fr_340px]' : ''">
+        <div v-else>
           <TransitionGroup tag="div" name="flujo-card" class="space-y-2">
             <div
               v-for="(op, idx) in prod.operaciones" :key="op.op_key"
@@ -1219,6 +1231,8 @@
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-1.5">
                   <span class="text-[13px] font-medium text-ink truncate">{{ supplierLabel(prod, op) }}</span>
+                  <span v-if="etiquetaArmado(prod, op) === 'arma'" class="flex-shrink-0 text-[10.5px] font-medium text-green-700 bg-green-50 ring-1 ring-green-200 rounded px-1.5 py-px">Aquí se arma la prenda</span>
+                  <span v-else-if="etiquetaArmado(prod, op) === 'armada'" class="flex-shrink-0 text-[10.5px] font-medium text-ink-muted bg-surface-raised rounded px-1.5 py-px">Recibe la prenda armada</span>
                   <span v-if="opIncompleta(op)" class="relative flex-shrink-0">
                     <svg class="w-3.5 h-3.5 text-amber-500 cursor-pointer" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" @click="toggleWarn(op, 'incompleto')"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
                     <div v-if="isWarnOpen(op, 'incompleto')" class="absolute z-20 left-0 top-full mt-1 w-56 bg-white border border-amber-200 rounded-lg shadow-lg p-2 text-[11px] leading-snug text-amber-800">Faltan datos en este paso (proveedor o servicio) -- revísalo en Costear.</div>
@@ -1317,62 +1331,85 @@
             </div>
           </TransitionGroup>
 
-          <!-- Sub-ensamblajes: solo tiene sentido con 2+ pasos -- son las "tandas"
-               físicas (puños, mangas...) que un mismo lote puede entregar por
-               separado, cada una por un subconjunto distinto de estos pasos (ver
-               Costeo Sub Ensamblaje / _multiplicador_por_operacion). No crea
-               ningún Artículo -- solo le dice al sistema cuántas veces de verdad
-               se repite el servicio de cada paso intermedio, para que su OC de
-               maquila nazca ya con la capacidad correcta. Tabla: una fila por
-               sub-ensamblaje, una columna por paso -- el check marca por dónde
-               pasa. El paso final siempre aparece marcado y fijo (no hace falta
-               tocarlo: una prenda no se termina sin todas sus piezas). -->
-          <div v-if="prod.operaciones.length > 1" class="mt-4 lg:mt-0">
+          <!-- Piezas y por dónde pasa cada una.
+               Tabla VOLTEADA respecto al diseño anterior: los servicios van de
+               FILAS y las piezas de columnas. Los nombres de servicio son largos
+               ("BORDADO-MANGA-DER-GRUPO-MEXICO") y de encabezado quedaban
+               recortados a unos pocos caracteres; los de pieza son cortos
+               ("Puños") y sí caben arriba. Cada casilla se marca por SERVICIO, que
+               es el grano con el que después se decide qué servicio cobra sobre
+               qué pieza (ver _resolve_piece_states). El paso final no se marca:
+               toda pieza llega ahí. -->
+          <div v-if="prod.operaciones.length > 1" class="mt-5">
             <div class="flex items-center justify-between mb-1.5">
-              <span class="text-[12px] font-medium text-ink-muted">Sub-ensamblajes</span>
-              <button type="button" class="text-[11px] text-brand-600 hover:text-brand-700" @click="agregarSubEnsamblaje(prod)">+ agregar</button>
+              <span class="text-[12px] font-medium text-ink-muted">Piezas de este producto</span>
+              <button type="button" class="text-[11px] text-brand-600 hover:text-brand-700" @click="agregarSubEnsamblaje(prod)">+ agregar pieza</button>
             </div>
-            <p v-if="!prod.sub_ensamblajes.length" class="text-[11px] text-ink-light leading-relaxed">
-              Ninguno declarado -- úsalo solo si este producto se entrega en varias tandas físicas distintas (puños, mangas, cuellos...) que pasan por caminos distintos del flujo.
+            <p v-if="!prod.sub_ensamblajes.length" class="text-[11px] text-ink-light leading-relaxed max-w-3xl">
+              Ninguna declarada -- úsalo solo si este producto se arma de piezas que siguen caminos distintos (puños, mangas, cuellos...). Con piezas declaradas, cada una avanza con su taller sin esperar a las demás.
             </p>
-            <div v-else class="overflow-x-auto rounded-lg ring-1 ring-surface-border">
-              <table class="w-full text-[11px] border-collapse">
+            <div v-else class="overflow-x-auto rounded-lg ring-1 ring-surface-border bg-white">
+              <table class="w-full text-[11.5px] border-collapse">
                 <thead>
                   <tr class="bg-surface-raised">
-                    <th class="text-left font-medium text-ink-muted px-2 py-1.5">Sub-ensamblaje</th>
-                    <th v-for="op in prod.operaciones" :key="op.op_key" class="font-medium text-ink-muted px-1 py-1.5 text-center" :title="supplierLabel(prod, op)">
-                      <span class="block max-w-[54px] truncate mx-auto">{{ supplierLabel(prod, op) }}</span>
+                    <th class="text-left font-medium text-ink-muted px-3 py-2 min-w-[220px]">Servicio</th>
+                    <th v-for="(sub, si) in prod.sub_ensamblajes" :key="si" class="px-2 py-1.5 align-top" style="width: 96px">
+                      <input
+                        v-model="sub.nombre" type="text" placeholder="Ej. Puños"
+                        class="w-full text-[11.5px] text-center px-1 py-0.5 rounded ring-1 ring-inset ring-surface-border focus:ring-brand-400 focus:outline-none"
+                        @input="flujoDirty = true"
+                      />
+                      <div class="flex items-center justify-center gap-1 mt-1">
+                        <span class="text-[10px] text-ink-light">×</span>
+                        <input
+                          v-model.number="sub.multiplicador" type="number" min="1" step="1"
+                          title="Cuántas de esta pieza lleva UNA prenda (2 puños, 1 frente)"
+                          class="w-9 text-[10.5px] text-center px-0.5 py-px rounded ring-1 ring-inset ring-surface-border focus:ring-brand-400 focus:outline-none"
+                          @input="flujoDirty = true"
+                        />
+                        <button type="button" class="mini-icon-btn" title="Quitar pieza" @click="quitarSubEnsamblaje(prod, si)">
+                          <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                        </button>
+                      </div>
                     </th>
-                    <th class="w-6"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(s, si) in prod.sub_ensamblajes" :key="si" class="border-t border-surface-border">
-                    <td class="px-2 py-1">
-                      <input
-                        v-model="s.nombre" type="text" placeholder="Ej. Puños"
-                        class="w-full min-w-[80px] text-[11.5px] px-1.5 py-1 rounded ring-1 ring-inset ring-surface-border focus:ring-brand-400 focus:outline-none"
-                        @input="flujoDirty = true"
-                      />
+                  <tr v-for="c in columnasMatriz(prod)" :key="c.stage_id" class="border-t border-surface-border">
+                    <td class="px-3 py-1.5">
+                      <div class="text-ink truncate" :title="c.titulo">{{ c.titulo }}</div>
+                      <div class="text-[10.5px] text-ink-light truncate">{{ c.supplier }}</div>
+                      <div v-if="c.arma" class="text-[10.5px] font-medium text-green-700">Aquí se unen todas las piezas</div>
+                      <div v-else-if="c.armada" class="text-[10.5px] text-ink-muted">Trabaja la prenda armada</div>
                     </td>
-                    <td v-for="op in prod.operaciones" :key="op.op_key" class="text-center px-1 py-1">
+                    <td v-for="(sub, si) in prod.sub_ensamblajes" :key="si" class="text-center px-2 py-1.5">
+                      <!-- Donde se arma: todas las piezas llegan aquí y salen como UNA prenda.
+                           Sigue siendo clic-able: marcar una pieza aquí dice que se trabaja
+                           por separado, y entonces la unión se recalcula. -->
                       <button
-                        v-if="!terminalKeysVivo(prod).includes(op.op_key)"
+                        v-if="(c.arma || c.armada) && !c.terminal"
+                        type="button"
+                        class="w-5 h-5 rounded-full flex items-center justify-center mx-auto transition-colors"
+                        :class="c.arma ? 'bg-green-50 text-green-600 ring-1 ring-inset ring-green-300 hover:ring-green-500' : 'text-ink-light hover:text-ink-muted'"
+                        :title="c.arma ? `Aquí se unen todas las piezas en una sola prenda. Márcala solo si ${sub.nombre || 'esta pieza'} se trabaja aquí por separado.` : 'Recibe la prenda ya armada'"
+                        @click="toggleSubEnsamblajeStage(sub, c.stage_id)"
+                      >
+                        <svg v-if="c.arma" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.6"><path stroke-linecap="round" stroke-linejoin="round" d="M6 4v5a6 6 0 006 6m6-11v5a6 6 0 01-6 6m0 0v5"/></svg>
+                        <svg v-else class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                      </button>
+                      <button
+                        v-else-if="!c.terminal"
                         type="button"
                         class="w-5 h-5 rounded flex items-center justify-center mx-auto transition-colors"
-                        :class="s.op_keys.includes(op.op_key) ? 'bg-brand-500 text-white' : 'ring-1 ring-inset ring-ink-xlight hover:ring-ink-light'"
-                        @click="toggleSubEnsamblajeOp(s, op.op_key)"
+                        :class="sub.stage_ids.includes(c.stage_id) ? 'bg-brand-500 text-white' : 'ring-1 ring-inset ring-ink-xlight hover:ring-ink-light'"
+                        :title="`${sub.nombre || 'Esta pieza'} pasa por ${c.titulo}`"
+                        @click="toggleSubEnsamblajeStage(sub, c.stage_id)"
                       >
-                        <svg v-if="s.op_keys.includes(op.op_key)" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                        <svg v-if="sub.stage_ids.includes(c.stage_id)" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
                       </button>
-                      <span v-else class="flex items-center justify-center text-green-600" title="Todo sub-ensamblaje llega hasta el paso final -- no hace falta marcarlo">
+                      <span v-else class="flex items-center justify-center text-green-600" :title="c.armada ? 'Recibe la prenda ya armada' : 'Toda pieza llega al paso final -- no hace falta marcarlo'">
                         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
                       </span>
-                    </td>
-                    <td class="px-1 py-1">
-                      <button type="button" class="mini-icon-btn" title="Quitar" @click="quitarSubEnsamblaje(prod, si)">
-                        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-                      </button>
                     </td>
                   </tr>
                 </tbody>
@@ -1384,7 +1421,10 @@
 
       <div class="flex justify-end items-center gap-3 mt-8">
         <span v-if="flujoDirty" class="text-[11.5px] text-ink-light">Cambios sin guardar</span>
-        <button :disabled="advancing || flujoLoading" class="px-4 py-2 text-[13px] font-medium text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex items-center gap-1.5 transition-colors" @click="confirmarFlujo">
+        <button :disabled="advancing || flujoLoading || guardandoFlujo" class="px-4 py-2 text-[13px] font-medium text-ink bg-white border border-surface-border rounded-lg hover:bg-surface-raised disabled:opacity-50 transition-colors" @click="guardarCambiosFlujo">
+          {{ guardandoFlujo ? "Guardando…" : "Guardar cambios" }}
+        </button>
+        <button :disabled="advancing || flujoLoading || guardandoFlujo" class="px-4 py-2 text-[13px] font-medium text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex items-center gap-1.5 transition-colors" @click="confirmarFlujo">
           {{ advancing ? "Preparando…" : "Confirmar y pasar a producción" }}
           <svg v-if="!advancing" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5-5 5M6 12h12"/></svg>
         </button>
@@ -1578,7 +1618,7 @@
                   </div>
                   <div v-if="mrLotesPreview[lote.lote_ref] && Object.keys(mrLotesPreview[lote.lote_ref]).length" class="mt-2 pt-2 border-t border-surface-border text-[11px] text-ink-light">
                     <span class="text-ink-muted">Materiales estimados: </span>
-                    <span v-for="(qty, mat, i) in mrLotesPreview[lote.lote_ref]" :key="mat">{{ i > 0 ? ' · ' : '' }}{{ mat }}: {{ qty }}</span>
+                    <span v-for="(m, mat, i) in mrLotesPreview[lote.lote_ref]" :key="mat">{{ i > 0 ? ' · ' : '' }}{{ mat }}: {{ m.qty }} {{ m.uom }}</span>
                   </div>
                 </div>
                 <div class="flex items-center justify-between">
@@ -1650,17 +1690,19 @@
                 :doc="subPo" :items="subItems" :form="subForm" desk-route="purchase-order"
                 :payment-terms-options="cotDefaults.payment_terms_templates" :terms-options="cotDefaults.terms"
                 show-preview-button :advancing="advancing"
+                :inline-preview-url="printUrl('Purchase Order', subPo.name)" :preview-key="previewKey"
                 :requires-review="subPo.requiere_doble_validacion" :reviewed="subPo.revisado_yelke"
                 :reviewed-by="subPo.revisado_por_yelke" :reviewed-at="subPo.revisado_en_yelke"
                 :puede-revisar="permisosValidacion.puede_revisar" :puede-aprobar="permisosValidacion.puede_aprobar"
                 @save="guardarSub" @validate="validarSub" @review="revisarSub" @preview="openPdf('Purchase Order', subPo.name)"
                 @send="openSend('Purchase Order', subPo.name, subPo.contact_email, subPo.contact_mobile)"
               />
-              <p v-if="!omEsMaestra" class="text-[11.5px] text-ink-light mt-2">Esta ficha técnica se heredó de otra etapa del proyecto — solo se edita desde la primera.</p>
-              <OrdenManufacturaForm
+              <p class="text-[11.5px] text-ink-light mt-2">Hay una sola ficha técnica por proyecto: lo que captures aquí se copia solo a las demás etapas.</p>
+              <OmTallerView v-if="omDeOc.some((r) => r.origen === 'general')" class="mt-3" :registros="omDeOc" />
+              <OrdenManufacturaForm v-else
                 class="mt-3"
                 :general="omGeneral" :om-cab="omCab" :om-dama="omDama" :om-proc="omProc" :om-tablas="omTablas" :om-archivos="omArchivos"
-                :uploading="omUploading" :disabled="!omEsMaestra" :OM_CAB="OM_CAB" :OM_DAMA="OM_DAMA" :talla-total="tallaTotal"
+                :uploading="omUploading" :disabled="!omEditable" :OM_CAB="OM_CAB" :OM_DAMA="OM_DAMA" :talla-total="tallaTotal"
                 :medidas-templates="medidasTemplates"
                 @add-proceso="addProceso" @remove-proceso="removeProceso" @add-tabla="addTabla" @add-tabla-plantilla="addTablaPlantilla" @remove-tabla="removeTabla"
                 @add-columna="addColumna" @remove-columna="removeColumna" @add-fila="addFila" @remove-fila="removeFila"
@@ -1713,9 +1755,56 @@
             </span>
           </div>
 
+          <!-- Material que quedó en los almacenes de los talleres. Sale del redondeo
+               hacia arriba de cada transferencia: se manda un poco de más y el recibo
+               consume la cantidad exacta del BOM. Dos salidas legítimas y solo la
+               persona sabe cuál pasó -- por eso esto informa y ofrece la devolución,
+               pero no decide solo. -->
+          <div v-if="talleresSaldo.length" class="border-t border-surface-border pt-3">
+            <p class="section-title mb-2">Material en talleres</p>
+            <p v-if="prodComplete.complete" class="text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
+              La producción ya terminó: pídele a cada taller este sobrante y registra su devolución para que vuelva a tu inventario.
+            </p>
+            <p v-else class="text-[11.5px] text-ink-light mb-2 leading-relaxed">
+              Sobró al redondear las transferencias. Mientras queden prendas por hacer, el taller lo usa en la siguiente transferencia (se descuenta solo); al terminar, registra la devolución para que vuelva a tu inventario.
+            </p>
+            <div class="space-y-2">
+              <div v-for="t in talleresSaldo" :key="t.warehouse" class="rounded-lg ring-1 ring-surface-border px-3 py-2">
+                <div class="flex items-center justify-between gap-2 mb-1">
+                  <span class="text-[12.5px] font-medium text-ink">{{ t.supplier }}</span>
+                  <button type="button" :disabled="advancing" class="text-[11.5px] text-brand-600 hover:text-brand-700 disabled:opacity-50" @click="devolverMaterialTaller(t)">Registrar devolución</button>
+                </div>
+                <div v-for="m in t.materiales" :key="m.item_code" class="flex items-center justify-between text-[12px] text-ink-muted tabular-nums">
+                  <span class="truncate">{{ m.item_name }}</span>
+                  <span class="flex-shrink-0">{{ m.libre.toLocaleString('es-MX') }} {{ m.uom }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Materia prima de este lote -->
           <div v-if="proveedoresLote(loteActivo).length" class="border-t border-surface-border pt-3">
             <p class="section-title mb-2">Materia prima de este lote</p>
+
+            <!-- Neteo contra existencias propias (MRP): la OC se generó por menos
+                 de lo que pide la solicitud porque este costeo ya tiene parte en el
+                 almacén. Se avisa porque en tela el remanente puede ser de otro
+                 lote de tintura y no servir -- la OC está en borrador y la cantidad
+                 es editable. -->
+            <div v-if="neteoOc.length" class="mb-2.5 rounded-lg bg-blue-50 ring-1 ring-blue-200 px-3 py-2">
+              <p class="text-[12px] font-medium text-blue-900 mb-1">Se descontó lo que ya tienes en almacén</p>
+              <table class="w-full text-[11.5px] text-blue-900">
+                <tbody>
+                  <tr v-for="n in neteoOc" :key="n.item_code">
+                    <td class="py-0.5 pr-2">{{ n.item_code }}</td>
+                    <td class="py-0.5 pr-2 text-right tabular-nums">la solicitud pide {{ n.solicitud.toLocaleString('es-MX') }}</td>
+                    <td class="py-0.5 pr-2 text-right tabular-nums">ya tienes {{ n.ya_tienes.toLocaleString('es-MX') }}</td>
+                    <td class="py-0.5 text-right tabular-nums font-semibold">se compran {{ n.comprar.toLocaleString('es-MX') }} {{ n.uom }}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <p class="text-[11px] text-blue-800 mt-1">Si ese material no sirve para este pedido (otro lote de tintura, por ejemplo), sube la cantidad en la orden antes de validarla.</p>
+            </div>
 
             <!-- Un grupo por proveedor: sus materiales + sus 4 botones, en el orden
                  real del proceso -- Solicitud de cotización / Presupuesto / OC /
@@ -1758,16 +1847,38 @@
                   :class="loteDocBtnClass(loteDocOpen.supplier === grp.supplier && loteDocOpen.tab === 'recibo', grp.po?.receipt_validated)"
                   @click="toggleLoteDoc(loteActivo, grp, 'recibo')"
                 ><svg class="w-3 h-3 transition-transform" :class="{ 'rotate-90': loteDocOpen.supplier === grp.supplier && loteDocOpen.tab === 'recibo' }" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg><svg v-if="grp.po?.receipt_validated" class="w-3 h-3 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>{{ grp.po?.receipt ? grp.po.receipt.name : 'Recibo de compra' }}</button>
+
+                <!-- Último paso: la factura del proveedor por lo recibido (índigo cuando ya está validada). -->
+                <button
+                  :disabled="advancing || !grp.po?.receipt_validated" class="doc-action"
+                  :class="grp.po?.factura?.docstatus === 1 ? 'border-indigo-500 text-indigo-700 bg-indigo-50'
+                    : loteDocOpen.supplier === grp.supplier && loteDocOpen.tab === 'factura' ? 'border-brand-500 text-brand-700 bg-brand-50'
+                    : grp.po?.factura ? 'border-amber-400 text-amber-700 bg-amber-50' : ''"
+                  :title="!grp.po?.receipt_validated ? 'Primero valida el recibo de compra' : ''"
+                  @click="toggleLoteDoc(loteActivo, grp, 'factura')"
+                ><svg class="w-3 h-3 transition-transform" :class="{ 'rotate-90': loteDocOpen.supplier === grp.supplier && loteDocOpen.tab === 'factura' }" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg><svg v-if="grp.po?.factura?.docstatus === 1" class="w-3 h-3 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>{{ grp.po?.factura ? `${grp.po.factura.name}${grp.po.factura.docstatus === 1 ? '' : ' · borrador'}` : 'Factura de compra' }}</button>
               </div>
 
-              <div v-if="loteDocOpen.supplier === grp.supplier && loteDocOpen.tab !== 'recibo' && docCompra" :id="`doc-hl-${docCompra.name}`" :class="['mt-2.5 pt-2.5 border-t border-dashed border-surface-border', { 'doc-highlight-flash': highlightTarget === docCompra.name }]">
+              <div v-if="loteDocOpen.supplier === grp.supplier && loteDocOpen.tab === 'factura'" class="mt-2.5 pt-2.5 border-t border-dashed border-surface-border">
+                <FacturaCompraPanel
+                  :doc="pinvDoc" :form="pinvForm" :validated="pinvValidated" :proveedor="grp.supplier"
+                  :advancing="advancing" :payment-terms-options="cotDefaults.payment_terms_templates"
+                  :preview-url="pinvDoc ? printUrl('Purchase Invoice', pinvDoc.name) : ''" :preview-key="previewKey"
+                  @crear="crearFacturaInline" @guardar="guardarPinv" @validar="validarFacturaInline"
+                  @descargar="downloadPdf('Purchase Invoice', pinvDoc.name)" @imprimir="printDocView('Purchase Invoice', pinvDoc.name)"
+                  @ampliar="openPdf('Purchase Invoice', pinvDoc.name)"
+                />
+              </div>
+              <div v-if="loteDocOpen.supplier === grp.supplier && !['recibo', 'factura'].includes(loteDocOpen.tab) && docCompra" :id="`doc-hl-${docCompra.name}`" :class="['mt-2.5 pt-2.5 border-t border-dashed border-surface-border', { 'doc-highlight-flash': highlightTarget === docCompra.name }]">
                 <PurchaseDocPanel
                   :doc="docCompra" :items="docCompraItems" :form="docCompraForm"
                   :desk-route="DOC_COMPRA[loteDocOpen.tab].desk"
                   :payment-terms-options="cotDefaults.payment_terms_templates" :terms-options="cotDefaults.terms"
                   :show-pull-prices="loteDocOpen.tab === 'oc'"
                   :editable-uom="docCompra.doctype === 'Purchase Order'"
-                  :help-text="loteDocOpen.tab === 'oc' ? 'Precio y UDM se ajustan aquí. Por defecto trae el precio del costeo (si la UDM sigue igual) o el del Presupuesto de proveedor si generaste uno — Jalar precios lo vuelve a calcular.' : ''"
+                  :editable-supplier="docCompra.doctype === 'Purchase Order'"
+                  :editable-qty="docCompra.doctype !== 'Purchase Order'"
+                  :help-text="loteDocOpen.tab === 'oc' ? 'Proveedor, precio y UDM se ajustan aquí. Por defecto trae el precio del costeo (si la UDM sigue igual) o el del Presupuesto de proveedor si generaste uno — Jalar precios lo vuelve a calcular. Cambiar de proveedor o de UDM recalcula la cantidad y el precio solos. La cantidad no se edita a mano -- ya respeta la Solicitud de Material.' : ''"
                   :advancing="advancing"
                   :inline-preview-url="printUrl(docCompra.doctype, docCompra.name)" :preview-key="previewKey"
                   :requires-review="docCompra.requiere_doble_validacion" :reviewed="docCompra.revisado_yelke"
@@ -1791,12 +1902,146 @@
             </div>
           </div>
 
+              <!-- OM general por producto: de aquí se arma la OM de cada orden de maquila. -->
+              <OmGeneralEditor
+                class="mb-4" :costeo="docName" :medidas-templates="medidasTemplates"
+                :tablas-de-plantilla="tablasDePlantilla" :show-toast="showToast"
+                @saved="subPo && loadOm(subPo.name)"
+              />
+
               <!-- Flujo del lote: un CARRIL por producto -- sus paradas (talleres) en
                    orden, con el producto terminado al final. Click en una tarjeta =
                    abrir su detalle abajo. -->
               <div class="border-t border-surface-border pt-3">
                 <p class="section-title mb-3">Flujo de este lote</p>
-                <div class="space-y-4">
+
+                <!-- Una RAMA por pieza, con SOLO los pasos por los que esa pieza
+                     pasa: la espalda va directo del corte a la confección, el
+                     frente lleva tres etapas. La vista por producto (abajo, para
+                     costeos sin piezas declaradas) repetía las mismas cuatro
+                     tarjetas en todas. -->
+                <!-- MATRIZ pieza × etapa. Columnas fijas por etapa: una pieza que
+                     se brinca una etapa deja "no aplica" en su columna en vez de
+                     recorrer las demás, para poder comparar las piezas de un
+                     vistazo. La selección es por celda y cruza talleres: marcas
+                     dos mangas del bordado y los puños del reflejante, y salen
+                     dos órdenes, una por taller. -->
+                <div v-if="loteActivo.ramas && loteActivo.ramas.length" class="space-y-3">
+                  <div class="flex items-start justify-between gap-4 flex-wrap">
+                    <p class="text-[12px] font-semibold text-ink flex items-center gap-1.5">
+                      <svg class="w-3.5 h-3.5 text-ink-light" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M16 4l4 4-3 1v11H7V9L4 8l4-4 2 2h4l2-2z"/></svg>
+                      {{ paradaProductosTexto(loteActivo.productos) }}
+                    </p>
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                      <span v-for="c in contadoresRamas" :key="c.k" class="text-[11.5px] px-2 py-0.5 rounded-full font-medium" :class="c.cls">{{ c.n }} {{ c.txt }}</span>
+                    </div>
+                  </div>
+
+                  <div class="overflow-x-auto -mx-1 px-1">
+                    <div class="w-max min-w-full">
+                      <!-- encabezados de columna -->
+                      <div class="flex gap-2.5 items-end pb-1.5">
+                        <div class="w-32 flex-shrink-0 text-[11px] font-semibold text-ink-light uppercase tracking-wide">Pieza</div>
+                        <div v-for="e in loteActivo.rama_etapas" :key="e.parada_id" class="w-56 flex-shrink-0 border-b-2 border-surface-border pb-1.5">
+                          <div class="flex items-end justify-between gap-2">
+                            <div class="min-w-0">
+                              <p class="text-[12.5px] font-semibold text-ink leading-tight"><span class="font-mono text-ink-xlight mr-1">{{ e.orden }}</span>{{ e.titulo }}</p>
+                              <p class="text-[11px] text-ink-muted truncate">{{ e.supplier }}</p>
+                              <p class="text-[10.5px] text-ink-light tabular-nums">${{ e.precio_prenda.toLocaleString('es-MX', { minimumFractionDigits: 2 }) }} por prenda</p>
+                            </div>
+                            <button v-if="e.listas" type="button" class="flex-shrink-0 text-[11px] px-1.5 py-1 rounded border border-surface-border bg-white hover:bg-surface-raised whitespace-nowrap" @click="toggleColumna(e)">
+                              {{ columnaTodaSel(e) ? 'Quitar' : `Listas (${e.listas})` }}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- una fila por pieza -->
+                      <div v-for="r in loteActivo.ramas" :key="r.pieza" class="flex gap-2.5 items-stretch py-1 border-b border-surface-border/50 last:border-0">
+                        <div class="w-32 flex-shrink-0 flex flex-col justify-center">
+                          <span class="text-[13px] font-semibold text-ink">{{ r.pieza }}</span>
+                          <span class="text-[10.5px] text-ink-muted">{{ r.por_prenda > 1 ? `×${r.por_prenda} por prenda · ${(r.por_prenda * prendasDelLote()).toLocaleString('es-MX')} pzas` : `${prendasDelLote().toLocaleString('es-MX')} pzas` }}</span>
+                        </div>
+                        <div v-for="e in loteActivo.rama_etapas" :key="e.parada_id" class="w-56 flex-shrink-0 flex">
+                          <template v-if="!celdaDe(r, e.parada_id)">
+                            <div class="flex-1 flex items-center gap-2 text-[11px] text-ink-xlight">
+                              <span class="flex-1 border-t border-dashed border-surface-border"></span>no aplica<span class="flex-1 border-t border-dashed border-surface-border"></span>
+                            </div>
+                          </template>
+                          <template v-else>
+                            <button
+                              type="button"
+                              :disabled="celdaDe(r, e.parada_id).estado === 'bloqueado'"
+                              :aria-pressed="celdaSeleccionada(r.pieza, e.parada_id)"
+                              class="flex-1 text-left rounded-lg px-2.5 py-2 flex items-start gap-2 transition-colors"
+                              :class="celdaClass(celdaDe(r, e.parada_id), r.pieza, e)"
+                              @click="celdaDe(r, e.parada_id).estado === 'listo' ? marcarCelda(celdaDe(r, e.parada_id), r.pieza, e.parada_id) : abrirCelda(celdaDe(r, e.parada_id), r.pieza)"
+                            >
+                              <span v-if="celdaDe(r, e.parada_id).estado === 'listo'" class="w-4 h-4 mt-0.5 rounded flex-shrink-0 flex items-center justify-center border" :class="celdaSeleccionada(r.pieza, e.parada_id) ? 'bg-brand-500 border-brand-500' : 'bg-white border-surface-border'">
+                                <svg v-if="celdaSeleccionada(r.pieza, e.parada_id)" class="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="4"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                              </span>
+                              <svg v-else-if="celdaDe(r, e.parada_id).estado === 'recibido'" class="w-4 h-4 mt-0.5 flex-shrink-0" :class="celdaDe(r, e.parada_id).facturado ? 'text-indigo-600' : 'text-green-600'" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.7-9.3a1 1 0 00-1.4-1.4L9 10.6 7.7 9.3a1 1 0 00-1.4 1.4l2 2a1 1 0 001.4 0l4-4z" clip-rule="evenodd"/></svg>
+                              <span v-else class="w-4 h-4 mt-0.5 flex-shrink-0"></span>
+                              <span class="min-w-0">
+                                <span class="block text-[11.5px] font-semibold text-ink leading-tight">{{ celdaDe(r, e.parada_id).servicio || celdaDe(r, e.parada_id).titulo }}</span>
+                                <span class="block text-[10.5px]" :class="pasoEstadoColor(celdaDe(r, e.parada_id))">{{ pasoEstadoTexto(celdaDe(r, e.parada_id)) }}</span>
+                              </span>
+                            </button>
+                          </template>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- barra de selección: una orden por taller -->
+                  <div v-if="gruposSel.length" class="rounded-lg bg-brand-50 ring-1 ring-brand-200 px-3 py-2.5 flex items-center gap-3 flex-wrap">
+                    <div class="flex-1 flex gap-2 flex-wrap min-w-0">
+                      <div v-for="g in gruposSel" :key="g.parada_id" class="rounded-md bg-white ring-1 ring-surface-border px-2.5 py-1.5">
+                        <p class="text-[11.5px] font-semibold text-ink">{{ g.supplier }} · {{ g.titulo }}</p>
+                        <p class="text-[11px] text-ink-muted">{{ g.piezas.join(', ') }}</p>
+                      </div>
+                    </div>
+                    <button type="button" class="doc-action flex-shrink-0" @click="limpiarCeldas">Limpiar</button>
+                    <button type="button" :disabled="advancing" class="flex-shrink-0 h-9 px-4 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="crearOrdenesSeleccion">
+                      {{ gruposSel.length > 1 ? `Crear ${gruposSel.length} órdenes` : 'Crear orden' }}
+                    </button>
+                  </div>
+                  <p v-else class="text-[11.5px] text-ink-muted">Marca las piezas listas — de uno o varios talleres — para generar sus órdenes de subcontratación.</p>
+
+                  <!-- Después de las ramas: donde se unen las piezas (confección) y, si la
+                       prenda armada todavía pasa por más talleres (acabado...), cada uno
+                       en orden. Sin ensamble intermedio es solo la tarjeta final. -->
+                  <div
+                    v-for="(t, i) in cadenaFinal" :key="t.parada_id"
+                    class="rounded-lg border border-surface-border bg-white p-3 flex items-center gap-4 flex-wrap"
+                  >
+                    <div class="min-w-0">
+                      <p class="text-[12.5px] font-semibold text-ink"><span class="font-mono text-ink-xlight mr-1">{{ loteActivo.rama_etapas.length + 1 + i }}</span>{{ t.titulo }}</p>
+                      <p class="text-[11px] text-ink-muted">{{ t.supplier }}<span v-if="t.facturado" class="ml-1.5 text-indigo-700 font-medium">· facturado</span></p>
+                    </div>
+                    <div v-if="t.arma_prenda" class="flex-1 min-w-[160px]">
+                      <p class="text-[11.5px] font-medium text-ink mb-1">{{ t.piezas_listas }} de {{ t.piezas_total }} piezas listas</p>
+                      <div class="h-1.5 rounded bg-surface-raised overflow-hidden">
+                        <div class="h-full bg-green-500 rounded" :style="{ width: (t.piezas_listas / t.piezas_total * 100) + '%' }"></div>
+                      </div>
+                    </div>
+                    <p v-else class="flex-1 min-w-[160px] text-[11.5px] text-ink-muted">Recibe la prenda armada de {{ cadenaFinal[i - 1].supplier }}</p>
+                    <button
+                      type="button"
+                      :disabled="advancing || t.estado !== 'listo'"
+                      class="flex-shrink-0 h-9 px-4 text-[13px] font-semibold rounded-lg disabled:opacity-50"
+                      :class="t.estado === 'listo' ? 'text-white bg-brand-500 hover:bg-brand-600' : 'text-ink-muted bg-surface-raised'"
+                      @click="abrirConfeccion(t)"
+                    >
+                      {{ t.estado === 'listo' ? (t.arma_prenda ? 'Encargar confección' : 'Encargar')
+                         : t.estado === 'recibido' ? (t.arma_prenda ? 'Confección recibida' : 'Recibido')
+                         : t.estado === 'bloqueado' ? (t.arma_prenda ? `Faltan ${t.piezas_total - t.piezas_listas} piezas` : 'Espera el paso anterior')
+                         : 'Ver encargo' }}
+                    </button>
+                  </div>
+                </div>
+
+                <div v-else class="space-y-4">
                   <div v-for="track in tracksLote" :key="track.finished_item">
                     <p class="text-[12px] font-semibold text-ink mb-1.5 flex items-center gap-1.5">
                       <svg class="w-3.5 h-3.5 text-ink-light" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M16 4l4 4-3 1v11H7V9L4 8l4-4 2 2h4l2-2z"/></svg>
@@ -1842,7 +2087,70 @@
                 </div>
               </div>
 
+            <!-- Entrega del lote al cliente: se habilita cuando el lote terminó toda su
+                 maquila; la remisión sale con lo que produjo ESTE lote y del almacén
+                 donde quedaron las prendas (ver crear_remision con lote_ref). -->
+            <div v-if="loteActivo.entrega" class="rounded-lg border p-3 flex items-start gap-4 flex-wrap"
+                 :class="loteActivo.entrega.lista ? 'border-green-200 bg-green-50/60' : 'border-surface-border bg-white'">
+              <div class="min-w-0 flex-1">
+                <p class="text-[12.5px] font-semibold text-ink">Entrega del {{ loteActivo.lote_ref }} al cliente</p>
+                <p v-if="!loteActivo.entrega.producido" class="text-[11.5px] text-ink-muted mt-0.5">Se habilita cuando el lote termine su producción (último taller recibido).</p>
+                <table v-else class="mt-1.5 text-[12px]">
+                  <thead><tr class="text-[10.5px] text-ink-light text-left"><th class="pr-4 font-medium">Producto</th><th class="pr-4 font-medium text-right">Producido</th><th class="pr-4 font-medium text-right">Ya en remisión</th><th class="font-medium text-right">Por entregar</th></tr></thead>
+                  <tbody>
+                    <tr v-for="(d, item) in loteActivo.entrega.productos" :key="item">
+                      <td class="pr-4 text-ink">{{ item }}</td>
+                      <td class="pr-4 text-right tabular-nums">{{ (d.producido || 0).toLocaleString('es-MX') }}</td>
+                      <td class="pr-4 text-right tabular-nums text-ink-muted">{{ (d.entregado || 0).toLocaleString('es-MX') }}</td>
+                      <td class="text-right tabular-nums font-medium" :class="d.pendiente > 0 ? 'text-ink' : 'text-ink-light'">{{ (d.pendiente || 0).toLocaleString('es-MX') }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div v-if="loteActivo.entrega.remisiones.length" class="flex flex-wrap items-center gap-1.5 mt-2">
+                  <span class="text-[11px] text-ink-light">Remisiones de este lote:</span>
+                  <button v-for="r in loteActivo.entrega.remisiones" :key="r.name" type="button"
+                          class="text-[11px] px-2 py-0.5 rounded-full ring-1 hover:bg-white"
+                          :class="r.docstatus === 1 ? 'ring-green-200 text-green-700' : 'ring-surface-border text-ink-muted'"
+                          @click="irARemision(r.name)">{{ r.name }} · {{ r.docstatus === 1 ? 'validada' : 'borrador' }}</button>
+                </div>
+              </div>
+              <button
+                type="button"
+                :disabled="advancing || !loteActivo.entrega.lista"
+                class="flex-shrink-0 h-9 px-4 text-[13px] font-semibold rounded-lg disabled:opacity-50"
+                :class="loteActivo.entrega.lista ? 'text-white bg-brand-500 hover:bg-brand-600' : 'text-ink-muted bg-surface-raised'"
+                @click="crearRemisionLote(loteActivo.lote_ref)"
+              >
+                {{ loteActivo.entrega.lista ? `Crear remisión del ${loteActivo.lote_ref} (${loteActivo.entrega.pendiente.toLocaleString('es-MX')} prendas)`
+                   : loteActivo.entrega.producido && !loteActivo.entrega.pendiente ? 'Todo el lote ya está en remisión'
+                   : 'Esperando fin de producción' }}
+              </button>
+            </div>
+
             <div v-if="paradaActiva" class="border-t border-surface-border pt-3 space-y-3">
+              <!-- SIGUIENTE PASO. Crear el encargo es solo el primero de cuatro, y
+                   al terminarlo la pantalla no decía qué sigue. Esto lee el estado
+                   real de la parada y deja una sola acción a la vista; los cuatro
+                   documentos siguen abajo para consultarlos cuando haga falta. -->
+              <div v-if="guiaParada" class="rounded-lg px-3 py-2.5 flex items-center gap-3 flex-wrap" :class="guiaParada.cls">
+                <div class="flex-1 min-w-0">
+                  <p class="text-[12.5px] font-semibold text-ink">{{ guiaParada.titulo }}</p>
+                  <p class="text-[11.5px] text-ink-muted">{{ guiaParada.detalle }}</p>
+                </div>
+                <button
+                  v-if="guiaParada.accion"
+                  type="button" :disabled="advancing"
+                  class="flex-shrink-0 h-9 px-4 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50"
+                  @click="guiaParada.accion()"
+                >{{ guiaParada.accionTexto }}</button>
+                <button
+                  v-if="guiaParada.alterna"
+                  type="button" :disabled="advancing"
+                  class="flex-shrink-0 text-[12px] text-brand-600 hover:text-brand-700"
+                  @click="guiaParada.alterna()"
+                >{{ guiaParada.alternaTexto }}</button>
+              </div>
+
               <!-- Flujo de esta etapa: Orden de compra / Orden de subcontratación / Transferencia / Recibo --
                    mismo patrón de 4 botones desplegables que materia prima, con el flujo real de
                    subcontratación (no aplica RFQ/Presupuesto: el taller ya tiene precio pactado en la OC). -->
@@ -1855,21 +2163,28 @@
 
                 <button
                   :disabled="advancing || paradaActiva.po_docstatus !== 1" class="doc-action"
-                  :class="loteDocBtnClass(subStepOpen === 'sco', paradaActiva.sco_docstatus === 1)"
+                  :class="loteDocBtnClass(subStepOpen === 'sco', pasoHecho('sco'))"
                   @click="openSubStepSco"
-                ><svg class="w-3 h-3 transition-transform" :class="{ 'rotate-90': subStepOpen === 'sco' }" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg><svg v-if="paradaActiva.sco_docstatus === 1" class="w-3 h-3 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>{{ paradaActiva.sco || 'Orden de subcontratación' }}</button>
+                ><svg class="w-3 h-3 transition-transform" :class="{ 'rotate-90': subStepOpen === 'sco' }" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg><svg v-if="pasoHecho('sco')" class="w-3 h-3 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>{{ paradaActiva.sco || 'Orden de subcontratación' }}</button>
 
                 <button
                   :disabled="advancing || paradaActiva.sco_docstatus !== 1" class="doc-action"
-                  :class="loteDocBtnClass(subStepOpen === 'transfer', paradaActiva.transfer_done)"
+                  :class="loteDocBtnClass(subStepOpen === 'transfer', pasoHecho('transfer'))"
                   @click="subStepOpen = 'transfer'"
-                ><svg class="w-3 h-3 transition-transform" :class="{ 'rotate-90': subStepOpen === 'transfer' }" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg><svg v-if="paradaActiva.transfer_done" class="w-3 h-3 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>{{ transDoc?.name || 'Transferencia' }}</button>
+                ><svg class="w-3 h-3 transition-transform" :class="{ 'rotate-90': subStepOpen === 'transfer' }" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg><svg v-if="pasoHecho('transfer')" class="w-3 h-3 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>{{ transDoc?.name || 'Transferencia' }}</button>
 
                 <button
                   :disabled="advancing || !paradaActiva.transfer_done" class="doc-action"
-                  :class="loteDocBtnClass(subStepOpen === 'recibo', paradaActiva.receipt_validated)"
+                  :class="loteDocBtnClass(subStepOpen === 'recibo', pasoHecho('recibo'))"
                   @click="subStepOpen = 'recibo'"
-                ><svg class="w-3 h-3 transition-transform" :class="{ 'rotate-90': subStepOpen === 'recibo' }" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg><svg v-if="paradaActiva.receipt_validated" class="w-3 h-3 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>{{ scr?.name || 'Recibo de subcontratación' }}</button>
+                ><svg class="w-3 h-3 transition-transform" :class="{ 'rotate-90': subStepOpen === 'recibo' }" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg><svg v-if="pasoHecho('recibo')" class="w-3 h-3 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>{{ scr?.name || 'Recibo de subcontratación' }}</button>
+
+                <button
+                  :disabled="advancing || !paradaActiva.receipt_validated" class="doc-action"
+                  :class="facturaParadaHecha ? 'border-indigo-500 text-indigo-700 bg-indigo-50' : subStepOpen === 'factura' ? 'border-brand-500 text-brand-700 bg-brand-50' : ''"
+                  :title="!paradaActiva.receipt_validated ? 'Primero valida el recibo del taller' : ''"
+                  @click="subStepOpen = 'factura'; abrirFacturaMaquila()"
+                ><svg class="w-3 h-3 transition-transform" :class="{ 'rotate-90': subStepOpen === 'factura' }" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg><svg v-if="facturaParadaHecha" class="w-3 h-3 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>Factura de maquila</button>
               </div>
 
               <!-- Orden de compra -->
@@ -1886,6 +2201,7 @@
                       :doc="subPo" :items="subItems" :form="subForm" desk-route="purchase-order"
                       :payment-terms-options="cotDefaults.payment_terms_templates" :terms-options="cotDefaults.terms"
                       show-preview-button :advancing="advancing"
+                      :inline-preview-url="printUrl('Purchase Order', subPo.name)" :preview-key="previewKey"
                       :requires-review="subPo.requiere_doble_validacion" :reviewed="subPo.revisado_yelke"
                       :reviewed-by="subPo.revisado_por_yelke" :reviewed-at="subPo.revisado_en_yelke"
                       :puede-revisar="permisosValidacion.puede_revisar" :puede-aprobar="permisosValidacion.puede_aprobar"
@@ -1893,11 +2209,11 @@
                       @send="openSend('Purchase Order', subPo.name, subPo.contact_email, subPo.contact_mobile)"
                     />
                   </div>
-                  <p v-if="!omEsMaestra" class="text-[11.5px] text-ink-light mt-2">Esta ficha técnica se heredó de otra etapa del proyecto — solo se edita desde la primera.</p>
-                  <OrdenManufacturaForm
+                  <OmTallerView v-if="omDeOc.some((r) => r.origen === 'general')" class="mt-3" :registros="omDeOc" />
+                  <OrdenManufacturaForm v-else
                     class="mt-3"
                     :general="omGeneral" :om-cab="omCab" :om-dama="omDama" :om-proc="omProc" :om-tablas="omTablas" :om-archivos="omArchivos"
-                    :uploading="omUploading" :disabled="!omEsMaestra" :OM_CAB="OM_CAB" :OM_DAMA="OM_DAMA" :talla-total="tallaTotal"
+                    :uploading="omUploading" :disabled="!omEditable" :OM_CAB="OM_CAB" :OM_DAMA="OM_DAMA" :talla-total="tallaTotal"
                     :medidas-templates="medidasTemplates"
                     @add-proceso="addProceso" @remove-proceso="removeProceso" @add-tabla="addTabla" @add-tabla-plantilla="addTablaPlantilla" @remove-tabla="removeTabla"
                     @add-columna="addColumna" @remove-columna="removeColumna" @add-fila="addFila" @remove-fila="removeFila"
@@ -1908,13 +2224,15 @@
 
               <!-- Orden de subcontratación (SCO) -->
               <template v-if="subStepOpen === 'sco'">
-                <!-- Entregas de esta parada: una parada puede tener VARIAS (una
-                     por "ola" de sub-ensamblaje, ver parada_registrar_entrega) --
-                     no solo la primera que se ve abajo en detalle. -->
+                <!-- Encargos (Subcontracting Order) de esta parada: una parada puede
+                     tener VARIOS cuando el taller va entregando por tandas (ver
+                     parada_registrar_entrega). OJO con el vocabulario: cada uno es
+                     el ENCARGO al taller, no su entrega -- lo que el taller
+                     devuelve es el recibo de maquila, un paso después. -->
                 <div v-if="paradaActiva.sco" class="mb-3">
                   <div class="flex items-center justify-between mb-1.5">
-                    <span class="text-[11.5px] font-medium text-ink-muted uppercase tracking-wide">Entregas de esta parada</span>
-                    <button type="button" class="text-[11px] text-brand-600 hover:text-brand-700" @click="abrirNuevaEntrega">+ Otra entrega</button>
+                    <span class="text-[11.5px] font-medium text-ink-muted uppercase tracking-wide">Encargos a este taller</span>
+                    <button type="button" class="text-[11px] text-brand-600 hover:text-brand-700" @click="abrirNuevaEntrega">+ Otro encargo</button>
                   </div>
                   <div class="space-y-1">
                     <button
@@ -1924,12 +2242,15 @@
                       :class="scoSel && scoSel.name === e.sco ? 'bg-brand-50 ring-1 ring-brand-200' : 'hover:bg-surface-raised'"
                       @click="subStepOpen = 'sco'; verEntrega(e)"
                     >
-                      <span class="truncate text-ink">{{ e.referencia_entrega || 'Sin referencia' }}</span>
+                      <span class="min-w-0 text-left">
+                        <span class="block truncate text-ink">{{ e.referencia_entrega || 'Sin referencia' }}</span>
+                        <span class="block text-[10.5px] text-ink-light">{{ e.sco }}</span>
+                      </span>
                       <span class="flex items-center gap-2 flex-shrink-0 text-ink-light tabular-nums">
-                        <span>{{ (e.cantidad || 0).toLocaleString('es-MX') }}</span>
-                        <svg v-if="e.receipt_validated" class="w-3.5 h-3.5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-                        <span v-else-if="e.transfer_done" class="text-brand-600">enviado</span>
-                        <span v-else class="text-ink-xlight">pendiente</span>
+                        <span>{{ (e.cantidad || 0).toLocaleString('es-MX') }} prendas</span>
+                        <span v-if="e.receipt_validated" class="flex items-center gap-1 text-green-700"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>recibido</span>
+                        <span v-else-if="e.transfer_done" class="text-brand-600">enviado, falta recibir</span>
+                        <span v-else class="text-amber-700">por enviar</span>
                       </span>
                     </button>
                   </div>
@@ -1947,25 +2268,48 @@
                     <div class="flex items-center gap-2">
                       <input v-model.number="nuevaEntregaForm.cantidad" type="number" min="0" step="1" placeholder="Cantidad" class="field-input w-28" />
                       <select v-if="paradaActiva.sub_ensamblajes.length" v-model="nuevaEntregaForm.sub_ensamblaje" class="field-input flex-1">
-                        <option value="">— Elige el sub-ensamblaje —</option>
-                        <option v-for="s in paradaActiva.sub_ensamblajes" :key="s.nombre" :value="s.nombre">{{ s.nombre }}</option>
+                        <option value="">Todas las piezas, de una vez</option>
+                        <option v-for="s in paradaActiva.sub_ensamblajes" :key="s.nombre" :value="s.nombre">Solo {{ s.nombre }}</option>
                       </select>
                       <input v-else v-model="nuevaEntregaForm.referencia" type="text" placeholder="Referencia (opcional)" class="field-input flex-1" />
                     </div>
                     <div class="flex justify-end gap-2">
                       <button type="button" class="px-3 py-1.5 text-[12px] text-ink-muted hover:text-ink" @click="cerrarNuevaEntrega">Cancelar</button>
-                      <button type="button" :disabled="nuevaEntregaForm.loading" class="px-3 py-1.5 text-[12px] font-medium text-white bg-brand-500 rounded-md hover:bg-brand-600 disabled:opacity-50" @click="confirmarNuevaEntrega">{{ nuevaEntregaForm.loading ? 'Registrando…' : 'Registrar' }}</button>
+                      <button type="button" :disabled="nuevaEntregaForm.loading" class="px-3 py-1.5 text-[12px] font-medium text-white bg-brand-500 rounded-md hover:bg-brand-600 disabled:opacity-50" @click="confirmarNuevaEntrega">{{ nuevaEntregaForm.loading ? 'Encargando…' : 'Encargar' }}</button>
                     </div>
                   </div>
                 </div>
 
+                <!-- Una parada con varias piezas (Puños, Mangas...) NO necesita
+                     nada especial aquí: se encarga igual que cualquier otra, con
+                     la cantidad del lote, y el sistema abre esas prendas a piezas
+                     (los puños van 2, ver _piezas_por_prenda_de_po). Hubo un
+                     formulario aparte que pedía cantidad y pieza a mano; sobraba
+                     -- las dos cosas ya se saben. Encargar UNA sola pieza sigue
+                     disponible, pero donde tiene sentido: en "+ Otro encargo",
+                     para los pasos encadenados en el mismo taller que sí llegan
+                     por tandas (bordado -> sublimado -> bordado). -->
                 <div v-if="!paradaActiva.sco" class="text-center py-6">
                   <p class="text-sm font-medium text-ink mb-1">{{ paradaActiva.titulo }} · {{ paradaActiva.supplier }} — {{ loteActivoRef }}</p>
                   <template v-if="paradaActiva.productos.some((x) => x.qty > 0) || loteActivo.productos.some((x) => x.qty > 0)">
                     <p class="text-[12.5px] text-ink-muted mb-3">
                       Se encarga con la cantidad del lote ({{ paradaProductosTexto(paradaActiva.productos.some((x) => x.qty > 0) ? paradaActiva.productos : loteActivo.productos) }}) y fecha del lote.
+                      <template v-if="paradaActiva.sub_ensamblajes.length">
+                        <br />Incluye las {{ paradaActiva.sub_ensamblajes.length }} piezas ({{ paradaActiva.sub_ensamblajes.map((s) => s.nombre).join(', ') }}); los puños y demás se multiplican solos.
+                      </template>
                     </p>
-                    <button :disabled="advancing" class="px-4 py-2 text-sm font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="abrirParada()">Encargar a {{ paradaActiva.supplier }}</button>
+                    <!-- Un solo lugar para encargar. Cuando el lote tiene piezas,
+                         ese lugar es la MATRIZ de arriba: ahí se eligen las piezas
+                         y se crea una orden por taller. Aquí abajo solo se guía
+                         hacia allá -- antes convivían tres botones que hacían casi
+                         lo mismo y no se sabía cuál usar. Sin piezas declaradas la
+                         matriz no existe, y entonces sí este es el botón. -->
+                    <template v-if="piezasDeParada(paradaActiva.parada_id).length">
+                      <p class="text-[12.5px] text-ink-muted">
+                        Elige las piezas en la matriz de arriba y pulsa <strong class="text-ink">Crear orden</strong>.
+                      </p>
+                    </template>
+                    <button v-else :disabled="advancing" class="px-4 py-2 text-sm font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="abrirParada()">Encargar a {{ paradaActiva.supplier }}</button>
                   </template>
                   <template v-else>
                     <p class="text-[12.5px] text-ink-muted mb-3">Este lote todavía no tiene cantidad definida (nació de materia prima) — indícala aquí.</p>
@@ -1982,6 +2326,7 @@
                 </div>
 
                 <div v-else-if="scoSel" class="space-y-3">
+                  <EncargoResumen :sco="scoSel" :materiales="materialesSco" :piezas="piezasSco" :servicios="serviciosSco" :importe="importeSco" />
                   <div class="bg-white rounded-xl border border-surface-border p-4">
                     <div class="flex items-center justify-between mb-3">
                       <div class="flex items-center gap-2.5">
@@ -2000,36 +2345,19 @@
                     </div>
                   </div>
 
-                  <div class="bg-white rounded-xl border border-surface-border p-4">
-                    <div class="flex items-center justify-between mb-1.5">
-                      <p class="section-title">Costos adicionales</p>
-                      <button v-if="!scoValidated" class="add-link" @click="addCosto"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Costo</button>
-                    </div>
-                    <p v-if="!scoCostos.length" class="prod-empty mb-1">Sin costos adicionales.</p>
+                  <!-- Los costos adicionales de la orden de subcontratación NO los copia ERPNext al
+                       recibo: nunca llegaban al inventario ni a cuentas por pagar. Los fletes se
+                       capturan en la transferencia (ida) o en el recibo (regreso). Aquí solo se
+                       muestran los que ya existían, de solo lectura. -->
+                  <div v-if="scoCostos.length" class="bg-white rounded-xl border border-surface-border p-4">
+                    <p class="section-title mb-1.5">Costos adicionales (registro anterior)</p>
                     <div v-for="(c, i) in scoCostos" :key="i" class="flex items-center gap-2 mb-1.5">
-                      <input v-model="c.description" placeholder="Descripción" :disabled="scoValidated" class="field-input flex-1" />
-                      <input v-model.number="c.amount" type="number" min="0" step="0.01" placeholder="Importe" :disabled="scoValidated" class="field-input w-32 text-right" />
-                      <button v-if="!scoValidated" class="del-btn" @click="removeCosto(i)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
+                      <input v-model="c.description" disabled class="field-input flex-1" />
+                      <input v-model.number="c.amount" type="number" disabled class="field-input w-32 text-right" />
                     </div>
-                    <p class="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 mt-1 flex items-start gap-1.5">
-                      <svg class="w-3.5 h-3.5 flex-shrink-0 mt-px" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.71-3l-6.93-12a2 2 0 00-3.42 0l-6.93 12a2 2 0 001.71 3z"/></svg>
-                      <span>Esto solo se suma al total a pagar al taller — <strong>no se capitaliza</strong> al valor del material recibido. Para fletes que sí deban afectar el costo del producto (ida al taller, por ejemplo), captúralos en el paso "Transferencia".</span>
-                    </p>
+                    <p class="text-[11px] text-ink-muted mt-1">Los fletes se registran en la transferencia al taller (ida) o en el recibo del taller (regreso), donde sí se suman al costo del producto y a lo que se le debe al transportista.</p>
                   </div>
 
-                  <div v-if="scoSel.supplied_items.length" class="bg-white rounded-xl border border-surface-border p-4">
-                    <p class="section-title mb-2">Materia prima requerida (se transferirá al taller)</p>
-                    <table class="w-full text-sm">
-                      <thead><tr class="text-left text-xs font-semibold text-ink-light border-b border-surface-border"><th class="py-2">Material</th><th class="py-2 w-24 text-right">Cant.</th><th class="py-2 w-16">UOM</th></tr></thead>
-                      <tbody>
-                        <tr v-for="(m, i) in scoSel.supplied_items" :key="i" class="border-b border-surface-border/60">
-                          <td class="py-1.5 pr-2">{{ m.item_name || m.rm_item_code }}</td>
-                          <td class="py-1.5 pr-2 text-right">{{ m.required_qty }}</td>
-                          <td class="py-1.5 pr-2 text-ink-muted text-xs">{{ m.stock_uom }}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
 
                   <div class="flex items-center gap-2 flex-wrap bg-white rounded-xl border border-surface-border p-3">
                     <button class="doc-action" @click="openPdf('Subcontracting Order', scoSel.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>Vista previa</button>
@@ -2048,29 +2376,13 @@
                 <div v-if="scoValidated">
                   <div v-if="!transDoc" class="bg-white rounded-xl border border-surface-border p-4">
                     <p class="text-[12px] text-ink-muted mb-3">Crea el movimiento de materia prima (Stock Entry · Enviar a subcontratista) hacia el almacén del taller. Se crea en <b>borrador</b> aquí mismo para que ajustes almacenes y lo valides.</p>
-                    <div v-if="scoSel?.supplied_items?.length" class="overflow-x-auto">
-                      <table class="w-full text-sm">
-                        <thead><tr class="text-left text-xs font-semibold text-ink-light border-b border-surface-border"><th class="py-2">Material</th><th class="py-2 w-24 text-right">Cant.</th><th class="py-2 w-16">UOM</th></tr></thead>
-                        <tbody>
-                          <tr v-for="(m, i) in scoSel.supplied_items" :key="i" class="border-b border-surface-border/60">
-                            <td class="py-1.5 pr-2">{{ m.item_name || m.rm_item_code }}</td>
-                            <td class="py-1.5 pr-2 text-right">{{ m.required_qty }}</td>
-                            <td class="py-1.5 pr-2 text-ink-muted text-xs">{{ m.stock_uom }}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                    <p v-else class="prod-empty">La orden de subcontratación no tiene materia prima ligada (revisa el BOM de subcontratación).</p>
-                    <!-- Camino rápido: "ya le mandé el material" hace transferencia +
-                         validación + recibo en borrador de un jalón. El camino largo
-                         (crear la transferencia y revisarla antes de validar) se
-                         conserva para cuando hay que ajustar almacenes o cantidades. -->
-                    <div class="flex items-center gap-2 mt-3 flex-wrap">
-                      <p class="text-[11.5px] text-ink-muted">Al enviar, el recibo queda listo para que confirmes cuánto entregó el taller.</p>
-                      <div class="flex-1"></div>
-                      <button :disabled="advancing || !scoSel?.supplied_items?.length" class="doc-action" @click="transferirMaterial">Revisar transferencia antes</button>
-                      <button :disabled="advancing || !scoSel?.supplied_items?.length" class="h-8 px-4 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex items-center gap-1.5" @click="enviarMaterialTaller()"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>Enviar al taller</button>
-                    </div>
+                    <EncargoResumen v-if="scoSel" :sco="scoSel" :materiales="materialesSco" :piezas="piezasSco" :servicios="serviciosSco" :importe="importeSco" />
+                    <p v-else class="prod-empty">Selecciona el encargo para ver qué se le va a mandar al taller.</p>
+                    <!-- Sin botones aquí: la acción vive en la barra de "Siguiente
+                         paso", arriba. Este bloque solo muestra QUÉ se le va a
+                         mandar al taller; tener los mismos dos botones en los dos
+                         lugares obligaba a decidir cuál pulsar. -->
+                    <p class="text-[11.5px] text-ink-muted mt-3">Al enviar, el recibo queda listo para que confirmes cuánto entregó el taller.</p>
                   </div>
                   <template v-else>
                     <div class="bg-white rounded-xl border border-surface-border p-4">
@@ -2095,21 +2407,43 @@
                       <p v-if="!transValidated" class="text-[11px] text-ink-light -mt-2 mb-2">Cada material puede salir de un almacén distinto (ej. un semiterminado de Trabajo en Proceso, un avío comprado directo de Materia Prima) — ajusta el almacén por fila si hace falta.</p>
                       <div class="overflow-x-auto">
                         <table class="w-full text-sm">
-                          <thead><tr class="text-left text-xs font-semibold text-ink-light border-b border-surface-border"><th class="py-2">Material</th><th class="py-2 w-24 text-right">A transferir</th><th class="py-2 w-44">Almacén de origen</th><th class="py-2 w-24 text-right">Disponible</th><th class="py-2 w-16">UOM</th></tr></thead>
+                          <thead><tr class="text-left text-xs font-semibold text-ink-light border-b border-surface-border"><th class="py-2">Material</th><th class="py-2 w-24 text-right">A transferir</th><th class="py-2 w-44">Almacén de origen</th><th class="py-2 w-24 text-right">{{ transValidated ? 'Quedó en almacén' : 'Disponible' }}</th><th v-if="!transValidated && transDoc.items.some(it => (it.ya_en_taller || 0) > 0)" class="py-2 w-28 text-right">Ya en el taller</th><th class="py-2 w-16">UOM</th></tr></thead>
                           <tbody>
-                            <tr v-for="it in transDoc.items" :key="it.name" class="border-b border-surface-border/60">
-                              <td class="py-1.5 pr-2">{{ it.item_name || it.item_code }}</td>
-                              <td class="py-1.5 pr-2"><input v-if="!transValidated" v-model.number="it.qty" type="number" min="0" step="1" class="field-input text-right" /><span v-else class="block text-right">{{ it.qty }}</span></td>
+                            <!-- Un renglón por MATERIAL, no por pieza: al taller se le
+                                 entrega un montón de tela, no un corte por cada pieza
+                                 que la va a usar. El documento sí conserva el detalle
+                                 por pieza (ERPNext lo necesita para conciliar lo
+                                 consumido); cambiar aquí el total lo reparte entre
+                                 ellas en la misma proporción. -->
+                            <tr v-for="g in transAgrupado" :key="g.item_code" class="border-b border-surface-border/60">
                               <td class="py-1.5 pr-2">
-                                <select v-if="!transValidated" v-model="it.s_warehouse" class="field-input" @change="refrescarDisponibleFila(it)"><option value="">— Selecciona —</option><option v-for="w in flujo.warehouses" :key="w.name" :value="w.name">{{ w.warehouse_name || w.name }}</option></select>
-                                <span v-else class="text-ink-muted text-xs">{{ it.s_warehouse }}</span>
+                                {{ g.item_name || g.item_code }}
+                                <span v-if="g.filas.length > 1" class="ml-1.5 text-[11px] text-ink-muted">· para {{ g.filas.length }} piezas</span>
                               </td>
-                              <td class="py-1.5 pr-2 text-right" :class="(it.available ?? 0) < it.qty ? 'text-red-600 font-semibold' : 'text-ink-muted'">{{ it.available === null ? '—' : it.available }}</td>
-                              <td class="py-1.5 pr-2 text-ink-muted text-xs">{{ it.uom }}</td>
+                              <td class="py-1.5 pr-2"><input v-if="!transValidated" :value="g.qty" type="number" min="0" step="1" class="field-input text-right" @change="cambiarCantidadMaterial(g, $event.target.value)" /><span v-else class="block text-right tabular-nums">{{ g.qty.toLocaleString('es-MX', { maximumFractionDigits: 3 }) }}</span></td>
+                              <td class="py-1.5 pr-2">
+                                <select v-if="!transValidated" :value="g.s_warehouse" class="field-input" @change="cambiarAlmacenDeMaterial(g, $event.target.value)"><option value="">— Selecciona —</option><option v-for="w in flujo.warehouses" :key="w.name" :value="w.name">{{ w.warehouse_name || w.name }}</option></select>
+                                <span v-else class="text-ink-muted text-xs">{{ g.s_warehouse }}</span>
+                              </td>
+                              <td class="py-1.5 pr-2 text-right tabular-nums" :class="!transValidated && (g.available ?? 0) < g.qty ? 'text-red-600 font-semibold' : 'text-ink-muted'">{{ g.available === null ? '—' : g.available.toLocaleString('es-MX', { maximumFractionDigits: 3 }) }}</td>
+                              <td v-if="!transValidated && transDoc.items.some(x => (x.ya_en_taller || 0) > 0)" class="py-1.5 pr-2 text-right" :class="g.ya_en_taller > 0 ? 'text-amber-700 font-medium' : 'text-ink-xlight'">{{ g.ya_en_taller > 0 ? g.ya_en_taller : '—' }}</td>
+                              <td class="py-1.5 pr-2 text-ink-muted text-xs">{{ g.uom }}</td>
                             </tr>
                           </tbody>
                         </table>
                       </div>
+                      <!-- El descuento ya viene aplicado desde que se crea la
+                           transferencia (_descontar_lo_que_ya_tiene_el_taller): la
+                           regla es que mientras queden prendas por hacer el taller
+                           usa su sobrante. Aquí solo se avisa, sin botón: volver a
+                           descontarlo a mano lo restaría dos veces. -->
+                      <div v-if="!transValidated && transDoc.items.some(it => (it.ya_en_taller || 0) > 0)" class="mt-2 rounded-lg bg-amber-50 ring-1 ring-amber-200 px-3 py-2">
+                        <p class="text-[12px] text-amber-900">
+                          <strong>Ya se descontó</strong> el material que este taller tenía libre de una tanda anterior — la columna "Ya en el taller" es lo que se le restó, para no mandarle de más.
+                          Si ese sobrante no sirve, sube la cantidad a mano antes de validar. Cuando ya no queden prendas por hacer, pídeselo de vuelta en "Material en talleres".
+                        </p>
+                      </div>
+                      <p v-if="transValidated" class="text-[11px] text-ink-light mt-2">El material ya salió al almacén del taller. "Quedó en almacén" es lo que permaneció en el almacén de origen — no es un faltante.</p>
                       <p v-if="!transValidated && transDoc.items.some(it => (it.available ?? 0) < it.qty)" class="text-[12px] text-red-600 mt-2 flex items-start gap-1.5"><svg class="w-4 h-4 flex-shrink-0 mt-px" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.71-3l-6.93-12a2 2 0 00-3.42 0l-6.93 12a2 2 0 001.71 3z"/></svg>No hay stock suficiente en el almacén de origen. Cámbialo por el almacén donde recibiste la materia prima, o cómprala/recíbela primero (Recibo de compra).</p>
                     </div>
 
@@ -2121,6 +2455,9 @@
                       <p v-if="!transCostos.length" class="prod-empty mb-1">Sin costos adicionales (fletes, maniobras…) — se capitalizan al valor del material transferido.</p>
                       <div v-for="(c, i) in transCostos" :key="i" class="flex items-center gap-2 mb-1.5">
                         <input v-model="c.description" placeholder="Descripción" :disabled="transValidated" class="field-input flex-1" />
+                        <div class="w-56 flex-shrink-0" :title="c.poliza_flete ? 'Póliza ' + c.poliza_flete : 'A quién se le paga el flete'">
+                          <LinkInput v-model="c.proveedor_flete" doctype="Supplier" placeholder="Transportista…" :readonly="transValidated" :error="!transValidated && c.amount > 0 && !c.proveedor_flete" />
+                        </div>
                         <input v-model.number="c.amount" type="number" min="0" step="0.01" placeholder="Importe" :disabled="transValidated" class="field-input w-32 text-right" />
                         <button v-if="!transValidated" class="del-btn" @click="removeCostoTrans(i)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
                       </div>
@@ -2141,6 +2478,19 @@
                     </div>
                   </template>
                 </div>
+              </template>
+
+              <!-- Factura del taller por lo que ya entregó (todos sus lotes recibidos) -->
+              <template v-if="subStepOpen === 'factura'">
+                <FacturaCompraPanel
+                  :doc="pinvDoc" :form="pinvForm" :validated="pinvValidated" :proveedor="paradaActiva.supplier"
+                  :pendiente="Number(paradaActiva.maquila_pendiente) || 0" :habilitado="(Number(paradaActiva.maquila_pendiente) || 0) > 0"
+                  :advancing="advancing" :payment-terms-options="cotDefaults.payment_terms_templates"
+                  :preview-url="pinvDoc ? printUrl('Purchase Invoice', pinvDoc.name) : ''" :preview-key="previewKey"
+                  @crear="crearFacturaInline" @guardar="guardarPinv" @validar="validarFacturaInline"
+                  @descargar="downloadPdf('Purchase Invoice', pinvDoc.name)" @imprimir="printDocView('Purchase Invoice', pinvDoc.name)"
+                  @ampliar="openPdf('Purchase Invoice', pinvDoc.name)"
+                />
               </template>
 
               <!-- Recibo de subcontratación -->
@@ -2185,6 +2535,9 @@
                       <p v-if="!scrCostos.length" class="text-[12px] mb-1" :class="scrValidated ? 'text-ink-muted' : 'text-red-500'">{{ scrValidated ? 'Sin costos adicionales.' : 'Obligatorio -- agrega al menos uno (fletes, maniobras…), aunque sea con importe $0.' }}</p>
                       <div v-for="(c, i) in scrCostos" :key="i" class="flex items-center gap-2 mb-1.5">
                         <input v-model="c.description" placeholder="Descripción" :disabled="scrValidated" class="field-input flex-1" />
+                        <div class="w-56 flex-shrink-0" :title="c.poliza_flete ? 'Póliza ' + c.poliza_flete : 'A quién se le paga el flete'">
+                          <LinkInput v-model="c.proveedor_flete" doctype="Supplier" placeholder="Transportista…" :readonly="scrValidated" :error="!scrValidated && c.amount > 0 && !c.proveedor_flete" />
+                        </div>
                         <input v-model.number="c.amount" type="number" min="0" step="0.01" placeholder="Importe" :disabled="scrValidated" class="field-input w-32 text-right" />
                         <button v-if="!scrValidated" class="del-btn" @click="removeCostoScr(i)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
                       </div>
@@ -2233,10 +2586,10 @@
           :envio-pct="activeSO ? Math.round(related.delivery_per_delivered || 0) : null"
         />
       </div>
-      <div class="flex gap-5 items-start max-w-6xl mx-auto">
+      <div class="flex flex-col lg:flex-row gap-5 items-start max-w-6xl mx-auto">
 
-        <!-- Izquierda: datos de la remisión -->
-        <div class="w-80 flex-shrink-0 bg-white rounded-xl border border-surface-border p-5">
+        <!-- Izquierda: datos de la remisión (lo principal de la pantalla) -->
+        <div class="w-full lg:flex-1 lg:min-w-0 bg-white rounded-xl border border-surface-border p-5">
           <div class="flex items-center justify-between mb-1">
             <p class="text-sm font-semibold text-ink">Remisión (entrega)</p>
             <span v-if="related.delivery_notes.length > 1" class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">{{ related.delivery_notes.length }} remisiones</span>
@@ -2267,24 +2620,41 @@
             <p v-else-if="related.delivery_notes.some(d => d.docstatus === 0)" class="text-[11px] text-ink-light mb-3">Valida la remisión en borrador antes de crear otra.</p>
 
             <div v-if="dnDoc" :id="`doc-hl-${dnDoc.name}`" class="pt-3 border-t border-surface-border" :class="{ 'doc-highlight-flash': highlightTarget === dnDoc.name }">
+            <!-- Resumen de la remisión abierta -->
+            <div class="flex flex-wrap items-baseline gap-x-5 gap-y-1 mb-4 text-[12px] text-ink-muted">
+              <span><span class="text-sm font-semibold text-ink">{{ dnDoc.name }}</span></span>
+              <span>Cliente: <span class="text-ink">{{ dnDoc.customer_name || dnDoc.customer }}</span></span>
+              <span v-if="dnDoc.lote_ref">Lote: <span class="text-ink font-medium">{{ dnDoc.lote_ref }}</span></span>
+              <span>Prendas: <span class="text-ink tabular-nums">{{ dnDoc.items.reduce((a, it) => a + (Number(it.qty) || 0), 0).toLocaleString('es-MX') }}</span></span>
+              <span>Total: <span class="text-ink tabular-nums">{{ (dnDoc.grand_total || 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' }) }}</span></span>
+            </div>
+            <p v-if="dnDoc.lote_ref" class="-mt-2 mb-4 text-[11.5px] text-ink-light">Cantidades y almacén tomados de lo que produjo el {{ dnDoc.lote_ref }}.</p>
+            <div class="grid sm:grid-cols-2 gap-x-4">
+            <div>
             <label class="field-label">Dirección de envío <span class="text-ink-light font-normal">(si es distinta a la de facturación)</span></label>
             <select v-model="dnForm.shipping_address_name" class="field-input mb-3" :disabled="dnValidated">
               <option value="">— Misma que facturación —</option>
               <option v-for="a in (dnDoc.address_options || [])" :key="a.value" :value="a.value">{{ a.label }}</option>
             </select>
 
+            </div>
+            <div>
             <label class="field-label">Dirección de facturación</label>
             <select v-model="dnForm.customer_address" class="field-input mb-3" :disabled="dnValidated">
               <option value="">— Sin especificar —</option>
               <option v-for="a in (dnDoc.address_options || [])" :key="a.value" :value="a.value">{{ a.label }}</option>
             </select>
 
+            </div>
+            <div>
             <label class="field-label">Fecha de entrega</label>
             <input v-model="dnForm.posting_date" type="date" class="field-input mb-3" :disabled="dnValidated" />
-
-            <p class="text-[11px] font-semibold text-ink-muted uppercase tracking-wider mb-1.5">Costo de envío <span class="normal-case font-normal text-ink-light">(opcional)</span></p>
-            <label class="field-label">Proveedor de transporte</label>
+            </div>
+            <div>
+            <label class="field-label">Proveedor de transporte <span class="text-ink-light font-normal">(costo de envío, opcional)</span></label>
             <LinkInput v-model="dnForm.flete_proveedor" doctype="Supplier" placeholder="Paquetería / transportista…" :readonly="dnValidated" class="mb-3" />
+            </div>
+            <div>
             <label class="field-label">Costo de envío</label>
             <div class="flex items-center border border-surface-border rounded-lg focus-within:ring-2 focus-within:ring-brand-500/30 focus-within:border-brand-400 bg-white mb-1">
               <span class="pl-3 pr-1 text-sm text-ink-light select-none">$</span>
@@ -2293,15 +2663,17 @@
             <p v-if="!dnValidated" class="text-[11px] text-ink-light mb-3">Al validar se registra como póliza contable (cargo a Transporte y Fletes, contra la cuenta por pagar del proveedor).</p>
             <p v-else-if="dnDoc.flete_journal_entry" class="text-[11px] text-ink-light mb-3">Póliza: <a :href="`/app/journal-entry/${dnDoc.flete_journal_entry}`" target="_blank" class="text-brand-600 hover:underline">{{ dnDoc.flete_journal_entry }}</a></p>
             <p v-else class="mb-3"></p>
+            </div>
+            </div>
 
             <table class="w-full text-sm mb-3">
-              <thead><tr class="text-left text-xs font-semibold text-ink-light border-b border-surface-border"><th class="py-2">Producto</th><th class="py-2 w-20 text-right">Cant.</th><th class="py-2">Almacén</th><th class="py-2 w-20 text-right">Disponible</th></tr></thead>
+              <thead><tr class="text-left text-xs font-semibold text-ink-light border-b border-surface-border"><th class="py-2">Producto</th><th class="py-2 w-20 text-right">Cant.</th><th class="py-2">Almacén</th><th class="py-2 w-20 text-right">{{ dnValidated ? 'Quedó en almacén' : 'Disponible' }}</th></tr></thead>
               <tbody>
                 <tr v-for="it in dnDoc.items" :key="it.name" class="border-b border-surface-border/60">
                   <td class="py-1.5 pr-2">{{ it.item_name || it.item_code }}</td>
                   <td class="py-1.5 pr-2"><input v-model.number="it.qty" type="number" min="0" class="field-input text-right" :disabled="dnValidated" /></td>
                   <td class="py-1.5 pr-2"><select v-model="it.warehouse" class="field-input" :disabled="dnValidated"><option value="">— Selecciona —</option><option v-for="w in (dnDoc.warehouses || [])" :key="w.name" :value="w.name">{{ w.warehouse_name || w.name }}</option></select></td>
-                  <td class="py-1.5 pr-2 text-right" :class="(it.available ?? 0) < it.qty ? 'text-red-600 font-semibold' : 'text-ink-muted'">{{ it.available ?? '—' }}</td>
+                  <td class="py-1.5 pr-2 text-right" :class="!dnValidated && (it.available ?? 0) < it.qty ? 'text-red-600 font-semibold' : 'text-ink-muted'">{{ it.available ?? '—' }}</td>
                 </tr>
               </tbody>
             </table>
@@ -2327,9 +2699,9 @@
           </template>
         </div>
 
-        <!-- Derecha: vista previa del PDF -->
-        <div class="flex-1 min-w-0 bg-white rounded-xl border border-surface-border overflow-hidden">
-          <div v-if="!dnDoc" class="flex flex-col items-center justify-center gap-2 text-ink-light" style="height: 78vh;">
+        <!-- Derecha: vista previa del PDF (compacta; "Ampliar" la abre completa) -->
+        <div class="w-full lg:w-[380px] lg:flex-shrink-0 bg-white rounded-xl border border-surface-border overflow-hidden">
+          <div v-if="!dnDoc" class="flex flex-col items-center justify-center gap-2 text-ink-light" style="height: 60vh;">
             <svg class="w-10 h-10 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.2"><path stroke-linecap="round" stroke-linejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0l-2 5H6l-2-5m16 0H4m5 5v.01M15 18v.01"/></svg>
             <p class="text-[13px]">La vista previa aparecerá al crear la remisión</p>
           </div>
@@ -2337,8 +2709,8 @@
             <div class="flex items-center justify-end px-2 py-1.5 border-b border-surface-border">
               <button class="doc-action" @click="openPdf('Delivery Note', dnDoc.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5h-4m4 0v-4m0 4l-5-5"/></svg>Ampliar</button>
             </div>
-            <div style="height: 78vh; overflow: auto;">
-              <iframe :key="previewKey" :src="printUrl('Delivery Note', dnDoc.name)" style="width: 143%; height: 143%; transform: scale(0.7); transform-origin: top left; border: 0;" title="Vista previa de la remisión"></iframe>
+            <div style="height: 70vh; overflow: auto;">
+              <iframe :key="previewKey" :src="printUrl('Delivery Note', dnDoc.name)" style="width: 200%; height: 200%; transform: scale(0.5); transform-origin: top left; border: 0;" title="Vista previa de la remisión"></iframe>
             </div>
           </div>
         </div>
@@ -2347,14 +2719,10 @@
 
     <!-- ══════════ STEP 7 · FACTURAR ══════════ -->
     <div v-else-if="activeStep === 7" class="p-5 pb-20">
-      <!-- Tabs: Venta (cliente) | Compras (proveedores) -->
+      <!-- Solo la factura de VENTA: las de compra viven como último paso de cada flujo (Producción). -->
       <div class="max-w-6xl mx-auto mb-4">
         <ActiveSOSelector :sales-orders="related.sales_orders" :active-name="activeSOName" @update:active-name="setActiveSO" class="mb-3" />
         <div class="flex items-center gap-1.5 bg-green-50 text-green-700 text-[12px] font-medium px-3 py-2 rounded-lg mb-3 w-max"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>{{ related.delivery_notes.length > 1 ? `${related.delivery_notes.length} remisiones validadas` : `Remisión ${related.delivery_notes[0]?.name} validada` }} · mercancía entregada</div>
-        <div class="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5 w-max">
-          <button class="px-3.5 py-1.5 rounded-md text-[13px] font-medium transition-colors" :class="factTab === 'venta' ? 'bg-white text-ink shadow-sm' : 'text-ink-muted hover:text-ink'" @click="factTab = 'venta'">Venta (cliente)</button>
-          <button class="px-3.5 py-1.5 rounded-md text-[13px] font-medium transition-colors" :class="factTab === 'compras' ? 'bg-white text-ink shadow-sm' : 'text-ink-muted hover:text-ink'" @click="selectComprasTab">Compras (proveedores)</button>
-        </div>
       </div>
 
       <!-- ── VENTA ── -->
@@ -2432,84 +2800,6 @@
             </div>
             <div style="height: 78vh; overflow: auto;">
               <iframe :key="previewKey" :src="printUrl('Sales Invoice', related.sales_invoice.name)" style="width: 143%; height: 143%; transform: scale(0.7); transform-origin: top left; border: 0;" title="Vista previa de la factura de venta"></iframe>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── COMPRAS (cuentas por pagar) ── -->
-      <div v-show="factTab === 'compras'" class="flex gap-5 items-start max-w-6xl mx-auto">
-        <!-- Izquierda: fuentes facturables -->
-        <div class="w-72 flex-shrink-0 space-y-3">
-          <div class="bg-white rounded-xl border border-surface-border p-4">
-            <p class="section-title mb-2">Materiales (materia prima)</p>
-            <p v-if="!compras.materiales.length" class="prod-empty">Sin recibos de compra.</p>
-            <button v-for="m in compras.materiales" :key="m.name" class="w-full text-left p-2.5 rounded-lg border mb-1.5 transition-colors" :class="pinvSel && pinvSel.source_name === m.name ? 'border-brand-400 bg-brand-50' : 'border-surface-border hover:bg-surface-raised'" @click="selectCompra('Purchase Receipt', m)">
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-[13px] font-medium text-ink truncate">{{ m.supplier_name || m.supplier }}</span>
-                <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0" :class="facBadge(m.invoice).cls">{{ facBadge(m.invoice).txt }}</span>
-              </div>
-              <p class="text-[12px] text-ink-muted mt-0.5">{{ fmtC(m.base_net_total) }}</p>
-            </button>
-          </div>
-          <div class="bg-white rounded-xl border border-surface-border p-4">
-            <p class="section-title mb-2">Maquila (talleres)</p>
-            <p v-if="!compras.maquila.length" class="prod-empty">Sin órdenes de subcontratación.</p>
-            <button v-for="m in compras.maquila" :key="m.name" class="w-full text-left p-2.5 rounded-lg border mb-1.5 transition-colors" :class="pinvSel && pinvSel.source_name === m.name ? 'border-brand-400 bg-brand-50' : 'border-surface-border hover:bg-surface-raised'" @click="selectCompra('Purchase Order', m)">
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-[13px] font-medium text-ink truncate">{{ m.supplier_name || m.supplier }}</span>
-                <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0" :class="facBadge(m.invoice).cls">{{ facBadge(m.invoice).txt }}</span>
-              </div>
-              <p class="text-[12px] text-ink-muted mt-0.5">{{ fmtC(m.base_net_total) }}</p>
-            </button>
-          </div>
-        </div>
-
-        <!-- Derecha: detalle de la factura de compra -->
-        <div class="flex-1 min-w-0">
-          <div v-if="!pinvSel" class="bg-white rounded-xl border border-surface-border flex flex-col items-center justify-center gap-2 text-ink-light" style="height: 60vh;">
-            <svg class="w-10 h-10 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 14l2 2 4-4m4 9V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z"/></svg>
-            <p class="text-[13px]">Selecciona una compra para facturar</p>
-          </div>
-          <div v-else-if="!pinvDoc" class="bg-white rounded-xl border border-surface-border p-8 text-center">
-            <p class="text-sm font-medium text-ink">{{ pinvSel.supplier_name }}</p>
-            <p class="text-[13px] text-ink-muted mt-1 mb-4">Aún no tiene factura de compra registrada.</p>
-            <button :disabled="advancing" class="px-4 py-2 text-sm font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="generarFacturaCompra">Registrar factura de compra</button>
-          </div>
-          <div v-else class="flex gap-5 items-start">
-            <div class="w-72 flex-shrink-0 bg-white rounded-xl border border-surface-border p-4" :id="`doc-hl-${pinvDoc.name}`" :class="{ 'doc-highlight-flash': highlightTarget === pinvDoc.name }">
-              <div class="flex items-center justify-between mb-3">
-                <span class="text-sm font-semibold text-ink truncate">{{ pinvDoc.name }}</span>
-                <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full" :class="pinvValidated ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'">{{ pinvValidated ? 'Validada' : 'Borrador' }}</span>
-              </div>
-              <div><label class="field-label">Proveedor</label><div class="field-input bg-surface-raised/60 truncate mb-3">{{ pinvDoc.supplier_name || pinvDoc.supplier }}</div></div>
-              <label class="field-label">Folio del proveedor (factura)</label>
-              <input v-model="pinvForm.bill_no" :disabled="pinvValidated" class="field-input mb-3" placeholder="Nº de factura del proveedor" />
-              <label class="field-label">Fecha de factura</label>
-              <input v-model="pinvForm.posting_date" type="date" :disabled="pinvValidated" class="field-input mb-3" />
-              <label class="field-label">Vencimiento</label>
-              <input v-model="pinvForm.due_date" type="date" :disabled="pinvValidated" class="field-input mb-3" />
-              <label class="field-label">Condiciones de pago</label>
-              <select v-model="pinvForm.payment_terms_template" :disabled="pinvValidated" class="field-input mb-4"><option value="">— Sin plantilla —</option><option v-for="p in cotDefaults.payment_terms_templates" :key="p.name" :value="p.name">{{ p.name }}</option></select>
-              <div class="border-t border-surface-border pt-3 mb-4 flex justify-between text-[13px]"><span class="text-ink-muted">Total (neto)</span><span class="font-medium">{{ fmtC(pinvDoc.base_net_total) }}</span></div>
-              <div class="space-y-2">
-                <template v-if="!pinvValidated">
-                  <button :disabled="advancing" class="w-full h-9 text-sm font-medium text-ink border border-surface-border rounded-lg hover:bg-surface-raised disabled:opacity-50" @click="guardarPinv">Guardar cambios</button>
-                  <button :disabled="advancing" class="w-full h-9 text-sm font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex items-center justify-center gap-1.5" @click="validarPinv"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Validar factura</button>
-                </template>
-                <div class="grid grid-cols-3 gap-2 pt-1">
-                  <button class="doc-action justify-center" @click="downloadPdf('Purchase Invoice', pinvDoc.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>Descargar</button>
-                  <button class="doc-action justify-center" @click="printDocView('Purchase Invoice', pinvDoc.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>Imprimir</button>
-                  <button class="doc-action justify-center" @click="openPdf('Purchase Invoice', pinvDoc.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5h-4m4 0v-4m0 4l-5-5"/></svg>Ampliar</button>
-                </div>
-                <a class="doc-action justify-center w-full" :href="`/app/purchase-invoice/${pinvDoc.name}`" target="_blank"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>Abrir en ERPNext</a>
-              </div>
-              <div class="pt-3 mt-2 border-t border-surface-border">
-                <AttachmentsPanel doctype="Purchase Invoice" :docname="pinvDoc.name" />
-              </div>
-            </div>
-            <div class="flex-1 min-w-0 bg-white rounded-xl border border-surface-border overflow-hidden" style="height: 78vh; overflow: auto;">
-              <iframe :key="'pinv' + previewKey" :src="printUrl('Purchase Invoice', pinvDoc.name)" style="width: 143%; height: 143%; transform: scale(0.7); transform-origin: top left; border: 0;" title="Vista previa de la factura de compra"></iframe>
             </div>
           </div>
         </div>
@@ -2606,6 +2896,8 @@ import { useRoute, useRouter } from "vue-router";
 import PageHeader from "@/components/PageHeader.vue";
 import CosteoStepper from "@/components/CosteoStepper.vue";
 import LinkInput from "@/components/LinkInput.vue";
+import EncargoResumen from "@/components/EncargoResumen.vue";
+import FacturaCompraPanel from "@/components/FacturaCompraPanel.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import MaterializeProductModal from "@/components/MaterializeProductModal.vue";
 import HistorialModal from "@/components/HistorialModal.vue";
@@ -2617,6 +2909,8 @@ import ProductionProgressBar from "@/components/ProductionProgressBar.vue";
 import PurchaseDocPanel from "@/components/PurchaseDocPanel.vue";
 import ReporteFinalPanel from "@/components/ReporteFinalPanel.vue";
 import OrdenManufacturaForm from "@/components/OrdenManufacturaForm.vue";
+import OmGeneralEditor from "@/components/OmGeneralEditor.vue";
+import OmTallerView from "@/components/OmTallerView.vue";
 import ActiveSOSelector from "@/components/ActiveSOSelector.vue";
 import { db, call, openDesk as deskOpen, uploadFile, searchLink, fuzzyQuery, getLinkDisplayLabel } from "@/utils/frappe.js";
 import { useToast } from "@/composables/useToast.js";
@@ -3164,6 +3458,17 @@ let companyDefaultsReq = 0;
 // sobrescribiéndolos (y borrándolos si esa compañía no los tiene con el nombre
 // esperado).
 let cargandoDoc = false;
+const diagCompania = reactive({ faltantes: [] });
+let diagReq = 0;
+async function cargarDiagnosticoCompania(company) {
+  const req = ++diagReq;
+  if (!company) { diagCompania.faltantes = []; return; }
+  try {
+    const r = await call("costeo_yelke.compania_setup.diagnostico_compania", { company });
+    if (req === diagReq) diagCompania.faltantes = r?.faltantes || [];
+  } catch { if (req === diagReq) diagCompania.faltantes = []; }
+}
+watch(() => form.compania, (c) => cargarDiagnosticoCompania(c), { immediate: true });
 async function applyCompanyDefaults(company) {
   if (!company || cargandoDoc) return;
   const req = ++companyDefaultsReq;
@@ -3237,22 +3542,28 @@ const {
   selectReciboLote, guardarRecibo, validarRecibo,
   subOcs, subPo, subItems, subForm, subValidated,
   loadSubcontratos, crearSubcontratos, selectSub, guardarSub, validarSub, revisarSub,
-  flujo, scoSel, scoValidated, scoForm, scoCostos,
+  flujo, scoActivo, scoSel, scoValidated, materialesSco, piezasSco, serviciosSco, importeSco, scoForm, scoCostos, selectSco,
   guardarSco, validarSco, addCosto, removeCosto,
   transDoc, transForm, transCostos, transValidated, transferDone, transferirMaterial, guardarTrans, validarTransferencia, enviarMaterialTaller,
+  talleresSaldo, devolverMaterialTaller,
   addCostoTrans, removeCostoTrans,
   scr, scrForm, scrCostos, scrValidated, crearReciboSub, guardarScr, validarScr,
   addCostoScr, removeCostoScr,
   lotesProduccion, productosCosteo, loteActivoRef, loteParadaActiva, nuevoLoteForm,
   loteActivo, paradaActiva, tracksLote, paradaEstado,
   loadLotesProduccion, seleccionarLote, seleccionarParada, verParadaPo,
-  abrirNuevoLote, cerrarNuevoLote, crearNuevoLote, abrirParada, siguienteParadaPendiente, generarOcLote,
+  abrirNuevoLote, cerrarNuevoLote, crearNuevoLote, abrirParada, siguienteParadaPendiente, generarOcLote, neteoOc,
+  transAgrupado, cambiarCantidadMaterial, cambiarAlmacenMaterial,
   nuevaEntregaForm, abrirNuevaEntrega, cerrarNuevaEntrega, confirmarNuevaEntrega, verEntrega,
+  piezasSel, piezasDeParada, piezasListas, togglePiezaSel, irAPasoDePieza,
+  piezaFoco, pasoSeleccionado,
+  celdasSel, celdaSeleccionada, toggleCelda, limpiarCeldas, celdaDe,
+  toggleColumna, columnaTodaSel, gruposSel, crearOrdenesSeleccion, prendasDelLote,
   primeraEtapaQty, primeraEtapaLoading, primeraEtapaLimitado, sugerirPrimeraEtapaQty,
   crearRfqLote, crearSqLote,
-  omGeneral, omCab, omDama, omProc, omTablas, omArchivos, omUploading, omEsMaestra,
+  omGeneral, omCab, omDama, omProc, omTablas, omArchivos, omUploading, omEditable,
   addProceso, removeProceso, addTabla, removeTabla, addColumna, removeColumna, addFila, removeFila,
-  medidasTemplates, addTablaPlantilla,
+  medidasTemplates, addTablaPlantilla, tablasDePlantilla, omDeOc, loadOm,
   tallaTotal, onOmFile, removeArchivo,
   prodComplete, loadProdComplete, materiaPrimaPct, subcontratacionPct, mpLotes,
 } = useProduccion({ showToast, advancing, ensurePrintFmt, previewKey });
@@ -3267,6 +3578,14 @@ function aplicarAlmacenOrigenATodos(warehouse) {
     it.s_warehouse = warehouse;
     refrescarDisponibleFila(it);
   }
+}
+// Cambio de almacén desde la vista agrupada por material: se aplica a todas las
+// filas de ese material y se refresca la existencia una sola vez (todas comparten
+// almacén, así que el dato es el mismo para las tres o las seis).
+async function cambiarAlmacenDeMaterial(grupo, warehouse) {
+  const primera = cambiarAlmacenMaterial(grupo, warehouse);
+  await refrescarDisponibleFila(primera);
+  for (const f of grupo.filas) f.available = primera.available;
 }
 async function refrescarDisponibleFila(it) {
   if (!it.s_warehouse) { it.available = null; return; }
@@ -3305,6 +3624,251 @@ function loteDocBtnClass(open, validated) {
 }
 // Tarjeta de parada (taller) en el flujo del lote: verde si ya recibió; resaltada
 // si es la que se está viendo; gris si aún no.
+// --- Estilos de los pasos de una RAMA de pieza -----------------------------
+// El estado ya viene resuelto del backend (_ramas_por_pieza): recibido / enviado
+// / encargado / listo / bloqueado. Un paso bloqueado no es clicable: encargarlo
+// no tendría qué transferir.
+// El resaltado va por PIEZA, no por parada: varias piezas comparten taller, y
+// marcar por parada pintaba de golpe todas las de ese proveedor. Si eliges dos o
+// más piezas, las dos se pintan (ver pasoSeleccionado).
+// Abrir una celda de la matriz: selecciona su parada Y deja abajo el documento
+// que toca. Antes solo cambiaba la parada y el panel se quedaba en el paso
+// anterior -- parecía que el clic no había hecho nada y había que pulsar otra vez.
+async function marcarCelda(celda, pieza, paradaId) {
+  const yaEstaba = celdaSeleccionada(pieza, paradaId);
+  toggleCelda(pieza, paradaId);
+  // Al MARCAR se abre abajo la parada de esa celda, para ver de una vez con qué
+  // taller y qué documentos se está trabajando. Al desmarcar no se mueve nada.
+  if (!yaEstaba) await abrirCelda(celda, pieza);
+}
+
+// Celda abierta: de ella salen la guía y los documentos de abajo. Es la CELDA y
+// no la parada porque varias piezas comparten taller -- el cuello y los puños van
+// los dos con Alfredo, y mirar el estado de la parada mostraba los documentos de
+// los puños al abrir el cuello.
+// Guardada por REFERENCIA (pieza + parada), no como objeto: al avanzar un paso se
+// recargan los lotes y el objeto viejo quedaba congelado -- la guía seguía
+// diciendo "enviar el material" después de haberlo enviado.
+const celdaRef = ref(null);
+const celdaAbierta = computed(() => {
+  const k = celdaRef.value;
+  if (!k) return null;
+  if (!k.pieza) return cadenaFinal.value.find((t) => t.parada_id === k.parada_id) || null;
+  const rama = (loteActivo.value?.ramas || []).find((r) => r.pieza === k.pieza);
+  return rama ? (rama.pasos || []).find((p) => p.parada_id === k.parada_id) || null : null;
+});
+
+// ¿Ese paso ya está hecho PARA LA CELDA abierta? Las palomitas de los cuatro
+// documentos leían el estado de la parada, y como varias piezas comparten taller
+// salían todas en verde al abrir una pieza que apenas empieza -- el cuello se
+// veía transferido y recibido porque los puños, del mismo Alfredo, ya lo estaban.
+function pasoHecho(cual) {
+  const c = celdaAbierta.value;
+  const p = paradaActiva.value;
+  if (!p) return false;
+  if (cual === "oc") return p.po_docstatus === 1;
+  if (!c) {
+    return cual === "sco" ? p.sco_docstatus === 1
+      : cual === "transfer" ? !!p.transfer_done
+      : !!p.receipt_validated;
+  }
+  if (cual === "sco") return (c.scos || []).length > 0;
+  if (cual === "transfer") return c.estado === "enviado" || c.estado === "recibido";
+  return c.estado === "recibido";
+}
+watch(() => loteActivoRef.value, () => { celdaRef.value = null; });
+
+// El panel de documentos sigue SIEMPRE al encargo de la celda abierta. No basta
+// con fijarlo al pulsar: cada acción (enviar material, validar) recarga el flujo
+// del proveedor, y ahí el panel podía volver al primer encargo de la parada --
+// con el frente abierto se veía el recibo YA VALIDADO de la manga derecha, sin
+// botón de validar, porque era otro documento.
+watch(() => (celdaAbierta.value && celdaAbierta.value.scos || [])[0], async (sco) => {
+  if (sco && scoActivo.value !== sco) await selectSco(sco);
+}, { flush: "post" });
+
+// La confección no se marca por piezas: se encarga entera. El botón de su
+// tarjeta abre su parada y, si ya se puede, crea el encargo de una vez.
+// Tarjetas después de las ramas, en orden (ver _ramas_por_pieza): confección y,
+// si la prenda armada sigue a otro taller, los que vengan. Un backend anterior
+// solo mandaba rama_terminal.
+const cadenaFinal = computed(() => {
+  const l = loteActivo.value;
+  if (!l) return [];
+  if ((l.rama_cadena || []).length) return l.rama_cadena;
+  return l.rama_terminal ? [{ ...l.rama_terminal, arma_prenda: true, es_terminal: true }] : [];
+});
+async function abrirConfeccion(tarjeta) {
+  const t = tarjeta || loteActivo.value?.rama_terminal;
+  if (!t) return;
+  await abrirCelda(t, null);
+  if (t.estado === "listo") await abrirParada();
+}
+
+async function abrirCelda(celda, pieza) {
+  celdaRef.value = { pieza, parada_id: celda.parada_id };
+  await irAPasoDePieza(celda, pieza);
+  const p = paradaActiva.value;
+  if (!p) return;
+  // Los encargos de ESTA pieza, no el primero de la parada.
+  const scos = celda.scos;
+  if (scos && scos.length && scoActivo.value !== scos[0]) await selectSco(scos[0]);
+  const tieneEncargo = scos ? scos.length > 0 : !!p.sco;
+  subStepOpen.value =
+    p.po_docstatus !== 1 ? "oc"
+    : !tieneEncargo ? "sco"
+    : celda.estado === "encargado" ? "transfer"
+    : "recibo";
+}
+
+// Qué sigue en la parada abierta. Son cuatro pasos encadenados -- encargo,
+// transferencia, recibo-- y hasta ahora, después de crear el encargo, la pantalla
+// no decía cuál venía. Devuelve el texto y UNA acción principal.
+const guiaParada = computed(() => {
+  const p = paradaActiva.value;
+  if (!p) return null;
+  const taller = p.supplier;
+
+  if (p.po_docstatus !== 1) {
+    return {
+      cls: "bg-amber-50 ring-1 ring-amber-200",
+      titulo: "Falta validar la orden de compra de este taller",
+      detalle: "Sin ella no se puede encargar nada. Ábrela abajo y valídala.",
+      accionTexto: "Ver orden de compra", accion: () => { subStepOpen.value = "oc"; },
+    };
+  }
+  // El estado que manda es el de la CELDA abierta: varias piezas comparten
+  // taller y parada, y el avance de una no dice nada de la otra. Sin celda
+  // (producto sin piezas) se cae al estado de la parada, como siempre.
+  const c = celdaAbierta.value;
+  const estado = c ? c.estado
+    : !p.sco ? "listo" : !p.transfer_done ? "encargado" : !p.receipt_validated ? "enviado" : "recibido";
+  const scoDeLaCelda = (c && c.scos && c.scos.length) ? c.scos[0] : p.sco;
+  const dePieza = c && c.servicio ? ` (${c.servicio})` : "";
+
+  if (estado === "bloqueado") {
+    return {
+      cls: "bg-surface-raised ring-1 ring-surface-border",
+      titulo: "Esta pieza todavía no puede entrar aquí",
+      detalle: "Le falta terminar su etapa anterior; en cuanto la recibas se habilita.",
+    };
+  }
+  if (estado === "listo") {
+    // Una etapa que NO se reparte en piezas -- la confección, o cualquier paso de
+    // un producto sin piezas declaradas-- se encarga entera desde aquí. Solo las
+    // que sí tienen piezas mandan a elegirlas en la matriz.
+    const conPiezas = piezasDeParada(p.parada_id).length > 0;
+    if (!conPiezas) {
+      return {
+        cls: "bg-brand-50 ring-1 ring-brand-200",
+        titulo: `Siguiente: encargar el trabajo a ${taller}`,
+        detalle: "Se encarga con la cantidad y la fecha del lote.",
+        accionTexto: `Encargar a ${taller}`, accion: () => abrirParada(),
+      };
+    }
+    return {
+      cls: "bg-surface-raised ring-1 ring-surface-border",
+      titulo: `Siguiente: encargar el trabajo${dePieza}`,
+      detalle: "Marca las piezas en la matriz de arriba y pulsa Crear orden.",
+    };
+  }
+  if (estado === "encargado") {
+    return {
+      cls: "bg-brand-50 ring-1 ring-brand-200",
+      titulo: `Siguiente: enviar el material a ${taller}`,
+      detalle: "Sale de tu almacén al del taller y deja el recibo listo para cuando entregue.",
+      accionTexto: "Enviar al taller",
+      accion: async () => { await enviarMaterialTaller(scoDeLaCelda); subStepOpen.value = "recibo"; },
+      alternaTexto: "Revisar la transferencia antes",
+      alterna: () => { subStepOpen.value = "transfer"; transferirMaterial(); },
+    };
+  }
+  if (estado === "enviado") {
+    return {
+      cls: "bg-brand-50 ring-1 ring-brand-200",
+      titulo: "Siguiente: confirmar lo que entregó el taller",
+      detalle: "Captura cuánto entregó de cada pieza y valida el recibo — ahí entra a tu inventario.",
+      accionTexto: "Ir al recibo", accion: () => { subStepOpen.value = "recibo"; },
+    };
+  }
+  // Pieza terminada en esta etapa: se apunta a lo siguiente que ya se pueda
+  // encargar en TODO el lote, sin importar el taller.
+  const pend = [];
+  for (const r of loteActivo.value?.ramas || []) {
+    for (const paso of r.pasos || []) if (paso.estado === "listo") pend.push(`${r.pieza} en ${paso.titulo}`);
+  }
+  const pendFact = Number(p.maquila_pendiente) || 0;
+  return {
+    cls: "bg-green-50 ring-1 ring-green-200",
+    titulo: c ? `${c.servicio || "Esta etapa"}: pieza recibida` : "Esta etapa ya está recibida",
+    ...(pendFact > 0 ? {
+      accionTexto: `Facturar maquila de ${taller} (${pendFact.toLocaleString("es-MX", { style: "currency", currency: "MXN" })})`,
+      accion: () => { subStepOpen.value = "factura"; abrirFacturaMaquila(); },
+    } : {}),
+    detalle: pend.length
+      ? `Sigue: ${pend.slice(0, 3).join(" · ")}${pend.length > 3 ? ` y ${pend.length - 3} más` : ""} — márcalas en la matriz.`
+      : "No queda nada pendiente de encargar en este lote.",
+  };
+});
+
+// Contadores del encabezado: cuántas celdas hay en cada estado.
+const contadoresRamas = computed(() => {
+  const n = { recibido: 0, listo: 0, encargado: 0, enviado: 0, bloqueado: 0 };
+  for (const r of loteActivo.value?.ramas || []) for (const p of r.pasos || []) n[p.estado] = (n[p.estado] || 0) + 1;
+  return [
+    { k: "recibido", n: n.recibido, txt: "recibidas", cls: "bg-green-50 text-green-700" },
+    { k: "listo", n: n.listo, txt: "listas para encargar", cls: "bg-brand-50 text-brand-700" },
+    { k: "encargado", n: n.encargado + n.enviado, txt: "encargadas", cls: "bg-brand-50 text-brand-700" },
+    { k: "bloqueado", n: n.bloqueado, txt: "en espera", cls: "bg-surface-raised text-ink-muted" },
+  ].filter((c) => c.n > 0);
+});
+
+// Estilo de una celda de la matriz. La seleccionada manda sobre todo lo demás.
+function celdaClass(c, pieza, etapa) {
+  if (celdaSeleccionada(pieza, etapa.parada_id)) return "bg-brand-50 border-2 border-brand-500 ring-2 ring-brand-200";
+  if (c.estado === "recibido") return c.facturado ? "bg-indigo-50 border border-indigo-200" : "bg-green-50 border border-green-200";
+  if (c.estado === "listo") return "bg-white border border-brand-300 hover:bg-surface-raised cursor-pointer";
+  if (c.estado === "bloqueado") return "bg-white border border-dashed border-surface-border cursor-default";
+  // Encargada / enviada: no se vuelve a marcar, pero sí se entra a ella para
+  // seguir con su transferencia y su recibo.
+  return "bg-brand-50/60 border border-brand-200 hover:bg-brand-50 cursor-pointer";
+}
+function pasoBtnClass(p, pieza = null) {
+  if (pasoSeleccionado(p, pieza)) return "border-brand-500 bg-brand-50 ring-2 ring-brand-200";
+  if (p.estado === "recibido") return "border-green-500 bg-green-50";
+  if (p.estado === "bloqueado") return "border-surface-border bg-surface-raised/50 opacity-60 cursor-not-allowed";
+  if (p.estado === "listo") return "border-brand-300 bg-white hover:bg-surface-raised";
+  return "border-brand-200 bg-white hover:bg-surface-raised";
+}
+function pasoDotClass(p) {
+  return {
+    recibido: "bg-green-500 text-white",
+    enviado: "bg-brand-500 text-white",
+    encargado: "bg-brand-200",
+    listo: "bg-brand-400",
+    bloqueado: "bg-surface-raised ring-1 ring-surface-border",
+  }[p.estado] || "bg-surface-raised";
+}
+function pasoEstadoTexto(p) {
+  if (p.estado === "recibido" && p.facturado) return "Recibido · facturado";
+  return {
+    recibido: "Recibido",
+    enviado: "Material enviado",
+    encargado: "Encargo creado",
+    listo: "Listo para encargar",
+    bloqueado: "Espera el paso anterior",
+  }[p.estado] || "";
+}
+function pasoEstadoColor(p) {
+  if (p.estado === "recibido" && p.facturado) return "text-indigo-700";
+  return {
+    recibido: "text-green-700",
+    enviado: "text-brand-700",
+    encargado: "text-brand-700",
+    listo: "text-brand-600 font-medium",
+    bloqueado: "text-ink-light",
+  }[p.estado] || "text-ink-light";
+}
 function paradaBtnClass(p) {
   if (p.receipt_validated) return "border-green-500 bg-green-50";
   if (loteParadaActiva.value === p.parada_id) return "border-brand-500 bg-brand-50";
@@ -3360,6 +3924,8 @@ async function toggleLoteDoc(lote, grp, tab) {
     else await generarOcLote(lote, grp.supplier);
   } else if (tab === "recibo") {
     if (grp.po?.docstatus === 1) await selectReciboLote(grp.po);
+  } else if (tab === "factura") {
+    if (grp.po?.receipt?.name) await abrirFacturaFuente("Purchase Receipt", grp.po.receipt.name, grp.supplier);
   }
 }
 
@@ -3601,6 +4167,19 @@ async function goLote(lote_ref) {
   activeStep.value = 5;
   await seleccionarLote(lote_ref);
 }
+// Recuerda el lote activo de Producción (localStorage + URL, mismo patrón que
+// ?step=) para que un refresh o volver a abrir el costeo regrese directo ahí,
+// no a la vista general de Producción -- ver el restore en loadCosteoData.
+watch(loteActivoRef, (val) => {
+  if (activeStep.value !== 5 || isNew.value) return;
+  try {
+    const key = `costeo_ultimo_lote_${docName.value}`;
+    if (val) localStorage.setItem(key, val); else localStorage.removeItem(key);
+  } catch { /* localStorage puede fallar (modo privado, etc.) -- se ignora */ }
+  const query = { ...route.query };
+  if (val) query.lote = val; else delete query.lote;
+  router.replace({ query });
+});
 // El "+" del riel de lotes en el stepper lleva a Producir (donde vive el
 // formulario de "Nuevo lote") y lo abre directo -- no hace falta entrar primero.
 async function onCrearLoteDesdeStepper() {
@@ -4538,6 +5117,49 @@ async function selectDn(name) {
   if (name) await loadRemisionDetalle(name);
   else dnDoc.value = null;
 }
+// Remisión de UN lote: cantidades, almacén y lote los pone el servidor con lo que
+// el lote ya produjo y falta entregar. Al crearla se abre en el paso Enviar.
+async function crearRemisionLote(lote_ref) {
+  if (activeSO.value?.docstatus !== 1) { showToast("Primero valida la orden de venta", "error"); return; }
+  advancing.value = true;
+  try {
+    const r = await call("costeo_yelke.api.costeo_api.crear_remision", {
+      costeo: docName.value, sales_order: activeSOName.value, lote_ref,
+    });
+    await loadRelated();
+    activeStep.value = 6;
+    await selectDn(r.name);
+    showToast(`Remisión del ${lote_ref} creada (borrador) — revisa dirección y flete, y valídala`);
+  } catch (e) { showToast(e.message || "No se pudo crear la remisión del lote", "error"); }
+  finally { advancing.value = false; }
+}
+// Factura de compra como ÚLTIMO paso de cada flujo (material o maquila), sin salir
+// de Producción: se carga la factura de esa fuente (o queda lista para crearla).
+async function abrirFacturaFuente(source_doctype, source_name, supplier_name) {
+  await loadCompras();
+  const fila = [...compras.materiales, ...compras.maquila].find((m) => m.name === source_name);
+  if (fila) await selectCompra(source_doctype, fila);
+  else { pinvSel.value = { source_doctype, source_name, supplier_name, pendiente: 0 }; pinvDoc.value = null; }
+}
+async function abrirFacturaMaquila() {
+  const p = paradaActiva.value;
+  if (p?.po) await abrirFacturaFuente("Purchase Order", p.po, p.supplier);
+}
+async function crearFacturaInline() {
+  await generarFacturaCompra();
+  await loadLotesProduccion();
+}
+async function validarFacturaInline() {
+  await validarPinv();
+  await loadLotesProduccion();
+}
+// La etapa abierta ya tiene su maquila facturada (celda / tarjeta en índigo).
+const facturaParadaHecha = computed(() => !!(celdaAbierta.value?.facturado)
+  || (!!paradaActiva.value?.receipt_validated && Number(paradaActiva.value?.maquila_pendiente) <= 0 && pinvValidated.value));
+async function irARemision(name) {
+  activeStep.value = 6;
+  await selectDn(name);
+}
 async function generarRemision() {
   if (isNew.value) { showToast("Guarda el costeo primero", "error"); return; }
   if (activeSO.value?.docstatus !== 1) { showToast("Primero valida la orden de venta", "error"); return; }
@@ -4643,7 +5265,7 @@ async function loadCompras() {
   } catch { /* ignore */ }
 }
 async function selectCompra(source_doctype, row) {
-  pinvSel.value = { source_doctype, source_name: row.name, supplier_name: row.supplier_name || row.supplier, monto: row.base_net_total };
+  pinvSel.value = { source_doctype, source_name: row.name, supplier_name: row.supplier_name || row.supplier, monto: row.base_net_total, pendiente: row.pendiente_facturar || 0 };
   if (row.invoice) { await loadPinv(row.invoice.name); } else { pinvDoc.value = null; }
 }
 async function generarFacturaCompra() {
@@ -4652,6 +5274,8 @@ async function generarFacturaCompra() {
   try {
     const r = await call("costeo_yelke.api.costeo_api.crear_factura_compra", { source_doctype: pinvSel.value.source_doctype, source_name: pinvSel.value.source_name });
     await loadCompras();
+    const fila = [...compras.maquila, ...compras.materiales].find((m) => m.name === pinvSel.value.source_name);
+    if (fila) pinvSel.value.pendiente = fila.pendiente_facturar || 0;
     if (r.name) await loadPinv(r.name);
     showToast("Factura de compra registrada (borrador)");
   } catch (e) { showToast(e.message || "No se pudo registrar la factura", "error"); }
@@ -4688,6 +5312,8 @@ async function validarPinv() {
     await guardarPinv();
     await call("costeo_yelke.api.costeo_api.validar_documento", { doctype: "Purchase Invoice", name: pinvDoc.value.name });
     await loadCompras();
+    const fila = [...compras.maquila, ...compras.materiales].find((m) => m.name === pinvSel.value?.source_name);
+    if (fila && pinvSel.value) pinvSel.value.pendiente = fila.pendiente_facturar || 0;
     await loadPinv(pinvDoc.value.name);
     showToast("Factura de compra validada");
   } catch (e) { showToast(e.message || "No se pudo validar la factura", "error"); }
@@ -4760,7 +5386,7 @@ async function loadFlujoOps() {
       // Marca como "fijado" lo que NO es el default lineal -- eso es lo que el
       // reordenar debe respetar; el resto se reengancha solo.
       ops.forEach((o, i) => { o.recibe_custom = !esRecibeLineal(ops, i); });
-      const subs = (p.sub_ensamblajes || []).map(s => ({ ...s, op_keys: [...(s.op_keys || [])] }));
+      const subs = (p.sub_ensamblajes || []).map(s => ({ ...s, stage_ids: [...(s.stage_ids || [])] }));
       return { ...p, operaciones: ops, sub_ensamblajes: subs };
     });
   } catch (e) { showToast(e.message || "No se pudo cargar el flujo", "error"); }
@@ -4930,25 +5556,84 @@ function materialesDirectosDe(prod, op) {
 }
 // Sub-ensamblajes declarados (ver Costeo Sub Ensamblaje) -- filas puramente
 // locales hasta que se guardan junto con el resto de "Flujo de Producción"
-// (ver confirmarFlujo). `op_keys` nunca incluye el/los paso(s) terminal(es):
-// esos llegan siempre, se muestran aparte como fijos (ver plantilla).
+// (ver confirmarFlujo). Se marcan POR SERVICIO (`stage_ids`), no por tarjeta: un
+// taller con varios servicios distintos necesita decir cuál es de cuál pieza, y
+// ese detalle se perdía al marcar la tarjeta completa. El/los paso(s) terminal(es)
+// nunca se marcan: toda pieza llega ahí, se muestran fijos (ver plantilla).
+// Dónde se arma la prenda, EN VIVO sobre lo que está en pantalla -- misma regla que
+// el backend (costeo._ops_prenda_armada): la PRIMERA operación no final que
+// (1) ninguna pieza marca, (2) no tiene trabajo por pieza aguas abajo y (3) a la que
+// llega la última operación de cada pieza. Las que siguen trabajan la prenda armada.
+// Sin ensamble intermedio, se arma en la final (como siempre).
+function armadoVivo(prod) {
+  const ops = prod.operaciones || [];
+  const terminales = new Set(terminalKeysVivo(prod));
+  const noFinales = ops.filter((o) => !terminales.has(o.op_key));
+  const piezas = (prod.sub_ensamblajes || []).filter((s) => (s.nombre || "").trim());
+  const piezasDe = {};
+  for (const o of noFinales) {
+    const st = new Set(o.stage_ids || (o.servicios || []).map((sv) => sv.stage_id));
+    piezasDe[o.op_key] = piezas.filter((s) => s.stage_ids.some((x) => st.has(x))).map((s) => s.nombre);
+  }
+  const vacio = { ensamble: null, despues: new Set(), hayPiezas: piezas.length > 0 };
+  const marcadas = new Set(noFinales.filter((o) => piezasDe[o.op_key].length).map((o) => o.op_key));
+  if (!marcadas.size) return vacio;
+  const hijos = {};
+  ops.forEach((o) => { hijos[o.op_key] = new Set(); });
+  ops.forEach((o) => (o.recibe_de || []).forEach((u) => hijos[u] && hijos[u].add(o.op_key)));
+  const memo = {};
+  const abajo = (k) => {
+    if (memo[k]) return memo[k];
+    memo[k] = new Set();
+    for (const h of hijos[k] || []) { memo[k].add(h); abajo(h).forEach((x) => memo[k].add(x)); }
+    return memo[k];
+  };
+  const ultima = {};
+  for (const o of noFinales) for (const n of piezasDe[o.op_key]) ultima[n] = o.op_key;
+  const e = noFinales.find((o) => !piezasDe[o.op_key].length && ![...abajo(o.op_key)].some((k) => marcadas.has(k)));
+  if (!e || Object.values(ultima).some((u) => !abajo(u).has(e.op_key))) return vacio;
+  return { ensamble: e.op_key, despues: new Set(ops.filter((o) => abajo(e.op_key).has(o.op_key)).map((o) => o.op_key)), hayPiezas: true };
+}
+// "arma" (aquí se unen todas las piezas), "armada" (recibe la prenda ya armada) o null.
+function etiquetaArmado(prod, op) {
+  const a = armadoVivo(prod);
+  if (!a.hayPiezas) return null;
+  if (a.ensamble) return op.op_key === a.ensamble ? "arma" : a.despues.has(op.op_key) ? "armada" : null;
+  return terminalKeysVivo(prod).includes(op.op_key) ? "arma" : null;
+}
+function columnasMatriz(prod) {
+  const terminales = terminalKeysVivo(prod);
+  const armado = armadoVivo(prod);
+  return (prod.operaciones || []).flatMap((op) =>
+    (op.servicios || []).map((sv) => ({
+      stage_id: sv.stage_id,
+      // SIEMPRE el nombre del servicio: la fila ya trae el taller debajo, y poner
+      // el taller arriba cuando hay un solo servicio lo dejaba repetido dos veces.
+      titulo: sv.item,
+      supplier: op.supplier,
+      terminal: terminales.includes(op.op_key),
+      arma: armado.ensamble === op.op_key,
+      armada: armado.despues.has(op.op_key),
+    })),
+  );
+}
 function agregarSubEnsamblaje(prod) {
-  prod.sub_ensamblajes.push({ nombre: "", op_keys: [], multiplicador: 1 });
+  prod.sub_ensamblajes.push({ nombre: "", stage_ids: [], multiplicador: 1 });
   flujoDirty.value = true;
 }
 function quitarSubEnsamblaje(prod, idx) {
   prod.sub_ensamblajes.splice(idx, 1);
   flujoDirty.value = true;
 }
-function toggleSubEnsamblajeOp(s, opKey) {
-  const i = s.op_keys.indexOf(opKey);
-  if (i === -1) s.op_keys.push(opKey); else s.op_keys.splice(i, 1);
+function toggleSubEnsamblajeStage(s, stageId) {
+  const i = s.stage_ids.indexOf(stageId);
+  if (i === -1) s.stage_ids.push(stageId); else s.stage_ids.splice(i, 1);
   flujoDirty.value = true;
 }
-async function confirmarFlujo() {
-  if (isNew.value) { showToast("Guarda el costeo primero", "error"); return; }
-  advancing.value = true;
-  try {
+// Guarda el flujo tal como está en pantalla (orden, "recibe de", materia prima por
+// paso y piezas) SIN preparar producción -- para poder avanzar por partes. Lo usan
+// "Guardar cambios" y "Confirmar y pasar a producción".
+async function guardarFlujo() {
     const cambios = [];
     const materiales = [];
     for (const prod of flujoOps.value) {
@@ -4969,12 +5654,31 @@ async function confirmarFlujo() {
     for (const prod of flujoOps.value) {
       const filas = (prod.sub_ensamblajes || [])
         .filter(s => (s.nombre || "").trim())
-        .map(s => ({ nombre: s.nombre.trim(), op_keys: s.op_keys, multiplicador: s.multiplicador || 1 }));
+        .map(s => ({ nombre: s.nombre.trim(), stage_ids: s.stage_ids, multiplicador: s.multiplicador || 1 }));
       await call("costeo_yelke.api.costeo_api.guardar_subensamblajes", {
         costeo: docName.value, producto: prod.finished_item, filas: JSON.stringify(filas),
       });
     }
     flujoDirty.value = false;
+}
+const guardandoFlujo = ref(false);
+async function guardarCambiosFlujo() {
+  if (isNew.value) { showToast("Guarda el costeo primero", "error"); return; }
+  guardandoFlujo.value = true;
+  try {
+    await guardarFlujo();
+    // Recarga para ver lo que entendió el sistema con lo guardado (dónde se arma
+    // la prenda, avisos de piezas).
+    await loadFlujoOps();
+    showToast("Flujo guardado");
+  } catch (e) { showToast(e.message || "No se pudo guardar el flujo", "error"); }
+  finally { guardandoFlujo.value = false; }
+}
+async function confirmarFlujo() {
+  if (isNew.value) { showToast("Guarda el costeo primero", "error"); return; }
+  advancing.value = true;
+  try {
+    await guardarFlujo();
     manufacturaGuardada.value = true;
     const ok = await materializeArticulosIfNeeded();
     if (!ok) return;
@@ -5677,6 +6381,20 @@ async function loadCosteoData() {
     // (goStep solo corre al hacer clic en el stepper, no al montar).
     if (activeStep.value === 4) loadFlujoOps();
     if (activeStep.value === 8) loadReporte();
+    // "Producción" (5) además recuerda el LOTE en el que te quedaste -- sin esto,
+    // reabrir el costeo siempre dejaba la vista general de Producción, sin volver
+    // a entrar al lote que se estaba trabajando (reportado en vivo). Se prioriza
+    // la URL (?lote=, mismo patrón que ?step=, para links compartidos) y si no
+    // trae nada, el último guardado en este navegador.
+    if (activeStep.value === 5) {
+      const loteUrl = route.query.lote ? String(route.query.lote) : "";
+      let loteGuardado = "";
+      try { loteGuardado = localStorage.getItem(`costeo_ultimo_lote_${docName.value}`) || ""; } catch { /* localStorage puede fallar (modo privado, etc.) -- se ignora */ }
+      const loteRestaurar = loteUrl || loteGuardado;
+      if (loteRestaurar && lotesProduccion.value.some((l) => l.lote_ref === loteRestaurar)) {
+        await seleccionarLote(loteRestaurar);
+      }
+    }
   } catch { showToast("No se pudo cargar el costeo", "error"); }
   finally { loading.value = false; }
 }

@@ -93,6 +93,11 @@
                   <option value="">— Seleccionar proveedor —</option>
                   <option v-for="s in defaults.suppliers" :key="s.name" :value="s.name">{{ s.supplier_name }}</option>
                 </select>
+                <button v-if="canEdit && supplierChanged" type="button" :disabled="sugiriendo"
+                  class="mt-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 disabled:opacity-50"
+                  @click="sugerirPrecios">
+                  {{ sugiriendo ? "Buscando precio…" : "Sugerir precios con este proveedor" }}
+                </button>
               </div>
 
               <div>
@@ -444,6 +449,15 @@ const supplierDisplayName = computed(() =>
   defaults.suppliers.find(s => s.name === form.supplier)?.supplier_name || form.supplier
 );
 
+// El proveedor de una OC ya puede cambiarse mientras esté en borrador (canEdit) --
+// si cambió respecto al que estaba guardado, se ofrece refrescar el precio de cada
+// línea con la lógica de _precio_para_oc (sin forzarlo: solo sugiere).
+const supplierChanged = computed(() =>
+  !isNew.value && !!formOriginal.value.supplier &&
+  form.supplier && form.supplier !== formOriginal.value.supplier
+);
+const sugiriendo = ref(false);
+
 const totals = computed(() => {
   const subtotal = form.items.reduce((s, r) => s + (r.amount || 0), 0);
   const taxes    = isNew.value ? 0 : (po.total_taxes_and_charges || 0);
@@ -551,6 +565,10 @@ async function save() {
         qty: r.qty, uom: r.uom, conversion_factor: r.conversion_factor || 1,
         rate: r.rate, discount_percentage: r.discount_percentage || 0,
         warehouse: r.warehouse, schedule_date: r.schedule_date || scheduleDate,
+        // Puro passthrough (no se edita en esta pantalla) -- preserva el vínculo con
+        // la Solicitud de Material, ver save_purchase_order.
+        material_request: r.material_request || "",
+        material_request_item: r.material_request_item || "",
       })),
     };
     const saved = await call("costeo_yelke.api.purchase_order_api.save_purchase_order", {
@@ -566,6 +584,28 @@ async function save() {
     saving.value = false;
   }
   return ok;
+}
+
+async function sugerirPrecios() {
+  sugiriendo.value = true;
+  try {
+    const sugerencias = await call("costeo_yelke.api.purchase_order_api.sugerir_precios_oc", {
+      po: form.name, supplier: form.supplier,
+    });
+    let aplicados = 0;
+    form.items.forEach(r => {
+      const precio = sugerencias[r.item_code];
+      if (precio !== undefined && precio !== r.rate) {
+        r.rate = precio; r._dirty = true; recalcRow(r);
+        aplicados++;
+      }
+    });
+    showToast(aplicados ? `Precio sugerido aplicado en ${aplicados} línea(s)` : "Sin precio sugerido para este proveedor");
+  } catch (e) {
+    showToast(e.message || "No se pudo sugerir el precio", "error");
+  } finally {
+    sugiriendo.value = false;
+  }
 }
 
 async function doConfirm() {

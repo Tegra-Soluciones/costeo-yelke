@@ -103,7 +103,7 @@
    "fieldname": "unit_price",
    "fieldtype": "Currency",
    "label": "Precio Unitario",
-   "precision": "2"
+   "precision": "6"
   },
   {
    "fieldname": "total",
