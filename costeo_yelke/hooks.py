@@ -58,6 +58,7 @@ add_to_apps_screen = [
 doctype_js = {
 	"Purchase Order": "public/js/purchase_order_manufacturing_order.js",
 	"Precio Acordado Recordatorio": "public/js/precio_acordado_recordatorio.js",
+	"Supplier": "public/js/supplier.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}

@@ -71,3 +71,4 @@ costeo_yelke.patches.v0_2_46.precio_servicio_sco_sin_relleno
 costeo_yelke.patches.v0_2_47.roles_vistas_produccion
 costeo_yelke.patches.v0_2_48.cuenta_bancaria_proveedor
 costeo_yelke.patches.v0_2_49.ocultar_iban_sucursal
+costeo_yelke.patches.v0_2_50.cuenta_bancaria_proveedor_aparte
