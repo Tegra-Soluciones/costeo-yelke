@@ -69,3 +69,4 @@ costeo_yelke.patches.v0_2_44.proveedor_flete_costos_adicionales
 costeo_yelke.patches.v0_2_45.lote_en_remision
 costeo_yelke.patches.v0_2_46.precio_servicio_sco_sin_relleno
 costeo_yelke.patches.v0_2_47.roles_vistas_produccion
+costeo_yelke.patches.v0_2_48.cuenta_bancaria_proveedor

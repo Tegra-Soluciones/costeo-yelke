@@ -157,6 +157,11 @@ after_install = "costeo_yelke.install.after_install"
 # Hook on document methods and events
 
 doc_events = {
+	# Cuenta bancaria del proveedor: CLABE / tarjeta y su resumen en la ficha (v0_2_48).
+	"Bank Account": {
+		"validate": "costeo_yelke.api.bank_account_api.validar",
+		"on_update": "costeo_yelke.api.bank_account_api.sincronizar_proveedor",
+	},
 	"Purchase Receipt": {
 		"validate": "costeo_yelke.api.contabilidad.validar_recepcion_contra_oc",
 		"before_submit": "costeo_yelke.api.costeo_api.validar_envio_capturado_recibo",
