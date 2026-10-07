@@ -52,6 +52,95 @@
   .prod-row { @apply flex items-center gap-3 py-1.5 border-b border-surface-border/60 last:border-0; }
   .prod-status { @apply text-[11px] font-medium text-ink-muted bg-surface-raised rounded-full px-2 py-0.5 whitespace-nowrap; }
   .prod-empty { @apply text-[12px] text-ink-light py-1; }
+
+  /* ══════════════════════════════════════════════════════════════════════════
+     Sistema de diseño "Producción v2" (docs/plan-ui-produccion.md §4,
+     docs/mockups/produccion.html). Todas con prefijo `p-` para no chocar con las
+     clases de arriba, que siguen vivas en el resto del costeo.
+
+     Vocabulario de estado, igual en TODAS partes:
+       verde = hecho · índigo = facturado · ámbar = pendiente o borrador
+       naranja = lo que sigue · rojo = bloqueado o falta · gris = en espera
+     ══════════════════════════════════════════════════════════════════════════ */
+
+  /* — Menú lateral — */
+  .p-rail-item { @apply flex items-center gap-2.5 w-full h-8 px-2.5 rounded-md text-[13px] text-ink-muted hover:bg-surface-raised hover:text-ink cursor-pointer select-none text-left; }
+  .p-rail-item.on { @apply bg-white text-ink font-medium shadow-[0_0_0_1px_#e4e4e7]; }
+  .p-rail-item:disabled { @apply opacity-50 cursor-not-allowed hover:bg-transparent hover:text-ink-muted; }
+  .p-rail-group { @apply px-2.5 pt-5 pb-1.5 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-ink-light; }
+  .p-count { @apply ml-auto text-[11px] tabular-nums text-ink-light; }
+  .p-count-hot { @apply ml-auto text-[10.5px] font-semibold tabular-nums text-white bg-brand-500 rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center; }
+
+  /* — Puntos de estado (8 px) — */
+  .p-dot { @apply inline-block w-2 h-2 rounded-full flex-shrink-0; }
+  .p-dot-ok { @apply bg-emerald-500; }
+  .p-dot-fac { @apply bg-indigo-500; }
+  .p-dot-wait { @apply bg-amber-400; }
+  .p-dot-now { @apply bg-brand-500 ring-4 ring-brand-100; }
+  .p-dot-off { @apply bg-zinc-300; }
+  .p-dot-bad { @apply bg-red-500; }
+
+  /* — Superficies y listas — */
+  .p-panel { @apply bg-white rounded-xl border border-surface-border; }
+  .p-row { @apply flex items-center gap-4 w-full px-4 py-3 border-b border-surface-border last:border-0 hover:bg-zinc-50 cursor-pointer text-left; }
+  .p-row.static { @apply cursor-default hover:bg-white; }
+
+  /* — Tipografía — */
+  .p-eyebrow { @apply text-[10.5px] font-semibold uppercase tracking-[0.08em] text-ink-light; }
+  .p-h1 { @apply text-[20px] font-semibold tracking-tight text-ink; text-wrap: balance; }
+  .p-lede { @apply text-[13px] text-ink-muted max-w-[62ch]; }
+  .p-meta { @apply text-[12px] text-ink-muted; }
+  .p-num { @apply tabular-nums; }
+
+  /* — Botones — */
+  .p-btn { @apply h-9 px-4 inline-flex items-center justify-center gap-2 rounded-lg text-[13px] font-semibold whitespace-nowrap transition-colors; }
+  .p-btn-primary { @apply p-btn bg-brand-500 text-white hover:bg-brand-600; }
+  .p-btn-secondary { @apply p-btn bg-white text-ink border border-surface-border hover:bg-surface-raised font-medium; }
+  .p-btn-ghost { @apply p-btn text-ink-muted hover:text-ink hover:bg-surface-raised font-medium px-3; }
+  .p-btn:disabled { @apply opacity-40 cursor-not-allowed; }
+
+  /* — Control segmentado — */
+  .p-seg { @apply inline-flex p-0.5 bg-surface-raised rounded-lg; }
+  .p-seg button { @apply h-7 px-3 rounded-md text-[12.5px] text-ink-muted font-medium flex items-center gap-1.5 whitespace-nowrap; }
+  .p-seg button.on { @apply bg-white text-ink shadow-sm; }
+
+  /* — Pills de estado — */
+  .p-pill { @apply inline-flex items-center justify-center gap-1.5 h-6 px-2 rounded-full text-[11.5px] font-medium whitespace-nowrap; }
+  .p-pill-ok { @apply p-pill bg-emerald-50 text-emerald-700; }
+  .p-pill-fac { @apply p-pill bg-indigo-50 text-indigo-700; }
+  .p-pill-wait { @apply p-pill bg-amber-50 text-amber-800; }
+  .p-pill-off { @apply p-pill bg-zinc-100 text-ink-muted; }
+  .p-pill-bad { @apply p-pill bg-red-50 text-red-700; }
+  .p-pill-now { @apply p-pill bg-brand-50 text-brand-700; }
+
+  /* — Campos — */
+  .p-field-label { @apply text-[12px] font-medium text-ink-muted block mb-1; }
+  .p-field { @apply w-full h-9 text-[13px] border border-surface-border rounded-lg px-3 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/25 focus:border-brand-400; }
+  .p-ro { @apply w-full min-h-[2.25rem] text-[13px] rounded-lg px-3 bg-surface-raised flex items-center text-ink; }
+
+  /* — Tablas — */
+  .p-tbl { @apply w-full text-[13px]; }
+  .p-tbl th { @apply text-left text-[11px] font-medium text-ink-light py-2 px-4 border-b border-surface-border; }
+  .p-tbl td { @apply py-2.5 px-4 border-b border-surface-border/70; }
+  .p-tbl tr:last-child td { @apply border-0; }
+
+  /* — Stepper: el MISMO componente para lote, taller, preparación y documentos — */
+  .p-steps { @apply flex items-center; }
+  .p-step { @apply flex items-center gap-2 text-[12.5px] text-ink-muted whitespace-nowrap; }
+  .p-steps.nav .p-step { @apply cursor-pointer hover:text-ink; }
+  .p-step .n { @apply w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-semibold bg-zinc-100 text-ink-muted flex-shrink-0; }
+  .p-step.done .n { @apply bg-emerald-500 text-white; }
+  .p-step.fac .n { @apply bg-indigo-500 text-white; }
+  .p-step.now { @apply text-ink font-semibold; }
+  .p-step.now .n { @apply bg-brand-500 text-white ring-4 ring-brand-100; }
+  .p-step.sel { @apply text-ink font-semibold; }
+  .p-step.sel .n { @apply ring-4 ring-zinc-200; }
+  .p-step.bad .n { @apply bg-red-500 text-white; }
+  .p-step.bloq { @apply opacity-60 cursor-not-allowed; }
+  .p-step-line { @apply flex-1 h-px bg-surface-border mx-3 min-w-[12px]; }
+
+  /* — Aviso de una línea — */
+  .p-note { @apply text-[11.5px] leading-relaxed text-yellow-900 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-1.5; }
 }
 
 /* Page transitions */
@@ -65,3 +154,29 @@
   outline: 2px solid #ff6b15;
   outline-offset: 2px;
 }
+
+/* El SPA se sirve dentro del cascarón de Frappe, cuyo website.bundle.css declara
+   `.d-none, .hide-control, .hide, .hidden { display: none !important; }`. Por ese
+   !important, el patrón normal de Tailwind "hidden md:block" NUNCA volvía a
+   mostrar el elemento en pantallas grandes: se quedaba oculto siempre (el menú
+   de Producción, los pasos compactos de las listas y, de antes, varias cosas del
+   navbar). Aquí se le devuelve la última palabra a la variante responsiva.
+   Solo las combinaciones que la app usa de verdad. */
+@media (min-width: 640px) {
+  .sm\:block { display: block !important; }
+  .sm\:flex { display: flex !important; }
+  .sm\:inline { display: inline !important; }
+}
+@media (min-width: 768px) {
+  .md\:block { display: block !important; }
+  .md\:flex { display: flex !important; }
+  .md\:inline { display: inline !important; }
+}
+@media (min-width: 1024px) {
+  .lg\:block { display: block !important; }
+  .lg\:flex { display: flex !important; }
+  .lg\:inline { display: inline !important; }
+}
+/* Lo contrario (ocultar en grande) sí funciona solo, pero se deja explícito para
+   que el par se lea junto. */
+@media (min-width: 1024px) { .lg\:hidden { display: none !important; } }

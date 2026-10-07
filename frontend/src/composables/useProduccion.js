@@ -119,7 +119,13 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   // Doble validación (Enviar -> Revisor -> Aprobador) -- hoy solo aplica a la
   // Orden de Compra (materia prima y subcontratada); el resto de docs de este
   // composable sigue con validación normal. Los roles se cargan una sola vez.
-  const permisosValidacion = reactive({ puede_revisar: true, puede_aprobar: true });
+  // `vistas`: claves de vista de Producción que este usuario puede abrir (ver
+  // roles.vistas_produccion). Arranca con todas para no parpadear mientras carga; el
+  // backend es la autoridad.
+  const permisosValidacion = reactive({
+    puede_revisar: true, puede_aprobar: true,
+    vistas: ["tablero", "preparacion", "om", "materia", "flujo", "talleres", "envios", "facturas", "entrega"],
+  });
   async function loadPermisosValidacion() {
     try { Object.assign(permisosValidacion, await call("costeo_yelke.api.costeo_api.get_permisos_validacion_yelke")); }
     catch { /* si falla, se dejan en true -- el backend igual bloquea si no toca */ }
@@ -1239,6 +1245,12 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   // + 1 envío + 1 recibo. `lotesProduccion` = r.lotes (lista plana); cada lote trae
   // `paradas` en orden de flujo, con `nivel` (columna) y `recibe_de` (dependencias).
   const lotesProduccion = ref([]);
+  // Nombres de lote ya usados en TODO el costeo, también los de otras órdenes de
+  // venta. El nombre del lote es la llave con la que se buscan la tabla de lotes del
+  // costeo, las remisiones y las cotizaciones de proveedor -- que son del costeo, no
+  // de la OV -- así que la numeración sigue corrida entre OV aunque cada una solo vea
+  // los suyos (ver get_lotes_produccion).
+  const loteRefsCosteo = ref([]);
   const productosCosteo = ref([]);      // r.productos: [{finished_item, item_name, root_po, root_po_docstatus}]
   const loteActivoRef = ref("");
   const loteParadaActiva = ref("");     // parada_id de la parada abierta en el detalle
@@ -1284,6 +1296,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
         ...l,
         material_items: (l.material_items || []).map((m) => ({ ...m, qty: limpiaNum(m.qty) })),
       }));
+      loteRefsCosteo.value = r.lote_refs_costeo || [];
       productosCosteo.value = r.productos || [];
     } catch { /* ignore */ }
     await loadSaldoTalleres();
@@ -1296,6 +1309,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   }
   function siguienteLoteLibre() {
     const existentes = new Set(lotesProduccion.value.map((l) => l.lote_ref));
+    loteRefsCosteo.value.forEach((r) => { if (r) existentes.add(r); });
     mrLotes.value.forEach((l) => { if (l.lote_ref) existentes.add(l.lote_ref); });
     let n = 1;
     while (existentes.has(`Lote ${n}`)) n++;
@@ -1382,6 +1396,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
 
       const r = await call("costeo_yelke.api.costeo_api.get_lotes_produccion", { plan: planDetail.value.name });
       lotesProduccion.value = r.lotes || [];
+      loteRefsCosteo.value = r.lote_refs_costeo || [];
       productosCosteo.value = r.productos || [];
 
       if (productosCosteo.value.every((p) => !p.root_po)) return; // template ofrece "Crear órdenes de subcontrato" a mano
@@ -1677,6 +1692,18 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     else celdasSel.value.push(k);
   }
   function limpiarCeldas() { celdasSel.value = []; }
+  /** Suelta las celdas que ya no se pueden encargar (se encargaron, o su etapa
+   *  anterior cambió). Se llama después de recargar los lotes: si no, se quedaban
+   *  pintadas como seleccionadas aunque ya no cuenten para la orden. */
+  function podarCeldasSel() {
+    celdasSel.value = celdasSel.value.filter((k) => {
+      const i = k.lastIndexOf("|");
+      const pieza = k.slice(0, i), paradaId = k.slice(i + 1);
+      const rama = (loteActivo.value?.ramas || []).find((r) => r.pieza === pieza);
+      const celda = rama && celdaDe(rama, paradaId);
+      return !!celda && celda.estado === "listo";
+    });
+  }
 
   // La celda de una pieza en una etapa, o null si esa pieza se brinca la etapa.
   function celdaDe(rama, paradaId) {
@@ -1705,11 +1732,16 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   const gruposSel = computed(() => {
     const porParada = new Map();
     for (const k of celdasSel.value) {
-      const [pieza, paradaId] = k.split("|");
+      const i = k.lastIndexOf("|");
+      const pieza = k.slice(0, i), paradaId = k.slice(i + 1);
       const rama = (loteActivo.value?.ramas || []).find((r) => r.pieza === pieza);
       const etapa = (loteActivo.value?.rama_etapas || []).find((e) => e.parada_id === paradaId);
       const celda = rama && celdaDe(rama, paradaId);
       if (!rama || !etapa || !celda) continue;
+      // Solo entran las LISTAS. La selección sobrevive a una recarga, así que una
+      // celda marcada puede haberse encargado en el intento anterior (o por otra
+      // pestaña): si se colara aquí saldría un SEGUNDO encargo del mismo trabajo.
+      if (celda.estado !== "listo") continue;
       const g = porParada.get(paradaId) || {
         parada_id: paradaId, titulo: etapa.titulo, supplier: etapa.supplier,
         piezas: [], prendas: prendasDelLote(),
@@ -1750,6 +1782,9 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
         : "Orden de subcontratación generada · sigue enviar material");
     } catch (e) {
       await loadLotesProduccion();
+      // Las que sí salieron ya no están listas: se sueltan para que un segundo
+      // intento no las vuelva a encargar.
+      podarCeldasSel();
       showToast(hechas.length
         ? `Se crearon ${hechas.length} (${hechas.join(", ")}) y falló la siguiente: ${e.message}`
         : (e.message || "No se pudieron crear las órdenes"), "error");
@@ -1897,6 +1932,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     loteActivo, paradaActiva, tracksLote, paradaEstado,
     loadLotesProduccion, seleccionarLote, seleccionarParada, verParadaPo,
     abrirNuevoLote, cerrarNuevoLote, crearNuevoLote, abrirParada, siguienteParadaPendiente, generarOcLote, neteoOc,
+    siguienteLoteRef, loteRefsCosteo,
     transAgrupado, cambiarCantidadMaterial, cambiarAlmacenMaterial,
     nuevaEntregaForm, abrirNuevaEntrega, cerrarNuevaEntrega, confirmarNuevaEntrega, verEntrega,
     piezasSel, piezasDeParada, piezasListas, togglePiezaSel, irAPasoDePieza,

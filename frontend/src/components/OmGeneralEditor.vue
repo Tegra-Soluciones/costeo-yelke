@@ -179,12 +179,16 @@ import ParaTalleres from "@/components/ParaTalleres.vue";
 
 const props = defineProps({
   costeo: { type: String, required: true },
+  // OV activa: la ficha es la misma para todas las OV del costeo, pero las tallas
+  // que se muestran (y que se le imprimen al taller) son las de esta.
+  salesOrder: { type: String, default: "" },
   medidasTemplates: { type: Array, default: () => [] },
   tablasDePlantilla: { type: Function, default: () => [] },
   showToast: { type: Function, default: () => {} },
   disabled: { type: Boolean, default: false },
 });
-const emit = defineEmits(["saved"]);
+// `cargado` lleva al menú de Producción cuántas fichas están capturadas (n/total).
+const emit = defineEmits(["saved", "cargado"]);
 
 const productos = ref([]);
 const loading = ref(false);
@@ -200,12 +204,20 @@ const checks = [
 async function cargar() {
   if (!props.costeo) return;
   loading.value = true;
-  try { productos.value = (await call("costeo_yelke.api.om_general.get_oms_generales", { costeo: props.costeo })).productos || []; }
+  try {
+    productos.value = (await call("costeo_yelke.api.om_general.get_oms_generales", {
+      costeo: props.costeo, sales_order: props.salesOrder || null,
+    })).productos || [];
+    emit("cargado", {
+      total: productos.value.length,
+      capturadas: productos.value.filter((p) => p.om).length,
+    });
+  }
   catch (e) { props.showToast(e.message || "No se pudieron cargar las órdenes de manufactura", "error"); }
   finally { loading.value = false; }
 }
 onMounted(cargar);
-watch(() => props.costeo, cargar);
+watch(() => [props.costeo, props.salesOrder], cargar);
 
 const total = (tallas) => (tallas || []).reduce((a, t) => a + (Number(t.cantidad) || 0), 0);
 function tablaVacia() { return { name: `Tabla ${form.value.tablas.length + 1}`, unit: "", columns: ["c1", "c2"], rows: [{ id: "r1", cells: { c1: "", c2: "" } }], proveedores: [] }; }

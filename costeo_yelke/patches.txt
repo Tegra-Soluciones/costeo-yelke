@@ -68,3 +68,4 @@ costeo_yelke.patches.v0_2_43.ocultar_campos_internos_oc
 costeo_yelke.patches.v0_2_44.proveedor_flete_costos_adicionales
 costeo_yelke.patches.v0_2_45.lote_en_remision
 costeo_yelke.patches.v0_2_46.precio_servicio_sco_sin_relleno
+costeo_yelke.patches.v0_2_47.roles_vistas_produccion

@@ -6,7 +6,7 @@
     <!-- Maquila: llegó más trabajo después de la última factura validada. -->
     <div v-if="doc && validated && pendiente > 0" class="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
       <p class="text-[12.5px] text-amber-800">Hay trabajo recibido sin facturar: <strong>{{ money(pendiente) }}</strong></p>
-      <button :disabled="advancing" class="px-3 py-1.5 text-[12.5px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="$emit('crear')">Registrar factura de lo pendiente</button>
+      <button v-if="!sinAcciones" :disabled="advancing" class="px-3 py-1.5 text-[12.5px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="$emit('crear')">Registrar factura de lo pendiente</button>
     </div>
 
     <div v-if="!doc" class="rounded-lg border border-surface-border bg-white p-4 flex items-center justify-between gap-3 flex-wrap">
@@ -14,7 +14,7 @@
         <p class="text-[13px] font-medium text-ink">{{ proveedor }}</p>
         <p class="text-[12px] text-ink-muted">Aún no tiene factura de compra. Se crea en borrador con lo recibido{{ pendiente > 0 ? ` (${money(pendiente)})` : '' }}.</p>
       </div>
-      <button :disabled="advancing || !habilitado" class="px-4 py-2 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="$emit('crear')">Crear factura de compra</button>
+      <button v-if="!sinAcciones" :disabled="advancing || !habilitado" class="px-4 py-2 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="$emit('crear')">Crear factura de compra</button>
     </div>
 
     <div v-else class="flex flex-col lg:flex-row gap-4 items-start">
@@ -33,7 +33,7 @@
           <span class="text-ink-muted">Subtotal <span class="font-medium text-ink tabular-nums">{{ money(doc.base_net_total) }}</span></span>
           <span v-if="doc.grand_total !== undefined" class="text-ink-muted">Total con impuestos <span class="font-medium text-ink tabular-nums">{{ money(doc.grand_total) }}</span></span>
         </div>
-        <div class="flex flex-wrap items-center gap-2">
+        <div v-if="!sinAcciones" class="flex flex-wrap items-center gap-2">
           <template v-if="!validated">
             <button :disabled="advancing" class="h-8 px-3 text-[13px] font-medium text-ink border border-surface-border rounded-lg hover:bg-surface-raised disabled:opacity-50" @click="$emit('guardar')">Guardar cambios</button>
             <button :disabled="advancing" class="h-8 px-4 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="$emit('validar')">Validar factura</button>
@@ -67,6 +67,10 @@ defineProps({
   paymentTermsOptions: { type: Array, default: () => [] },
   previewUrl: { type: String, default: "" },
   previewKey: { type: Number, default: 0 },
+  // Dentro de un PanelLateral los botones viven en el PIE del panel, no aquí
+  // (regla del diseño v2: las acciones siempre en el mismo lugar). La lógica no
+  // se duplica: el pie emite estos mismos eventos.
+  sinAcciones: { type: Boolean, default: false },
 });
 defineEmits(["crear", "guardar", "validar", "descargar", "imprimir", "ampliar"]);
 const money = (v) => (Number(v) || 0).toLocaleString("es-MX", { style: "currency", currency: "MXN" });

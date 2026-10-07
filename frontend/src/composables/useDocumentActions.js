@@ -9,9 +9,9 @@ export function useDocumentActions(showToast) {
   const previewKey = ref(0); // fuerza recarga de los iframes de preview
 
   const pdfModal = reactive({ open: false, doctype: "", name: "" });
-  const sendChooser = reactive({ open: false, doctype: "", name: "", email: "", phone: "" });
+  const sendChooser = reactive({ open: false, doctype: "", name: "", email: "", phone: "", printFormats: [], asunto: "", mensaje: "" });
   const waModal = reactive({ open: false, doctype: "", name: "", phone: "", message: "" });
-  const sendModal = reactive({ open: false, doctype: "", name: "", recipients: "", subject: "", message: "", sending: false });
+  const sendModal = reactive({ open: false, doctype: "", name: "", recipients: "", subject: "", message: "", sending: false, printFormats: [] });
   const assignModal = reactive({ open: false, doctype: "", name: "", selected: [], sending: false });
 
   // El formato se resuelve por DOCUMENTO: en Orden de Compra depende del propio
@@ -49,6 +49,16 @@ export function useDocumentActions(showToast) {
   function downloadPdf(doctype, name) {
     window.open(printUrl(doctype, name).replace("trigger_print=0", "trigger_print=1"), "_blank");
   }
+  /** Mismo documento, FORMATO explícito -- la orden a un taller se imprime en dos
+   *  PDF distintos (la orden de compra y su ficha de manufactura) y cada botón
+   *  tiene que pedir el suyo, no el formato por omisión del documento. */
+  function printUrlFmt(doctype, name, fmt) {
+    return `/printview?doctype=${encodeURIComponent(doctype)}&name=${encodeURIComponent(name)}`
+      + `&format=${encodeURIComponent(fmt)}&no_letterhead=0&trigger_print=0&_v=${previewKey.value}`;
+  }
+  function downloadPdfFmt(doctype, name, fmt) {
+    window.open(printUrlFmt(doctype, name, fmt).replace("trigger_print=0", "trigger_print=1"), "_blank");
+  }
 
   async function openPdf(doctype, name) {
     pdfModal.doctype = doctype; pdfModal.name = name;
@@ -56,17 +66,25 @@ export function useDocumentActions(showToast) {
     previewKey.value++; pdfModal.open = true;
   }
 
-  function openSend(doctype, name, email, phone) {
+  /** `opciones.printFormats`: los PDF que se adjuntan (varios del mismo documento).
+   *  `opciones.asunto` / `opciones.mensaje`: textos propios de ese envío. */
+  function openSend(doctype, name, email, phone, opciones = {}) {
     sendChooser.doctype = doctype; sendChooser.name = name;
     sendChooser.email = email || ""; sendChooser.phone = phone || "";
+    sendChooser.printFormats = opciones.printFormats || [];
+    sendChooser.asunto = opciones.asunto || "";
+    sendChooser.mensaje = opciones.mensaje || "";
     sendChooser.open = true;
   }
   function chooseEmail() {
     sendChooser.open = false;
     sendModal.doctype = sendChooser.doctype; sendModal.name = sendChooser.name;
     sendModal.recipients = sendChooser.email;
-    sendModal.subject = `${sendChooser.doctype === "Quotation" ? "Cotización" : sendChooser.doctype} ${sendChooser.name}`;
-    sendModal.message = "Estimado cliente, adjunto encontrará el documento. Quedamos atentos.";
+    sendModal.subject = sendChooser.asunto
+      || `${sendChooser.doctype === "Quotation" ? "Cotización" : sendChooser.doctype} ${sendChooser.name}`;
+    sendModal.message = sendChooser.mensaje
+      || "Estimado cliente, adjunto encontrará el documento. Quedamos atentos.";
+    sendModal.printFormats = sendChooser.printFormats || [];
     sendModal.open = true;
   }
   function chooseWhatsApp() {
@@ -92,7 +110,11 @@ export function useDocumentActions(showToast) {
   async function doSend() {
     sendModal.sending = true;
     try {
-      await call("costeo_yelke.api.costeo_api.enviar_por_correo", { doctype: sendModal.doctype, name: sendModal.name, recipients: sendModal.recipients, subject: sendModal.subject, message: sendModal.message });
+      await call("costeo_yelke.api.costeo_api.enviar_por_correo", {
+        doctype: sendModal.doctype, name: sendModal.name, recipients: sendModal.recipients,
+        subject: sendModal.subject, message: sendModal.message,
+        print_formats: (sendModal.printFormats || []).length ? JSON.stringify(sendModal.printFormats) : null,
+      });
       sendModal.open = false;
       showToast("Correo enviado");
     } catch (e) { showToast(e.message || "No se pudo enviar", "error"); }
@@ -116,7 +138,7 @@ export function useDocumentActions(showToast) {
   return {
     printFmtMap, previewKey,
     pdfModal, sendChooser, waModal, sendModal, assignModal,
-    ensurePrintFmt, printUrl, printDocView, downloadPdf,
+    ensurePrintFmt, printUrl, printDocView, downloadPdf, printUrlFmt, downloadPdfFmt,
     openPdf, openSend, chooseEmail, chooseWhatsApp, sendWhatsAppGeneric, doSend,
     openAssign, doAssign,
   };

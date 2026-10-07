@@ -1,6 +1,13 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ["./index.html", "./src/**/*.{vue,js}"],
+  // Las clases de estado de Producción se arman en tiempo de ejecución
+  // (`p-dot-${estado}`, `p-pill-${estado}`, ver EstadoPunto.vue / Pill.vue), así que
+  // el escaneo de Tailwind no las encuentra en ningún archivo y las purgaría. Sin
+  // esto, los puntos de color salían transparentes.
+  safelist: [
+    ...["ok", "fac", "wait", "now", "off", "bad"].flatMap((e) => [`p-dot-${e}`, `p-pill-${e}`]),
+  ],
   theme: {
     extend: {
       colors: {

@@ -9,7 +9,12 @@ from frappe import _
 from frappe.utils import add_days, cint, flt, formatdate, getdate, nowdate
 
 from costeo_yelke.api import item_api
-from costeo_yelke.roles import puede_aprobar_documentos, puede_revisar_documentos
+from costeo_yelke.roles import (
+    puede_aprobar_documentos,
+    puede_revisar_documentos,
+    requiere_vista,
+    vistas_produccion,
+)
 from costeo_yelke.utils import resolver_terminos
 
 # UOM usada en Subcontracting BOM / Purchase Order cuando un servicio de maquila se
@@ -1730,6 +1735,35 @@ def set_tipo_formato_cotizacion(name: str, custom_tipo_formato: str) -> dict:
     return {"name": name}
 
 
+def _vistas_de_documento(doctype, name=None):
+    """Vistas de Producción que autorizan a escribir/validar ESE documento -- basta
+    con tener una (ver roles.requiere_vista). Tupla vacía = el documento no es de
+    Producción (Costeo, Cotización, Orden de Venta, Remisión, Factura de venta) y no
+    se restringe por vista; su gating sigue siendo el de la doble validación.
+
+    Esto se SUMA a la doble validación Revisor/Aprobador, no la reemplaza."""
+    if doctype == "Purchase Order":
+        # La OC de maquila se crea y valida al preparar producción, pero también la
+        # toca quien lleva los talleres; la de materia prima es de quien compra.
+        sub = frappe.db.get_value("Purchase Order", name, "is_subcontracted") if name else None
+        return ("preparacion", "talleres") if sub else ("materia",)
+    if doctype == "Stock Entry":
+        # Solo el envío de material a un taller es de Producción. Cualquier otro
+        # movimiento de almacén sigue sin gating por vista, como hasta ahora.
+        propo = frappe.db.get_value("Stock Entry", name, "purpose") if name else None
+        return ("talleres", "envios") if propo == "Send to Subcontractor" else ()
+    return {
+        "Production Plan": ("preparacion",),
+        "Material Request": ("preparacion",),
+        "Request for Quotation": ("materia",),
+        "Supplier Quotation": ("materia",),
+        "Purchase Receipt": ("materia", "envios"),
+        "Subcontracting Order": ("talleres",),
+        "Subcontracting Receipt": ("talleres", "envios"),
+        "Purchase Invoice": ("facturas",),
+    }.get(doctype, ())
+
+
 @frappe.whitelist()
 def validar_documento(doctype: str, name: str) -> dict:
     """Valida (submit) un documento en borrador.
@@ -1743,6 +1777,7 @@ def validar_documento(doctype: str, name: str) -> dict:
     - Los demás doctypes que también pasan por aquí (Production Plan, Sales
       Invoice, Purchase Receipt, etc.) siguen con la validación normal, sin
       gating por rol."""
+    requiere_vista(*_vistas_de_documento(doctype, name))
     if doctype == "Costeo" and not puede_aprobar_documentos():
         frappe.throw(
             _("No tienes permiso para validar este Costeo -- se requiere el rol 'Aprobador de Documentos Yelke'."),
@@ -1782,6 +1817,7 @@ def marcar_revisado_documento(doctype: str, name: str) -> dict:
     """Marca la verificación intermedia del esquema Doble (hoy solo Purchase
     Order -- materia prima y subcontratada) -- paso previo obligatorio a
     validar_documento para los doctypes que lo requieren."""
+    requiere_vista(*_vistas_de_documento(doctype, name))
     if not frappe.get_meta(doctype).has_field("revisado_yelke"):
         frappe.throw(_("Este tipo de documento no usa doble validación."))
     if not puede_revisar_documentos():
@@ -1812,8 +1848,16 @@ def puede_validar_costeo():
 def get_permisos_validacion_yelke():
     """Roles del usuario actual frente al motor de validación (Simple y Doble) --
     para que el SPA deshabilite/explique los botones de Revisar/Validar antes de
-    que el backend los rechace."""
-    return {"puede_revisar": puede_revisar_documentos(), "puede_aprobar": puede_aprobar_documentos()}
+    que el backend los rechace.
+
+    ``vistas``: claves de las vistas de Producción que puede abrir (ver
+    roles.vistas_produccion). El menú de Producción solo muestra esas; el backend
+    sigue siendo la autoridad."""
+    return {
+        "puede_revisar": puede_revisar_documentos(),
+        "puede_aprobar": puede_aprobar_documentos(),
+        "vistas": vistas_produccion(),
+    }
 
 
 def _contabilizar_overhead_factura(si_doc):
@@ -2393,6 +2437,10 @@ def crear_remision(costeo: str, posting_date=None, shipping_address_name=None, i
     ``lote_ref``: remisión de UN lote de producción -- sin ``items``, la cantidad de
     cada producto es lo que ese lote ya produjo y todavía no se ha remisionado
     (_entrega_de_lote), y sale del almacén donde quedaron esas prendas."""
+    # Solo la remisión de un LOTE es de la vista Entrega de Producción; sin lote_ref
+    # esto es el paso 6 del costeo, que no se restringe por vista.
+    if lote_ref:
+        requiere_vista("entrega")
     almacen_lote = {}
     if lote_ref and not items:
         entrega = _entrega_de_lote(costeo, lote_ref)
@@ -2874,19 +2922,50 @@ def _pinv_for(field, value):
 
 
 @frappe.whitelist()
-def get_facturas_compra(costeo: str) -> dict:
+def get_facturas_compra(costeo: str, sales_order: str = None) -> dict:
     """Fuentes facturables de compra del costeo, con su factura si ya existe.
-    Materiales → desde el Recibo de compra. Maquila → desde la OC de subcontratación."""
+    Materiales → desde el Recibo de compra. Maquila → desde la OC de subcontratación.
+
+    ``sales_order``, si se manda, es la OV activa elegida en el SPA: con un costeo de
+    varias OV cada una ve solo sus propias compras (ver _alcance_ov). Con una sola OV
+    se comporta igual que siempre.
+
+    Cada renglón trae además de dónde viene, para poder agruparlo por lote en la
+    bandeja de Facturas: ``lote_ref`` en materiales (el lote de la OC que se recibió)
+    y ``lotes`` en maquila (la OC de un taller cubre todos los lotes que le encargaron,
+    por eso es una lista)."""
     materiales, maquila = [], []
     if not frappe.db.has_column("Purchase Order", "costeo"):
         return {"materiales": materiales, "maquila": maquila}
 
+    alcance = _alcance_ov(costeo, sales_order=sales_order)
+    pos_alcance = alcance["purchase_orders"] if alcance else None
+    tiene_lote = frappe.db.has_column("Purchase Order", "lote_ref")
+
+    _f_mat = {"costeo": costeo, "is_subcontracted": 0, "docstatus": 1}
+    if pos_alcance is not None:
+        _f_mat["name"] = ["in", list(pos_alcance) or [""]]
     mat_pos = frappe.get_all(
-        "Purchase Order", filters={"costeo": costeo, "is_subcontracted": 0, "docstatus": 1}, pluck="name"
+        "Purchase Order", filters=_f_mat,
+        fields=["name", "lote_ref"] if tiene_lote else ["name"],
     )
-    rec_names = list(dict.fromkeys(
-        frappe.get_all("Purchase Receipt Item", filters={"purchase_order": ["in", mat_pos]}, pluck="parent")
-    )) if mat_pos else []
+    lote_de_po = {p["name"]: (p.get("lote_ref") or "") for p in mat_pos}
+    mat_po_names = list(lote_de_po)
+    # Recibo -> lote de la(s) OC que recibió. Normalmente una sola; si un recibo
+    # juntara OC de dos lotes se muestran ambos, no se inventa uno.
+    lote_de_recibo = {}
+    rec_names = []
+    if mat_po_names:
+        for r in frappe.get_all(
+            "Purchase Receipt Item",
+            filters={"purchase_order": ["in", mat_po_names]}, fields=["parent", "purchase_order"],
+        ):
+            if r.parent not in lote_de_recibo:
+                rec_names.append(r.parent)
+                lote_de_recibo[r.parent] = []
+            lote = lote_de_po.get(r.purchase_order) or ""
+            if lote and lote not in lote_de_recibo[r.parent]:
+                lote_de_recibo[r.parent].append(lote)
     for r in rec_names:
         rd = frappe.db.get_value(
             "Purchase Receipt", r,
@@ -2897,22 +2976,44 @@ def get_facturas_compra(costeo: str) -> dict:
             continue
         rd["source_doctype"] = "Purchase Receipt"
         rd["invoice"] = _pinv_for("purchase_receipt", r)
+        rd["lote_ref"] = (lote_de_recibo.get(r) or [""])[0]
+        rd["lotes"] = lote_de_recibo.get(r) or []
         materiales.append(rd)
 
+    _f_sub = {"costeo": costeo, "is_subcontracted": 1, "docstatus": 1}
+    if pos_alcance is not None:
+        _f_sub["name"] = ["in", list(pos_alcance) or [""]]
     sub_pos = frappe.get_all(
-        "Purchase Order",
-        filters={"costeo": costeo, "is_subcontracted": 1, "docstatus": 1},
-        fields=["name", "supplier", "supplier_name", "base_net_total", "grand_total", "status"],
+        "Purchase Order", filters=_f_sub,
+        fields=["name", "supplier", "supplier_name", "base_net_total", "grand_total", "status",
+                "per_received"],
         order_by="creation asc",
     )
     for p in sub_pos:
         p["source_doctype"] = "Purchase Order"
+        # La factura de maquila es UNA por OC de subcontratación -- el comportamiento
+        # nativo de ERPNext --, así que solo se captura cuando el taller ya devolvió
+        # TODO lo que se le encargó, de todos los lotes. Hasta entonces el importe que
+        # se vería sería engañoso: el precio del servicio viaja completo en una pieza
+        # portadora (ver precio-pieza-portadora), de modo que con una sola pieza de
+        # vuelta la OC ya muestra el total del servicio.
+        p["per_received"] = flt(p.get("per_received"))
+        p["recibido_todo"] = p["per_received"] >= 99.99
         # Una OC de maquila se va facturando por lo RECIBIDO (recepciones de servicio
         # que nacen de cada recibo de taller), así que puede tener varias facturas.
         facturas = _pinvs_de_oc(p["name"])
         p["invoices"] = facturas
         p["invoice"] = next((f for f in facturas if f.docstatus == 0), None) or (facturas[-1] if facturas else None)
         p["pendiente_facturar"] = _maquila_pendiente_de_facturar(p["name"])
+        # Los lotes que esta OC de taller ya cubre (sus encargos). La factura es por
+        # taller, no por lote: el mismo importe aparecería duplicado si se mostrara
+        # dentro de cada lote.
+        p["lotes"] = sorted({
+            r for r in frappe.get_all(
+                "Subcontracting Order",
+                filters={"purchase_order": p["name"], "docstatus": ["<", 2]}, pluck="lote_ref")
+            if r
+        }) if frappe.db.has_column("Subcontracting Order", "lote_ref") else []
         maquila.append(p)
 
     return {"materiales": materiales, "maquila": maquila}
@@ -3011,6 +3112,7 @@ def _estado_factura_sco(sco, po, cache_po):
 def crear_factura_compra(source_doctype: str, source_name: str) -> dict:
     """Crea una Factura de Compra (Purchase Invoice) en borrador desde un Recibo de compra
     (materiales) o una OC de subcontratación (maquila)."""
+    requiere_vista("facturas")
     field = "purchase_receipt" if source_doctype == "Purchase Receipt" else "purchase_order"
 
     # Maquila: se factura lo RECIBIDO, encadenando sus recepciones de servicio aún no
@@ -3085,6 +3187,7 @@ def get_factura_compra(name: str) -> dict:
 def actualizar_factura_compra(name: str, posting_date=None, due_date=None, bill_no=None, bill_date=None,
                               payment_terms_template=None, tc_name=None) -> dict:
     """Actualiza los datos manuales de una factura de compra en borrador."""
+    requiere_vista("facturas")
     doc = frappe.get_doc("Purchase Invoice", name)
     if doc.docstatus != 0:
         frappe.throw(_("La factura ya está validada; no se puede editar."))
@@ -4386,6 +4489,20 @@ def get_costeo_related(costeo: str, sales_order: str = None) -> dict:
                     "contact_mobile", "selling_price_list", "taxes_and_charges", "po_no"],
             order_by="creation desc",
         )
+        # Cantidad por producto de cada OV -- la tarjeta "Orden de venta" del menú de
+        # Producción muestra qué se está produciendo ("2,880 + 175 · 2 lotes"), y con
+        # varias OV es el dato que las distingue de un vistazo. Una sola consulta para
+        # todas, no una por OV.
+        if rows:
+            por_so = {}
+            for it in frappe.get_all(
+                "Sales Order Item", filters={"parent": ["in", [r["name"] for r in rows]]},
+                fields=["parent", "item_code", "item_name", "qty"], order_by="idx asc",
+            ):
+                por_so.setdefault(it.parent, []).append(
+                    {"item_code": it.item_code, "item_name": it.item_name, "qty": flt(it.qty)})
+            for r in rows:
+                r["cantidades"] = por_so.get(r["name"], [])
         out["sales_orders"] = rows
         if rows:
             out["sales_order"] = rows[0]
@@ -4515,6 +4632,7 @@ def preparar_produccion(costeo: str, sales_order: str = None) -> dict:
     todas las OV de un mismo costeo. El Plan sí es por OV: solo se salta si YA existe un
     plan para esta OV específica (no basta con que exista alguno para el costeo -- otra
     OV pudo haber creado el suyo antes)."""
+    requiere_vista("preparacion")
     existing = get_produccion_docs(costeo, sales_order)
     steps = []
 
@@ -4681,6 +4799,7 @@ def guardar_plan(plan: str, for_warehouse: str = None, items=None) -> dict:
     subcontratación) sale de esta cantidad, subirla aquí es lo único que hace falta
     para que ese margen se refleje en TODO el flujo de producción sin tener que
     repetirlo lote por lote ni documento por documento."""
+    requiere_vista("preparacion")
     pp = frappe.get_doc("Production Plan", plan)
     if pp.docstatus != 0:
         frappe.throw(_("El plan ya está validado."))
@@ -4725,6 +4844,7 @@ def guardar_plan(plan: str, for_warehouse: str = None, items=None) -> dict:
 @frappe.whitelist()
 def plan_obtener_materias_primas(plan: str, warehouse: str = None) -> dict:
     """Re-ejecuta 'Obtener materias primas para comprar' sobre un plan en borrador."""
+    requiere_vista("preparacion")
     pp = frappe.get_doc("Production Plan", plan)
     if pp.docstatus != 0:
         frappe.throw(_("El plan ya está validado."))
@@ -4759,6 +4879,7 @@ def plan_crear_solicitud_material(plan: str) -> dict:
     """Crea las Solicitudes de Material DESDE el plan (nativo, quedan asociadas) y
     pre-llena el PROVEEDOR por materia prima tomándolo del Costeo (como la versión Desk),
     para habilitar la creación de una OC por proveedor."""
+    requiere_vista("preparacion")
     pp = frappe.get_doc("Production Plan", plan)
     if pp.docstatus != 1:
         frappe.throw(_("Valida el plan primero."))
@@ -4943,6 +5064,7 @@ def guardar_solicitud_material(mr: str, items=None, schedule_date=None) -> dict:
     (qty_original, capturada al crear la solicitud) -- de más (mermas/control de
     calidad) o de menos (ej. comprar en múltiplos/rollos cerrados) -- sin dejar que se
     dispare a lo que sea."""
+    requiere_vista("preparacion")
     doc = frappe.get_doc("Material Request", mr)
     if doc.docstatus != 0:
         frappe.throw(_("La solicitud ya está validada; no se puede editar."))
@@ -5113,6 +5235,7 @@ def mr_crear_oc(mr: str, items=None, schedule_date=None, lote_ref: str = None) -
     `schedule_date` (opcional): fecha requerida de este lote -- se aplica a la OC y a
     cada una de sus líneas. `lote_ref` (opcional) correlaciona esta OC con el lote de
     subcontratación del mismo nombre (ver get_lotes_produccion)."""
+    requiere_vista("materia")
     doc = frappe.get_doc("Material Request", mr)
     if doc.docstatus != 1:
         frappe.throw(_("Valida la solicitud primero."))
@@ -5463,6 +5586,7 @@ def mr_dividir_en_lotes_por_piezas(mr: str, plan: str, lotes) -> dict:
     exceda su `planned_qty` en el plan -- el frontend ya lo bloquea antes de
     llegar aquí (contorno rojo en el campo), pero esta es la validación real:
     nunca hay que confiar solo en lo que ya filtró la pantalla."""
+    requiere_vista("preparacion")
     lotes = json.loads(lotes) if isinstance(lotes, str) else lotes
 
     pp = frappe.get_doc("Production Plan", plan)
@@ -5734,6 +5858,7 @@ def mr_generar_oc_lote(mr: str, lote_ref: str, supplier: str = None) -> dict:
     que si se hubiera "dividido" en un solo lote que es la Solicitud completa. La
     validación de saldo pendiente de mr_crear_oc sigue aplicando de todos modos, así
     que no hay riesgo de comprar de más si esto se llama más de una vez."""
+    requiere_vista("materia")
     doc = frappe.get_doc("Material Request", mr)
     if doc.docstatus != 1:
         frappe.throw(_("Valida la solicitud primero."))
@@ -5813,6 +5938,7 @@ def oc_jalar_precios(po: str) -> dict:
     """Re-jala los precios de una OC en borrador (Presupuesto de Proveedor → precio
     oficial con ese proveedor → precio del costeo si la UDM no cambió → lista de
     precios), ver _precio_para_oc."""
+    requiere_vista("materia")
     doc = frappe.get_doc("Purchase Order", po)
     if doc.docstatus != 0:
         frappe.throw(_("La OC ya está validada; no se puede editar."))
@@ -5871,7 +5997,8 @@ def get_recibos(plan: str) -> dict:
     mr_names = _mrs_activos_del_plan(plan)
     if mr_names:
         mri_rows = frappe.get_all(
-            "Material Request Item", filters={"parent": ["in", mr_names]}, fields=["item_code", "qty"],
+            "Material Request Item", filters={"parent": ["in", mr_names]},
+            fields=["item_code", "qty", "conversion_factor", "stock_qty"],
         )
         precio_cache = {}
 
@@ -5881,7 +6008,9 @@ def get_recibos(plan: str) -> dict:
                 precio_cache[item_code] = flt(precio or 0)
             return precio_cache[item_code]
 
-        valor_total = sum(flt(r.qty) * _precio(r.item_code) for r in mri_rows)
+        valor_total = sum(
+            (flt(r.stock_qty) or flt(r.qty) * (flt(r.conversion_factor) or 1)) * _precio(r.item_code)
+            for r in mri_rows)
         if valor_total:
             recibido_rows = frappe.get_all(
                 "Purchase Receipt Item",
@@ -5903,6 +6032,7 @@ def crear_recibo_oc(po: str) -> dict:
     existe un recibo (borrador o validado) para esta OC lo regresa en vez de crear uno
     duplicado -- se dispara solo al validar la OC, así que debe ser segura de llamar
     más de una vez."""
+    requiere_vista("materia", "envios")
     po_doc = frappe.get_doc("Purchase Order", po)
     if po_doc.docstatus != 1:
         frappe.throw(_("Valida la orden de compra primero."))
@@ -6147,6 +6277,7 @@ def guardar_om(po: str, general=None, tallas_caballero=None, tallas_dama=None, p
     replica a todas las demás, así que da igual desde cuál se edite. (Antes solo se
     aceptaba desde la primera OC creada -- una distinción interna que en la pantalla
     se veía como "no me deja editar nada" en 3 de las 4 etapas.)"""
+    requiere_vista("preparacion")
     costeo = _guardar_om_una(po, general, tallas_caballero, tallas_dama, procesos, tablas, archivos)
     if costeo:
         origen = get_om(po)
@@ -6233,6 +6364,101 @@ def _po_for_bom_item(bom_item, sales_order, costeo):
     )
 
 
+def _lote_refs_del_costeo(costeo):
+    """Todos los nombres de lote ya usados en un costeo, de cualquier OV: los
+    declarados en la solicitud de material, los de las OC de material y los de los
+    encargos a talleres. Sirve para que el siguiente lote nunca repita un nombre (ver
+    get_lotes_produccion)."""
+    refs = set()
+    if frappe.db.has_column("Material Request Item", "lote_ref"):
+        mrs = frappe.get_all("Material Request", filters={"costeo": costeo, "docstatus": ["<", 2]}, pluck="name")
+        if mrs:
+            refs |= set(frappe.get_all(
+                "Material Request Item",
+                filters={"parent": ["in", mrs], "lote_ref": ["not in", ["", None]]}, pluck="lote_ref"))
+    pos = frappe.get_all("Purchase Order", filters={"costeo": costeo, "docstatus": ["<", 2]}, pluck="name") \
+        if frappe.db.has_column("Purchase Order", "costeo") else []
+    if pos and frappe.db.has_column("Purchase Order", "lote_ref"):
+        refs |= set(frappe.get_all(
+            "Purchase Order", filters={"name": ["in", pos], "lote_ref": ["not in", ["", None]]}, pluck="lote_ref"))
+    if pos and frappe.db.has_column("Subcontracting Order", "lote_ref"):
+        refs |= set(frappe.get_all(
+            "Subcontracting Order",
+            filters={"purchase_order": ["in", pos], "lote_ref": ["not in", ["", None]], "docstatus": ["<", 2]},
+            pluck="lote_ref"))
+    return sorted(r for r in refs if r)
+
+
+def _ovs_del_costeo(costeo):
+    """Órdenes de venta vivas (no canceladas) de un costeo."""
+    if not costeo or not frappe.db.has_column("Sales Order", "costeo"):
+        return []
+    return frappe.get_all("Sales Order", filters={"costeo": costeo, "docstatus": ["<", 2]}, pluck="name")
+
+
+def _ov_del_plan(plan):
+    """La OV a la que está ligado un Production Plan (tabla hija nativa), o None."""
+    return frappe.db.get_value("Production Plan Sales Order", {"parent": plan}, "sales_order") if plan else None
+
+
+def _alcance_ov(costeo, sales_order=None, plan=None):
+    """Qué documentos de producción pertenecen a UNA orden de venta del costeo.
+
+    Un Costeo puede tener varias OV (réplicas de un pedido recurrente), cada una con
+    su propio plan, su propia solicitud de material y sus propios lotes. Casi todos
+    esos documentos se etiquetan solo con ``costeo``, así que sin este filtro la
+    pantalla de la OV-B mostraba también los lotes, las órdenes de compra y las
+    facturas de la OV-A.
+
+    Devuelve ``None`` cuando no hace falta filtrar -- el costeo tiene UNA sola OV (el
+    caso de siempre, y el de todos los datos viejos) o no se pudo resolver la OV -- y
+    entonces todo se comporta exactamente igual que antes. Si no, un dict con los
+    conjuntos de nombres en alcance.
+
+    De dónde sale cada filtro (verificado contra los datos reales de sandbox):
+    - Solicitudes de material: ``Material Request Item.production_plan``, que el
+      propio plan llena al generarlas.
+    - OC de MAQUILA: ``Purchase Order Item.production_plan``, que pone
+      plan_crear_subcontratacion.
+    - OC de MATERIA PRIMA: ``sales_order`` / ``material_request`` de la línea -- el
+      mapeador nativo que las crea desde la Solicitud nunca copia production_plan
+      (misma razón que se documenta en get_recibos).
+
+    Las solicitudes de cotización, los presupuestos de proveedor, las remisiones y la
+    tabla de lotes del costeo NO hacen falta aquí: todos se buscan por ``lote_ref``,
+    que se mantiene único dentro del costeo (ver siguienteLoteLibre en el SPA)."""
+    if not costeo:
+        return None
+    if plan and not sales_order:
+        sales_order = _ov_del_plan(plan)
+    if not sales_order:
+        return None
+    if len(_ovs_del_costeo(costeo)) <= 1:
+        return None
+    if not plan:
+        plan = _get_plan_for_so(costeo, sales_order)
+
+    mrs = set(frappe.get_all("Material Request", filters={"costeo": costeo, "docstatus": ["<", 2]}, pluck="name"))
+    if plan:
+        mrs &= set(frappe.get_all("Material Request Item", filters={"production_plan": plan}, pluck="parent"))
+    else:
+        mrs = set()
+
+    pos = set(frappe.get_all("Purchase Order Item", filters={"sales_order": sales_order}, pluck="parent"))
+    if plan:
+        pos |= set(frappe.get_all("Purchase Order Item", filters={"production_plan": plan}, pluck="parent"))
+    if mrs:
+        pos |= set(frappe.get_all(
+            "Purchase Order Item", filters={"material_request": ["in", list(mrs)]}, pluck="parent"))
+
+    return {
+        "sales_order": sales_order,
+        "plan": plan,
+        "material_requests": mrs,
+        "purchase_orders": pos,
+    }
+
+
 @frappe.whitelist()
 def get_lotes_produccion(plan: str) -> dict:
     """Vista por LOTE de la subcontratación. Cada lote se descompone en PARADAS (ver
@@ -6248,7 +6474,12 @@ def get_lotes_produccion(plan: str) -> dict:
     Sub Ensamblaje -- vacío si no declaró ninguna)."""
     costeo = frappe.db.get_value("Production Plan", plan, "costeo")
     if not costeo:
-        return {"productos": [], "lotes": []}
+        return {"productos": [], "lotes": [], "lote_refs_costeo": []}
+
+    # Solo lo de la OV de ESTE plan cuando el costeo tiene varias (ver _alcance_ov);
+    # None = costeo de una sola OV, comportamiento idéntico al de siempre.
+    alcance = _alcance_ov(costeo, plan=plan)
+    pos_alcance = alcance["purchase_orders"] if alcance else None
 
     doc = frappe.get_doc("Costeo", costeo)
     pts_costeo = _productos_terminados_de_costeo(costeo)
@@ -6271,9 +6502,12 @@ def get_lotes_produccion(plan: str) -> dict:
     # por lote_ref a nivel de COSTEO y se ofrece igual a todos los productos que
     # compartan ese lote_ref -- el usuario es quien decide, al capturar el lote de
     # entrega, con qué lote de subcontratación se corresponde.
+    _f_mat = {"costeo": costeo, "is_subcontracted": 0, "lote_ref": ["not in", ["", None]], "docstatus": ["<", 2]}
+    if pos_alcance is not None:
+        _f_mat["name"] = ["in", list(pos_alcance) or [""]]
     material_pos = frappe.get_all(
         "Purchase Order",
-        filters={"costeo": costeo, "is_subcontracted": 0, "lote_ref": ["not in", ["", None]], "docstatus": ["<", 2]},
+        filters=_f_mat,
         fields=["name", "lote_ref", "docstatus", "supplier", "supplier_name", "per_received", "enviado_el"],
         order_by="creation asc",
     ) if frappe.db.has_column("Purchase Order", "lote_ref") else []
@@ -6302,6 +6536,8 @@ def get_lotes_produccion(plan: str) -> dict:
     # disparando a propósito desde la pantalla del lote, no automáticamente al validar
     # la solicitud (algo pudo cambiar entretanto: precio de un presupuesto, cantidad).
     mr_names = frappe.get_all("Material Request", filters={"costeo": costeo, "docstatus": 1}, pluck="name")
+    if alcance is not None:
+        mr_names = [m for m in mr_names if m in alcance["material_requests"]]
     has_sup = frappe.db.has_column("Material Request Item", "supplier")
     materiales_por_lote = {}
     # Fecha de cada lote -- para poder mostrarlos siempre en el orden en que de
@@ -6381,9 +6617,12 @@ def get_lotes_produccion(plan: str) -> dict:
         return f"{nombres[0]} +{len(nombres) - 1}"
 
     # ---- SCO de maquila del costeo, con su estado (envío / recibo) ----
+    _f_maq = {"costeo": costeo, "is_subcontracted": 1, "docstatus": ["<", 2]}
+    if pos_alcance is not None:
+        _f_maq["name"] = ["in", list(pos_alcance) or [""]]
     maquila_pos = frappe.get_all(
         "Purchase Order",
-        filters={"costeo": costeo, "is_subcontracted": 1, "docstatus": ["<", 2]},
+        filters=_f_maq,
         pluck="name",
     ) if frappe.db.has_column("Purchase Order", "costeo") else []
     scos_all = frappe.get_all(
@@ -6607,6 +6846,9 @@ def get_lotes_produccion(plan: str) -> dict:
                 "sub_ensamblajes": sub_ensamblajes_out,
                 # Lo que ya entregó este taller (todos sus lotes) y aún no se le factura.
                 "maquila_pendiente": _maquila_pendiente_de_facturar(parada.po) if parada.po else 0,
+                # La factura de maquila de lo que ya entregó en esta parada, si existe
+                # (``{name, docstatus}``). Se usa para llegar a ella desde un enlace.
+                "factura": next((s["factura"] for s in scos_parada if s.get("factura")), None),
             })
 
         ramas, terminal_rama, etapas_rama, cadena_rama = _ramas_por_pieza(
@@ -6659,6 +6901,13 @@ def get_lotes_produccion(plan: str) -> dict:
             for p in doc.costeo_producto if p.finished_item
         ],
         "lotes": lotes_out,
+        # TODOS los lote_ref del costeo, también los de las otras OV. El nombre del
+        # lote ("Lote 3") es la llave con la que se buscan la tabla de lotes del
+        # costeo, las remisiones, las solicitudes de cotización y los presupuestos,
+        # que son del COSTEO y no de la OV: si dos OV abrieran cada una su "Lote 1",
+        # se pisarían. Por eso la numeración sigue corrida entre OV (ver
+        # siguienteLoteLibre en el SPA), aunque cada una solo vea los suyos.
+        "lote_refs_costeo": _lote_refs_del_costeo(costeo),
     }
 
 
@@ -7195,6 +7444,7 @@ def sub_crear_sco(po: str, qty: float = None, schedule_date: str = None, lote_re
     `lote_ref` correlaciona esta SCO con las de OTRAS paradas (otras OC, u otra parada
     del mismo taller) que pertenecen al mismo lote de producción -- ver
     get_lotes_produccion."""
+    requiere_vista("talleres")
     from erpnext.buying.doctype.purchase_order.purchase_order import make_subcontracting_order
 
     if isinstance(cantidades, str):
@@ -7533,6 +7783,7 @@ def _landed_cost_row(company, description, amount, expense_account=None, proveed
 @frappe.whitelist()
 def sub_guardar_sco(sco: str, campos=None, costos=None) -> dict:
     """Guarda almacenes, dirección/contacto y costos adicionales en la SCO en borrador."""
+    requiere_vista("talleres")
     doc = frappe.get_doc("Subcontracting Order", sco)
     if doc.docstatus != 0:
         frappe.throw(_("La orden de subcontratación ya está validada."))
@@ -7569,6 +7820,7 @@ def sub_guardar_sco(sco: str, campos=None, costos=None) -> dict:
 @frappe.whitelist()
 def sub_validar_sco(sco: str) -> dict:
     """Valida (submit) la orden de subcontratación."""
+    requiere_vista("talleres")
     doc = frappe.get_doc("Subcontracting Order", sco)
     if doc.docstatus == 0:
         doc.flags.ignore_permissions = True
@@ -7740,6 +7992,7 @@ def sub_transferir_material(sco: str) -> dict:
     'Transferencia → Materiales al proveedor' de ERPNext). No lo valida: el usuario revisa
     almacenes y cantidades y lo valida aparte (así no fuerza stock negativo).
     El almacén de origen se pre-llena según la etapa (materia prima / trabajo en proceso)."""
+    requiere_vista("talleres", "envios")
     from erpnext.controllers.subcontracting_controller import make_rm_stock_entry
 
     doc = frappe.get_doc("Subcontracting Order", sco)
@@ -8057,6 +8310,7 @@ def sub_devolver_material(costeo: str, warehouse: str, items=None, destino: str 
     ``items`` = [{item_code, qty}]; sin ellos se devuelve TODO el saldo libre de ese
     almacén (ver sub_saldo_talleres). Nunca deja devolver más de lo libre: lo que
     está comprometido por un encargo abierto sigue siendo del taller."""
+    requiere_vista("envios", "talleres")
     if isinstance(items, str):
         items = frappe.parse_json(items) if items else None
 
@@ -8255,6 +8509,7 @@ def sub_guardar_transferencia(stock_entry: str, from_warehouse=None, to_warehous
     """Guarda almacenes de origen/destino, cantidades y costos adicionales (flete al enviar
     materia prima al taller) del Stock Entry en borrador -- se capitalizan al valor del
     material recibido en el almacén del proveedor, igual que en la SCO."""
+    requiere_vista("talleres", "envios")
     doc = frappe.get_doc("Stock Entry", stock_entry)
     if doc.docstatus != 0:
         frappe.throw(_("La transferencia ya está validada."))
@@ -8312,6 +8567,7 @@ def sub_guardar_transferencia(stock_entry: str, from_warehouse=None, to_warehous
 def sub_validar_transferencia(stock_entry: str) -> dict:
     """Valida (submit) el Stock Entry de transferencia. Puede lanzar NegativeStockError si la
     materia prima aún no está en el almacén de origen (hay que comprarla/recibirla primero)."""
+    requiere_vista("talleres", "envios")
     doc = frappe.get_doc("Stock Entry", stock_entry)
     if doc.docstatus == 0:
         doc.flags.ignore_permissions = True
@@ -8322,6 +8578,7 @@ def sub_validar_transferencia(stock_entry: str) -> dict:
 @frappe.whitelist()
 def sub_crear_recibo(sco: str) -> dict:
     """Crea el Subcontracting Receipt (borrador) para recibir el producto terminado del taller."""
+    requiere_vista("talleres", "envios")
     from erpnext.subcontracting.doctype.subcontracting_order.subcontracting_order import make_subcontracting_receipt
 
     if frappe.db.get_value("Subcontracting Order", sco, "docstatus") != 1:
@@ -8402,14 +8659,34 @@ def _lote_paradas(doc, cantidades):
 
     trans_up = _transitive_upstream(ops_by_key)
 
+    # OC validadas de ESTE costeo. La búsqueda por fg_item de abajo tiene que
+    # acotarse a ellas: dos costeos con el mismo producto terminado generan los
+    # MISMOS fg_item ("CAMISOLA-PRUEBA-YP", "CAMISOLA-PRUEBA-YP · CUELLO-C"...), así
+    # que basta con duplicar un costeo o partir de una plantilla -- que es el flujo
+    # normal -- para que haya dos OC con el mismo fg_item.
+    #
+    # Antes se buscaba SIN filtro y solo se comprobaba el costeo después; si no
+    # coincidía se daba por perdida la operación en vez de seguir buscando. Ganaba
+    # la OC del costeo más reciente y el otro se quedaba sin paradas, sin ramas y
+    # sin root_po: su pantalla de Producción aparecía vacía, como si nunca se
+    # hubieran creado las órdenes a talleres.
+    pos_costeo = frappe.get_all(
+        "Purchase Order", filters={"costeo": costeo, "docstatus": 1}, pluck="name",
+    ) if frappe.db.has_column("Purchase Order", "costeo") else []
+
     po_de_key, faltan = {}, []
     for k, op in ops_by_key.items():
-        po = next((frappe.db.get_value("Purchase Order Item",
-                                       {"fg_item": fg, "docstatus": 1}, "parent")
-                   for fg in op.fg_items_oc
-                   if frappe.db.get_value("Purchase Order Item",
-                                          {"fg_item": fg, "docstatus": 1}, "parent")), None)
-        if not po or frappe.db.get_value("Purchase Order", po, "costeo") != costeo:
+        po = None
+        for fg in op.fg_items_oc:
+            # `parent in pos_costeo` hace el filtro DENTRO de la consulta, así cada
+            # costeo encuentra la suya. La lista vacía no puede caer en "sin filtro".
+            po = frappe.db.get_value(
+                "Purchase Order Item",
+                {"fg_item": fg, "docstatus": 1, "parent": ["in", pos_costeo or [""]]},
+                "parent")
+            if po:
+                break
+        if not po:
             faltan += list(op.fg_items_oc)
             continue
         po_de_key[k] = po
@@ -8528,6 +8805,7 @@ def lote_abrir(plan: str, lote_ref: str, cantidades=None, schedule_date: str = N
     vive en la TRANSFERENCIA.
 
     Las paradas que ya tengan su SCO en este lote se saltan -- seguro reintentar."""
+    requiere_vista("preparacion")
     if not lote_ref:
         frappe.throw(_("Indica la referencia del lote."))
     if isinstance(cantidades, str):
@@ -8928,6 +9206,7 @@ def parada_registrar_entrega(plan: str, lote_ref: str, parada_id: str, cantidad:
     TODAS sus entregas no puede acumular más piezas que las ya definidas para
     el lote (ver _parada_entregas_registradas) -- no existe una "ola" legítima
     ahí, terminar de más sería un error."""
+    requiere_vista("flujo", "talleres")
     if not lote_ref or not parada_id:
         frappe.throw(_("Indica el lote y la parada."))
     cantidad = round(flt(cantidad))
@@ -9104,6 +9383,7 @@ def sub_enviar_material(sco: str) -> dict:
     recibo) en una sola acción con un significado claro: "ya le mandé el material".
     Lo que NO se automatiza es validar el recibo -- ahí sí hay un dato real que sólo
     conoce el usuario (la cantidad entregada, con su merma o rechazo)."""
+    requiere_vista("talleres", "envios")
     if frappe.db.get_value("Subcontracting Order", sco, "docstatus") != 1:
         frappe.throw(_("Valida la orden de subcontratación primero."))
 
@@ -9167,6 +9447,7 @@ def sub_guardar_recibo(scr: str, set_warehouse=None, rejected_warehouse=None, su
     maniobras, etc.) del Subcontracting Receipt en borrador -- se capitalizan al valor
     del producto recibido. Al menos una fila (aunque sea $0) es obligatoria antes de
     validar -- ver validar_envio_capturado_recibo."""
+    requiere_vista("talleres", "envios")
     doc = frappe.get_doc("Subcontracting Receipt", scr)
     if doc.docstatus != 0:
         frappe.throw(_("El recibo ya está validado."))
@@ -9234,6 +9515,7 @@ def mr_crear_rfq(mr: str, supplier: str, items, lote_ref: str = None) -> dict:
     propio botón desde la pantalla del lote (no se genera sola al validar la
     solicitud, ni junta a todos los proveedores en un solo documento: cada
     proveedor tiene su RFQ, y sólo se crea cuando el usuario la pide)."""
+    requiere_vista("materia")
     doc = frappe.get_doc("Material Request", mr)
     if doc.docstatus != 1:
         frappe.throw(_("Valida la solicitud primero."))
@@ -9264,6 +9546,7 @@ def mr_crear_rfq(mr: str, supplier: str, items, lote_ref: str = None) -> dict:
 def mr_crear_presupuesto_proveedor(mr: str, supplier: str, items, lote_ref: str = None) -> dict:
     """Crea un Presupuesto de Proveedor (Supplier Quotation) para UN proveedor -- mismo
     criterio que mr_crear_rfq: por su propio botón, un documento por proveedor."""
+    requiere_vista("materia")
     doc = frappe.get_doc("Material Request", mr)
     if doc.docstatus != 1:
         frappe.throw(_("Valida la solicitud primero."))
@@ -9472,6 +9755,7 @@ def guardar_documento_compra(doctype: str, name: str, schedule_date=None, valid_
     que traía la línea ya no aplican tal cual (ver _precio_para_oc): la cantidad se
     reconvierte para conservar la misma cantidad REAL de material (en stock_uom), y el
     precio se recalcula solo -- sigue editable a mano después de guardar."""
+    requiere_vista(*_vistas_de_documento(doctype, name))
     doc = frappe.get_doc(doctype, name)
     if doc.docstatus != 0:
         frappe.throw(_("El documento ya está validado; no se puede editar."))
@@ -9609,9 +9893,16 @@ def _validar_sobrecompra_contra_solicitud(doc):
 
     for (mr, item_code), pedido in por_mr.items():
         # Lo que pide la solicitud completa para ese material, sumando sus lotes.
-        total_solicitado = sum(flt(r.qty) for r in frappe.get_all(
-            "Material Request Item", filters={"parent": mr, "item_code": item_code},
-            fields=["qty"]))
+        # EN UNIDADES DE STOCK, igual que `pedido` y `comprometido`: la solicitud se
+        # captura en la UDM de COMPRA (el botón se pide en Mazo, 1 = 1,728 piezas), así
+        # que sumar su `qty` tal cual comparaba 8 Mazo contra 6,912 piezas y daba
+        # "cubierta por completo" en cuanto existía UNA orden. Pasa con cualquier
+        # material cuyo factor de conversión no sea 1 (botones por mazo, tela por rollo).
+        total_solicitado = sum(
+            flt(r.stock_qty) or flt(r.qty) * (flt(r.conversion_factor) or 1)
+            for r in frappe.get_all(
+                "Material Request Item", filters={"parent": mr, "item_code": item_code},
+                fields=["qty", "conversion_factor", "stock_qty"]))
         # Lo ya comprometido por OTRAS órdenes vivas contra la misma solicitud.
         comprometido = 0.0
         for r in frappe.get_all(
@@ -9694,6 +9985,7 @@ def plan_dividir_lotes(plan: str, item_code: str, lotes) -> dict:
 @frappe.whitelist()
 def plan_crear_ordenes_trabajo(plan: str) -> dict:
     """Crea las Órdenes de Trabajo DESDE el plan (nativo, quedan asociadas)."""
+    requiere_vista("preparacion")
     pp = frappe.get_doc("Production Plan", plan)
     if pp.docstatus != 1:
         frappe.throw(_("Valida el plan primero."))
@@ -9713,6 +10005,7 @@ def plan_crear_subcontratacion(plan: str) -> dict:
     correcta de ESA orden (puede ser distinta a la del costeo si es una réplica con otra
     cantidad). Las OC creadas quedan etiquetadas con esa misma OV (sales_order nativo en
     Purchase Order Item) para poder filtrarlas después por OV."""
+    requiere_vista("preparacion")
     pp = frappe.get_doc("Production Plan", plan)
     if pp.docstatus != 1:
         frappe.throw(_("Valida el plan primero."))
@@ -10122,28 +10415,73 @@ def get_reporte_final(costeo: str, sales_order: str = None) -> dict:
 
 
 @frappe.whitelist()
-def enviar_por_correo(doctype: str, name: str, recipients: str, subject: str = None, message: str = None, print_format: str = None) -> dict:
+def contacto_principal_proveedor(supplier: str) -> dict:
+    """Contacto al que se le manda un documento a ese proveedor.
+
+    Se prefiere el marcado como principal (``is_primary_contact``); si ninguno lo
+    está, el primero que tenga correo, y si no, el primero que haya. Devuelve
+    ``{"contacto", "nombre", "email", "telefono"}`` -- todo vacío si el proveedor no
+    tiene ningún contacto dado de alta, para que la pantalla lo diga y deje
+    capturar el correo a mano en vez de fallar."""
+    if not supplier:
+        return {"contacto": None, "nombre": "", "email": "", "telefono": ""}
+    nombres = frappe.get_all(
+        "Dynamic Link",
+        filters={"link_doctype": "Supplier", "link_name": supplier, "parenttype": "Contact"},
+        pluck="parent",
+    )
+    contactos = [
+        frappe.db.get_value(
+            "Contact", n,
+            ["name", "first_name", "last_name", "email_id", "mobile_no", "phone", "is_primary_contact"],
+            as_dict=True)
+        for n in dict.fromkeys(nombres)
+    ]
+    contactos = [c for c in contactos if c]
+    elegido = (next((c for c in contactos if c.is_primary_contact and c.email_id), None)
+               or next((c for c in contactos if c.is_primary_contact), None)
+               or next((c for c in contactos if c.email_id), None)
+               or (contactos[0] if contactos else None))
+    if not elegido:
+        return {"contacto": None, "nombre": "", "email": "", "telefono": ""}
+    return {
+        "contacto": elegido.name,
+        "nombre": " ".join(x for x in [elegido.first_name, elegido.last_name] if x).strip() or elegido.name,
+        "email": elegido.email_id or "",
+        "telefono": elegido.mobile_no or elegido.phone or "",
+    }
+
+
+@frappe.whitelist()
+def enviar_por_correo(doctype: str, name: str, recipients: str, subject: str = None, message: str = None,
+                      print_format: str = None, print_formats=None) -> dict:
     """Envía un documento por correo.
 
     Adjunta el PDF si el generador está disponible (wkhtmltopdf); si no,
     envía el documento renderizado como HTML en el cuerpo (sin dependencia).
+
+    ``print_formats`` (lista o JSON) manda VARIOS PDF del mismo documento en un solo
+    correo -- la orden a un taller va con dos: la orden de compra y su ficha de
+    manufactura, que son formatos distintos del mismo Purchase Order.
     """
     recipient_list = [r.strip() for r in (recipients or "").replace(";", ",").split(",") if r.strip()]
     if not recipient_list:
         frappe.throw(_("Indica al menos un destinatario."))
 
-    fmt = print_format or "Standard"
+    if isinstance(print_formats, str):
+        print_formats = json.loads(print_formats)
+    formatos = [f for f in (print_formats or []) if f] or [print_format or "Standard"]
     attachments = None
     body = message or f"Adjunto {doctype} {name}."
     used = "pdf"
 
     try:
-        attachments = [frappe.attach_print(doctype, name, print_format=fmt)]
+        attachments = [frappe.attach_print(doctype, name, print_format=f) for f in formatos]
     except Exception:
         # Sin wkhtmltopdf: incrustar el documento como HTML en el cuerpo del correo.
         used = "html"
-        print_html = frappe.get_print(doctype, name, print_format=fmt)
-        body = (message or "") + "<br><br>" + print_html
+        body = (message or "") + "".join(
+            "<br><br>" + frappe.get_print(doctype, name, print_format=f) for f in formatos)
 
     frappe.sendmail(
         recipients=recipient_list,

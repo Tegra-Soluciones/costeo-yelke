@@ -18,6 +18,7 @@ from frappe import _
 from frappe.utils import flt
 
 from costeo_yelke.api.costeo_api import _om_decode_tables, _om_encode_tables, get_om
+from costeo_yelke.roles import requiere_vista
 
 GENERAL = ["om_modelo", "om_tela", "om_color", "om_color_principal", "om_forro", "om_combinacion",
            "om_ubicacion", "om_aberturas", "om_fecha_requerida", "om_bordado", "om_estampado",
@@ -55,28 +56,63 @@ def _etiqueta_talla(texto):
     return ", ".join(t.split(" - ")[0].strip() for t in (texto or "").split(",") if t.strip())
 
 
-def tallas_de_producto(doc, base):
+def qty_por_producto_de_ov(sales_order):
+    """{producto: cantidad} de una orden de venta, o None si no se dio ninguna.
+    Un producto con tallas extraordinarias trae VARIOS renglones del mismo artículo,
+    así que se suman (mismo criterio que get_reporte_final)."""
+    if not sales_order:
+        return None
+    out = {}
+    for r in frappe.get_all("Sales Order Item", filters={"parent": sales_order}, fields=["item_code", "qty"]):
+        if r.item_code:
+            out[r.item_code] = out.get(r.item_code, 0) + flt(r.qty)
+    return out or None
+
+
+def tallas_de_producto(doc, base, qty_ov=None):
     """Tallas heredadas del costeo para el producto base y sus variantes: lo que el
     costeo trae desglosado por talla, y el resto de cada producto como un renglón
-    (la variante con su etiqueta de talla; la base, "Sin desglose")."""
+    (la variante con su etiqueta de talla; la base, "Sin desglose").
+
+    ``qty_ov`` ({producto: cantidad}, de qty_por_producto_de_ov) es la cantidad de la
+    ORDEN DE VENTA activa. La ficha de manufactura es una sola por producto y la
+    comparten todas las OV del costeo, pero las tallas que se le imprimen a cada
+    taller tienen que ser las de la OV que está produciendo: si esa OV es una réplica
+    con otra cantidad, el desglose se recalcula proporcional (mismo criterio que
+    get_reporte_final) y los productos que no van en esa OV no aparecen. Sin
+    ``qty_ov`` se usan las cantidades del costeo, como siempre."""
     filas = []
     productos = dict(_productos_base(doc)).get(base, [base])
     for prod in productos:
         p = next((x for x in doc.costeo_producto if x.finished_item == prod), None)
         if not p:
             continue
+        if qty_ov is not None and prod not in qty_ov:
+            continue  # este producto del costeo no forma parte de la OV activa
+        total_costeo = flt(p.qty)
+        total = flt(qty_ov[prod]) if qty_ov is not None else total_costeo
+        # Proporción OV/costeo: 1.0 cuando coinciden (el caso normal) o cuando el
+        # costeo no trae cantidad, para no dividir entre cero.
+        factor = (total / total_costeo) if (qty_ov is not None and total_costeo) else 1.0
+        desde = len(filas)
         asignado = 0.0
         for t in (doc.get("tabla_tallas_costeo") or []):
             if t.finished_item != prod or flt(t.qty) <= 0:
                 continue
-            filas.append({"producto": prod, "genero": t.genero or "", "talla": _etiqueta_talla(t.talla), "cantidad": flt(t.qty)})
-            asignado += flt(t.qty)
-        resto = flt(p.qty) - asignado
+            cantidad = round(flt(t.qty) * factor, 2) if factor != 1.0 else flt(t.qty)
+            filas.append({"producto": prod, "genero": t.genero or "", "talla": _etiqueta_talla(t.talla),
+                          "cantidad": cantidad})
+            asignado += cantidad
+        resto = round(total - asignado, 2)
         if resto > 0:
             etiqueta = p.get("talla_grupo_label") or ""
             genero = etiqueta.split(" ")[0] if etiqueta else ""
             talla = etiqueta[len(genero):].strip() if etiqueta else ("Sin desglose" if prod == base else prod)
             filas.append({"producto": prod, "genero": genero, "talla": talla or "Sin desglose", "cantidad": resto})
+        elif resto and len(filas) > desde:
+            # Sin renglón de resto, el redondeo al prorratear no puede cambiar el
+            # total de la OV: la diferencia se absorbe en el último desglose.
+            filas[-1]["cantidad"] = round(filas[-1]["cantidad"] + resto, 2)
     return filas
 
 
@@ -111,25 +147,34 @@ def _serializar(om):
 
 
 @frappe.whitelist()
-def get_oms_generales(costeo: str) -> dict:
+def get_oms_generales(costeo: str, sales_order: str = None) -> dict:
     """Las órdenes de manufactura generales del costeo, una por producto base, con sus
-    talleres (para asignar) y sus tallas heredadas."""
+    talleres (para asignar) y sus tallas heredadas.
+
+    ``sales_order``, si se manda, es la OV activa del SPA: la ficha es la misma para
+    todas las OV del costeo, pero las tallas que se muestran son las de esa OV (ver
+    tallas_de_producto). Sin ella, las del costeo completo, como siempre."""
     doc = frappe.get_doc("Costeo", costeo)
+    qty_ov = qty_por_producto_de_ov(sales_order)
     out = []
     for base, productos in _productos_base(doc):
+        tallas = tallas_de_producto(doc, base, qty_ov)
+        if qty_ov is not None and not tallas:
+            continue  # ningún producto de esta ficha va en la OV activa
         out.append({
             "producto": base,
             "item_name": frappe.db.get_value("Item", base, "item_name") or base,
             "variantes": [p for p in productos if p != base],
             "talleres": talleres_de_producto(doc, base),
-            "tallas": tallas_de_producto(doc, base),
+            "tallas": tallas,
             "om": _serializar(_om_doc(costeo, base)),
         })
-    return {"productos": out}
+    return {"productos": out, "sales_order": sales_order or None}
 
 
 @frappe.whitelist()
 def guardar_om_general(costeo: str, producto: str, datos) -> dict:
+    requiere_vista("om")
     datos = json.loads(datos) if isinstance(datos, str) else (datos or {})
     doc = frappe.get_doc("Costeo", costeo)
     base = _base_de(doc, producto)
@@ -157,6 +202,23 @@ def guardar_om_general(costeo: str, producto: str, datos) -> dict:
     return {"ok": True, "name": om.name, "om": _serializar(om)}
 
 
+def _ov_de_oc(po_doc):
+    """La orden de venta que produce una orden de maquila. Sus líneas traen
+    ``sales_order`` (lo copia plan_crear_subcontratacion); las más viejas solo traen
+    ``production_plan``, de donde se resuelve la OV por la tabla hija nativa. None si
+    no se puede resolver: entonces se usan las cantidades del costeo, como antes."""
+    for it in po_doc.items:
+        if it.get("sales_order"):
+            return it.get("sales_order")
+    for it in po_doc.items:
+        if it.get("production_plan"):
+            so = frappe.db.get_value(
+                "Production Plan Sales Order", {"parent": it.get("production_plan")}, "sales_order")
+            if so:
+                return so
+    return None
+
+
 def _para(fila_proveedores, supplier):
     lista = fila_proveedores if isinstance(fila_proveedores, list) else _lista(fila_proveedores)
     return not lista or supplier in lista
@@ -172,6 +234,7 @@ def om_de_oc(po: str) -> list:
     registros = []
     if costeo and frappe.db.exists("Costeo", costeo):
         doc = frappe.get_doc("Costeo", costeo)
+        qty_ov = qty_por_producto_de_ov(_ov_de_oc(po_doc))
         bases = []
         for it in po_doc.items:
             prod = it.get("producto_terminado") or (it.get("fg_item") or "").split(" · ")[0]
@@ -187,7 +250,7 @@ def om_de_oc(po: str) -> list:
                 "producto": base,
                 "item_name": frappe.db.get_value("Item", base, "item_name") or base,
                 "general": om["general"],
-                "tallas": tallas_de_producto(doc, base),
+                "tallas": tallas_de_producto(doc, base, qty_ov),
                 "procesos": [r for r in om["procesos"] if _para(r["proveedores"], sup)],
                 "observaciones": [r for r in om["observaciones"] if _para(r["proveedores"], sup)],
                 "tablas": [t for t in om["tablas"] if _para(t.get("proveedores"), sup)],

@@ -1,11 +1,11 @@
 <template>
   <!-- La OM tal como la recibe ESTE taller: un registro por producto que trabaja, con
        la info general y las tallas completas y solo lo que se le asignó en la OM
-       general (om_general.om_de_oc). Se edita en "Órdenes de manufactura" del lote. -->
+       general (om_general.om_de_oc). Se captura en Preparación · Orden de manufactura. -->
   <div class="rounded-lg border border-surface-border bg-white p-3 space-y-3">
     <div class="flex items-center justify-between gap-2">
       <p class="section-title">Orden de manufactura de este taller</p>
-      <span class="text-[11px] text-ink-light">Se edita en "Órdenes de manufactura" del lote</span>
+      <span class="text-[11px] text-ink-light">Se captura en Preparación · Orden de manufactura</span>
     </div>
     <div v-for="r in registros" :key="r.producto" class="border-t border-surface-border first:border-t-0 pt-2.5 first:pt-0 space-y-2.5">
       <p class="text-[12.5px] font-medium text-ink">{{ r.item_name || r.producto }}</p>

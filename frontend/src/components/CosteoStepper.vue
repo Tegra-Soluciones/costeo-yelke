@@ -8,81 +8,34 @@
     <div class="overflow-x-auto">
       <div class="w-max mx-auto">
         <div class="flex items-start">
-          <template v-for="(step, idx) in STEPS" :key="step.key">
+          <template v-for="(step, i) in VISIBLES" :key="step.key">
             <button
               class="flex flex-col items-center gap-1.5 w-[88px] flex-shrink-0 group"
-              :class="stepReachable(idx) ? 'cursor-pointer' : 'cursor-default'"
-              :disabled="!stepReachable(idx)"
-              @click="stepReachable(idx) && $emit('select', idx)"
+              :class="stepReachable(step.idx) ? 'cursor-pointer' : 'cursor-default'"
+              :disabled="!stepReachable(step.idx)"
+              @click="stepReachable(step.idx) && $emit('select', step.idx)"
             >
-              <span class="w-8 h-8 rounded-full flex items-center justify-center transition-all flex-shrink-0" :class="stepCircleClass(idx)">
-                <svg v-if="stepState(idx) === 'done'" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+              <span class="w-8 h-8 rounded-full flex items-center justify-center transition-all flex-shrink-0" :class="stepCircleClass(step.idx)">
+                <svg v-if="stepState(step.idx) === 'done'" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
                 <svg v-else class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.9">
                   <path stroke-linecap="round" stroke-linejoin="round" :d="step.icon" />
                 </svg>
               </span>
-              <span class="text-[10.5px] leading-tight text-center px-0.5 min-h-[2.2em] flex items-start justify-center" :class="stepLabelClass(idx)">{{ step.label }}</span>
+              <span class="text-[10.5px] leading-tight text-center px-0.5 min-h-[2.2em] flex items-start justify-center" :class="stepLabelClass(step.idx)">{{ step.label }}</span>
             </button>
             <div
-              v-if="idx < STEPS.length - 1"
+              v-if="i < VISIBLES.length - 1"
               class="flex-1 min-w-[16px] h-0.5 mt-4 transition-colors"
-              :class="stepState(idx) === 'done' ? 'bg-brand-300' : 'bg-surface-border'"
+              :class="stepState(step.idx) === 'done' ? 'bg-brand-300' : 'bg-surface-border'"
             />
           </template>
         </div>
 
-        <!-- Lotes de producción: en su propio renglón (no alargan la barra principal),
-             alineados bajo "Producción" -- cada uno es un sub-paso de ese mismo paso.
-             El relleno de la izquierda son marcadores invisibles del mismo ANCHO que un
-             círculo+conector reales, en vez de un margen en px calculado a mano -- así
-             el alineado no se desfasa si el ancho del círculo o la cantidad de pasos
-             anteriores vuelve a cambiar. OJO: el conector real es "flex-1 min-w-[16px]"
-             pero SIEMPRE mide exactamente 16px en este renglón de arriba (el ancho del
-             wrapper w-max lo fija su propio contenido, así que no le sobra espacio que
-             repartir) -- el marcador de abajo debe copiar ese resultado con un ancho
-             FIJO (w-4), no con flex-1: si también fuera flex-1, en ESTE renglón (más
-             corto que el de arriba) sí sobra espacio, y los 5 marcadores se estirarían
-             para repartírselo, empujando todo lo demás mucho más a la derecha. -->
-        <div v-if="lotes.length || producirReachable" class="flex items-center mt-2">
-          <!-- Prefijo SIN gap, igual que el renglón de arriba (ahí el botón y su
-               conector quedan pegados) -- si este prefijo llevara el mismo gap-1.5 que
-               el contenido de lotes, cada separación de 6px entre marcador y marcador
-               se sumaría y el corte quedaría más a la derecha de lo que le toca. -->
-          <div class="flex items-start flex-shrink-0">
-            <template v-for="n in PRODUCIR_IDX" :key="'sp' + n">
-              <span class="w-[88px] flex-shrink-0" aria-hidden="true"></span>
-              <span class="w-4 flex-shrink-0" aria-hidden="true"></span>
-            </template>
-            <!-- +1 marcador de círculo: el corte debe quedar DESPUÉS de "Producción"
-                 -- justo en el conector entre "Producción" y "Enviar" -- no antes,
-                 a la altura de su propio círculo. -->
-            <span class="w-[88px] flex-shrink-0" aria-hidden="true"></span>
-          </div>
-          <div class="flex items-center gap-1.5">
-            <div class="w-4 h-4 border-l-2 border-b-2 border-surface-border rounded-bl-md flex-shrink-0 -mt-2"></div>
-            <button
-              v-for="lote in lotes" :key="lote.lote_ref"
-              class="flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-full border transition-colors flex-shrink-0"
-              :class="loteCircleClass(lote)"
-              @click="$emit('select-lote', lote.lote_ref)"
-            >
-              <span class="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0" :class="loteDotClass(lote)">
-                <svg v-if="lote.done" class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="4"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-              </span>
-              <span class="text-[11px] font-medium whitespace-nowrap">{{ lote.label }}</span>
-            </button>
-            <button
-              v-if="producirReachable"
-              class="w-6 h-6 rounded-full border border-dashed border-brand-300 text-brand-500 hover:bg-brand-50 flex items-center justify-center flex-shrink-0"
-              title="Nuevo lote"
-              @click="$emit('create-lote')"
-            >
-              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
-            </button>
-          </div>
-        </div>
+        <!-- El riel de lotes se quitó del stepper: ahora los lotes viven en el menú
+             izquierdo de Producción, con su estado y su paso actual (diseño v2,
+             docs/plan-ui-produccion.md §4.2). -->
       </div>
     </div>
   </div>
@@ -95,10 +48,6 @@ const props = defineProps({
   // costeo_status: Borrador | Cotizado | Orden de Venta | En Producción | Entregado | Completado
   modelValue: { type: String, default: "Borrador" },
   activeStep: { type: Number, default: 0 },
-  // Lotes de producción ya creados (de la OV activa), en orden. [{ lote_ref, label, done }]
-  lotes: { type: Array, default: () => [] },
-  // lote_ref del lote que se está viendo ahora mismo (si activeStep está en esa vista).
-  activeLoteRef: { type: String, default: "" },
   // "Vender", "Alta de Productos" y "Flujo de Producción" viven los tres DENTRO del
   // mismo costeo_status ("Orden de Venta") -- costeo_status no distingue si cada uno
   // ya se resolvió, así que el propio "done" de cada uno se decide con su señal real
@@ -108,7 +57,7 @@ const props = defineProps({
   altaProductosListo: { type: Boolean, default: false },
   flujoProduccionListo: { type: Boolean, default: false },
 });
-defineEmits(["select", "select-lote", "create-lote"]);
+defineEmits(["select"]);
 
 const STEPS = [
   { key: "costear",  label: "Costear",  icon: "M9 7h6M9 11h6M9 15h4M6 3h12a1 1 0 011 1v16a1 1 0 01-1 1H6a1 1 0 01-1-1V4a1 1 0 011-1z" },
@@ -117,10 +66,15 @@ const STEPS = [
   { key: "preparar_manufactura", label: "Alta de Productos", icon: "M9 3v2m6-2v2M5 8h14M6 5h12a1 1 0 011 1v13a1 1 0 01-1 1H6a1 1 0 01-1-1V6a1 1 0 011-1zm3 7l2 2 4-4" },
   { key: "flujo_manufactura", label: "Flujo de Producción", icon: "M4 6h13M4 6a1 1 0 102 0 1 1 0 00-2 0zm0 6h13m-13 0a1 1 0 102 0 1 1 0 00-2 0zm0 6h13m-13 0a1 1 0 102 0 1 1 0 00-2 0zm15-12l2 2-2 2m0 4l2 2-2 2" },
   { key: "producir", label: "Producción", icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z" },
-  { key: "enviar",   label: "Enviar",   icon: "M12 19l9 2-9-18-9 18 9-2zm0 0v-8" },
+  // Oculto: la remisión se hace desde el paso Entrega de cada lote y se sigue en la
+  // bandeja de Envíos. Se queda en el arreglo para NO renumerar -- `activeStep`,
+  // `?step=`, STEP_ORDER_IDX y los *_IDX de abajo son todos este índice.
+  { key: "enviar",   label: "Enviar",   oculto: true, icon: "M12 19l9 2-9-18-9 18 9-2zm0 0v-8" },
   { key: "facturar", label: "Facturar", icon: "M9 14l2 2 4-4m4 9V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" },
   { key: "reportar", label: "Reportar", icon: "M9 19V6a1 1 0 011-1h1a1 1 0 011 1v13m-3 0h3m-3 0H6a1 1 0 01-1-1v-7a1 1 0 011-1h1a1 1 0 011 1v8m3 0h3v-16a1 1 0 011-1h1a1 1 0 011 1v16m-3 0h3" },
 ];
+/** Los pasos que se PINTAN, cada uno con su índice original en STEPS. */
+const VISIBLES = computed(() => STEPS.map((p, idx) => ({ ...p, idx })).filter((p) => !p.oculto));
 const ORDER = ["Borrador", "Cotizado", "Orden de Venta", "En Producción", "Entregado", "Completado"];
 const statusIdx = computed(() => Math.max(ORDER.indexOf(props.modelValue), 0));
 // Índice de STEPS -> índice comparable en ORDER. null = paso sin costeo_status propio

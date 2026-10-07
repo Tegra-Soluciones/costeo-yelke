@@ -49,7 +49,56 @@ ROLES_FLUJO_DOCUMENTOS = {
     "Aprobador de Documentos Yelke": "Da la aprobación/validación final de un documento.",
 }
 
-ROLES_YELKE = {**ROLES_PROCESO, **ROLES_APROBACION, **ROLES_FLUJO_DOCUMENTOS}
+# ── Roles por VISTA de Producción ────────────────────────────────────────────
+# El paso "Producción" del costeo es una app completa (ver docs/plan-ui-produccion.md):
+# un menú con un puñado de vistas, cada una el trabajo de una persona distinta. Hay un
+# rol por vista; quien necesita dos vistas recibe los dos roles.
+#
+# A diferencia de ROLES_PROCESO (que hoy es documentación y no controla nada), estos
+# SÍ se revisan: el menú solo muestra lo permitido y los endpoints que escriben lo
+# exigen (ver requiere_vista).
+VISTAS_PRODUCCION = {
+    "tablero":     "Producción Tablero Yelke",
+    "preparacion": "Producción Preparación Yelke",
+    "om":          "Producción Orden de Manufactura Yelke",
+    "materia":     "Producción Materia Prima Yelke",
+    "flujo":       "Producción Flujo Yelke",
+    "talleres":    "Producción Talleres Yelke",
+    "envios":      "Producción Envíos Yelke",
+    "facturas":    "Producción Facturas Yelke",
+    "entrega":     "Producción Entrega Yelke",
+}
+
+# Nombre que ve el usuario en los mensajes de "no tienes acceso a ...".
+ETIQUETAS_VISTA = {
+    "tablero":     "Tablero",
+    "preparacion": "Preparación",
+    "om":          "Orden de manufactura",
+    "materia":     "Materia prima",
+    "flujo":       "Flujo",
+    "talleres":    "Talleres",
+    "envios":      "Envíos",
+    "facturas":    "Facturas",
+    "entrega":     "Entrega",
+}
+
+ROLES_VISTA_PRODUCCION = {
+    VISTAS_PRODUCCION["tablero"]:     "Ve el tablero de producción de la orden de venta (solo lectura).",
+    VISTAS_PRODUCCION["preparacion"]: "Prepara producción: plan, solicitud de material, lotes de entrega, órdenes a talleres y apertura de lotes.",
+    VISTAS_PRODUCCION["om"]:          "Captura la orden de manufactura general por producto.",
+    VISTAS_PRODUCCION["materia"]:     "Compra la materia prima de cada lote: cotizaciones, orden de compra y recibo.",
+    VISTAS_PRODUCCION["flujo"]:       "Ve la matriz del lote y crea los encargos a talleres.",
+    VISTAS_PRODUCCION["talleres"]:    "Lleva cada taller: encargos, envío de material y recibo del trabajo.",
+    VISTAS_PRODUCCION["envios"]:      "Almacén: recibe material, envía a talleres, recibe de talleres y registra devoluciones.",
+    VISTAS_PRODUCCION["facturas"]:    "Captura y valida las facturas de compra (material y maquila).",
+    VISTAS_PRODUCCION["entrega"]:     "Crea la remisión de cada lote terminado.",
+}
+
+# Quien ve y hace TODO en Producción, sin necesidad de los roles por vista.
+PASE_LIBRE_PRODUCCION = ("System Manager", "Director Yelke", "Supervisor Yelke")
+
+ROLES_YELKE = {**ROLES_PROCESO, **ROLES_APROBACION, **ROLES_FLUJO_DOCUMENTOS,
+               **ROLES_VISTA_PRODUCCION}
 
 # Rol que hoy usa item_api._es_ceo() para aprobar precios. Se mantiene por
 # compatibilidad; el motor nuevo acepta tanto este como "Director Yelke".
@@ -76,3 +125,42 @@ def puede_revisar_documentos(user=None):
 
     roles = frappe.get_roles(user)
     return bool({"Revisor de Documentos Yelke", "Aprobador de Documentos Yelke", "System Manager"} & set(roles))
+
+
+# ── Permisos por vista de Producción ─────────────────────────────────────────
+def vistas_produccion(user=None):
+    """Claves de vista de Producción que `user` (o el usuario actual) puede abrir.
+    Con pase libre (ver PASE_LIBRE_PRODUCCION), todas."""
+    import frappe
+
+    roles = set(frappe.get_roles(user))
+    if roles & set(PASE_LIBRE_PRODUCCION):
+        return list(VISTAS_PRODUCCION)
+    return [clave for clave, rol in VISTAS_PRODUCCION.items() if rol in roles]
+
+
+def puede_ver(clave, user=None):
+    """True si `user` puede abrir esa vista de Producción."""
+    return clave in vistas_produccion(user)
+
+
+def requiere_vista(*claves, user=None):
+    """Exige al menos UNA de las vistas; si no, lanza PermissionError en español.
+
+    Se pone al inicio de cada endpoint que ESCRIBE (las lecturas no se restringen).
+    Se suma a la doble validación por documento, no la reemplaza."""
+    import frappe
+    from frappe import _
+
+    if not claves:
+        return
+    permitidas = set(vistas_produccion(user))
+    if permitidas & set(claves):
+        return
+    roles = [VISTAS_PRODUCCION[c] for c in claves if c in VISTAS_PRODUCCION]
+    if len(roles) == 1:
+        frappe.throw(_("Necesitas el rol {0} para esto.").format(roles[0]),
+                     frappe.PermissionError)
+    frappe.throw(
+        _("Necesitas alguno de estos roles para esto: {0}.").format(", ".join(roles)),
+        frappe.PermissionError)
