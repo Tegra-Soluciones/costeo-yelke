@@ -673,6 +673,29 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     } catch { /* ignore */ }
     await loadLotesProduccion();
   }
+  /** Revisa y valida las OC de taller que sigan en borrador, y RECARGA `subOcs`.
+   *  La relectura NO es opcional: `subOcs` es lo que pinta la lista "Órdenes a
+   *  talleres", y sin volver a leerla las órdenes se quedaban en "Borrador" ahí
+   *  aunque ya estuvieran validadas -- el panel sí las mostraba bien porque lee el
+   *  documento por su cuenta, y de ahí que la lista y el panel se contradijeran. */
+  async function validarOcsTallerPendientes() {
+    for (const po of subOcs.value) {
+      if (po.docstatus !== 0) continue;
+      try {
+        await call("costeo_yelke.api.costeo_api.marcar_revisado_documento", { doctype: "Purchase Order", name: po.name });
+      } catch { /* ya revisada, o sin permiso -- se intenta validar de todos modos */ }
+      try {
+        await call("costeo_yelke.api.costeo_api.validar_documento", { doctype: "Purchase Order", name: po.name });
+      } catch (e) {
+        showToast(`No se pudo validar ${po.name} automáticamente (${e.message || "revisa permisos"}) -- valídala a mano.`, "error");
+      }
+    }
+    try {
+      const r = await call("costeo_yelke.api.costeo_api.get_subcontratos", { plan: planDetail.value.name });
+      subOcs.value = r.ocs || [];
+    } catch { /* si falla la relectura, se refresca al volver a entrar a la vista */ }
+  }
+
   async function crearSubcontratos() {
     advancing.value = true;
     try {
@@ -1382,17 +1405,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
       const rsub = await call("costeo_yelke.api.costeo_api.get_subcontratos", { plan: planDetail.value.name });
       subOcs.value = rsub.ocs || [];
 
-      for (const po of subOcs.value) {
-        if (po.docstatus !== 0) continue;
-        try {
-          await call("costeo_yelke.api.costeo_api.marcar_revisado_documento", { doctype: "Purchase Order", name: po.name });
-        } catch { /* ya revisada, o sin permiso -- se intenta validar de todos modos */ }
-        try {
-          await call("costeo_yelke.api.costeo_api.validar_documento", { doctype: "Purchase Order", name: po.name });
-        } catch (e) {
-          showToast(`No se pudo validar ${po.name} automáticamente (${e.message || "revisa permisos"}) -- valídala a mano abajo.`, "error");
-        }
-      }
+      await validarOcsTallerPendientes();
 
       const r = await call("costeo_yelke.api.costeo_api.get_lotes_produccion", { plan: planDetail.value.name });
       lotesProduccion.value = r.lotes || [];
@@ -1939,6 +1952,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     piezaFoco, pasoSeleccionado,
     celdasSel, celdaSeleccionada, toggleCelda, limpiarCeldas, celdaDe,
     toggleColumna, columnaTodaSel, gruposSel, crearOrdenesSeleccion, prendasDelLote,
+    validarOcsTallerPendientes,
     primeraEtapaQty, primeraEtapaLoading, primeraEtapaLimitado, sugerirPrimeraEtapaQty,
     crearRfqLote, crearSqLote,
     omGeneral, omCab, omDama, omProc, omTablas, omArchivos, omUploading, omEditable,

@@ -671,7 +671,7 @@
     <Transition name="fade">
       <div
         v-if="toast.show"
-        class="fixed bottom-5 right-5 z-50 px-4 py-3 rounded-lg text-sm font-medium shadow-lg"
+        class="fixed bottom-5 left-5 z-50 px-4 py-3 rounded-lg text-sm font-medium shadow-lg"
         :class="toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-green-600 text-white'"
       >
         {{ toast.msg }}

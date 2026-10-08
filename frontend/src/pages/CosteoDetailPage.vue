@@ -3030,7 +3030,7 @@
            tapaba justo en la esquina donde sale, así que cada error que ocurría con
            un panel abierto (validar un recibo, una transferencia…) se perdía y
            parecía que el botón "no hacía nada". -->
-      <div v-if="toast.show" class="fixed bottom-5 right-5 z-[60] px-4 py-3 rounded-lg text-sm font-medium shadow-lg max-w-[min(92vw,30rem)]" :class="toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-green-600 text-white'">{{ toast.msg }}</div>
+      <div v-if="toast.show" class="fixed bottom-5 left-5 z-[60] px-4 py-3 rounded-lg text-sm font-medium shadow-lg max-w-[min(92vw,30rem)]" :class="toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-green-600 text-white'">{{ toast.msg }}</div>
     </Transition>
   </div>
 </template>
@@ -3755,7 +3755,7 @@ const {
   permisosValidacion, loadPermisosValidacion,
   reciboPr, reciboItems, reciboForm,
   selectReciboLote, guardarRecibo, validarRecibo,
-  subOcs, subPo, subItems, subForm, subValidated,
+  subOcs, subPo, subItems, subForm, subValidated, validarOcsTallerPendientes,
   loadSubcontratos, crearSubcontratos, selectSub, guardarSub, validarSub, revisarSub,
   flujo, scoActivo, scoSel, scoValidated, materialesSco, piezasSco, serviciosSco, importeSco, scoForm, scoCostos, selectSco,
   guardarSco, validarSco, addCosto, removeCosto,
@@ -4764,7 +4764,7 @@ async function irARemision(name) {
   await abrirPanelRemision(name);
 }
 
-async function abrirPanelProveedor(grp, tab = "") {
+async function abrirPanelProveedor(grp, tab = "", { crear = false } = {}) {
   cerrarPaneles();
   limpiarDocsCompra();
   panelProv.supplier = grp.supplier;
@@ -4778,7 +4778,7 @@ async function abrirPanelProveedor(grp, tab = "") {
     || pasos.find((x) => !x.bloqueado)?.clave
     || "oc";
   panelProv.tab = destino;   // el paso lo fija SIEMPRE quien abre, aunque la carga falle
-  await irPasoProveedor(destino);
+  await irPasoProveedor(destino, { crear });
 }
 function cerrarPanelProveedor() {
   panelProv.abierto = false;
@@ -4790,10 +4790,16 @@ function cerrarPanelProveedor() {
 }
 /** Cambiar de paso dentro del panel = cargar ese documento (lo hace toggleLoteDoc,
  *  que además lo CREA si no existe). Se fuerza a abrir, nunca a cerrar. */
-async function irPasoProveedor(tab, { poEsperada = "", crear = false } = {}) {
+async function irPasoProveedor(tab, { poEsperada = "", crear = false, forzar = false } = {}) {
   // "rfq"/"sq" son documentos sueltos del menú "⋯", no pasos: no se revisan contra
   // el stepper. Un paso bloqueado (prerrequisito o rol) no se abre.
-  if (["oc", "recibo", "factura"].includes(tab)) {
+  //
+  // `forzar` salta SOLO el prerrequisito, para la transición que dispara el propio
+  // "Validar": ese prerrequisito se mide con los datos del LOTE (grp.po.docstatus,
+  // grp.po.receipt_validated), que en ese instante pueden no reflejar todavía lo que
+  // acabamos de validar. Sin esto la guarda contestaba "Primero valida la orden de
+  // compra" y el panel se quedaba en la OC -- lo que se veía como "no pasó al recibo".
+  if (!forzar && ["oc", "recibo", "factura"].includes(tab)) {
     const paso = pasosPanelProv.value.find((x) => x.clave === tab);
     if (paso?.bloqueado) { showToast(paso.motivo, "error"); return; }
   }
@@ -4971,6 +4977,13 @@ const accionesPanelProv = computed(() => {
   if (d && Number(d.docstatus) === 1) return [accionPasarA(panelProv.tab)].filter(Boolean);
   // Sin documento todavía: su botón para generarlo, cada uno con su nombre.
   if (!d) {
+    // OJO: si la orden YA existe (grp.po) pero no quedó cargada, ofrecer "Generar
+    // orden de compra" es falso y duplicaría -- lo que toca es seguir al recibo. Es
+    // la pantalla contradictoria que se veía: el paso 1 con ✓ y el cuerpo diciendo
+    // "Todavía no hay orden de compra".
+    if (panelProv.tab === "oc" && grpPanelProv.value?.po) {
+      return [accionPasarA("oc")].filter(Boolean);
+    }
     const crear = {
       oc: "Generar orden de compra",
       rfq: "Solicitar cotización al proveedor",
@@ -5013,7 +5026,7 @@ async function validarDocYSeguir() {
   // validar, el backend ya dejó hecho su recibo (crear_recibo_oc es idempotente y
   // devuelve el que exista), así que el paso Recibo abre con el documento puesto en
   // vez de pedir un clic más. Entre cotización y presupuesto no hay nada que atar.
-  await irPasoProveedor(sig.clave, esOc ? { poEsperada: poValidada, crear: true } : {});
+  await irPasoProveedor(sig.clave, esOc ? { poEsperada: poValidada, crear: true, forzar: true } : { forzar: true });
 }
 /** Validar el recibo y pasar solo a la factura, para no tener que volver al
  *  stepper. Si no se validó, el panel se queda donde está con su aviso. */
@@ -5023,7 +5036,7 @@ async function validarReciboYSeguir() {
   if (Number(reciboPr.value?.docstatus) !== 1) return;
   await loadLotesProduccion();
   await nextTick();
-  await irPasoProveedor("factura");
+  await irPasoProveedor("factura", { forzar: true });
 }
 
 /** El recibo exige costo de envío (aunque sea 0) -- antes lo avisaba el propio
@@ -5344,16 +5357,28 @@ function barraLote() {
     const porRecibir = provs.filter((g) => g.po && g.po.docstatus === 1 && !g.po.receipt_validated);
     const borradores = provs.filter((g) => g.po?.factura && g.po.factura.docstatus === 0);
     const base = { atras: anterior("materia") };
+    // El recibo manda sobre generar otra orden: en cuanto se valida una OC, lo que
+    // sigue en ESE proveedor es recibirla. Antes `sinOc` iba primero, así que tras
+    // validar la barra brincaba a "Generar orden · <otro proveedor>" y el recibo que
+    // se acababa de habilitar no se ofrecía. Las órdenes que faltan siguen a mano
+    // como secundaria (y en la lista de arriba).
+    if (porRecibir.length) {
+      return { ...base, estado: { color: "wait", texto: `${porRecibir.length} por recibir` },
+        acciones: [
+          ...(sinOc.length ? [sec(`Generar orden · ${sinOc[0].supplier}`,
+                                  () => abrirPanelProveedor(sinOc[0], "oc", { crear: true }))] : []),
+          pri(`Pasar al recibo · ${porRecibir[0].supplier}`,
+              () => abrirPanelProveedor(porRecibir[0], "recibo", { crear: true })),
+        ] };
+    }
     if (sinOc.length) {
       return { ...base, estado: { color: "now", texto: `${sinOc.length} proveedor(es) sin orden de compra` },
         acciones: [
           ...(sinOc.length > 1 ? [sec(`Generar las ${sinOc.length}`, () => generarTodasLasOc(l, sinOc))] : []),
-          pri(`Generar orden · ${sinOc[0].supplier}`, () => abrirPanelProveedor(sinOc[0], "oc")),
+          // `crear: true`: el botón GENERA la orden. Antes solo abría el panel, y ahí
+          // había que pulsar "Generar orden de compra" -- el mismo botón dos veces.
+          pri(`Generar orden · ${sinOc[0].supplier}`, () => abrirPanelProveedor(sinOc[0], "oc", { crear: true })),
         ] };
-    }
-    if (porRecibir.length) {
-      return { ...base, estado: { color: "wait", texto: `${porRecibir.length} por recibir` },
-        acciones: [pri(`Recibir · ${porRecibir[0].supplier}`, () => abrirPanelProveedor(porRecibir[0], "recibo"))] };
     }
     if (borradores.length) {
       return { ...base, estado: { color: "wait", texto: `${borradores.length} factura(s) en borrador` },
@@ -6023,17 +6048,7 @@ async function crearSubcontratosDesdeLote() {
   // validarlas aquí, get_lotes_produccion sigue sin ver ninguna parada (filtra
   // por docstatus=1) y la pantalla se hubiera quedado tan "vacía" como antes de
   // darle al botón. Mismo auto-encadenado que abrirNuevoLote.
-  for (const po of subOcs.value) {
-    if (po.docstatus !== 0) continue;
-    try {
-      await call("costeo_yelke.api.costeo_api.marcar_revisado_documento", { doctype: "Purchase Order", name: po.name });
-    } catch { /* ya revisada, o sin permiso -- se intenta validar de todos modos */ }
-    try {
-      await call("costeo_yelke.api.costeo_api.validar_documento", { doctype: "Purchase Order", name: po.name });
-    } catch (e) {
-      showToast(`No se pudo validar ${po.name} automáticamente (${e.message || "revisa permisos"}) -- valídala a mano.`, "error");
-    }
-  }
+  await validarOcsTallerPendientes();
   await loadLotesProduccion();
   // Antes de crear las OC de subcontrato el lote no tenía ninguna parada, así
   // que loteParadaActiva seguía vacío -- sin este fallback, tras crearlas la

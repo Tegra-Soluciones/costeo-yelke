@@ -92,36 +92,13 @@
                   <button
                     class="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
                     :class="openMenu === item.name ? 'text-gray-700 bg-gray-100' : ''"
-                    @click.stop="toggleMenu(item.name)"
+                    @click.stop="toggleMenu(item.name, $event)"
                   >
                     <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                       <circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>
                     </svg>
                   </button>
 
-                  <Transition name="panel">
-                    <div
-                      v-if="openMenu === item.name"
-                      class="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden z-50"
-                    >
-                      <div class="py-1">
-                        <button class="ctx-item" @click="openItem(item.name)">
-                          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-                          Abrir
-                        </button>
-                        <button class="ctx-item" @click="duplicateItem(item.name)">
-                          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-                          Duplicar
-                        </button>
-                      </div>
-                      <div class="border-t border-gray-100 py-1">
-                        <button class="ctx-item text-red-500 hover:bg-red-50 hover:text-red-600" @click="askDelete(item.name)">
-                          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                          Eliminar
-                        </button>
-                      </div>
-                    </div>
-                  </Transition>
                 </div>
               </td>
             </tr>
@@ -146,11 +123,44 @@
     <Transition name="fade">
       <div
         v-if="toast.show"
-        class="fixed bottom-5 right-5 z-50 px-4 py-3 rounded-lg text-sm font-medium shadow-lg flex items-center gap-2"
+        class="fixed bottom-5 left-5 z-50 px-4 py-3 rounded-lg text-sm font-medium shadow-lg flex items-center gap-2"
         :class="toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-green-600 text-white'"
       >{{ toast.msg }}</div>
     </Transition>
   </div>
+    <!-- Menú "⋯" de la fila. Va TELETRANSPORTADO al body y con posición fija: la
+         tarjeta de la tabla tiene `overflow-hidden` (para las esquinas redondeadas) y
+         recortaba el menú, que solo se asomaba como una franja. Al estar fuera de la
+         tabla ya no hay ancestro que lo corte, y se voltea hacia arriba cuando no cabe
+         abajo. -->
+    <Teleport to="body">
+      <Transition name="panel">
+        <div
+          v-if="openMenu"
+          class="fixed w-44 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden z-[60]"
+          :style="{ top: `${menuPos.top}px`, left: `${menuPos.left}px` }"
+          @click.stop
+        >
+          <div class="py-1">
+            <button class="ctx-item" @click="openItem(menuTarget)">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+              Abrir
+            </button>
+            <button class="ctx-item" @click="duplicateItem(menuTarget)">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+              Duplicar
+            </button>
+          </div>
+          <div class="border-t border-gray-100 py-1">
+            <button class="ctx-item text-red-500 hover:bg-red-50 hover:text-red-600" @click="askDelete(menuTarget)">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+              Eliminar
+            </button>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
 </template>
 
 <script setup>
@@ -171,6 +181,8 @@ const items        = ref([]);
 const search       = ref("");
 const filterStatus = ref("");
 const openMenu     = ref(null); // name of card whose menu is open
+const menuTarget   = ref(null); // sobre quién actúa el menú (ver toggleMenu)
+const menuPos      = ref({ top: 0, left: 0 });
 
 const toast = reactive({ show: false, msg: "", type: "success" });
 
@@ -204,8 +216,22 @@ function showToast(msg, type = "success") {
 }
 
 // ── Context menu ──────────────────────────────────────────────────────────────
-function toggleMenu(name) {
-  openMenu.value = openMenu.value === name ? null : name;
+const ALTO_MENU = 116;   // los 3 renglones + separadores
+const ANCHO_MENU = 176;  // w-44
+
+/** `menuTarget` se guarda aparte de `openMenu` porque `closeMenus` corre en fase de
+ *  CAPTURA, o sea ANTES del clic en el renglón del menú: si los handlers leyeran
+ *  `openMenu` lo encontrarían ya en null. */
+function toggleMenu(name, ev) {
+  if (openMenu.value === name) { openMenu.value = null; return; }
+  const r = ev.currentTarget.getBoundingClientRect();
+  const cabeAbajo = window.innerHeight - r.bottom > ALTO_MENU + 8;
+  menuPos.value = {
+    top: cabeAbajo ? r.bottom + 4 : Math.max(8, r.top - ALTO_MENU - 4),
+    left: Math.max(8, r.right - ANCHO_MENU),
+  };
+  menuTarget.value = name;
+  openMenu.value = name;
 }
 
 function closeMenus(e) {

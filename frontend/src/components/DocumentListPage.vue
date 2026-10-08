@@ -61,7 +61,7 @@
     <!-- Aviso para filas sin costeo vinculado (solo si el padre pasó deskDoctype) --
          no hay a dónde redirigir dentro de la app, así que se ofrece abrirlo en ERPNext
          en vez de dejar el clic sin ningún efecto ni explicación. -->
-    <div v-if="toast.show" class="fixed bottom-5 right-5 z-50 bg-white border border-gray-200 shadow-lg rounded-xl px-4 py-3 flex items-center gap-3 max-w-sm">
+    <div v-if="toast.show" class="fixed bottom-5 left-5 z-50 bg-white border border-gray-200 shadow-lg rounded-xl px-4 py-3 flex items-center gap-3 max-w-sm">
       <svg class="w-5 h-5 text-amber-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
       <p class="text-[13px] text-gray-700 flex-1">{{ toast.msg }}</p>
       <button class="text-[12.5px] font-semibold text-brand-600 hover:text-brand-700 whitespace-nowrap flex-shrink-0" @click="openInErpnext">Abrir en ERPNext</button>
