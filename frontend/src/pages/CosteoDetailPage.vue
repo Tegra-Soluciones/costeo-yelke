@@ -1499,7 +1499,7 @@
                   </template>
                 </FilaLista>
               </div>
-              <p class="p-meta mt-1.5">Cada lote: 1 Materia prima · 2 Flujo · 3 Talleres · 4 Entrega</p>
+              <p class="p-meta mt-1.5">Cada lote: 1 Materia prima · 2 Talleres · 3 Entrega</p>
             </div>
 
             <div v-if="porHacer.length">
@@ -1985,7 +1985,7 @@
                           <button
                             class="text-left w-48 rounded-lg border px-2.5 py-2 transition-colors flex-shrink-0"
                             :class="paradaBtnClass(pa)"
-                            @click="seleccionarParada(pa)"
+                            @click="irAParada(pa)"
                           >
                             <div class="flex items-center gap-1.5 mb-0.5">
                               <span class="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0" :class="paradaDotClass(pa)">
@@ -5410,10 +5410,17 @@ function barraLote() {
     }
     if (!loteTienePiezas.value) {
       // Sin piezas declaradas se encarga desde cada taller, no desde una matriz.
-      const pend = (l.paradas || []).find((pa) => !pa.sco);
+      // El que sigue es el primero sin encargo y, si ya todos lo tienen, el primero
+      // que no haya entregado -- si no, con todos encargados la barra se quedaba con
+      // "Siguiente: Entrega" deshabilitado y NINGUNA forma de entrar al taller a
+      // enviar el material (pasó en producción con el pantalón, una sola etapa).
+      const sinEncargo = (l.paradas || []).find((pa) => !pa.sco);
+      const pend = sinEncargo || (l.paradas || []).find((pa) => !pa.receipt_validated);
+      const texto = !pend ? "Todos los talleres entregaron"
+        : sinEncargo ? `${pend.titulo} · ${pend.supplier} sin encargar`
+        : `${pend.titulo} · ${pend.supplier}`;
       return { ...base,
-        estado: pend ? { color: "now", texto: `${pend.titulo} · ${pend.supplier} sin encargar` }
-                     : { color: "ok", texto: "Todos los talleres tienen su encargo" },
+        estado: { color: pend ? "now" : "ok", texto },
         acciones: pend ? [pri(`Abrir ${pend.titulo} →`, () => irAParada(pend))] : [avanzar("talleres")] };
     }
     const listas = (contadoresRamas.value.find((x) => x.k === "listo") || {}).n || 0;
