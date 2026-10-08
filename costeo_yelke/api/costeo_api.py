@@ -2670,10 +2670,91 @@ def _overhead_pct_promedio(doc):
     return (est_overhead_total / base_sin_overhead * 100) if base_sin_overhead > 0 else 0
 
 
+def _pinvs_validadas_de_oc(po):
+    """Facturas de compra VALIDADAS que facturan esta OC (directo o vía su recibo:
+    ERPNext rellena `purchase_order` en los dos casos)."""
+    return list(dict.fromkeys(frappe.db.sql_list(
+        """select distinct pii.parent
+             from `tabPurchase Invoice Item` pii
+             join `tabPurchase Invoice` pi on pi.name = pii.parent
+            where pii.purchase_order = %s and pi.docstatus = 1""",
+        po)))
+
+
+def _facturado_de_oc(po_doc):
+    """Renglones ya FACTURADOS por el proveedor contra esta OC, agrupados por renglón.
+    ``None`` si todavía no hay ninguna factura validada.
+
+    Es la fuente PREFERIDA del costo real: la factura es lo que de verdad se le debe al
+    proveedor. Las notas de crédito (``is_return``) traen importe negativo, así que la
+    suma queda neta sin tener que filtrarlas."""
+    filas = frappe.db.sql(
+        """select pii.po_detail, pii.item_code, pii.item_name,
+                  sum(pii.qty) qty, sum(pii.base_net_amount) amount
+             from `tabPurchase Invoice Item` pii
+             join `tabPurchase Invoice` pi on pi.name = pii.parent
+            where pii.purchase_order = %s and pi.docstatus = 1
+            group by pii.po_detail, pii.item_code, pii.item_name""",
+        po_doc.name, as_dict=True,
+    )
+    if not filas:
+        return None
+    out = []
+    for r in filas:
+        qty = flt(r.qty)
+        out.append({
+            "item_code": r.item_code, "item_name": r.item_name,
+            "qty": qty, "amount": flt(r.amount),
+            "rate": flt(r.amount) / qty if qty else 0.0,
+        })
+    return out
+
+
+def _costo_real_de_oc(po_doc):
+    """Renglones del costo REAL de una OC y de dónde salieron, en este orden:
+
+      1. ``factura`` -- lo facturado por el proveedor: lo que de verdad se debe.
+      2. ``recibo``  -- lo recibido (recepciones de servicio de maquila), cuando el
+                        taller ya entregó pero todavía no factura.
+      3. ``orden``   -- lo contratado en la OC, cuando no hay ni recibo ni factura.
+
+    Antes se usaba (2) y, si no había recepciones, (3) la OC COMPLETA. Eso contaba como
+    costo real trabajo que el taller no había hecho, y además el total podía BAJAR al
+    empezar a recibir, porque cambiaba de base a media marcha."""
+    facturado = _facturado_de_oc(po_doc)
+    if facturado is not None:
+        return facturado, "factura"
+    recibida = _maquila_recibida_de_oc(po_doc)
+    if recibida is not None:
+        return recibida, "recibo"
+    return ([{
+        "item_code": it.item_code, "item_name": it.item_name, "qty": flt(it.qty),
+        "rate": flt(it.rate), "amount": flt(it.amount),
+    } for it in po_doc.items], "orden")
+
+
+def _por_facturar_de_oc(po_doc):
+    """Cuánto de esta OC falta por facturar: lo contratado menos lo ya facturado. Es lo
+    que impide dar el reporte por cerrado -- sin esto podía salir "completo" con las
+    facturas del proveedor sin capturar, y el costo real quedaba corto."""
+    facturado = _facturado_de_oc(po_doc)
+    if facturado is None:
+        return flt(sum(flt(it.amount) for it in po_doc.items))
+    falta = flt(sum(flt(it.amount) for it in po_doc.items)) - flt(sum(r["amount"] for r in facturado))
+    return falta if falta > 0.005 else 0.0
+
+
 def _flete_materiales_de_oc(po_doc):
-    """Flete real de una OC de materia prima: se captura en la RECEPCIÓN (candado
-    validar_envio_capturado_recibo), así que se lee de sus recepciones validadas; solo
-    si la OC aún no tiene recepción se toma el de la propia OC."""
+    """Flete real de una OC de materia prima, con la misma preferencia que el costo:
+    el de las FACTURAS validadas si ya hay (es lo que se debe, e incluye cualquier
+    ajuste), si no el de sus RECEPCIONES validadas -- donde se captura, por el candado
+    validar_envio_capturado_recibo -- y si no hay ninguna, el de la propia OC.
+
+    Tomar factura Y recibo a la vez lo duplicaría: la factura nace del recibo y arrastra
+    su renglón de flete."""
+    pinvs = _pinvs_validadas_de_oc(po_doc.name)
+    if pinvs:
+        return sum(_get_shipping_row_amount(frappe.get_doc("Purchase Invoice", n)) for n in pinvs)
     prs = list(dict.fromkeys(frappe.get_all(
         "Purchase Receipt Item", filters={"purchase_order": po_doc.name, "docstatus": 1}, pluck="parent")))
     if prs:
@@ -2767,17 +2848,24 @@ def _material_sobrante_de_costeo(costeo):
 
 
 def _costo_directo_real(costeo):
-    """Suma de todo el costo real ya validado del costeo: OC de materiales (+ su flete),
-    OC/SCO de subcontratación (+ fletes ida/regreso al taller), flete de entrega al
-    cliente -- misma fórmula que usa get_reporte_final para 'costo_directo'; si se toca
-    una, tocar la otra."""
+    """Suma de todo el costo real del costeo: materiales (+ su flete), subcontratación
+    (+ fletes ida/regreso al taller) y flete de entrega al cliente -- misma fórmula que
+    usa get_reporte_final para 'costo_directo'; si se toca una, tocar la otra.
+
+    El importe de cada OC sale de lo FACTURADO por el proveedor cuando ya hay factura
+    validada, y solo cae a lo recibido o a lo contratado mientras no la haya (ver
+    _costo_real_de_oc). OJO: esta función también alimenta la póliza de overhead de la
+    factura de venta (_crear_poliza_overhead_venta), así que facturar al cliente antes
+    de capturar las facturas de los proveedores absorbe overhead sobre un costo todavía
+    incompleto."""
     material_directo_real = 0.0
     flete_materiales_real = 0.0
     for po in frappe.get_all("Purchase Order", filters={"costeo": costeo, "is_subcontracted": 0, "docstatus": 1}, pluck="name"):
         po_doc = frappe.get_doc("Purchase Order", po)
         flete_materiales_real += _flete_materiales_de_oc(po_doc)
-        for it in po_doc.items:
-            material_directo_real += flt(it.amount)
+        # Lo FACTURADO manda sobre lo contratado (ver _costo_real_de_oc).
+        renglones, _base = _costo_real_de_oc(po_doc)
+        material_directo_real += sum(flt(r["amount"]) for r in renglones)
     # El material que sobró y sigue en inventario no es costo de este pedido.
     material_directo_real -= _material_sobrante_de_costeo(costeo)[0]
 
@@ -2786,9 +2874,8 @@ def _costo_directo_real(costeo):
     flete_taller_regreso_real = 0.0
     for po in frappe.get_all("Purchase Order", filters={"costeo": costeo, "is_subcontracted": 1, "docstatus": 1}, pluck="name"):
         po_doc = frappe.get_doc("Purchase Order", po)
-        recibida = _maquila_recibida_de_oc(po_doc)
-        servicio_directo_real += sum(flt(r["amount"]) for r in recibida) if recibida is not None \
-            else sum(flt(it.amount) for it in po_doc.items)
+        renglones, _base = _costo_real_de_oc(po_doc)
+        servicio_directo_real += sum(flt(r["amount"]) for r in renglones)
         for sco in frappe.get_all("Subcontracting Order", filters={"purchase_order": po, "docstatus": 1}, pluck="name"):
             sco_doc = frappe.get_doc("Subcontracting Order", sco)
             for c in sco_doc.additional_costs:
@@ -10191,16 +10278,22 @@ def get_reporte_final(costeo: str, sales_order: str = None) -> dict:
     materiales_real = []
     material_directo_real = 0.0
     flete_materiales_real = 0.0
+    bases_costo = set()
+    por_facturar_material = 0.0
     for po in mat_pos:
         po_doc = frappe.get_doc("Purchase Order", po.name)
         flete = _flete_materiales_de_oc(po_doc)
         flete_materiales_real += flete
-        for it in po_doc.items:
-            material_directo_real += flt(it.amount)
+        # Lo FACTURADO por el proveedor manda; si todavía no factura, lo recibido o lo
+        # contratado (ver _costo_real_de_oc). `base` se expone para que la pantalla
+        # pueda decir de dónde salió el número.
+        renglones, base = _costo_real_de_oc(po_doc)
+        bases_costo.add(base)
+        por_facturar_material += _por_facturar_de_oc(po_doc)
+        for r in renglones:
+            material_directo_real += flt(r["amount"])
             materiales_real.append({
-                "po": po.name, "item_code": it.item_code, "item_name": it.item_name,
-                "proveedor": po.supplier_name or po.supplier, "qty": flt(it.qty), "rate": flt(it.rate),
-                "amount": flt(it.amount),
+                "po": po.name, "proveedor": po.supplier_name or po.supplier, "base": base, **r,
             })
 
     # ── SERVICIOS DE SUBCONTRATACIÓN: estimado vs real (+ fletes ida/regreso) ──
@@ -10226,20 +10319,22 @@ def get_reporte_final(costeo: str, sales_order: str = None) -> dict:
     )
     servicios_real = []
     servicio_directo_real = 0.0
+    por_facturar_maquila = 0.0
     flete_taller_ida_real = 0.0
     flete_taller_regreso_real = 0.0
     sco_borrador = se_borrador = scr_borrador = 0
     for po in sub_pos:
         po_doc = frappe.get_doc("Purchase Order", po.name)
-        # Maquila REALMENTE recibida (recepciones de servicio); sin ellas, lo contratado en la OC.
-        recibida = _maquila_recibida_de_oc(po_doc)
-        renglones = recibida if recibida is not None else [
-            {"item_code": it.item_code, "item_name": it.item_name, "qty": flt(it.qty),
-             "rate": flt(it.rate), "amount": flt(it.amount)} for it in po_doc.items
-        ]
+        # Lo FACTURADO por el taller manda; si no factura, lo recibido; si tampoco ha
+        # entregado, lo contratado en la OC (ver _costo_real_de_oc).
+        renglones, base = _costo_real_de_oc(po_doc)
+        bases_costo.add(base)
+        por_facturar_maquila += _por_facturar_de_oc(po_doc)
         for r in renglones:
             servicio_directo_real += flt(r["amount"])
-            servicios_real.append({"po": po.name, "proveedor": po.supplier_name or po.supplier, **r})
+            servicios_real.append({
+                "po": po.name, "proveedor": po.supplier_name or po.supplier, "base": base, **r,
+            })
 
         scos = frappe.get_all("Subcontracting Order", filters={"purchase_order": po.name}, fields=["name", "docstatus"])
         for sco_row in scos:
@@ -10370,11 +10465,35 @@ def get_reporte_final(costeo: str, sales_order: str = None) -> dict:
     rentabilidad_real_monto = ingreso_real - costo_total_real
     rentabilidad_real_pct = (rentabilidad_real_monto / ingreso_real * 100) if ingreso_real else 0
 
+    # Recibos de MATERIAL en borrador: no estaban contados en ningún lado, así que el
+    # reporte podía darse por cerrado con cuatro de ellos pendientes -- y el flete, que
+    # se captura justo ahí, quedaba en cero sin avisar.
+    pr_material_borrador = list(dict.fromkeys(frappe.db.sql_list(
+        """select distinct pr.name
+             from `tabPurchase Receipt` pr
+             join `tabPurchase Receipt Item` pri on pri.parent = pr.name
+            where pr.docstatus = 0 and pri.purchase_order in %(pos)s""",
+        {"pos": [p.name for p in mat_pos] or [""]},
+    ))) if mat_pos else []
+    # Facturas de compra en borrador de cualquiera de las OC del costeo.
+    pinv_borrador = list(dict.fromkeys(frappe.db.sql_list(
+        """select distinct pii.parent
+             from `tabPurchase Invoice Item` pii
+             join `tabPurchase Invoice` pi on pi.name = pii.parent
+            where pi.docstatus = 0 and pii.purchase_order in %(pos)s""",
+        {"pos": [p.name for p in mat_pos] + [p.name for p in sub_pos] or [""]},
+    ))) if (mat_pos or sub_pos) else []
+    por_facturar_total = round(por_facturar_material + por_facturar_maquila, 2)
+
     pendientes = {
         "ocs_materia_prima_borrador": len(mat_pos_borrador),
         "ocs_subcontratacion_borrador": len(sub_pos_borrador),
         "sco_borrador": sco_borrador, "transferencias_borrador": se_borrador,
-        "recibos_borrador": scr_borrador, "remisiones_borrador": len(dns_borrador),
+        "recibos_borrador": scr_borrador,
+        "recibos_material_borrador": len(pr_material_borrador),
+        "facturas_compra_borrador": len(pinv_borrador),
+        "por_facturar": por_facturar_total,
+        "remisiones_borrador": len(dns_borrador),
         "factura_venta_borrador": bool(si_borrador),
     }
     completo = bool(si) and not any(pendientes.values())
@@ -10391,6 +10510,12 @@ def get_reporte_final(costeo: str, sales_order: str = None) -> dict:
             "rentabilidad_pct": rentabilidad_estimada_pct, "rentabilidad_monto": rentabilidad_estimada_monto,
         },
         "real": {
+            # De dónde salió el importe real: "factura" (lo que el proveedor ya
+            # facturó), "recibo" (entregado y sin facturar) u "orden" (ni entregado).
+            # Si hay varias OC en estados distintos vienen todas, para no afirmar una
+            # base que no aplica a todo.
+            "bases": sorted(bases_costo),
+            "por_facturar": por_facturar_total,
             "materiales": materiales_real, "material_directo": material_directo_real,
             "material_sobrante": sobrante_total, "material_sobrante_en_almacen": sobrante_en_almacen,
             "material_sobrante_en_talleres": sobrante_en_talleres, "material_consumido": material_consumido_real,

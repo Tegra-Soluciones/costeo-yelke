@@ -15,7 +15,8 @@
       </div>
 
       <p v-if="!r.completo" class="text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-        Aún hay documentos en borrador — los números reales pueden seguir moviéndose: {{ pendientesTexto }}.
+        El proceso no está cerrado — los números reales pueden seguir moviéndose: {{ pendientesTexto }}.
+        <span v-if="baseTexto" class="block mt-1">{{ baseTexto }}</span>
       </p>
 
       <!-- Hero: rentabilidad -->
@@ -328,9 +329,26 @@ const pendientesTexto = computed(() => {
   if (p.ocs_subcontratacion_borrador) partes.push(`${p.ocs_subcontratacion_borrador} OC de subcontratación`);
   if (p.sco_borrador) partes.push(`${p.sco_borrador} orden(es) de subcontratación`);
   if (p.transferencias_borrador) partes.push(`${p.transferencias_borrador} transferencia(s)`);
-  if (p.recibos_borrador) partes.push(`${p.recibos_borrador} recibo(s)`);
+  if (p.recibos_borrador) partes.push(`${p.recibos_borrador} recibo(s) de taller`);
+  if (p.recibos_material_borrador) partes.push(`${p.recibos_material_borrador} recibo(s) de material`);
+  if (p.facturas_compra_borrador) partes.push(`${p.facturas_compra_borrador} factura(s) de compra`);
+  if (p.por_facturar > 0) partes.push(`${fmtC(p.por_facturar)} que el proveedor aún no factura`);
   if (p.remisiones_borrador) partes.push(`${p.remisiones_borrador} remisión(es)`);
-  if (p.factura_venta_borrador) partes.push("la factura de venta");
-  return partes.join(", ") || "sin detalle";
+  if (p.factura_venta_borrador) partes.push("la factura de venta en borrador");
+  // Sin nada en borrador lo que falta es facturar al cliente: decirlo, en vez del
+  // "sin detalle" que dejaba la frase colgando.
+  return partes.join(", ") || "falta validar la factura de venta";
+});
+
+/** De dónde sale el importe real. Vacío cuando ya todo viene de facturas. */
+const baseTexto = computed(() => {
+  const b = props.r?.real?.bases || [];
+  if (!b.length || (b.length === 1 && b[0] === "factura")) return "";
+  const nombre = {
+    factura: "lo que el proveedor ya facturó",
+    recibo: "lo que el taller entregó y todavía no factura",
+    orden: "lo contratado en la orden de compra",
+  };
+  return `El costo real de abajo sale de ${b.map((x) => nombre[x] || x).join(" y de ")}.`;
 });
 </script>

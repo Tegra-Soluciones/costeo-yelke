@@ -1679,10 +1679,23 @@ def _create_subcontracting_pos_from_stages(source, stage_rows, sales_order=None)
 
     so_item_cache = {}
     def _sales_order_item(item_code):
+        """La línea de la OV de ese producto, o None si no hay EXACTAMENTE una.
+
+        Si el MISMO producto viene en VARIAS líneas de la orden de venta (pasó en
+        YT-OV-2026-307: 8,137 pzas a un precio y 1 pza a otro), ninguna de ellas
+        explica por sí sola la cantidad AGREGADA que lleva la OC. Antes se tomaba
+        una cualquiera con `get_value` y ERPNext comparaba el total contra esa:
+        8,138 > 8,137 y rebotaba el documento con "over limit by Qty 1.0", dejando
+        la OC de subcontratación imposible de validar.
+
+        Con varias líneas se deja vacío, igual que con los subensamblajes: el campo
+        `sales_order` de la línea alcanza para ligar la OC a su OV."""
         if item_code not in so_item_cache:
-            so_item_cache[item_code] = frappe.db.get_value(
-                "Sales Order Item", {"parent": sales_order, "item_code": item_code}, "name"
+            filas = frappe.get_all(
+                "Sales Order Item", filters={"parent": sales_order, "item_code": item_code},
+                pluck="name", limit=2,
             )
+            so_item_cache[item_code] = filas[0] if len(filas) == 1 else None
         return so_item_cache[item_code]
 
     bom_map = _get_subcontracting_bom_map([row.finished_good for row in stage_rows])
