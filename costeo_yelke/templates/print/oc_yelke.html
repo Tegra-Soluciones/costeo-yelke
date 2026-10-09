@@ -105,7 +105,7 @@ body > .print-format { margin: 0 !important; padding: 0 !important; }
 .pdf-container .yk-chip { display: inline-block; background: #ff6b15; color: #fff; font-size: 6.5pt; font-weight: 600;
     letter-spacing: 1px; text-transform: uppercase; padding: 0.5mm 2mm; border-radius: 0.8mm; white-space: nowrap; }
 .yk-letra { margin-top: 2mm; color: #777; font-style: italic; font-size: 7.3pt; }
-.yk-notas { margin-top: 3mm; border: 0.3mm dashed #d4d4d4; border-radius: 1.5mm; padding: 2.5mm 3.5mm; }
+.yk-notas { margin-top: 4mm; page-break-inside: avoid; border: 0.3mm dashed #d4d4d4; border-radius: 1.5mm; padding: 2.5mm 3.5mm; }
 .yk-notas .terms-content { color: #555; font-size: 7.2pt; }
 .yk-tot { width: 100%; border-collapse: collapse; border: 0.3mm solid #ececec; }
 .yk-tot td { padding: 2mm 3.5mm !important; font-size: 7.8pt; border: 0 !important; border-left: 0 !important; border-bottom: 0.3mm solid #ececec !important; vertical-align: middle; }
@@ -378,12 +378,13 @@ body > .print-format { margin: 0 !important; padding: 0 !important; }
     <tr>
         <td class="col" style="{{ 'width:56%; padding-right:6mm' if mostrar_totales else '' }}">
             {% if mostrar_pagos %}{{ terminos_pago(doc) }}{% endif %}
-            {{ terminos(doc) }}
         </td>
         {% if mostrar_totales %}<td class="col">{{ totales(doc) }}</td>{% endif %}
     </tr>
 </table>
 {% endif %}
+{#- Términos a todo el ancho: en la columna de pago quedaban apretados. -#}
+{{ terminos(doc) }}
 {{ firmas(doc) }}
 {{ pie(texto_pie) }}
 {%- endmacro -%}
