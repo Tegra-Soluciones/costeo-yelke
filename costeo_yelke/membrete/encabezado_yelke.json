@@ -4,9 +4,9 @@
  "footer_source": "HTML",
  "align": "Left",
  "footer_align": "Left",
- "image_height": 52.630462097,
- "image_width": 153.0,
+ "image_height": 0,
+ "image_width": 0,
  "footer_image_height": 0.0,
  "footer_image_width": 0.0,
- "image": "/assets/costeo_yelke/images/logo-yelke-black.png"
+ "image": null
 }

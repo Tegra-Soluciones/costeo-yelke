@@ -1,0 +1,82 @@
+{#- ===================================================================
+    Membrete de Yelke: encabezado y pie de TODOS los PDF.
+
+    Lo usan dos caminos, con el mismo código:
+      · Los 7 formatos de la app (oc_yelke.html -> membrete_encabezado /
+        membrete_pie), que pasan su propio título ("Orden de Manufactura").
+      · El Letter Head "Encabezado Yelke" (costeo_yelke/membrete), para
+        cualquier otro formato de ERPNext. Ahí `doc` llega como dict y el
+        título sale de titulo_documento(doc).
+
+    wkhtmltopdf lo repite en cada página (header-html / footer-html) y
+    sustituye .page / .topage por el número de página.
+    Diseño: logo, cinta reflejante (naranja con franjas plateadas), Poppins.
+    =================================================================== -#}
+
+{%- macro estilos_membrete() -%}
+<style>
+/* El alto total del encabezado (cinta + logo + folio) debe caber en el margen superior
+   de la hoja (.print-format en oc_yelke.html); si no, wkhtmltopdf recorta la parte de arriba. */
+.yk-hivis { height: 4mm; }
+.yk-hivis div { height: 0.8mm; background: #ff6b15; }
+.yk-hivis div.p { height: 0.5mm; background: #d4d4d4; }
+.yk-hivis.fino div { height: 0.5mm; }
+.yk-hivis.fino div.p { height: 0.35mm; }
+.yk-head { width: 100%; border-collapse: collapse; margin-top: 3mm; font-family: 'Poppins', Arial, sans-serif; }
+.yk-head td { vertical-align: middle; padding: 0 14mm !important; border: 0 !important; }
+.yk-head .logo img { height: 12mm; }
+.yk-head .doc { text-align: right; }
+.yk-tipo { display: inline-block; background: #111; color: #fff; font-size: 7.5pt; font-weight: 600;
+    letter-spacing: 2px; text-transform: uppercase; padding: 1mm 3mm 0.8mm 4mm; white-space: nowrap;
+    border-left: 1.2mm solid #ff6b15; }
+.yk-folio { font-size: 15pt; font-weight: 600; color: #222; letter-spacing: -0.3px; line-height: 1.25; margin-top: 1mm; }
+.yk-meta { font-size: 7.5pt; color: #777; }
+.yk-pill { display: inline-block; font-size: 6.5pt; font-weight: 600; padding: 0.4mm 2.2mm; border-radius: 3mm; margin-left: 1.5mm; }
+.yk-pill.validada { background: #e8f6ef; color: #0f8a5f; }
+.yk-pill.borrador { background: #fff3ec; color: #e65a0b; }
+.yk-pill.cancelada { background: #fdecec; color: #c0392b; }
+.yk-foot { width: 100%; border-collapse: collapse; font-family: 'Poppins', Arial, sans-serif; font-size: 6.8pt; color: #777; margin-bottom: 2mm; }
+.yk-foot td { padding: 2mm 14mm 0 14mm !important; border: 0 !important; border-top: 0.3mm solid #ececec !important; }
+.yk-foot b { color: #222; font-weight: 600; }
+</style>
+{%- endmacro -%}
+
+
+{%- macro cinta(fino=false) -%}
+<div class="yk-hivis{% if fino %} fino{% endif %}"><div></div><div class="p"></div><div></div><div class="p"></div><div></div></div>
+{%- endmacro -%}
+
+
+{%- macro encabezado(doc, titulo=None) -%}
+{%- set est = estado_documento(doc) -%}
+{%- set fecha = doc.get("transaction_date") or doc.get("posting_date") or doc.get("fecha") or doc.get("creation") -%}
+{{ estilos_membrete() }}
+{{ cinta() }}
+<table class="yk-head">
+    <tr>
+        <td class="logo"><img src="{{ logo_yelke() }}" alt="Yelke"></td>
+        <td class="doc">
+            <span class="yk-tipo">{{ titulo or titulo_documento(doc) }}</span>
+            <div class="yk-folio">{{ doc.get("name") }}</div>
+            <div class="yk-meta">
+                {% if fecha %}Emitida {{ fecha_corta(fecha) }} · {% endif %}Página <span class="page"></span> de <span class="topage"></span>
+                {% if est[0] %}<span class="yk-pill {{ est[1] }}">{{ est[0] }}</span>{% endif %}
+            </div>
+        </td>
+    </tr>
+</table>
+{%- endmacro -%}
+
+
+{%- macro pie(doc) -%}
+{#- El Costeo guarda su compañía en `compañia`; los demás documentos en `company`. -#}
+{%- set e = datos_empresa(doc.get("compañia") or doc.get("company")) -%}
+{{ estilos_membrete() }}
+<table class="yk-foot">
+    <tr>
+        <td><b>{{ e.nombre }}</b>{% if e.rfc %} · RFC {{ e.rfc }}{% endif %}{% if e.web %} · {{ e.web }}{% endif %}{% if e.correo %} · {{ e.correo }}{% endif %}</td>
+        <td style="text-align:right; white-space:nowrap;">{{ doc.get("name") }} · <span class="page"></span>/<span class="topage"></span></td>
+    </tr>
+</table>
+{{ cinta(true) }}
+{%- endmacro -%}
