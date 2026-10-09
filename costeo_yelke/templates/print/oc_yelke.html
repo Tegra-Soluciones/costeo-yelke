@@ -207,8 +207,8 @@ body > .print-format { margin: 0 !important; padding: 0 !important; }
 {{ datos(doc,
     {"etiqueta": "Proveedor", "nombre": doc.supplier_name or doc.supplier,
      "rfc": rfc_tercero("Supplier", doc.supplier), "direccion": direccion_lineas(doc.supplier_address)},
-    [("Fecha", fecha_corta(doc.transaction_date)),
-     ("Requerido para", fecha_corta(doc.schedule_date)),
+    [("Fecha de elaboración", fecha_corta(doc.transaction_date)),
+     ("Entrega requerida", fecha_corta(doc.schedule_date)),
      ("Entregar en", doc.get("set_warehouse") if mostrar_almacen else None),
      ("Centro de costos", doc.get("cost_center")),
      ("Moneda", doc.currency)]) }}
