@@ -22,7 +22,7 @@
 <style>
 {{ fuentes_css() }}
 
-.print-format { margin-top: 40mm; margin-bottom: 19mm; margin-left: 0mm; margin-right: 0mm; }
+.print-format { margin-top: 40mm; margin-bottom: 19mm; margin-left: 0mm; margin-right: 0mm; page-size: Letter; }
 /* En los archivos del encabezado/pie (body > .print-format) esos márgenes no aplican. */
 body > .print-format { margin: 0 !important; padding: 0 !important; }
 .print-format, .print-format * { font-family: 'Poppins', Arial, sans-serif; }
@@ -174,19 +174,25 @@ body > .print-format { margin: 0 !important; padding: 0 !important; }
 .yk-nav .print-format table.yk-hoja > tbody > tr, .yk-nav .print-format table.yk-hoja > tbody > tr > td,
 .yk-nav .print-format table.yk-hoja div { page-break-inside: auto !important; break-inside: auto !important; }
 .yk-nav .print-format table.yk-hoja table td div { page-break-inside: avoid !important; break-inside: avoid !important; }
-.yk-nav .print-format #header-html .letter-head { padding-bottom: 5mm; }
-.yk-nav .yk-esp-pie { height: 20mm; }
+/* Misma geometría que el PDF de wkhtmltopdf (márgenes de .print-format de arriba): franja
+   de encabezado de 40mm con la cinta a 11mm del borde, y franja de pie de 19mm. */
+.yk-nav .print-format table.yk-hoja > thead > tr > td { height: 40mm; }
+.yk-nav .print-format #header-html { padding-top: 11mm; }
+.yk-nav .print-format #header-html .letter-head { margin: 0 !important; }
+.yk-nav .print-format #footer-html { height: 19mm; box-sizing: border-box; overflow: hidden; background: #fff; }
+.yk-nav .yk-esp-pie { height: 19mm; }
 @media screen {
-    .yk-nav .print-format { width: 216mm !important; max-width: 100% !important; min-height: 279mm; padding: 0 0 2mm !important; }
+    /* Vista web: una hoja carta con el pie al fondo. */
+    .yk-nav .print-format { position: relative; width: 216mm !important; max-width: 100% !important;
+        min-height: 279mm; padding: 0 0 19mm !important; box-sizing: border-box; }
     .yk-nav .print-format .yk-esp-pie { display: none; }
-    .yk-nav .print-format .pdf-container { padding-bottom: 6mm; }
+    .yk-nav .print-format #footer-html { position: absolute; left: 0; right: 0; bottom: 0; }
 }
 @media print {
     html.yk-nav, .yk-nav body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
     .yk-nav .print-format-gutter { padding: 0 !important; background: #fff !important; }
     .yk-nav .print-format { width: 100% !important; max-width: none !important; min-height: 0 !important; border-radius: 0 !important; }
-    .yk-nav .print-format #footer-html { position: fixed; left: 0; right: 0; bottom: 0; background: #fff; }
-    .yk-nav .print-format .pdf-container { padding-bottom: 4mm; }
+    .yk-nav .print-format #footer-html { position: fixed; left: 0; right: 0; bottom: 0; }
 }
 </style><script>
 (function () {
