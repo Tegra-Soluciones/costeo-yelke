@@ -69,7 +69,16 @@ def qty_por_producto_de_ov(sales_order):
     return out or None
 
 
-def tallas_de_producto(doc, base, qty_ov=None):
+def _desglose_ov(doc, sales_order):
+    """Desglose por talla capturado en la OV (api/tallas_ov.py), con el género de
+    cada producto tomado del costeo para las líneas viejas que no lo traen."""
+    from costeo_yelke.api.tallas_ov import desglose_de_ov
+
+    generos = {t.finished_item: t.genero for t in (doc.get("tabla_tallas_costeo") or []) if t.genero}
+    return desglose_de_ov(sales_order, generos)
+
+
+def tallas_de_producto(doc, base, qty_ov=None, desglose=None):
     """Tallas heredadas del costeo para el producto base y sus variantes: lo que el
     costeo trae desglosado por talla, y el resto de cada producto como un renglón
     (la variante con su etiqueta de talla; la base, "Sin desglose").
@@ -89,6 +98,13 @@ def tallas_de_producto(doc, base, qty_ov=None):
             continue
         if qty_ov is not None and prod not in qty_ov:
             continue  # este producto del costeo no forma parte de la OV activa
+        if desglose and desglose.get(prod):
+            # Desglose capturado en la Orden de Venta (tallas normales del producto
+            # principal y tallas extra): manda sobre el del costeo. Ver api/tallas_ov.py.
+            for f in desglose[prod]:
+                filas.append({"producto": prod, "genero": f.get("genero") or "", "talla": f.get("talla") or "",
+                              "cantidad": flt(f.get("cantidad"))})
+            continue
         total_costeo = flt(p.qty)
         total = flt(qty_ov[prod]) if qty_ov is not None else total_costeo
         # Proporción OV/costeo: 1.0 cuando coinciden (el caso normal) o cuando el
@@ -156,9 +172,10 @@ def get_oms_generales(costeo: str, sales_order: str = None) -> dict:
     tallas_de_producto). Sin ella, las del costeo completo, como siempre."""
     doc = frappe.get_doc("Costeo", costeo)
     qty_ov = qty_por_producto_de_ov(sales_order)
+    desglose = _desglose_ov(doc, sales_order)
     out = []
     for base, productos in _productos_base(doc):
-        tallas = tallas_de_producto(doc, base, qty_ov)
+        tallas = tallas_de_producto(doc, base, qty_ov, desglose)
         if qty_ov is not None and not tallas:
             continue  # ningún producto de esta ficha va en la OV activa
         out.append({
@@ -234,7 +251,9 @@ def om_de_oc(po: str) -> list:
     registros = []
     if costeo and frappe.db.exists("Costeo", costeo):
         doc = frappe.get_doc("Costeo", costeo)
-        qty_ov = qty_por_producto_de_ov(_ov_de_oc(po_doc))
+        ov = _ov_de_oc(po_doc)
+        qty_ov = qty_por_producto_de_ov(ov)
+        desglose = _desglose_ov(doc, ov)
         bases = []
         for it in po_doc.items:
             prod = it.get("producto_terminado") or (it.get("fg_item") or "").split(" · ")[0]
@@ -250,7 +269,7 @@ def om_de_oc(po: str) -> list:
                 "producto": base,
                 "item_name": frappe.db.get_value("Item", base, "item_name") or base,
                 "general": om["general"],
-                "tallas": tallas_de_producto(doc, base, qty_ov),
+                "tallas": tallas_de_producto(doc, base, qty_ov, desglose),
                 "procesos": [r for r in om["procesos"] if _para(r["proveedores"], sup)],
                 "observaciones": [r for r in om["observaciones"] if _para(r["proveedores"], sup)],
                 "tablas": [t for t in om["tablas"] if _para(t.get("proveedores"), sup)],

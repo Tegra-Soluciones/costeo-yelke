@@ -926,6 +926,42 @@
                   </div>
                   <a class="doc-action justify-center w-full" :href="`/app/sales-order/${so.name}`" target="_blank"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>Abrir en ERPNext</a>
 
+                  <!-- Desglose por talla del PRODUCTO PRINCIPAL (tallas normales). La suma
+                       debe ser exacta a la cantidad del producto (la del costeo); al guardar
+                       se escribe como lista debajo de la descripción y la Orden de
+                       Manufactura lo toma para su desglose de tallas (api/tallas_ov.py). -->
+                  <div v-if="so.docstatus === 0 && soDesgloseForm.length" class="pt-3 mt-2 border-t border-surface-border">
+                    <p class="text-[12.5px] font-semibold text-ink mb-0.5">Desglose por talla</p>
+                    <p class="text-[11px] text-ink-muted mb-2">Cuántas piezas de cada talla lleva el producto. Debe sumar exacto la cantidad del costeo.</p>
+                    <div v-for="d in soDesgloseForm" :key="d.row" class="mb-3">
+                      <div class="flex items-center justify-between gap-2 mb-1.5">
+                        <span class="text-[12.5px] text-ink truncate" :title="d.item_name">{{ d.item_name }}</span>
+                        <span class="text-[11px] tabular-nums" :class="sumaDesglose(d) === d.qty ? 'text-green-700' : 'text-amber-600'">{{ sumaDesglose(d) }} / {{ d.qty }}</span>
+                      </div>
+                      <div class="grid grid-cols-2 gap-1.5 mb-1.5">
+                        <select v-model="d.genero" class="field-input text-xs py-1" @change="d.grupo = ''">
+                          <option value="">Género…</option>
+                          <option v-for="g in ['Dama', 'Caballero']" :key="g" :value="g">{{ g }}</option>
+                        </select>
+                        <select v-model="d.grupo" class="field-input text-xs py-1" :disabled="!d.genero">
+                          <option value="">Tipo de talla…</option>
+                          <option v-for="g in gruposDeGenero(d.genero)" :key="g.name" :value="g.name">{{ g.talla }}</option>
+                        </select>
+                      </div>
+                      <div v-if="d.grupo" class="grid grid-cols-3 gap-1.5">
+                        <label v-for="t in tallasDeGrupo(d.grupo)" :key="t.name" class="flex items-center gap-1">
+                          <span class="text-[11px] text-ink-muted w-9 text-right">{{ t.talla }}</span>
+                          <input v-model.number="d.valores[t.name]" type="number" min="0" step="1" class="field-input w-full text-xs py-0.5" />
+                        </label>
+                      </div>
+                    </div>
+                    <button
+                      :disabled="soDesgloseSaving"
+                      class="w-full h-8 text-[12.5px] font-medium text-ink border border-surface-border rounded-lg hover:bg-surface-raised disabled:opacity-50"
+                      @click="guardarDesgloseOV(so)"
+                    >{{ soDesgloseSaving ? "Guardando…" : "Guardar desglose" }}</button>
+                  </div>
+
                   <!-- Cantidades confirmadas por talla -- solo aquí (OV), nunca en la
                        Cotización: es en esta etapa donde el cliente confirma las
                        cantidades oficiales de cada variante, o las quita si no las
@@ -3487,6 +3523,7 @@ function toggleSalesOrder(so) {
   expandedSOName.value = so.name;
   applySOToForm(so);
   loadSoVariantesForm(so);
+  loadSoDesgloseForm(so);
 }
 
 // ── Cantidades confirmadas por talla (solo en la OV, nunca en la Cotización) ──
@@ -3516,6 +3553,49 @@ function parseDesgloseDeDescripcion(description, tallas) {
   if (!algo) return null;
   for (const t of tallas) if (!(t.code in encontrado)) encontrado[t.code] = 0;
   return encontrado;
+}
+// ── Desglose por talla del producto principal (api/tallas_ov.py) ──
+const soDesgloseForm = ref([]);
+const soDesgloseSaving = ref(false);
+function sumaDesglose(d) {
+  return Object.values(d.valores).reduce((a, b) => a + (Number(b) || 0), 0);
+}
+async function loadSoDesgloseForm(so) {
+  if (!so || so.docstatus !== 0) { soDesgloseForm.value = []; return; }
+  try {
+    await loadAllTallas();
+    const filas = await call("costeo_yelke.api.tallas_ov.get_desglose_tallas_ov", { sales_order: so.name });
+    soDesgloseForm.value = (filas || []).map((f) => {
+      const valores = {};
+      for (const x of f.filas || []) valores[x.talla] = x.qty;
+      const primera = allTallas.value.find((t) => t.name === (f.filas || [])[0]?.talla);
+      return { ...f, valores, genero: primera?.genero || "", grupo: primera?.parent_talla || "" };
+    });
+  } catch { soDesgloseForm.value = []; }
+}
+async function guardarDesgloseOV(so) {
+  for (const d of soDesgloseForm.value) {
+    const suma = sumaDesglose(d);
+    if (suma && suma !== d.qty) {
+      showToast(`El desglose de "${d.item_name}" suma ${suma} y el producto lleva ${d.qty}: debe coincidir exacto`, "error");
+      return;
+    }
+  }
+  soDesgloseSaving.value = true;
+  try {
+    for (const d of soDesgloseForm.value) {
+      const filas = Object.entries(d.valores).filter(([, q]) => Number(q) > 0).map(([talla, qty]) => ({ talla, qty: Number(qty) }));
+      await call("costeo_yelke.api.tallas_ov.guardar_desglose_tallas_ov", { sales_order: so.name, row: d.row, filas: JSON.stringify(filas) });
+    }
+    await loadRelated();
+    previewKey.value++;
+    await loadSoDesgloseForm(so);
+    showToast("Desglose guardado -- ya aparece en la descripción y en la orden de manufactura");
+  } catch (e) {
+    showToast(e.message || "No se pudo guardar el desglose", "error");
+  } finally {
+    soDesgloseSaving.value = false;
+  }
 }
 const soVariantesForm = ref([]);
 const soVariantesLoading = ref(false);

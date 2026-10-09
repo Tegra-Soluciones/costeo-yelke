@@ -82,6 +82,11 @@ body > .print-format { margin: 0 !important; padding: 0 !important; }
 .item-code strong, .item-fiscal-code strong { font-weight: 500; }
 .item-description { color: #666; font-size: 7.2pt; }
 .item-pieces { font-size: 6.8pt; color: #666; margin-top: 0.8mm; }
+/* Desglose de tallas dentro de la descripción (api/impresion.descripcion_html) */
+.yk-lista-titulo { margin-top: 1.2mm; font-size: 6.5pt; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: #e65a0b; }
+.yk-lista { margin: 0.6mm 0 0 0; padding: 0 0 0 4mm; }
+.yk-lista li { font-size: 7.2pt; color: #444; line-height: 1.5; }
+.yk-lista li b { color: #ff6b15; font-weight: 600; }
 .item-image { width: 11mm; height: 11mm; border-radius: 1.5mm; }
 .yk-tag { display: inline-block; font-size: 6pt; font-weight: 600; color: #e65a0b; background: #fff3ec;
     border-radius: 1mm; padding: 0.2mm 1.5mm; margin: 0.8mm 1mm 0 0; }
@@ -329,7 +334,7 @@ body > .print-format { margin: 0 !important; padding: 0 !important; }
                 <div class="item-title">{{ row.item_name or row.item_code }}</div>
                 <div class="item-code">{{ row.item_code }}{% if row.get("mx_product_service_key") %} · SAT {{ row.mx_product_service_key }}{% endif %}</div>
                 {% if row.description and (row.description | striptags | trim | upper) != ((row.item_name or "") | trim | upper) %}
-                <div class="item-description">{{ row.description }}</div>
+                <div class="item-description">{{ descripcion_html(row.description, row.item_name) }}</div>
                 {% endif %}
             </td>
             <td class="num">{{ cantidad_uom(row.qty, row.uom or row.stock_uom) }}</td>

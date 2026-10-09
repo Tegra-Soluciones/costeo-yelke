@@ -74,3 +74,4 @@ costeo_yelke.patches.v0_2_49.ocultar_iban_sucursal
 costeo_yelke.patches.v0_2_50.cuenta_bancaria_proveedor_aparte
 costeo_yelke.patches.v0_2_51.formatos_impresion_predeterminados
 costeo_yelke.patches.v0_2_52.firma_usuario
+costeo_yelke.patches.v0_2_53.desglose_tallas_ov

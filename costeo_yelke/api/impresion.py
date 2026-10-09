@@ -211,3 +211,35 @@ def direccion_lineas(nombre):
     if ciudad or cp:
         lineas.append(" · ".join(x for x in (ciudad, cp) if x))
     return lineas
+
+
+def descripcion_html(desc, item_name=None):
+    """Descripción de un artículo para los PDF: los renglones "- <talla> × <n>
+    pza(s)" (desglose de tallas normales y extra, ver api/tallas_ov.py) salen como
+    lista; los encabezados ("Desglose por talla:", "Talla: Caballero") como
+    etiqueta, y el resto como párrafo."""
+    from frappe.utils import escape_html
+
+    from costeo_yelke.api.tallas_ov import texto_plano
+
+    partes, lista = [], []
+
+    def cerrar_lista():
+        if lista:
+            partes.append('<ul class="yk-lista">' + "".join(f"<li>{x}</li>" for x in lista) + "</ul>")
+            lista.clear()
+
+    for linea in texto_plano(desc).splitlines():
+        linea = linea.strip()
+        if not linea or (item_name and linea.upper() == item_name.strip().upper()):
+            continue  # el nombre ya sale como título del renglón
+        if linea.startswith(("- ", "• ")):
+            lista.append(escape_html(linea[2:].strip()).replace(" × ", " <b>×</b> ").replace(" pza(s)", " pzas"))
+            continue
+        cerrar_lista()
+        if linea.endswith(":") or linea.lower().startswith(("talla:", "tallas extra")):
+            partes.append(f'<div class="yk-lista-titulo">{escape_html(linea.rstrip(":"))}</div>')
+        else:
+            partes.append(f"<div>{escape_html(linea)}</div>")
+    cerrar_lista()
+    return "".join(partes)

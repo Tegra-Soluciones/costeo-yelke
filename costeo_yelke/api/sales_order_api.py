@@ -213,6 +213,11 @@ def save_sales_order(data):
         if val is not None and val != "":
             setattr(doc, field, val)
 
+    # El desglose por talla (JSON, ver api/tallas_ov.py) no viaja en el payload de
+    # las pantallas: se conserva el del renglón anterior con el mismo artículo y
+    # la misma descripción (que lleva el desglose en texto).
+    desglose_previo = {(x.item_code, (x.description or "").strip()): x.get("desglose_tallas")
+                       for x in doc.items if x.get("desglose_tallas")}
     doc.items = []
     for r in data.get("items") or []:
         if not r.get("item_code"):
@@ -235,6 +240,10 @@ def save_sales_order(data):
         row.discount_percentage = float(r.get("discount_percentage") or 0)
         row.warehouse         = r.get("warehouse") or ""
         row.delivery_date     = r.get("delivery_date") or doc.delivery_date or add_days(nowdate(), 7)
+        if r.get("desglose_tallas") is not None:
+            row.desglose_tallas = r.get("desglose_tallas")
+        else:
+            row.desglose_tallas = desglose_previo.get((row.item_code, (row.description or "").strip()))
 
     doc.flags.ignore_permissions = True
     doc.flags.ignore_mandatory   = True
