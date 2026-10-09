@@ -133,6 +133,25 @@ body > .print-format { margin: 0 !important; padding: 0 !important; }
 .yk-borrador { position: absolute; top: 70mm; left: 0; width: 100%; text-align: center; font-size: 80pt;
     font-weight: 700; letter-spacing: 6px; color: rgba(255, 107, 21, 0.07); -webkit-transform: rotate(-28deg); }
 
+/* Título de sección pegado a lo que sigue: que no quede solo al pie de una hoja. */
+.yk-seccion { margin-top: 5mm; page-break-after: avoid; break-after: avoid; }
+.yk-seccion + table, .yk-seccion + div { page-break-before: avoid; break-before: avoid; }
+
+/* ── Orden de manufactura: ficha, tablas libres y galería de diagramas ── */
+.yk-ficha { width: 100%; border-collapse: collapse; margin-bottom: 2mm; }
+.yk-ficha td { padding: 1.6mm 2.5mm !important; border: 0 !important; border-bottom: 0.3mm solid #e4e4e4 !important; vertical-align: top; font-size: 7.6pt; }
+.yk-ficha td.k { width: 18%; color: #777; }
+.pdf-container .yk-ficha td.v { width: 32%; font-weight: 500; color: #222; }
+.yk-lleva { margin: 1mm 0 2mm; font-size: 7.4pt; }
+.yk-lleva .k { color: #777; margin-right: 2mm; }
+.yk-lleva .yk-tag { margin-top: 0; }
+.yk-flex td.k { color: #555; }
+.yk-galeria { width: 100%; border-collapse: separate; border-spacing: 3mm 0; margin: 0 -3mm 3mm; table-layout: fixed; }
+.yk-galeria td { width: 50%; vertical-align: top; padding: 0 !important; border: 0 !important; page-break-inside: avoid; }
+.yk-galeria .img { border: 0.3mm solid #e4e4e4; border-radius: 1.5mm; padding: 3mm; text-align: center; height: 62mm; }
+.yk-galeria .img img { max-width: 100%; max-height: 56mm; }
+.yk-galeria .pie { font-size: 7pt; color: #666; margin-top: 1.2mm; }
+
 /* ── Costeo: tablas y totales propios ── */
 .totals-section { margin: 2mm 0 4mm; }
 .totals-table { float: right; width: 45%; border-collapse: collapse; border: 0.3mm solid #ececec; }
@@ -414,7 +433,7 @@ body > .print-format { margin: 0 !important; padding: 0 !important; }
 
 {#- ── Título de sección dentro del documento (p. ej. "Materia prima consumida"). ── -#}
 {%- macro seccion(texto) -%}
-<span class="yk-lbl" style="margin-top:5mm">{{ texto }}</span>
+<div class="yk-seccion"><span class="yk-lbl">{{ texto }}</span></div>
 {%- endmacro -%}
 
 
