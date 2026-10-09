@@ -24,8 +24,14 @@
 .yk-hivis.fino div.p { height: 0.35mm; }
 .yk-head { width: 100%; border-collapse: collapse; margin-top: 3mm; font-family: 'Poppins', Arial, sans-serif; }
 .yk-head td { vertical-align: middle; padding: 0 14mm !important; border: 0 !important; }
-.yk-head .logo img { height: 12mm; }
+/* Medidas fijas en la proporción del logo (640×220): con solo el alto, el max-width:100%
+   de Frappe lo encogía a lo ancho y salía aplastado. */
+.yk-head .logo img { width: 35mm !important; height: 12mm !important; max-width: none !important; }
 .yk-head .doc { text-align: right; }
+.yk-head td.logo { padding-right: 6mm !important; }
+.yk-head td.emp { padding-left: 0 !important; padding-right: 0 !important; vertical-align: middle; }
+.yk-emp { font-size: 6.6pt; color: #777; line-height: 1.5; }
+.yk-emp b { display: block; font-size: 7.4pt; font-weight: 600; color: #222; }
 .yk-tipo { display: inline-block; background: #111; color: #fff; font-size: 7.5pt; font-weight: 600;
     letter-spacing: 2px; text-transform: uppercase; padding: 1mm 3mm 0.8mm 4mm; white-space: nowrap;
     border-left: 1.2mm solid #ff6b15; }
@@ -54,7 +60,15 @@
 {{ cinta() }}
 <table class="yk-head">
     <tr>
-        <td class="logo"><img src="{{ logo_yelke() }}" alt="Yelke"></td>
+        <td class="logo" style="width:35mm"><img src="{{ logo_yelke() }}" alt="Yelke"></td>
+        {#- Nuestra compañía (la del documento): nombre, RFC, domicilio y contacto. -#}
+        {%- set e = datos_empresa(doc.get("compañia") or doc.get("company")) %}
+        <td class="emp"><div class="yk-emp">
+            <b>{{ e.nombre }}</b>
+            {% if e.rfc %}RFC {{ e.rfc }}<br>{% endif %}
+            {% if e.direccion %}{{ e.direccion | join(", ") }}<br>{% endif %}
+            {{ [e.telefono, e.correo] | select | join(" · ") }}
+        </div></td>
         <td class="doc">
             <span class="yk-tipo">{{ titulo or titulo_documento(doc) }}</span>
             <div class="yk-folio">{{ doc.get("name") }}</div>
@@ -74,7 +88,7 @@
 {{ estilos_membrete() }}
 <table class="yk-foot">
     <tr>
-        <td>{{ e.nombre }}{% if e.rfc %} · RFC {{ e.rfc }}{% endif %}{% if e.web %} · {{ e.web }}{% endif %}{% if e.correo %} · {{ e.correo }}{% endif %}</td>
+        <td>{{ e.nombre }}{% if e.rfc %} · RFC {{ e.rfc }}{% endif %}{% if e.web %} · {{ e.web }}{% endif %}{% if e.correo %} · {{ e.correo }}{% endif %}{% if e.telefono %} · {{ e.telefono }}{% endif %}</td>
         <td style="text-align:right; white-space:nowrap;">{{ doc.get("name") }}<span class="yk-paginas"> · <span class="page"></span>/<span class="topage"></span></span></td>
     </tr>
 </table>

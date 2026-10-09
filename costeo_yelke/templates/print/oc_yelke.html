@@ -65,30 +65,32 @@ body > .print-format { margin: 0 !important; padding: 0 !important; }
 /* ── Tabla de artículos ── */
 .items-table, .payment-table { width: 100%; border-collapse: collapse; margin-bottom: 4mm; }
 /* El fondo va en la fila: en celdas, wkhtmltopdf deja costuras entre ellas. */
-.items-table thead tr, .payment-table thead tr { background: #f6f6f6; }
+/* Encabezado negro y renglones sin fondo, separados solo por líneas horizontales.
+   El fondo va en la fila: en celdas, wkhtmltopdf deja costuras entre ellas. */
+.items-table thead tr, .payment-table thead tr { background: #111; }
 .pdf-container .items-table thead th, .pdf-container .payment-table thead th {
-    background: transparent !important; color: #777 !important; font-size: 6.5pt; font-weight: 500;
-    letter-spacing: 1.2px; text-transform: uppercase; padding: 2.2mm 2.5mm; border: 0 !important;
-    border-bottom: 0.3mm solid #e2e2e2 !important; text-align: left;
+    background: transparent !important; color: #fff !important; font-size: 6.5pt; font-weight: 500;
+    letter-spacing: 1.2px; text-transform: uppercase; padding: 2.2mm 2.5mm; border: 0 !important; text-align: left;
 }
 .items-table thead th.text-right, .payment-table thead th.text-right { text-align: right; }
 .items-table thead th.text-center, .payment-table thead th.text-center { text-align: center; }
 .items-table tbody td, .payment-table tbody td {
-    padding: 2.6mm 2.5mm; border: 0 !important; border-bottom: 0.3mm solid #ececec !important;
-    vertical-align: top; font-size: 7.8pt;
+    padding: 2.6mm 2.5mm; border: 0 !important; border-bottom: 0.3mm solid #e4e4e4 !important;
+    vertical-align: top; font-size: 7.8pt; background: transparent !important;
 }
-.items-table tbody tr:nth-child(even) td, .payment-table tbody tr:nth-child(even) td { background: #fafafa; }
 .pdf-container .item-title { font-weight: 600; color: #111; font-size: 8.2pt; }
-.item-code, .item-fiscal-code { font-size: 6.6pt; color: #888; letter-spacing: 0.3px; }
+.item-code, .item-fiscal-code { font-size: 6.6pt; color: #888; letter-spacing: 0.3px; margin-top: 0.3mm; }
+.item-code .k { color: #aaa; }
 .item-code strong, .item-fiscal-code strong { font-weight: 500; }
-.item-description { color: #666; font-size: 7.2pt; }
+.item-description { color: #666; font-size: 7.2pt; margin-top: 0.8mm; }
 .item-pieces { font-size: 6.8pt; color: #666; margin-top: 0.8mm; }
 /* Desglose de tallas dentro de la descripción (api/impresion.descripcion_html) */
 .yk-lista-titulo { margin-top: 1.2mm; font-size: 6.5pt; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: #e65a0b; }
 .yk-lista { margin: 0.6mm 0 0 0; padding: 0 0 0 4mm; }
 .yk-lista li { font-size: 7.2pt; color: #444; line-height: 1.5; }
 .yk-lista li b { color: #ff6b15; font-weight: 600; }
-.item-image { width: 11mm; height: 11mm; border-radius: 1.5mm; }
+.item-foto { width: 15mm; text-align: center; }
+.item-foto img { max-width: 15mm; max-height: 15mm; }
 .yk-tag { display: inline-block; font-size: 6pt; font-weight: 600; color: #e65a0b; background: #fff3ec;
     border-radius: 1mm; padding: 0.2mm 1.5mm; margin: 0.8mm 1mm 0 0; }
 .bg-volumen { background: #ff6b15 !important; color: #fff !important; }
@@ -169,7 +171,6 @@ body > .print-format { margin: 0 !important; padding: 0 !important; }
 .yk-nav .print-format #footer-html { display: block !important; margin: 0 !important; }
 /* El número de página del pie solo lo pone wkhtmltopdf; en la hoja impresa lo pone @page. */
 .yk-nav .print-format .yk-paginas { display: none; }
-.yk-nav .print-format .yk-head .logo img { height: 12mm !important; width: auto !important; max-width: none !important; }
 .yk-nav .print-format table.yk-hoja { width: 100%; border-collapse: collapse; margin: 0; }
 .yk-nav .print-format table.yk-hoja > * > tr > td { padding: 0 !important; border: 0 !important; vertical-align: top !important; }
 /* La fila que envuelve todo el contenido sí se parte entre hojas: ERPNext pone avoid a los tr
@@ -391,13 +392,14 @@ body > .print-format { margin: 0 !important; padding: 0 !important; }
 {#- Tabla de artículos común (Compra, Venta, Cotización, Nota de Entrega).
     La imagen solo sale si algún renglón la tiene; descuento y peso son opcionales. -#}
 {%- macro tabla_articulos(doc, mostrar_descuento=false, mostrar_peso=false) -%}
-{%- set con_img = doc.items | selectattr("image") | list | length > 0 -%}
+{%- set ns = namespace(img=false) -%}
+{%- for r in doc.items %}{% if imagen_articulo(r) %}{% set ns.img = true %}{% endif %}{% endfor -%}
 {%- set con_desc = mostrar_descuento and (doc.items | selectattr("discount_percentage") | list | length > 0) -%}
 <table class="items-table">
     <thead>
         <tr>
             <th style="width:6mm">#</th>
-            {% if con_img %}<th style="width:15mm"></th>{% endif %}
+            {% if ns.img %}<th style="width:17mm"></th>{% endif %}
             <th>Artículo</th>
             <th class="text-right" style="width:24mm">Cantidad</th>
             {% if con_desc %}<th class="text-right" style="width:14mm">Desc.</th>{% endif %}
@@ -408,12 +410,13 @@ body > .print-format { margin: 0 !important; padding: 0 !important; }
     </thead>
     <tbody>
         {% for row in doc.items %}
+        {%- set img = imagen_articulo(row) if ns.img else None %}
         <tr>
             <td class="muted">{{ row.idx }}</td>
-            {% if con_img %}<td>{% if row.image %}<img src="{{ row.image }}" alt="" class="item-image">{% endif %}</td>{% endif %}
+            {% if ns.img %}<td><div class="item-foto">{% if img %}<img src="{{ img }}" alt="">{% endif %}</div></td>{% endif %}
             <td>
                 <div class="item-title">{{ row.item_name or row.item_code }}</div>
-                <div class="item-code">{{ row.item_code }}{% if row.get("mx_product_service_key") %} · SAT {{ row.mx_product_service_key }}{% endif %}</div>
+                <div class="item-code"><span class="k">Código de producto:</span> {{ row.item_code }}{% if row.get("mx_product_service_key") %} · SAT {{ row.mx_product_service_key }}{% endif %}</div>
                 {% if row.description and (row.description | striptags | trim | upper) != ((row.item_name or "") | trim | upper) %}
                 <div class="item-description">{{ descripcion_html(row.description, row.item_name) }}</div>
                 {% endif %}

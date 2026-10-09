@@ -109,7 +109,8 @@ jinja = {
 		"costeo_yelke.api.impresion.fecha_corta",
 		"costeo_yelke.api.impresion.rfc_tercero",
 		"costeo_yelke.api.impresion.direccion_lineas",
-		"costeo_yelke.api.impresion.descripcion_html"],
+		"costeo_yelke.api.impresion.descripcion_html",
+		"costeo_yelke.api.impresion.imagen_articulo"],
 }
 
 # Installation

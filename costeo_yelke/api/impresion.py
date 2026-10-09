@@ -10,6 +10,9 @@ personas que de verdad intervinieron, con su firma de User.firma (patch v0_2_52)
 "Validó/Aprobó" es quien lo validó (submit): se toma del Version que registra el
 cambio docstatus 0 -> 1, así sirve también para documentos ya validados.
 """
+import base64
+from functools import lru_cache
+
 import frappe
 from frappe.utils import formatdate
 
@@ -22,7 +25,49 @@ def _persona(usuario):
     nombre = u.get("full_name") or usuario
     if usuario == "Administrator":
         nombre = "Administrador"
-    return {"nombre": nombre, "firma": u.get("firma") or None}
+    return {"nombre": nombre, "firma": firma_limpia(u.get("firma"))}
+
+
+def firma_limpia(uri):
+    """La firma tal como se imprime: sin la línea guía y recortada al trazo.
+
+    El recuadro de firma de ERPNext (jSignature, decorColor) pinta su línea guía
+    DENTRO de la imagen que guarda, y guarda el lienzo completo (casi todo en
+    blanco), así que impresa salía chica y con una raya debajo. La línea guía de
+    jSignature va siempre en el mismo lugar: y = alto - round(alto/5), de
+    x = 1.5·d a ancho - 1.5·d (d = round(alto/5)). Se borra esa franja y se
+    recorta a lo que quede dibujado; el formato la escala al alto de la firma."""
+    if not uri or not uri.startswith("data:image"):
+        return uri or None
+    return _firma_limpia(uri)
+
+
+@lru_cache(maxsize=64)
+def _firma_limpia(uri):
+    import io
+
+    from PIL import Image
+
+    try:
+        im = Image.open(io.BytesIO(base64.b64decode(uri.split(",", 1)[1]))).convert("RGBA")
+    except Exception:
+        return uri
+    ancho, alto = im.size
+    d = round(alto / 5)
+    y = alto - d
+    pix = im.load()
+    for yy in range(max(0, y - 2), min(alto, y + 3)):
+        for xx in range(max(0, int(d * 1.5) - 2), min(ancho, int(ancho - d * 1.5) + 3)):
+            pix[xx, yy] = (0, 0, 0, 0)
+    caja = im.getchannel("A").point(lambda a: 255 if a > 24 else 0).getbbox()
+    if not caja:
+        return None
+    margen = 3
+    im = im.crop((max(0, caja[0] - margen), max(0, caja[1] - margen),
+                  min(ancho, caja[2] + margen), min(alto, caja[3] + margen)))
+    buf = io.BytesIO()
+    im.save(buf, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
 def _quien_valido(doc):
@@ -174,8 +219,59 @@ def datos_empresa(company):
     if not company or not frappe.db.exists("Company", company):
         return {"nombre": company or "", "rfc": "", "web": "", "correo": "", "telefono": ""}
     c = frappe.get_cached_doc("Company", company)
-    return {"nombre": c.company_name, "rfc": c.get("tax_id") or "", "web": c.get("website") or "www.yelke.com.mx",
-            "correo": c.get("email") or "", "telefono": c.get("phone_no") or ""}
+    web = re.sub(r"^https?://|/$", "", c.get("website") or "") or "www.yelke.com.mx"
+    return {"nombre": c.company_name, "rfc": c.get("tax_id") or "", "web": web,
+            "correo": c.get("email") or "", "telefono": telefono(c.get("phone_no")),
+            "direccion": direccion_lineas(_direccion_empresa(company))}
+
+
+def _direccion_empresa(company):
+    try:
+        from erpnext.setup.doctype.company.company import get_default_company_address
+
+        return get_default_company_address(company)
+    except Exception:
+        return None
+
+
+def telefono(numero):
+    """4423481220 -> 442 348 1220 (lada de 3 dígitos, como se escribe en Querétaro)."""
+    d = re.sub(r"\D", "", numero or "")
+    if len(d) == 12 and d.startswith("52"):
+        d = d[2:]
+    return f"{d[:3]} {d[3:6]} {d[6:]}" if len(d) == 10 else (numero or "")
+
+
+def imagen_articulo(row):
+    """Imagen del renglón (si no la trae, la del artículo) como miniatura incrustada.
+
+    Las imágenes de artículo suelen ser archivos privados: wkhtmltopdf no tiene sesión
+    para pedirlos y en el PDF salían como un cuadrito vacío. Incrustada en base64 sale
+    igual en el PDF, la impresión y la vista web, y la miniatura no infla el PDF."""
+    url = row.get("image") or (frappe.db.get_value("Item", row.item_code, "image") if row.get("item_code") else None)
+    return _miniatura(url) if url else None
+
+
+@lru_cache(maxsize=256)
+def _miniatura(url):
+    import io
+
+    from PIL import Image
+
+    try:
+        if url.startswith("http"):
+            return url
+        ruta = frappe.get_site_path(*url.lstrip("/").split("/")) if url.startswith("/private/") \
+            else frappe.get_site_path("public", *url.lstrip("/").split("/"))
+        im = Image.open(ruta)
+        im.thumbnail((240, 240))
+        if im.mode not in ("RGB", "RGBA"):
+            im = im.convert("RGBA")
+        buf = io.BytesIO()
+        im.save(buf, format="PNG", optimize=True)
+        return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        return None
 
 
 _MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
