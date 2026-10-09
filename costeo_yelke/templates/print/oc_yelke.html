@@ -689,3 +689,22 @@
 {{ firmas(doc) }}
 {{ pie(texto_pie) }}
 {%- endmacro -%}
+
+
+{#- Membrete (Letter Head "Encabezado Yelke", ver costeo_yelke/membrete). Los
+    formatos de código propio no lo reciben solos: se pinta igual que en el
+    formato estándar de Frappe, con header-html / footer-html para que el PDF lo
+    repita en cada página. Se pasan las variables porque un macro importado no ve
+    el contexto del formato. -#}
+{%- macro membrete_encabezado(letter_head, no_letterhead, print_settings) -%}
+<div {% if print_settings and print_settings.repeat_header_footer %}id="header-html" class="hidden-pdf"{% endif %}>
+    {% if letter_head and not no_letterhead %}<div class="letter-head">{{ letter_head }}</div>{% endif %}
+</div>
+{%- endmacro -%}
+
+
+{%- macro membrete_pie(footer, no_letterhead, print_settings) -%}
+<div {% if print_settings and print_settings.repeat_header_footer %}id="footer-html" class="visible-pdf"{% endif %}>
+    {% if footer and not no_letterhead %}<div class="letter-head-footer">{{ footer }}</div>{% endif %}
+</div>
+{%- endmacro -%}

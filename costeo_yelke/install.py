@@ -10,6 +10,12 @@ def after_install():
 
 def after_migrate():
 	ensure_default_warehouses()
+	# Membrete (encabezado y pie) de los PDF: vive en la app, ver costeo_yelke/membrete.
+	try:
+		from costeo_yelke.membrete import sincronizar_membrete
+		sincronizar_membrete()
+	except Exception:
+		frappe.log_error(title="Costeo Yelke: no se pudo sincronizar el membrete")
 
 
 def ensure_default_warehouses():
