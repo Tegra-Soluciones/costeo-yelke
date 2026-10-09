@@ -59,7 +59,7 @@
             <span class="yk-tipo">{{ titulo or titulo_documento(doc) }}</span>
             <div class="yk-folio">{{ doc.get("name") }}</div>
             <div class="yk-meta">
-                {% if fecha %}Emitida {{ fecha_corta(fecha) }}{% endif %}<span class="yk-paginas">{% if fecha %} · {% endif %}Página <span class="page"></span> de <span class="topage"></span></span>
+                {% if fecha %}Emitida {{ fecha_corta(fecha) }}{% endif %}
                 {% if est[0] %}<span class="yk-pill {{ est[1] }}">{{ est[0] }}</span>{% endif %}
             </div>
         </td>
@@ -74,7 +74,7 @@
 {{ estilos_membrete() }}
 <table class="yk-foot">
     <tr>
-        <td><b>{{ e.nombre }}</b>{% if e.rfc %} · RFC {{ e.rfc }}{% endif %}{% if e.web %} · {{ e.web }}{% endif %}{% if e.correo %} · {{ e.correo }}{% endif %}</td>
+        <td>{{ e.nombre }}{% if e.rfc %} · RFC {{ e.rfc }}{% endif %}{% if e.web %} · {{ e.web }}{% endif %}{% if e.correo %} · {{ e.correo }}{% endif %}</td>
         <td style="text-align:right; white-space:nowrap;">{{ doc.get("name") }}<span class="yk-paginas"> · <span class="page"></span>/<span class="topage"></span></span></td>
     </tr>
 </table>

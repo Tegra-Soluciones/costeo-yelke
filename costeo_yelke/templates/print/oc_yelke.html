@@ -150,20 +150,24 @@ body > .print-format { margin: 0 !important; padding: 0 !important; }
 .chart-section { margin-top: 5mm; page-break-inside: avoid; }
 .chart-title { font-size: 6.5pt; font-weight: 600; letter-spacing: 1.6px; text-transform: uppercase; color: #ff6b15; margin-bottom: 2mm; }
 </style>
-{#- Impresión desde el NAVEGADOR (/printview: botón PDF de la app, Imprimir del escritorio).
-    Ahí los márgenes de .print-format no sirven (wkhtmltopdf los usa como margen de hoja,
-    el navegador los pinta como espacio en blanco) y el membrete va dentro de la página.
-    Hoja carta sin margen de navegador; el script mete el contenido en una tabla: el
-    encabezado va en el <thead> (Chrome lo repite arriba de cada hoja) y el <tfoot>
-    reserva el lugar del pie, que queda fijo abajo.
+{#- Impresión desde el NAVEGADOR (/printview: botón PDF de la app, Imprimir del escritorio)
+    con la misma hoja que el PDF de wkhtmltopdf: carta, franja de encabezado de 40mm con la
+    cinta a 11mm del borde y franja de pie de 19mm.
+      · Encabezado: el script lo mete en el <thead> de una tabla que envuelve el contenido;
+        Chrome repite el thead arriba de cada hoja.
+      · Pie: va en las cajas de margen de la hoja (@page @bottom-left / @bottom-right), con
+        "folio · página/total" como en el PDF. El margen inferior de la hoja es real, así que
+        el contenido corta antes del pie en todas las hojas. (Un pie position:fixed con un
+        <tfoot> de relleno NO sirve: Chrome no respeta el tfoot de afuera al partir la tabla
+        de artículos y el último renglón quedaba debajo del pie.)
     OJO con wkhtmltopdf: ERPNext quita lo .hidden-pdf del cuerpo, pero copia TODOS los
-    <style> a los archivos del encabezado y del pie. Por eso cada regla va bajo
-    html.yk-nav, clase que solo pone este script (wkhtmltopdf nunca lo ve), y el @page
-    también lo inyecta el script. -#}
+    <style> a los archivos del encabezado y del pie. Por eso cada regla va bajo html.yk-nav,
+    clase que solo pone este script (wkhtmltopdf nunca lo ve), y el @page también lo inyecta
+    el script. -#}
 <div class="hidden-pdf"><style>
 .yk-nav .print-format { margin: 0 auto !important; padding: 0 !important; }
 .yk-nav .print-format #footer-html { display: block !important; margin: 0 !important; }
-/* El número de página solo lo pone wkhtmltopdf. */
+/* El número de página del pie solo lo pone wkhtmltopdf; en la hoja impresa lo pone @page. */
 .yk-nav .print-format .yk-paginas { display: none; }
 .yk-nav .print-format .yk-head .logo img { height: 12mm !important; width: auto !important; max-width: none !important; }
 .yk-nav .print-format table.yk-hoja { width: 100%; border-collapse: collapse; margin: 0; }
@@ -174,39 +178,50 @@ body > .print-format { margin: 0 !important; padding: 0 !important; }
 .yk-nav .print-format table.yk-hoja > tbody > tr, .yk-nav .print-format table.yk-hoja > tbody > tr > td,
 .yk-nav .print-format table.yk-hoja div { page-break-inside: auto !important; break-inside: auto !important; }
 .yk-nav .print-format table.yk-hoja table td div { page-break-inside: avoid !important; break-inside: avoid !important; }
-/* Misma geometría que el PDF de wkhtmltopdf (márgenes de .print-format de arriba): franja
-   de encabezado de 40mm con la cinta a 11mm del borde, y franja de pie de 19mm. */
 .yk-nav .print-format table.yk-hoja > thead > tr > td { height: 40mm; }
 .yk-nav .print-format #header-html { padding-top: 11mm; }
 .yk-nav .print-format #header-html .letter-head { margin: 0 !important; }
-.yk-nav .print-format #footer-html { height: 19mm; box-sizing: border-box; overflow: hidden; background: #fff; }
-.yk-nav .yk-esp-pie { height: 19mm; }
 @media screen {
     /* Vista web: una hoja carta con el pie al fondo. */
     .yk-nav .print-format { position: relative; width: 216mm !important; max-width: 100% !important;
         min-height: 279mm; padding: 0 0 19mm !important; box-sizing: border-box; }
-    .yk-nav .print-format .yk-esp-pie { display: none; }
-    .yk-nav .print-format #footer-html { position: absolute; left: 0; right: 0; bottom: 0; }
+    .yk-nav .print-format #footer-html { position: absolute; left: 0; right: 0; bottom: 0; height: 19mm; overflow: hidden; }
 }
 @media print {
     html.yk-nav, .yk-nav body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
     .yk-nav .print-format-gutter { padding: 0 !important; background: #fff !important; }
     .yk-nav .print-format { width: 100% !important; max-width: none !important; min-height: 0 !important; border-radius: 0 !important; }
-    .yk-nav .print-format #footer-html { position: fixed; left: 0; right: 0; bottom: 0; }
+    .yk-nav .print-format #footer-html { display: none !important; }
 }
 </style><script>
 (function () {
+    /* Cinta reflejante del pie (membrete.html, cinta fino) como fondo de la caja de margen. */
+    var CINTA = [[7.0, 0.5, "#ff6b15"], [7.5, 0.35, "#d4d4d4"], [7.85, 0.5, "#ff6b15"], [8.35, 0.35, "#d4d4d4"], [8.7, 0.5, "#ff6b15"]]
+        .map(function (b) { return "linear-gradient(" + b[2] + "," + b[2] + ") 0 " + b[0] + "mm/100% " + b[1] + "mm no-repeat"; }).join(",");
+    function caja(pos, contenido, extra) {
+        return "@" + pos + " { content: " + contenido + "; width: 50%; vertical-align: top; padding-top: 2mm; "
+            + "font-family: Poppins, Arial, sans-serif; font-size: 6.8pt; color: #777; "
+            + "border-top: 0.3mm solid #ececec; background: " + CINTA + "; " + extra + " }";
+    }
     function armar() {
         var pf = document.querySelector(".print-format");
         var cont = pf && pf.querySelector(".pdf-container");
         if (!cont || pf.querySelector("table.yk-hoja")) return;
         document.documentElement.classList.add("yk-nav");
+
+        var celdas = pf.querySelectorAll("#footer-html .yk-foot td");
+        var izq = celdas[0] ? celdas[0].textContent.replace(/\s+/g, " ").trim() : "";
+        var folio = pf.getAttribute("data-folio") || (celdas[1] ? celdas[1].textContent.replace(/[·\s\/]+$/, "").trim() : "");
         var pagina = document.createElement("style");
-        pagina.textContent = "@page { size: letter; margin: 0; }";
+        pagina.textContent = "@page { size: letter; margin: 0 0 19mm 0; "
+            + caja("bottom-left", JSON.stringify(izq), "padding-left: 14mm;")
+            + caja("bottom-right", JSON.stringify(folio + " · ") + " counter(page) \"/\" counter(pages)", "text-align: right; padding-right: 14mm;")
+            + " }";
         document.head.appendChild(pagina);
+
         var t = document.createElement("table");
         t.className = "yk-hoja";
-        t.innerHTML = "<thead><tr><td></td></tr></thead><tbody><tr><td></td></tr></tbody><tfoot><tr><td><div class=\"yk-esp-pie\"></div></td></tr></tfoot>";
+        t.innerHTML = "<thead><tr><td></td></tr></thead><tbody><tr><td></td></tr></tbody>";
         cont.parentNode.insertBefore(t, cont);
         var head = pf.querySelector("#header-html");
         if (head) t.tHead.rows[0].cells[0].appendChild(head);
