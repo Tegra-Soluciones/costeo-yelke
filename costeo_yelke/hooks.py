@@ -96,7 +96,7 @@ doctype_js = {
 # }
 jinja = {
 	# OM de cada taller dentro del formato "Orden de Maquila".
-	"methods": ["costeo_yelke.api.om_general.om_de_oc"],
+	"methods": ["costeo_yelke.api.om_general.om_de_oc", "costeo_yelke.api.impresion.firmas_documento"],
 }
 
 # Installation

@@ -1,16 +1,15 @@
 {#- ===================================================================
-    Diseño compartido de las órdenes de compra de Yelke.
+    Diseño compartido de TODOS los formatos de impresión de Yelke:
+    Costeo, Cotización, Orden de Venta, Nota de Entrega, Orden de Compra,
+    Orden de Maquila y Orden de Manufactura (ver costeo_yelke/print_format/).
 
-    Lo usan DOS formatos de impresión que solo se diferencian en la tabla de
-    artículos (ver costeo_yelke/print_format/):
+    Cada formato solo dibuja su tabla de artículos; estilos, encabezado,
+    totales, condiciones de pago, términos, firmas y pie viven aquí una sola
+    vez, así todos se ven iguales y un cambio se hace en un solo lugar.
 
-      · "Orden de Compra Yelke" -- compra normal, un renglón por artículo.
-      · "Orden de Maquila"      -- subcontratación, renglones agrupados por
-                                   servicio y producto, cobrados por prenda.
-
-    El resto (estilos, encabezado, totales, términos, firmas, pie) vive aquí
-    una sola vez: cambiar el color de la marca o la firma del CEO se hace en un
-    solo lugar y los dos formatos quedan iguales.
+    Las firmas salen de quien de verdad intervino en el documento
+    (elaboró / revisó / aprobó o validó) con su firma de User.firma --
+    ver costeo_yelke/api/impresion.py (método jinja firmas_documento).
     =================================================================== -#}
 
 {%- macro estilos() -%}
@@ -368,66 +367,114 @@
     margin-top: 40px;
     margin-bottom: 30px;
     display: table;
+    table-layout: fixed;
     width: 100%;
     page-break-inside: avoid;
 }
 
 .signature-box {
     display: table-cell;
-    width: 45%;
-    padding: 0 20px;
+    padding: 0 18px;
     vertical-align: bottom;
 }
 
-.signature-box-ceo {
-    position: relative;
+.signature-img-wrap {
+    height: 64px;
+    overflow: hidden;
+    text-align: center;
+    margin-bottom: 4px;
 }
 
-.ceo-signature-img {
-    max-width: 220px;
-    max-height: 90px;
+.signature-img {
+    height: 60px;
     width: auto;
-    height: auto;
-    display: block;
-    margin: 0 auto -5px auto;
-    object-fit: contain;
+    max-width: 100%;
+    display: inline-block;
 }
 
 .signature-line {
-    border-top: 2px solid #333;
-    margin-bottom: 8px;
-    margin-top: 10px;
+    border-top: 1px solid #333;
+    margin-bottom: 6px;
+    margin-top: 4px;
 }
 
 .signature-label {
     font-size: 10px;
     font-weight: 700;
-    color: #333;
+    color: #FF6B15;
     text-align: center;
-    margin-bottom: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
 }
 
 .signature-info {
-    font-size: 9px;
-    color: #666;
+    font-size: 9.5px;
+    color: #333;
     text-align: center;
     font-weight: 600;
+    min-height: 12px;
 }
 
 .signature-date {
-    font-size: 9px;
+    font-size: 8.5px;
     color: #888;
     text-align: center;
-    margin-top: 5px;
-    font-style: italic;
+    margin-top: 2px;
+    min-height: 11px;
 }
 
-.signature-role {
-    font-size: 9px;
+/* ========================= */
+/* CLIENTE (documentos de venta) */
+/* ========================= */
+.client-section {
+    background-color: #fdfdfd;
+    padding: 10px;
+    border-left: 3px solid #FF6B15;
+}
+.quote-details, .delivery-details {
+    background-color: #fdfdfd;
+    padding: 10px;
+    text-align: right;
+}
+.client-address {
+    margin-top: 8px;
+    padding: 5px;
+    background: #fff;
+    border: 1px solid #eee;
+    border-radius: 4px;
+}
+.client-address strong {
     color: #FF6B15;
-    text-align: center;
+    font-size: 10px;
+    display: block;
+    margin-bottom: 3px;
+}
+.client-address .address-line {
+    color: #555;
+    font-size: 10px;
+    line-height: 1.4;
+    display: block;
+}
+.total-in-words {
+    clear: both;
+    margin-top: 15px;
+    padding: 8px;
+    background: #f9f9f9;
+    border-left: 3px solid #FF6B15;
+    font-size: 10px;
+    font-style: italic;
+}
+.bg-volumen {
+    background-color: #333 !important;
+    color: #fff !important;
+    border-left: 1px solid #555;
+}
+.volume-cell {
     font-weight: 600;
-    margin-top: 2px;
+    color: #FF6B15;
+    background-color: #fafafa;
+    border-right: 1px dashed #e0e0e0;
 }
 
 /* ========================= */
@@ -494,7 +541,7 @@
 
         <td class="order-details">
             <span class="section-title">{{ titulo_orden }}</span>
-            <div class="info-line"><strong>Orden #:</strong> {{ doc.name }}</div>
+            <div class="info-line"><strong>Folio:</strong> {{ doc.name }}</div>
             <div class="info-line">
                 <strong>Fecha:</strong> {{ doc.get_formatted("transaction_date") or frappe.format_date(doc.transaction_date) }}
             </div>
@@ -564,15 +611,16 @@
 {%- endmacro -%}
 
 
-{#- Términos de pago, términos y condiciones, firmas y pie. -#}
-{%- macro cierre(doc) -%}
+{#- Condiciones de pago: el TÍTULO del plazo (p. ej. "30 días de Crédito"),
+    nunca la descripción. Encabezado = plantilla de condiciones del documento. -#}
+{%- macro terminos_pago(doc) -%}
 {% if doc.payment_schedule %}
 <div class="payment-terms">
-    <h4 class="payment-terms-title">Términos de Pago</h4>
+    <h4 class="payment-terms-title">Condiciones de Pago{% if doc.get("payment_terms_template") %}: {{ doc.payment_terms_template }}{% endif %}</h4>
     <table class="table payment-table">
         <thead>
             <tr>
-                <th width="50%">Plazo de pago</th>
+                <th width="50%">Plazo</th>
                 <th class="text-center" width="10%">%</th>
                 <th class="text-center" width="20%">Vencimiento</th>
                 <th class="text-right" width="20%">Importe</th>
@@ -581,9 +629,9 @@
         <tbody>
             {% for term in doc.payment_schedule %}
             <tr>
-                <td>{{ term.payment_term }}</td>
+                <td>{{ term.payment_term or doc.get("payment_terms_template") or "Pago único" }}</td>
                 <td class="text-center">{{ "{:,.2f}".format(term.invoice_portion or 0) }}%</td>
-                <td class="text-center">{{ frappe.format_date(term.due_date) if term.due_date else "-" }}</td>
+                <td class="text-center">{{ term.get_formatted("due_date") if term.due_date else "-" }}</td>
                 <td class="text-right">
                     <strong>{{ doc.currency }} {{ "{:,.2f}".format(term.payment_amount or 0) }}</strong>
                 </td>
@@ -593,38 +641,51 @@
     </table>
 </div>
 {% endif %}
+{%- endmacro -%}
 
-{% if doc.terms %}
+
+{%- macro terminos(doc) -%}
+{% if doc.get("terms") %}
 <div class="terms">
     <span class="terms-title">Términos y Condiciones:</span>
     <div class="terms-content">
-        {{ doc.terms.replace("FOLIO_DOC", doc.name).replace("EMPRESA_ACTUAL", doc.company).replace("MONEDA_DOC", currency=doc.currency) }}
+        {{ doc.terms.replace("FOLIO_DOC", doc.name).replace("EMPRESA_ACTUAL", doc.get("company") or "").replace("MONEDA_DOC", doc.get("currency") or "") }}
     </div>
 </div>
 {% endif %}
+{%- endmacro -%}
 
+
+{#- Firmas de quien intervino: Elaboró · Revisó · Aprobó (OC) o Elaboró · Validó. -#}
+{%- macro firmas(doc) -%}
 <div class="signature-section">
+    {% for f in firmas_documento(doc) %}
     <div class="signature-box">
+        <div class="signature-img-wrap">
+            {% if f.firma %}<img src="{{ f.firma }}" alt="Firma" class="signature-img" />{% endif %}
+        </div>
         <div class="signature-line"></div>
-        <div class="signature-label">Firma del Proveedor</div>
-        <div class="signature-info">{{ doc.supplier_name or doc.supplier }}</div>
-        <div class="signature-date">Fecha: ____/____/________</div>
+        <div class="signature-label">{{ f.titulo }}</div>
+        <div class="signature-info">{{ f.nombre }}</div>
+        <div class="signature-date">{{ f.fecha }}</div>
     </div>
-    <div class="signature-box signature-box-ceo">
-        {#- Solo si el archivo existe: en un sitio sin /files/signature.png
-            (una instalación nueva, el sandbox) la imagen rota se vería en el PDF. -#}
-        {% if doc.docstatus == 1 and frappe.db.exists("File", {"file_url": "/files/signature.png"}) %}
-            <img src="/files/signature.png" alt="Firma Autorizada" class="ceo-signature-img" />
-        {% endif %}
-        <div class="signature-line"></div>
-        <div class="signature-label">Autorizado por</div>
-        <div class="signature-info">Juan Manuel Cuéllar Rojas</div>
-        <div class="signature-role">CEO</div>
-    </div>
+    {% endfor %}
 </div>
+{%- endmacro -%}
 
+
+{%- macro pie(texto="Gracias por su colaboración.") -%}
 <div class="pdf-footer">
     <hr class="divider" />
-    <p>Gracias por su colaboración.</p>
+    <p>{{ texto }}</p>
 </div>
+{%- endmacro -%}
+
+
+{#- Cierre completo de cualquier formato. -#}
+{%- macro cierre(doc, texto_pie="Gracias por su colaboración.", mostrar_pagos=true) -%}
+{% if mostrar_pagos %}{{ terminos_pago(doc) }}{% endif %}
+{{ terminos(doc) }}
+{{ firmas(doc) }}
+{{ pie(texto_pie) }}
 {%- endmacro -%}
