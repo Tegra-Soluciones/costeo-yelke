@@ -392,6 +392,32 @@ body > .print-format { margin: 0 !important; padding: 0 !important; }
 
 {#- Tabla de artículos común (Compra, Venta, Cotización, Nota de Entrega).
     La imagen solo sale si algún renglón la tiene; descuento y peso son opcionales. -#}
+{#- ── Celda de artículo: nombre, código de producto y descripción (con el desglose
+    de tallas como lista). La usan todas las tablas de artículos de los formatos. ── -#}
+{%- macro celda_articulo(row, codigo=None, nombre=None, con_descripcion=true) -%}
+{%- set nombre = nombre or row.item_name or row.item_code -%}
+<div class="item-title">{{ nombre }}</div>
+<div class="item-code"><span class="k">Código de producto:</span> {{ codigo or row.item_code }}{% if row.get("mx_product_service_key") %} · SAT {{ row.mx_product_service_key }}{% endif %}</div>
+{% if con_descripcion and row.get("description") and (row.description | striptags | trim | upper) != (nombre | trim | upper) %}
+<div class="item-description">{{ descripcion_html(row.description, nombre) }}</div>
+{% endif %}
+{%- endmacro -%}
+
+
+{#- ── Total suelto a la derecha, para documentos sin impuestos (recibo de taller). ── -#}
+{%- macro total_simple(etiqueta, valor) -%}
+<table class="yk-cierre"><tr><td class="col" style="width:56%"></td><td class="col">
+<table class="yk-tot"><tr class="total"><td class="k">{{ etiqueta }}</td><td class="v">{{ valor }}</td></tr></table>
+</td></tr></table>
+{%- endmacro -%}
+
+
+{#- ── Título de sección dentro del documento (p. ej. "Materia prima consumida"). ── -#}
+{%- macro seccion(texto) -%}
+<span class="yk-lbl" style="margin-top:5mm">{{ texto }}</span>
+{%- endmacro -%}
+
+
 {%- macro tabla_articulos(doc, mostrar_descuento=false, mostrar_peso=false) -%}
 {%- set ns = namespace(img=false) -%}
 {%- for r in doc.items %}{% if imagen_articulo(r) %}{% set ns.img = true %}{% endif %}{% endfor -%}
@@ -416,11 +442,7 @@ body > .print-format { margin: 0 !important; padding: 0 !important; }
             <td class="muted">{{ row.idx }}</td>
             {% if ns.img %}<td><div class="item-foto">{% if img %}<img src="{{ img }}" alt="">{% endif %}</div></td>{% endif %}
             <td>
-                <div class="item-title">{{ row.item_name or row.item_code }}</div>
-                <div class="item-code"><span class="k">Código de producto:</span> {{ row.item_code }}{% if row.get("mx_product_service_key") %} · SAT {{ row.mx_product_service_key }}{% endif %}</div>
-                {% if row.description and (row.description | striptags | trim | upper) != ((row.item_name or "") | trim | upper) %}
-                <div class="item-description">{{ descripcion_html(row.description, row.item_name) }}</div>
-                {% endif %}
+                {{ celda_articulo(row) }}
             </td>
             <td class="num">{{ cantidad_uom(row.qty, row.uom or row.stock_uom) }}</td>
             {% if con_desc %}<td class="num">{{ "{:g}%".format(row.discount_percentage) if row.discount_percentage else "—" }}</td>{% endif %}

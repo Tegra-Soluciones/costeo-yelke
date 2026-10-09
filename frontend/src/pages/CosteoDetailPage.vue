@@ -885,8 +885,13 @@
                   <option v-for="t in cotDefaults.terms" :key="t.name" :value="t.name">{{ t.name }}</option>
                 </select>
 
-                <label class="field-label">OC del Cliente</label>
-                <input v-model="soForm.po_no" type="text" class="field-input mb-3" :disabled="so.docstatus === 1" placeholder="Número de orden de compra" />
+                <label class="field-label">OC del Cliente <span class="text-red-500">*</span></label>
+                <OcClienteAdjunto
+                  v-model="soForm.oc_cliente_archivo" class="mb-3"
+                  :solo-lectura="so.docstatus === 1" :subiendo="ocClienteSubiendo"
+                  @archivo="(ev) => subirOcCliente(ev, 'Sales Order', so.name)"
+                  @quitar="quitarOcCliente('Sales Order', so.name)"
+                />
 
                 <label class="field-label">Moneda</label>
                 <select v-model="soForm.currency" class="field-input mb-3" :disabled="so.docstatus === 1">
@@ -1039,8 +1044,13 @@
             <option v-for="t in cotDefaults.terms" :key="t.name" :value="t.name">{{ t.name }}</option>
           </select>
 
-          <label class="field-label">OC del Cliente</label>
-          <input v-model="soForm.po_no" type="text" class="field-input mb-3" placeholder="Número de orden de compra" />
+          <label class="field-label">OC del Cliente <span class="text-red-500">*</span></label>
+          <OcClienteAdjunto
+            v-model="soForm.oc_cliente_archivo" class="mb-3"
+            :subiendo="ocClienteSubiendo"
+            @archivo="(ev) => subirOcCliente(ev, 'Costeo', docName)"
+            @quitar="quitarOcCliente('Costeo', docName)"
+          />
 
           <label class="field-label">Moneda</label>
           <select v-model="soForm.currency" class="field-input mb-3">
@@ -1662,7 +1672,10 @@
                   <span class="text-[13px] font-semibold text-ink">{{ mrDetail.name }}</span>
                   <DocStatusPill :docstatus="mrDetail.docstatus" />
                 </div>
-                <a class="doc-action" :href="`/app/material-request/${mrDetail.name}`" target="_blank"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>ERPNext</a>
+                <div class="flex items-center gap-2">
+                  <button class="doc-action" @click="openPdf('Material Request', mrDetail.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>Vista previa</button>
+                  <a class="doc-action" :href="`/app/material-request/${mrDetail.name}`" target="_blank"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>ERPNext</a>
+                </div>
               </div>
               <div class="grid grid-cols-3 gap-3">
                 <div><label class="field-label">Tipo</label><div class="field-input bg-surface-raised/60">{{ mrDetail.material_request_type }}</div></div>
@@ -3480,6 +3493,7 @@ async function toggleQuotation(q) {
 }
 const soForm = reactive({
   delivery_date: "", delivery_weeks: null, payment_terms_template: "", tc_name: "", po_no: "",
+  oc_cliente_archivo: "",
   currency: "MXN", selling_price_list: "", taxes_and_charges: "", contact_email: "", contact_mobile: "",
 });
 // El usuario captura el tiempo de entrega en SEMANAS (lo que de verdad conoce al
@@ -3512,6 +3526,7 @@ function applySOToForm(so) {
   soForm.payment_terms_template = so.payment_terms_template || "";
   soForm.tc_name = so.tc_name || "";
   soForm.po_no = so.po_no || "";
+  soForm.oc_cliente_archivo = so.oc_cliente_archivo || "";
   soForm.currency = so.currency || "MXN";
   soForm.selling_price_list = so.selling_price_list || "";
   soForm.taxes_and_charges = so.taxes_and_charges || "";
@@ -7961,6 +7976,7 @@ async function guardarBorradorOrdenVenta() {
       payment_terms_template: soForm.payment_terms_template || null,
       tc_name: soForm.tc_name || null,
       po_no: soForm.po_no || null,
+      oc_cliente_archivo: soForm.oc_cliente_archivo || null,
       currency: soForm.currency || null,
       selling_price_list: soForm.selling_price_list || null,
       taxes_and_charges: soForm.taxes_and_charges || null,

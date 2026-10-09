@@ -76,3 +76,4 @@ costeo_yelke.patches.v0_2_51.formatos_impresion_predeterminados
 costeo_yelke.patches.v0_2_52.firma_usuario
 costeo_yelke.patches.v0_2_53.desglose_tallas_ov
 costeo_yelke.patches.v0_2_54.contacto_companias
+costeo_yelke.patches.v0_2_55.formatos_recepciones_facturas

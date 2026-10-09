@@ -1796,6 +1796,17 @@ def validar_documento(doctype: str, name: str) -> dict:
     doc = frappe.get_doc(doctype, name)
     doc.flags.ignore_permissions = True
     doc.submit()
+    if doctype == "Sales Order" and frappe.db.has_column("Sales Order", "oc_cliente_archivo"):
+        # La orden de compra del CLIENTE es el respaldo del pedido: sin ella no se
+        # valida la OV. El candado va aquí y no como `reqd` del campo porque la OV
+        # nace en BORRADOR y un archivo solo se puede adjuntar a un documento que ya
+        # existe -- con `reqd` no se podría ni crear el borrador.
+        if not (frappe.db.get_value("Sales Order", name, "oc_cliente_archivo") or "").strip():
+            frappe.throw(_(
+                "Falta adjuntar la orden de compra del cliente. Súbela en el campo "
+                "'OC del Cliente' de la orden de venta antes de validarla."
+            ))
+
     if doctype == "Sales Invoice" and frappe.db.has_column("Sales Invoice", "overhead_journal_entry"):
         _contabilizar_overhead_factura(doc)
 
@@ -2018,7 +2029,7 @@ def get_cotizacion_defaults(company: str = None) -> dict:
 def crear_orden_venta(
     costeo: str, delivery_date=None, payment_terms_template=None, tc_name=None,
     po_no=None, currency=None, selling_price_list=None, taxes_and_charges=None,
-    contact_email=None, contact_mobile=None,
+    contact_email=None, contact_mobile=None, oc_cliente_archivo=None,
 ) -> dict:
     """Crea una Sales Order en BORRADOR desde el Costeo con los datos manuales."""
     doc = frappe.get_doc("Costeo", costeo)
@@ -2036,6 +2047,10 @@ def crear_orden_venta(
         so.terms = resolver_terminos(tc_name)
     if po_no:
         so.po_no = po_no
+    # El archivo de la OC del cliente: se sube antes (adjunto al Costeo, que ya
+    # existe) y aquí solo se copia la ruta a la OV.
+    if oc_cliente_archivo and frappe.db.has_column("Sales Order", "oc_cliente_archivo"):
+        so.oc_cliente_archivo = oc_cliente_archivo
     if currency:
         so.currency = currency
     if selling_price_list:

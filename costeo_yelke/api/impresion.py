@@ -176,7 +176,10 @@ def cantidad_uom(qty, uom=None):
     if not uom:
         return num
     nombre = uom.split(" - ", 1)[-1].strip()
-    return f"{num} {_UDM_CORTA.get(nombre.lower(), nombre.lower())}"
+    corta = _UDM_CORTA.get(nombre.lower(), nombre.lower())
+    if q == 1 and len(corta) > 3 and corta.endswith("s"):  # "1 mazo", "1 pza" -- no "1 mazos"
+        corta = corta[:-2] if corta.endswith("es") and not corta.endswith(("zes", "tes")) else corta[:-1]
+    return f"{num} {corta}"
 
 
 def importe_letra(monto, moneda="MXN"):
