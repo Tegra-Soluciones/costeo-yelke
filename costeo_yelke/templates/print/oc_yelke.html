@@ -65,10 +65,11 @@ body > .print-format { margin: 0 !important; padding: 0 !important; }
 /* ── Tabla de artículos ── */
 .items-table, .payment-table { width: 100%; border-collapse: collapse; margin-bottom: 4mm; }
 /* El fondo va en la fila: en celdas, wkhtmltopdf deja costuras entre ellas. */
-.items-table thead tr, .payment-table thead tr { background: #111; }
+.items-table thead tr, .payment-table thead tr { background: #f6f6f6; }
 .pdf-container .items-table thead th, .pdf-container .payment-table thead th {
-    background: transparent !important; color: #fff !important; font-size: 6.5pt; font-weight: 500;
-    letter-spacing: 1.2px; text-transform: uppercase; padding: 2.2mm 2.5mm; border: 0 !important; text-align: left;
+    background: transparent !important; color: #777 !important; font-size: 6.5pt; font-weight: 500;
+    letter-spacing: 1.2px; text-transform: uppercase; padding: 2.2mm 2.5mm; border: 0 !important;
+    border-bottom: 0.3mm solid #e2e2e2 !important; text-align: left;
 }
 .items-table thead th.text-right, .payment-table thead th.text-right { text-align: right; }
 .items-table thead th.text-center, .payment-table thead th.text-center { text-align: center; }
@@ -149,6 +150,65 @@ body > .print-format { margin: 0 !important; padding: 0 !important; }
 .chart-section { margin-top: 5mm; page-break-inside: avoid; }
 .chart-title { font-size: 6.5pt; font-weight: 600; letter-spacing: 1.6px; text-transform: uppercase; color: #ff6b15; margin-bottom: 2mm; }
 </style>
+{#- Impresión desde el NAVEGADOR (/printview: botón PDF de la app, Imprimir del escritorio).
+    Ahí los márgenes de .print-format no sirven (wkhtmltopdf los usa como margen de hoja,
+    el navegador los pinta como espacio en blanco) y el membrete va dentro de la página.
+    Hoja carta sin margen de navegador; el script mete el contenido en una tabla: el
+    encabezado va en el <thead> (Chrome lo repite arriba de cada hoja) y el <tfoot>
+    reserva el lugar del pie, que queda fijo abajo.
+    OJO con wkhtmltopdf: ERPNext quita lo .hidden-pdf del cuerpo, pero copia TODOS los
+    <style> a los archivos del encabezado y del pie. Por eso cada regla va bajo
+    html.yk-nav, clase que solo pone este script (wkhtmltopdf nunca lo ve), y el @page
+    también lo inyecta el script. -#}
+<div class="hidden-pdf"><style>
+.yk-nav .print-format { margin: 0 auto !important; padding: 0 !important; }
+.yk-nav .print-format #footer-html { display: block !important; margin: 0 !important; }
+/* El número de página solo lo pone wkhtmltopdf. */
+.yk-nav .print-format .yk-paginas { display: none; }
+.yk-nav .print-format .yk-head .logo img { height: 12mm !important; width: auto !important; max-width: none !important; }
+.yk-nav .print-format table.yk-hoja { width: 100%; border-collapse: collapse; margin: 0; }
+.yk-nav .print-format table.yk-hoja > * > tr > td { padding: 0 !important; border: 0 !important; vertical-align: top !important; }
+/* La fila que envuelve todo el contenido sí se parte entre hojas: ERPNext pone avoid a los tr
+   y a "table td div" (pensado para wkhtmltopdf), que ahora alcanzaría a todo el documento.
+   Se libera aquí y se devuelve a las celdas de las tablas internas. */
+.yk-nav .print-format table.yk-hoja > tbody > tr, .yk-nav .print-format table.yk-hoja > tbody > tr > td,
+.yk-nav .print-format table.yk-hoja div { page-break-inside: auto !important; break-inside: auto !important; }
+.yk-nav .print-format table.yk-hoja table td div { page-break-inside: avoid !important; break-inside: avoid !important; }
+.yk-nav .print-format #header-html .letter-head { padding-bottom: 5mm; }
+.yk-nav .yk-esp-pie { height: 20mm; }
+@media screen {
+    .yk-nav .print-format { width: 216mm !important; max-width: 100% !important; min-height: 279mm; padding: 0 0 2mm !important; }
+    .yk-nav .print-format .yk-esp-pie { display: none; }
+    .yk-nav .print-format .pdf-container { padding-bottom: 6mm; }
+}
+@media print {
+    html.yk-nav, .yk-nav body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+    .yk-nav .print-format-gutter { padding: 0 !important; background: #fff !important; }
+    .yk-nav .print-format { width: 100% !important; max-width: none !important; min-height: 0 !important; border-radius: 0 !important; }
+    .yk-nav .print-format #footer-html { position: fixed; left: 0; right: 0; bottom: 0; background: #fff; }
+    .yk-nav .print-format .pdf-container { padding-bottom: 4mm; }
+}
+</style><script>
+(function () {
+    function armar() {
+        var pf = document.querySelector(".print-format");
+        var cont = pf && pf.querySelector(".pdf-container");
+        if (!cont || pf.querySelector("table.yk-hoja")) return;
+        document.documentElement.classList.add("yk-nav");
+        var pagina = document.createElement("style");
+        pagina.textContent = "@page { size: letter; margin: 0; }";
+        document.head.appendChild(pagina);
+        var t = document.createElement("table");
+        t.className = "yk-hoja";
+        t.innerHTML = "<thead><tr><td></td></tr></thead><tbody><tr><td></td></tr></tbody><tfoot><tr><td><div class=\"yk-esp-pie\"></div></td></tr></tfoot>";
+        cont.parentNode.insertBefore(t, cont);
+        var head = pf.querySelector("#header-html");
+        if (head) t.tHead.rows[0].cells[0].appendChild(head);
+        t.tBodies[0].rows[0].cells[0].appendChild(cont);
+    }
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", armar); else armar();
+})();
+</script></div>
 {%- endmacro -%}
 
 
