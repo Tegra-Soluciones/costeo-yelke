@@ -1,5 +1,5 @@
 """Formatos Yelke como predeterminados de recibos, movimientos de material, solicitudes
-de material y facturas (mismo diseño que los de venta y compra, ver patch v0_2_51)."""
+de material, facturas, solicitudes de cotización y encargos a taller (mismo diseño que los de venta y compra, ver patch v0_2_51)."""
 import frappe
 from frappe.custom.doctype.property_setter.property_setter import make_property_setter
 
@@ -10,6 +10,8 @@ FORMATOS = {
     "Material Request": "Solicitud de Material Yelke",
     "Purchase Invoice": "Factura de Compra Yelke",
     "Sales Invoice": "Factura de Venta Yelke",
+    "Request for Quotation": "Solicitud de Cotizacion Yelke",
+    "Subcontracting Order": "Encargo a Taller Yelke",
 }
 
 

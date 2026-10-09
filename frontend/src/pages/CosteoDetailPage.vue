@@ -1635,7 +1635,15 @@
             <div class="border-t border-surface-border pt-3">
               <div class="prod-head"><span class="prod-title"><svg class="w-4 h-4 text-ink-light" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>Materias primas a comprar <span class="prod-count">{{ planDetail.mr_items.length }}</span></span></div>
               <div v-for="it in planDetail.mr_items" :key="it.item_code" class="prod-row">
-                <span class="flex-1 min-w-0 truncate font-mono text-[12px]">{{ it.item_code }}</span>
+                <span class="flex-1 min-w-0">
+                  <span class="block truncate font-mono text-[12px]">{{ it.item_code }}</span>
+                  <!-- Consumo por prenda capturado en el costeo, solo informativo: sirve
+                       para comprobar que el total de arriba cuadra. Si dos productos
+                       comparten el material, cada uno trae el suyo. -->
+                  <span v-if="it.consumo && it.consumo.length" class="block text-[11px] truncate"
+                        :class="consumoFueraDelCosteo(it) ? 'text-amber-700' : 'text-ink-light'"
+                        :title="consumoTitulo(it)">{{ consumoTexto(it) }}</span>
+                </span>
                 <span class="text-[13px] whitespace-nowrap">× {{ it.quantity }} {{ it.uom }}</span>
                 <span class="prod-status">{{ it.warehouse }}</span>
               </div>
@@ -3111,6 +3119,7 @@ import DocStatusPill from "@/components/DocStatusPill.vue";
 import ProductionProgressBar from "@/components/ProductionProgressBar.vue";
 import PurchaseDocPanel from "@/components/PurchaseDocPanel.vue";
 import ReporteFinalPanel from "@/components/ReporteFinalPanel.vue";
+import OcClienteAdjunto from "@/components/OcClienteAdjunto.vue";
 import OrdenManufacturaForm from "@/components/OrdenManufacturaForm.vue";
 import OmGeneralEditor from "@/components/OmGeneralEditor.vue";
 import OmTallerView from "@/components/OmTallerView.vue";
@@ -3491,6 +3500,77 @@ async function toggleQuotation(q) {
   applyQuotToForm(q);
   await loadCotItems(q.name);
 }
+/** Consumo por prenda de un material del plan, para la línea informativa.
+ *  Con un solo producto se omite su nombre (sobra); con varios se listan todos,
+ *  porque es justo lo que hay que poder comparar. */
+function consumoTexto(it) {
+  const c = it.consumo || [];
+  if (!c.length) return "";
+  const n = (x) => Number(x.qty || 0).toLocaleString("es-MX", { maximumFractionDigits: 4 });
+  const base = c.length === 1
+    ? `${n(c[0])} ${c[0].uom || ""} por prenda`
+    : "por prenda: " + c.map((x) => `${x.item_name} ${n(x)} ${x.uom || ""}`).join(" · ");
+  // Avisa cuando el consumo NO salió del costeo: el plan lo pide porque está en el
+  // BOM del producto, pero este costeo nunca lo costeó.
+  return consumoFueraDelCosteo(it) ? `${base} — del BOM, no está en el costeo` : base;
+}
+/** ¿Algún renglón de consumo salió del BOM en vez del costeo? */
+function consumoFueraDelCosteo(it) {
+  return (it.consumo || []).some((c) => c.origen === "bom");
+}
+/** El tooltip explica la trampa de las unidades: el plan pide en UDM de compra. */
+function consumoTitulo(it) {
+  const c = it.consumo || [];
+  if (!c.length) return "";
+  const lineas = c.map((x) => `${x.item_name}: ${x.qty} ${x.uom || ""} por prenda`
+    + (x.origen === "bom" ? "  (del BOM del producto)" : "")).join("\n");
+  const aviso = consumoFueraDelCosteo(it)
+    ? "\n\nOJO: este material NO está declarado en el costeo. El plan lo pide porque "
+      + "viene en el BOM del producto, así que su costo no entró en el precio."
+    : "";
+  return lineas
+    + `\n\nEl plan pide ${it.quantity} ${it.uom || ""} en total (unidad de compra); `
+    + "el consumo va en la unidad con la que se costeó." + aviso;
+}
+
+// ── OC del cliente: el archivo, no un número escrito a mano ─────────────────
+const ocClienteSubiendo = ref(false);
+/** Sube el archivo y lo deja adjunto a `doctype/docname`: la Orden de Venta cuando ya
+ *  existe, o el Costeo mientras no -- un adjunto necesita un documento guardado. */
+async function subirOcCliente(ev, doctype, docname) {
+  const file = ev?.target?.files?.[0];
+  if (!file) return;
+  if (!docname) { showToast("Guarda el costeo antes de adjuntar la OC del cliente", "error"); return; }
+  ocClienteSubiendo.value = true;
+  try {
+    const res = await uploadFile(file, { doctype, docname });
+    soForm.oc_cliente_archivo = res?.file_url || "";
+    // Si la OV ya existe, el campo se persiste de una; si no, viaja al crearla.
+    if (doctype === "Sales Order") {
+      await call("frappe.client.set_value", {
+        doctype: "Sales Order", name: docname,
+        fieldname: "oc_cliente_archivo", value: soForm.oc_cliente_archivo,
+      });
+    }
+    showToast("OC del cliente adjuntada");
+  } catch (e) {
+    showToast(e.message || "No se pudo subir el archivo", "error");
+  } finally {
+    ocClienteSubiendo.value = false;
+    if (ev?.target) ev.target.value = "";   // deja re-elegir el mismo archivo
+  }
+}
+async function quitarOcCliente(doctype, docname) {
+  soForm.oc_cliente_archivo = "";
+  if (doctype === "Sales Order" && docname) {
+    try {
+      await call("frappe.client.set_value", {
+        doctype: "Sales Order", name: docname, fieldname: "oc_cliente_archivo", value: "",
+      });
+    } catch (e) { showToast(e.message || "No se pudo quitar", "error"); }
+  }
+}
+
 const soForm = reactive({
   delivery_date: "", delivery_weeks: null, payment_terms_template: "", tc_name: "", po_no: "",
   oc_cliente_archivo: "",

@@ -4870,6 +4870,58 @@ def get_plan_detail(costeo: str, sales_order: str = None) -> dict:
         return {"plan": None}
 
     pp = frappe.get_doc("Production Plan", plan_name)
+
+    # Consumo POR PRENDA tal como se capturó en el costeo, por producto terminado.
+    # Es informativo: deja comprobar de un vistazo que el total que pide el plan
+    # cuadra con lo costeado. Va como LISTA porque dos productos pueden compartir el
+    # mismo material y cada uno lleva su propio consumo (una camisola 1.45 m y su
+    # variante de talla 2.00 m, por ejemplo).
+    #
+    # OJO con las unidades: el plan pide en la UDM de COMPRA (el botón, en Mazo) y el
+    # costeo captura en la de consumo (piezas), así que cada renglón trae la suya y no
+    # hay que compararlas de frente.
+    consumo_por_material = {}
+    for r in frappe.get_all(
+        "Costeo Producto Detalle",
+        filters={"parent": costeo, "concept_type": "Materia Prima"},
+        fields=["item", "finished_item", "internal_qty", "internal_uom"],
+        order_by="idx asc",
+    ):
+        if not r.item:
+            continue
+        consumo_por_material.setdefault(r.item, []).append({
+            "finished_item": r.finished_item,
+            "item_name": frappe.db.get_value("Item", r.finished_item, "item_name") or r.finished_item,
+            "qty": flt(r.internal_qty),
+            "uom": r.internal_uom,
+            "origen": "costeo",
+        })
+
+    # Un material puede venir en el plan SIN estar en el costeo: el plan explota el
+    # BOM del artículo, y ese BOM pudo nacer de otro costeo o editarse aparte. En vez
+    # de dejar el renglón mudo se saca su consumo del BOM y se marca el origen -- es
+    # justo lo que conviene ver: el plan está comprando algo que este costeo no costeó.
+    productos_costeo = [p.finished_item for p in
+                        frappe.get_all("Costeo Producto", filters={"parent": costeo},
+                                       fields=["finished_item"]) if p.finished_item]
+    faltantes = {r.item_code for r in (pp.get("mr_items") or [])} - set(consumo_por_material)
+    if faltantes:
+        for fi in productos_costeo:
+            bom = frappe.db.get_value(
+                "BOM", {"item": fi, "is_active": 1, "is_default": 1}, ["name", "quantity"], as_dict=True)
+            if not bom:
+                continue
+            por = flt(bom.quantity) or 1.0
+            for b in frappe.get_all("BOM Item", filters={"parent": bom.name, "item_code": ["in", list(faltantes)]},
+                                    fields=["item_code", "stock_qty", "stock_uom"]):
+                consumo_por_material.setdefault(b.item_code, []).append({
+                    "finished_item": fi,
+                    "item_name": frappe.db.get_value("Item", fi, "item_name") or fi,
+                    "qty": flt(b.stock_qty) / por,
+                    "uom": b.stock_uom,
+                    "origen": "bom",
+                })
+
     return {"plan": {
         "name": pp.name,
         "docstatus": pp.docstatus,
@@ -4884,7 +4936,8 @@ def get_plan_detail(costeo: str, sales_order: str = None) -> dict:
         "sub_assembly_items": [{"production_item": r.production_item, "qty": r.qty,
                                 "type_of_manufacturing": r.type_of_manufacturing, "supplier": r.supplier}
                                for r in pp.get("sub_assembly_items") or []],
-        "mr_items": [{"item_code": r.item_code, "quantity": r.quantity, "warehouse": r.warehouse, "uom": r.uom}
+        "mr_items": [{"item_code": r.item_code, "quantity": r.quantity, "warehouse": r.warehouse,
+                      "uom": r.uom, "consumo": consumo_por_material.get(r.item_code) or []}
                      for r in pp.get("mr_items") or []],
     }}
 
