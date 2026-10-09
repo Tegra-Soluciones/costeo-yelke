@@ -200,7 +200,7 @@ body > .print-format { margin: 0 !important; padding: 0 !important; }
     var CINTA = [[7.0, 0.5, "#ff6b15"], [7.5, 0.35, "#d4d4d4"], [7.85, 0.5, "#ff6b15"], [8.35, 0.35, "#d4d4d4"], [8.7, 0.5, "#ff6b15"]]
         .map(function (b) { return "linear-gradient(" + b[2] + "," + b[2] + ") 0 " + b[0] + "mm/100% " + b[1] + "mm no-repeat"; }).join(",");
     function caja(pos, contenido, extra) {
-        return "@" + pos + " { content: " + contenido + "; width: 50%; vertical-align: top; padding-top: 2mm; "
+        return "@" + pos + " { content: " + contenido + "; vertical-align: top; padding-top: 2mm; "
             + "font-family: Poppins, Arial, sans-serif; font-size: 6.8pt; color: #777; "
             + "border-top: 0.3mm solid #ececec; background: " + CINTA + "; " + extra + " }";
     }
@@ -215,8 +215,8 @@ body > .print-format { margin: 0 !important; padding: 0 !important; }
         var folio = pf.getAttribute("data-folio") || (celdas[1] ? celdas[1].textContent.replace(/[·\s\/]+$/, "").trim() : "");
         var pagina = document.createElement("style");
         pagina.textContent = "@page { size: letter; margin: 0 0 19mm 0; "
-            + caja("bottom-left", JSON.stringify(izq), "padding-left: 14mm;")
-            + caja("bottom-right", JSON.stringify(folio + " · ") + " counter(page) \"/\" counter(pages)", "text-align: right; padding-right: 14mm;")
+            + caja("bottom-left", JSON.stringify(izq), "width: 68%; padding-left: 14mm;")
+            + caja("bottom-right", JSON.stringify(folio + " · ") + " counter(page) \"/\" counter(pages)", "width: 32%; text-align: right; padding-right: 14mm;")
             + " }";
         document.head.appendChild(pagina);
 

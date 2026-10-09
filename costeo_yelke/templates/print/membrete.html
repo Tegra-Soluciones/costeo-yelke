@@ -30,12 +30,12 @@
 .yk-head .doc { text-align: right; }
 .yk-head td.logo { padding-right: 6mm !important; }
 .yk-head td.emp { padding-left: 0 !important; padding-right: 0 !important; vertical-align: middle; }
-.yk-emp { font-size: 6.6pt; color: #777; line-height: 1.5; }
+.yk-emp { font-size: 6.4pt; color: #777; line-height: 1.45; }
 .yk-emp b { display: block; font-size: 7.4pt; font-weight: 600; color: #222; }
 .yk-tipo { display: inline-block; background: #111; color: #fff; font-size: 7.5pt; font-weight: 600;
     letter-spacing: 2px; text-transform: uppercase; padding: 1mm 3mm 0.8mm 4mm; white-space: nowrap;
     border-left: 1.2mm solid #ff6b15; }
-.yk-folio { font-size: 15pt; font-weight: 600; color: #222; letter-spacing: -0.3px; line-height: 1.25; margin-top: 1mm; }
+.yk-folio { white-space: nowrap; font-size: 15pt; font-weight: 600; color: #222; letter-spacing: -0.3px; line-height: 1.25; margin-top: 1mm; }
 .yk-meta { font-size: 7.5pt; color: #777; }
 .yk-pill { display: inline-block; font-size: 6.5pt; font-weight: 600; padding: 0.4mm 2.2mm; border-radius: 3mm; margin-left: 1.5mm; }
 .yk-pill.validada { background: #e8f6ef; color: #0f8a5f; }
@@ -65,9 +65,8 @@
         {%- set e = datos_empresa(doc.get("compañia") or doc.get("company")) %}
         <td class="emp"><div class="yk-emp">
             <b>{{ e.nombre }}</b>
-            {% if e.rfc %}RFC {{ e.rfc }}<br>{% endif %}
-            {% if e.direccion %}{{ e.direccion | join(", ") }}<br>{% endif %}
-            {{ [e.telefono, e.correo] | select | join(" · ") }}
+            {{ [("RFC " ~ e.rfc) if e.rfc else "", e.telefono, e.correo] | select | join(" · ") }}
+            {% if e.direccion %}<br>{{ e.direccion | join(", ") }}{% endif %}
         </div></td>
         <td class="doc">
             <span class="yk-tipo">{{ titulo or titulo_documento(doc) }}</span>
@@ -88,7 +87,7 @@
 {{ estilos_membrete() }}
 <table class="yk-foot">
     <tr>
-        <td>{{ e.nombre }}{% if e.rfc %} · RFC {{ e.rfc }}{% endif %}{% if e.web %} · {{ e.web }}{% endif %}{% if e.correo %} · {{ e.correo }}{% endif %}{% if e.telefono %} · {{ e.telefono }}{% endif %}</td>
+        <td>{{ e.nombre }}{% if e.web %} · {{ e.web }}{% endif %}{% if e.correo %} · {{ e.correo }}{% endif %}{% if e.telefono %} · {{ e.telefono }}{% endif %}</td>
         <td style="text-align:right; white-space:nowrap;">{{ doc.get("name") }}<span class="yk-paginas"> · <span class="page"></span>/<span class="topage"></span></span></td>
     </tr>
 </table>
