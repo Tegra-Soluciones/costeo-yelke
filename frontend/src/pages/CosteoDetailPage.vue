@@ -4688,13 +4688,23 @@ const facturasFilas = computed(() => {
   };
   for (const m of compras.materiales || []) {
     const ds = m.invoice?.docstatus;
+    // Una fila por orden de compra (puede haber llegado en varias entregas). La
+    // factura se registra cuando llegó todo: antes, solo lectura.
+    const falta = m.recibido_todo === false && !m.invoice;
+    const nRec = (m.recibos || []).length;
     filas.push(conIr({
-      tipo: "material", nombre: m.name, estado: ds === 1 ? "fac" : m.invoice ? "wait" : "off",
+      tipo: "material", nombre: m.name, estado: falta ? "wait" : ds === 1 ? "fac" : m.invoice ? "wait" : "off",
       titulo: m.supplier_name || m.supplier,
-      meta: ["Material", m.lote_ref || "", `recibo ${m.name}`].filter(Boolean).join(" · "),
+      meta: ["Material", m.lote_ref || "", m.purchase_order || `recibo ${m.name}`,
+             nRec > 1 ? `${nRec} entregas` : "",
+             falta ? `faltan ${fmtCantidad(m.pendiente_recibir)} por recibir` : ""].filter(Boolean).join(" · "),
       importe: Number(m.base_net_total || 0),
-      pill: ds === 1 ? { estado: "fac", texto: "Validada" } : m.invoice ? { estado: "wait", texto: "Borrador" } : { estado: "off", texto: "Sin factura" },
+      pill: falta ? { estado: "wait", texto: "Por recibir" }
+        : ds === 1 ? { estado: "fac", texto: "Validada" } : m.invoice ? { estado: "wait", texto: "Borrador" } : { estado: "off", texto: "Sin factura" },
       pendiente: ds !== 1,
+      bloqueo: falta
+        ? `La orden ${m.purchase_order || ""} todavía tiene ${fmtCantidad(m.pendiente_recibir)} por recibir. La factura se registra cuando llegue todo.`
+        : "",
     }, "Purchase Receipt"));
   }
   for (const m of compras.maquila || []) {
@@ -5189,7 +5199,10 @@ const pasosPanelProv = computed(() => {
     rfq: "", sq: "",
     oc: "",
     recibo: po?.docstatus === 1 ? "" : "Primero valida la orden de compra",
-    factura: po?.hay_recibo_validado ? "" : "Primero valida el recibo de compra",
+    // La factura se registra cuando llegó TODO lo de la orden, no con una entrega parcial.
+    factura: po?.recibido_completo || po?.factura ? ""
+      : po?.hay_recibo_validado ? `Falta recibir ${fmtCantidad(po.pendiente_recibir)}; la factura se registra cuando llegue todo`
+      : "Primero valida el recibo de compra",
   };
   return caminoProveedor(grp, { conOpcionales: true }).map((x) => {
     const permitido = x.clave === "factura" ? puedeVer("facturas") : puedeVer("materia") || puedeVer("envios");
@@ -5275,14 +5288,13 @@ const accionesPanelProv = computed(() => {
     return [sec("Guardar", guardarPinv), pri("Validar factura", validarFacturaInline)];
   }
   if (panelProv.tab === "recibo") {
-    // Recibo ya validado: si la orden todavía tiene pendiente (entrega parcial), se
-    // puede registrar otro recibo con lo que falta; la factura ya se puede hacer con
-    // lo recibido hasta ahora.
+    // Recibo ya validado: si la orden todavía tiene pendiente (entrega parcial), lo
+    // que sigue es registrar otro recibo con lo que falta. La factura espera a que
+    // llegue todo.
     if (reciboPr.value && Number(reciboPr.value.docstatus) === 1) {
       const po = grpPanelProv.value?.po;
       if (po?.puede_nuevo_recibo) {
-        return [accionPasarA("recibo"), pri(`Registrar otro recibo · faltan ${fmtCantidad(po.pendiente_recibir)}`,
-          () => nuevoReciboLote(po))].filter(Boolean).map((a, i, arr) => (arr.length > 1 && i === 0 ? { ...a, tipo: "secundaria" } : a));
+        return [pri(`Registrar otro recibo · faltan ${fmtCantidad(po.pendiente_recibir)}`, () => nuevoReciboLote(po))];
       }
       return [accionPasarA("recibo")].filter(Boolean);
     }

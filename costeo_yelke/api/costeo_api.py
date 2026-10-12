@@ -3094,6 +3094,16 @@ def get_facturas_compra(costeo: str, sales_order: str = None) -> dict:
             lote = lote_de_po.get(r.purchase_order) or ""
             if lote and lote not in lote_de_recibo[r.parent]:
                 lote_de_recibo[r.parent].append(lote)
+    # Una fila por ORDEN DE COMPRA, no por recibo: la OC puede llegar en varias
+    # entregas y su factura las junta todas (ver crear_factura_compra). Se factura
+    # cuando ya se recibió todo -- antes la fila sale con `recibido_todo` en falso y
+    # la pantalla no ofrece crearla.
+    po_de_recibo = {}
+    if mat_po_names:
+        for r in frappe.get_all("Purchase Receipt Item", filters={"purchase_order": ["in", mat_po_names]},
+                                fields=["parent", "purchase_order"]):
+            po_de_recibo.setdefault(r.parent, r.purchase_order)
+    por_po = {}
     for r in rec_names:
         rd = frappe.db.get_value(
             "Purchase Receipt", r,
@@ -3102,11 +3112,23 @@ def get_facturas_compra(costeo: str, sales_order: str = None) -> dict:
         )
         if not rd or rd.docstatus != 1:
             continue
-        rd["source_doctype"] = "Purchase Receipt"
-        rd["invoice"] = _pinv_for("purchase_receipt", r)
-        rd["lote_ref"] = (lote_de_recibo.get(r) or [""])[0]
-        rd["lotes"] = lote_de_recibo.get(r) or []
-        materiales.append(rd)
+        po = po_de_recibo.get(r) or r
+        fila = por_po.get(po)
+        if not fila:
+            est = estado_recibos_oc(po) if po != r else {"recibido_completo": True, "pendiente_recibir": 0}
+            fila = por_po[po] = frappe._dict(
+                name=r, supplier=rd.supplier, supplier_name=rd.supplier_name, base_net_total=0, grand_total=0,
+                docstatus=1, status=rd.status, source_doctype="Purchase Receipt", purchase_order=po if po != r else None,
+                recibos=[], invoice=None, lote_ref=(lote_de_recibo.get(r) or [""])[0], lotes=lote_de_recibo.get(r) or [],
+                recibido_todo=est["recibido_completo"], pendiente_recibir=est["pendiente_recibir"])
+            materiales.append(fila)
+        fila.recibos.append(r)
+        fila.name = r  # el último validado sirve de fuente para la factura
+        fila.base_net_total = flt(fila.base_net_total) + flt(rd.base_net_total)
+        fila.grand_total = flt(fila.grand_total) + flt(rd.grand_total)
+        inv = _pinv_for("purchase_receipt", r)
+        if inv and (not fila.invoice or inv.get("docstatus", 0) <= fila.invoice.get("docstatus", 0)):
+            fila.invoice = inv
 
     _f_sub = {"costeo": costeo, "is_subcontracted": 1, "docstatus": 1}
     if pos_alcance is not None:
@@ -3275,7 +3297,15 @@ def crear_factura_compra(source_doctype: str, source_name: str) -> dict:
     if source_doctype == "Purchase Receipt":
         po = frappe.db.get_value("Purchase Receipt Item", {"parent": source_name}, "purchase_order")
         if po:
-            recibos = [r["name"] for r in estado_recibos_oc(po)["receipts"] if r["docstatus"] == 1]
+            est = estado_recibos_oc(po)
+            recibos = [r["name"] for r in est["receipts"] if r["docstatus"] == 1]
+            ya = frappe.db.get_value("Purchase Invoice Item", {"purchase_receipt": ["in", recibos or [""]],
+                                                               "docstatus": ["<", 2]}, "parent")
+            # Se factura cuando llegó TODO lo de la orden (decisión de Yelke): con una
+            # entrega parcial no se crea la factura. Una que ya exista sí se abre.
+            if not est["recibido_completo"] and not ya:
+                frappe.throw(_("La orden {0} todavía tiene {1} por recibir. La factura se registra cuando llegue todo.")
+                             .format(po, frappe.format(est["pendiente_recibir"], {"fieldtype": "Float"})))
             borrador = frappe.db.get_value(
                 "Purchase Invoice Item", {"purchase_receipt": ["in", recibos or [""]], "docstatus": 0}, "parent")
             if borrador:
