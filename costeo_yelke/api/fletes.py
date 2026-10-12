@@ -185,3 +185,16 @@ def validar_flete_recibo(doc, method=None):
 def soltar_factura_remision(doc, method=None):
     """Delivery Note on_cancel: la factura del flete al cliente sigue al documento."""
     soltar_factura_flete(doc.get("flete_factura"))
+
+
+# ── Factura del flete ───────────────────────────────────────────────────────
+
+def validar_factura_flete(doc, method=None):
+    """Purchase Invoice before_submit: una factura de FLETE se valida con el folio del
+    CFDI y con su respaldo adjunto (CFDI XML/PDF y, si aplica, la carta porte)."""
+    if not doc.get("es_factura_flete"):
+        return
+    if not (doc.get("bill_no") or "").strip():
+        frappe.throw(_("Captura el folio del CFDI del proveedor de paquetería antes de validar la factura del flete."))
+    if not frappe.db.exists("File", {"attached_to_doctype": "Purchase Invoice", "attached_to_name": doc.name}):
+        frappe.throw(_("Adjunta el CFDI (XML o PDF) y, si aplica, la carta porte antes de validar la factura del flete."))

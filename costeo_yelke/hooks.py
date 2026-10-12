@@ -221,6 +221,9 @@ doc_events = {
 	},
 }
 
+# Factura de flete: se valida con folio del CFDI y sus adjuntos (api/fletes.py).
+doc_events.setdefault("Purchase Invoice", {})["before_submit"] = "costeo_yelke.api.fletes.validar_factura_flete"
+
 # Remisión cancelada: su factura de flete (borrador) se va con ella (api/fletes.py).
 doc_events.setdefault("Delivery Note", {})["on_cancel"] = "costeo_yelke.api.fletes.soltar_factura_remision"
 

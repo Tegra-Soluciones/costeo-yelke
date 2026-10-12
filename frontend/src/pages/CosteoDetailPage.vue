@@ -4676,9 +4676,11 @@ const facTipo = computed({
   set: (v) => prodRuta.set({ filtro_lote: v }),
 });
 const facturasTotales = computed(() => {
-  const borradores = [...(compras.materiales || []), ...(compras.maquila || [])]
+  // Las facturas de flete son ellas mismas la factura (no traen `invoice` aparte).
+  const fletes = (compras.fletes || []).map((f) => ({ base_net_total: f.base_net_total, invoice: { docstatus: f.docstatus } }));
+  const borradores = [...(compras.materiales || []), ...(compras.maquila || []), ...fletes]
     .filter((m) => m.invoice && m.invoice.docstatus === 0);
-  const validadas = [...(compras.materiales || []), ...(compras.maquila || [])]
+  const validadas = [...(compras.materiales || []), ...(compras.maquila || []), ...fletes]
     .filter((m) => m.invoice && m.invoice.docstatus === 1);
   return {
     porFacturar: (compras.maquila || []).reduce((a, m) => a + Number(m.pendiente_facturar || 0), 0),
@@ -4856,7 +4858,7 @@ async function abrirFacturaDesdeBandeja(source_doctype, fila) {
   // `pinvDoc` es de una factura a la vez y lo comparten esta bandeja, el panel del
   // proveedor y el paso Factura de cada taller: se suelta antes de pedir la nueva.
   pinvDoc.value = null;
-  panelFactura.eyebrow = `Factura de compra · ${fila.tipo === "maquila" ? "maquila" : "material"}`;
+  panelFactura.eyebrow = `Factura de compra · ${{ maquila: "maquila", flete: "flete (paquetería)" }[fila.tipo] || "material"}`;
   panelFactura.titulo = fila.titulo;
   panelFactura.meta = fila.meta;
   panelFactura.pendiente = fila.tipo === "maquila" ? Number(fila.importe) || 0 : 0;
@@ -7748,6 +7750,12 @@ async function guardarPinv() {
 }
 async function validarPinv() {
   if (!pinvDoc.value) return;
+  // Factura de flete: folio del CFDI y sus archivos antes de validar (también lo
+  // exige el servidor, ver fletes.validar_factura_flete).
+  if (pinvDoc.value.es_factura_flete && !(pinvForm.bill_no || "").trim()) {
+    showToast("Captura el folio del CFDI del proveedor de paquetería antes de validar", "error");
+    return;
+  }
   advancing.value = true;
   try {
     await guardarPinv();
