@@ -17,6 +17,7 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
+from costeo_yelke.api import tallas_lote
 from costeo_yelke.api.costeo_api import _om_decode_tables, _om_encode_tables, get_om
 from costeo_yelke.roles import requiere_vista
 
@@ -132,6 +133,40 @@ def tallas_de_producto(doc, base, qty_ov=None, desglose=None):
     return filas
 
 
+def tallas_por_lote_de_producto(doc, base, qty_ov=None):
+    """Las tallas del producto base y sus variantes repartidas por LOTE de entrega:
+    ``[{lote_ref, schedule_date, tallas: [...], total}]``, en orden de entrega.
+
+    La ficha de manufactura es UNA por producto y vale para todos los lotes -- por eso
+    sigue existiendo tallas_de_producto con el desglose completo. Esto es lo que le
+    pone al mismo dato el corte por lote, para que el taller vea en qué tanda le toca
+    cada talla.
+
+    Devuelve lista VACÍA mientras nadie haya repartido tallas por lote (ver
+    api/tallas_lote.py): quien la consume debe entonces seguir usando el desglose de
+    siempre, que es exactamente el comportamiento anterior."""
+    productos = dict(_productos_base(doc)).get(base, [base])
+    reparto = tallas_lote.reparto_guardado(doc.name, doc)
+    if not reparto:
+        return []
+    fechas = tallas_lote.fechas_de_lote(doc.name, doc)
+    refs = [ref for ref, por_prod in reparto.items() if any(p in por_prod for p in productos)]
+    out = []
+    for ref in tallas_lote.orden_lotes(refs, fechas):
+        filas = []
+        for prod in productos:
+            if qty_ov is not None and prod not in qty_ov:
+                continue  # este producto no va en la OV activa
+            for f in (reparto[ref].get(prod) or []):
+                filas.append({"producto": prod, "genero": f.get("genero") or "",
+                              "talla": f.get("talla") or "", "cantidad": flt(f.get("cantidad"))})
+        if filas:
+            out.append({"lote_ref": ref,
+                        "schedule_date": str(fechas.get(ref)) if fechas.get(ref) else None,
+                        "tallas": filas, "total": sum(f["cantidad"] for f in filas)})
+    return out
+
+
 def talleres_de_producto(doc, base):
     productos = dict(_productos_base(doc)).get(base, [base])
     vistos = []
@@ -184,6 +219,7 @@ def get_oms_generales(costeo: str, sales_order: str = None) -> dict:
             "variantes": [p for p in productos if p != base],
             "talleres": talleres_de_producto(doc, base),
             "tallas": tallas,
+            "tallas_lotes": tallas_por_lote_de_producto(doc, base, qty_ov),
             "om": _serializar(_om_doc(costeo, base)),
         })
     return {"productos": out, "sales_order": sales_order or None}
@@ -200,7 +236,11 @@ def guardar_om_general(costeo: str, producto: str, datos) -> dict:
     for f, v in (datos.get("general") or {}).items():
         if f in GENERAL:
             om.set(f, v or (0 if f in ("om_aberturas", "om_bordado", "om_estampado", "om_sublimado", "om_reflejante") else None))
-    om.set("om_tallas", tallas_de_producto(doc, base))
+    # La tabla guardada lleva el corte por lote cuando ya se repartió (columna
+    # "Lote"); si no, el desglose completo de siempre, con la columna vacía.
+    por_lote = tallas_por_lote_de_producto(doc, base)
+    om.set("om_tallas", [dict(f, lote=l["lote_ref"]) for l in por_lote for f in l["tallas"]]
+           if por_lote else tallas_de_producto(doc, base))
     om.set("om_procesos", [
         {"proceso": f"Proceso {i}", "nombre_proceso": r.get("nombre_proceso"), "ubicacion": r.get("ubicacion"),
          "colores": r.get("colores"), "proveedores": ", ".join(_lista(r.get("proveedores")))}
@@ -270,6 +310,7 @@ def om_de_oc(po: str) -> list:
                 "item_name": frappe.db.get_value("Item", base, "item_name") or base,
                 "general": om["general"],
                 "tallas": tallas_de_producto(doc, base, qty_ov, desglose),
+                "tallas_lotes": tallas_por_lote_de_producto(doc, base, qty_ov),
                 "procesos": [r for r in om["procesos"] if _para(r["proveedores"], sup)],
                 "observaciones": [r for r in om["observaciones"] if _para(r["proveedores"], sup)],
                 "tablas": [t for t in om["tablas"] if _para(t.get("proveedores"), sup)],
@@ -281,7 +322,7 @@ def om_de_oc(po: str) -> list:
         g = legacy.get("general") or {}
         if any(g.get(f) for f in GENERAL) or legacy.get("procesos") or legacy.get("tablas") or legacy.get("archivos") or g.get("om_observaciones"):
             registros.append({
-                "producto": "", "item_name": "", "general": g, "tallas": [],
+                "producto": "", "item_name": "", "general": g, "tallas": [], "tallas_lotes": [],
                 "procesos": legacy.get("procesos") or [],
                 "observaciones": [{"texto": g.get("om_observaciones")}] if g.get("om_observaciones") else [],
                 "tablas": legacy.get("tablas") or [], "archivos": legacy.get("archivos") or [],

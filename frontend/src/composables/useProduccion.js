@@ -43,6 +43,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
       planDetail.value = r.plan;
       if (r.plan) {
         planWh.value = r.plan.for_warehouse || "";
+        await loadTallasDeLotes();
         await loadSolicitud();
         await loadRecibos();
         await loadSubcontratos();
@@ -148,11 +149,80 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   // cantidad de prendas.
   const mrLotes = ref([]);
   const mrLotesPreview = reactive({});
+
+  // ── Reparto por TALLA de cada lote (api/tallas_lote.py) ──────────────────
+  // `tallasOv.productos` = {producto: [{clave, etiqueta, genero, talla, cantidad}]}
+  // con lo que la orden de venta pide de cada talla. Si viene vacío -- producto sin
+  // desglose, o costeo de antes -- toda esta capa se apaga sola y el lote se captura
+  // solo por prendas, exactamente como siempre.
+  const tallasOv = reactive({ sales_order: null, productos: {}, repartido: {} });
+  async function loadTallasDeLotes() {
+    tallasOv.productos = {}; tallasOv.repartido = {}; tallasOv.sales_order = null;
+    if (!planDetail.value) return;
+    try {
+      const r = await call("costeo_yelke.api.tallas_lote.get_tallas_de_lotes", { plan: planDetail.value.name });
+      tallasOv.sales_order = r.sales_order || null;
+      tallasOv.productos = r.productos || {};
+      tallasOv.repartido = r.repartido || {};
+    } catch { /* sin desglose, la pantalla sigue funcionando por prendas */ }
+  }
+  function tallasDe(producto) { return tallasOv.productos[producto] || []; }
+  function tieneTallas(producto) { return tallasDe(producto).length > 0; }
+  const hayTallasEnLotes = computed(() =>
+    (planDetail.value?.po_items || []).some((p) => tieneTallas(p.item_code)));
+
+  // Las prendas de un producto CON tallas no se capturan: son la suma de su
+  // desglose. Así el número grande y el detalle no pueden contradecirse.
+  function sincronizarPiezasDeTallas(lote) {
+    Object.keys(lote.tallas || {}).forEach((prod) => {
+      if (!tieneTallas(prod)) return;
+      lote.piezas[prod] = Object.values(lote.tallas[prod] || {})
+        .reduce((sum, q) => sum + (Number(q) || 0), 0);
+    });
+  }
+  function mrLoteTallaAsignada(producto, clave) {
+    return mrLotes.value.reduce((sum, l) => sum + (Number(l.tallas?.[producto]?.[clave]) || 0), 0);
+  }
+  // Lo que falta (o sobra, en negativo) de esa talla entre todos los lotes. Tiene
+  // que quedar en CERO: la suma de los lotes es exacta contra la orden de venta.
+  function mrLoteTallaPendiente(producto, clave) {
+    const fila = tallasDe(producto).find((f) => f.clave === clave);
+    return Math.round(((Number(fila?.cantidad) || 0) - mrLoteTallaAsignada(producto, clave)) * 100) / 100;
+  }
+  function mrLoteTallaDescuadrada(producto, clave) {
+    return Math.abs(mrLoteTallaPendiente(producto, clave)) > 0.001;
+  }
+  function mrLoteTallasDescuadradas(producto) {
+    return tieneTallas(producto) && tallasDe(producto).some((f) => mrLoteTallaDescuadrada(producto, f.clave));
+  }
+  // El TOTAL del producto sí tiene margen: el plan puede venir inflado hasta un 5%
+  // ("producir de más") y el desglose exacto de la OV seguir siendo el correcto.
+  const TOLERANCIA_TOTAL = 0.05;
+  function mrLoteTotalDeProducto(producto) {
+    return mrLotes.value.reduce((sum, l) => sum + (Number(l.piezas?.[producto]) || 0), 0);
+  }
+  function mrLoteMargenTotal(producto) {
+    const planned = Number(planDetail.value?.po_items?.find((p) => p.item_code === producto)?.planned_qty) || 0;
+    return { planned, piso: Math.round(planned * (1 - TOLERANCIA_TOTAL)), tope: Math.round(planned * (1 + TOLERANCIA_TOTAL)) };
+  }
+  function mrLoteTotalFueraDeMargen(producto) {
+    if (!tieneTallas(producto)) return false;
+    const { planned, piso, tope } = mrLoteMargenTotal(producto);
+    if (!planned) return false;
+    const total = mrLoteTotalDeProducto(producto);
+    return total > tope + 0.001 || total < piso - 0.001;
+  }
+
   let _mrLoteSeq = 0;
   function addMrLote() {
-    const piezas = {};
-    (planDetail.value?.po_items || []).forEach((it) => { piezas[it.item_code] = 0; });
-    mrLotes.value.push({ id: `mrlote_${++_mrLoteSeq}`, fecha_requerida: "", piezas, lote_ref: siguienteLoteLibre() });
+    const piezas = {}, tallas = {};
+    (planDetail.value?.po_items || []).forEach((it) => {
+      piezas[it.item_code] = 0;
+      if (tieneTallas(it.item_code)) {
+        tallas[it.item_code] = Object.fromEntries(tallasDe(it.item_code).map((f) => [f.clave, 0]));
+      }
+    });
+    mrLotes.value.push({ id: `mrlote_${++_mrLoteSeq}`, fecha_requerida: "", piezas, tallas, lote_ref: siguienteLoteLibre() });
   }
   function removeMrLote(id) {
     mrLotes.value = mrLotes.value.filter((l) => l.id !== id);
@@ -164,6 +234,24 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     const n = mrLotes.value.length;
     if (!n) return;
     (planDetail.value?.po_items || []).forEach((it) => {
+      // Con desglose por talla se reparte TALLA por talla (y las prendas salen de
+      // la suma): repartir el total y luego las tallas por separado dejaría dos
+      // números que no cuadran entre sí.
+      if (tieneTallas(it.item_code)) {
+        tallasDe(it.item_code).forEach((f) => {
+          const total = Number(f.cantidad) || 0;
+          const base = Math.floor(total / n);
+          let asignado = 0;
+          mrLotes.value.forEach((lote, i) => {
+            if (!lote.tallas[it.item_code]) lote.tallas[it.item_code] = {};
+            const qty = i === n - 1 ? total - asignado : base;
+            lote.tallas[it.item_code][f.clave] = qty;
+            asignado += qty;
+          });
+        });
+        mrLotes.value.forEach(sincronizarPiezasDeTallas);
+        return;
+      }
       const total = Number(it.planned_qty) || 0;
       const base = Math.floor(total / n);
       let asignado = 0;
@@ -185,6 +273,9 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   // de ese producto (en cualquier lote) para que se note dónde ajustar, sin
   // importar cuál de ellos fue el que hizo que se pasara.
   function mrLoteProductoExcedido(item_code_producto) {
+    // Un producto con desglose por talla se rige por sus tallas y por el margen del
+    // 5% contra el plan, no por el "exacto al total" de siempre.
+    if (tieneTallas(item_code_producto)) return false;
     return mrLotePendiente(item_code_producto) < -0.001;
   }
   // Pendiente positivo = todavía queda repartir piezas de ese producto en
@@ -192,6 +283,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   // exista no se puede validar: los lotes tienen que cubrir el 100% del
   // plan, no dejar un sobrante fuera del flujo de lotes.
   function mrLoteProductoIncompleto(item_code_producto) {
+    if (tieneTallas(item_code_producto)) return false;
     return mrLotePendiente(item_code_producto) > 0.001;
   }
   // Ningún producto debe quedar excedido NI con piezas sin repartir para
@@ -201,7 +293,9 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   // intentarlo.
   const mrLotesInvalidos = computed(() =>
     mrLotes.value.length > 0
-    && (planDetail.value?.po_items || []).some((p) => mrLoteProductoExcedido(p.item_code) || mrLoteProductoIncompleto(p.item_code))
+    && (planDetail.value?.po_items || []).some((p) =>
+      mrLoteProductoExcedido(p.item_code) || mrLoteProductoIncompleto(p.item_code)
+      || mrLoteTallasDescuadradas(p.item_code) || mrLoteTotalFueraDeMargen(p.item_code))
   );
   // Las cantidades de la solicitud salen de multiplicar consumo x piezas y sumar,
   // así que arrastran ruido de coma flotante: 29 llega como 28.99999998 y en
@@ -277,7 +371,11 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   }
   async function validarSolicitud() {
     if (mrLotesInvalidos.value) {
-      showToast("Los lotes tienen que sumar exacto el total del plan (ni de más ni de menos) antes de poder validar", "error");
+      const conTallas = (planDetail.value?.po_items || []).some(
+        (p) => mrLoteTallasDescuadradas(p.item_code) || mrLoteTotalFueraDeMargen(p.item_code));
+      showToast(conTallas
+        ? "El reparto por talla no cuadra con la orden de venta — ajústalo antes de validar"
+        : "Los lotes tienen que sumar exacto el total del plan (ni de más ni de menos) antes de poder validar", "error");
       return;
     }
     advancing.value = true;
@@ -288,6 +386,12 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
           schedule_date: l.fecha_requerida || null,
           lote_ref: l.lote_ref || null,
           piezas: Object.fromEntries(Object.entries(l.piezas).filter(([, q]) => Number(q) > 0).map(([k, q]) => [k, Number(q)])),
+          // Reparto por talla (solo de los productos que la OV trae desglosados);
+          // el backend lo revalida y de ahí deriva las prendas del lote.
+          tallas: Object.fromEntries(Object.entries(l.tallas || {})
+            .filter(([prod]) => tieneTallas(prod))
+            .map(([prod, porTalla]) => [prod, Object.fromEntries(
+              Object.entries(porTalla).filter(([, q]) => Number(q) > 0).map(([k, q]) => [k, Number(q)]))])),
         }))
         .filter((l) => Object.keys(l.piezas).length);
       // Divide las líneas por lote ANTES de validar (la MR debe seguir en borrador
@@ -301,6 +405,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
       }
       await call("costeo_yelke.api.costeo_api.validar_documento", { doctype: "Material Request", name: mrDetail.value.name });
       mrLotes.value = [];
+      await loadTallasDeLotes();
       await loadSolicitud();
       if (lotesConDatos.length) await loadLotesProduccion();
       showToast(lotesConDatos.length ? `Solicitud validada · ${lotesConDatos.length} lote(s) listo(s) para generar su OC` : "Solicitud validada");
@@ -1923,6 +2028,10 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     loteOc, abrirLoteOc, cerrarLoteOc, crearOc,
     mrLotes, addMrLote, removeMrLote, repartirMrLotesIgual, mrLotePendiente,
     mrLotesPreview, actualizarPreviewLotes, mrLoteProductoExcedido, mrLoteProductoIncompleto, mrLotesInvalidos,
+    // Reparto por talla de cada lote (api/tallas_lote.py)
+    tallasOv, tallasDe, tieneTallas, hayTallasEnLotes, sincronizarPiezasDeTallas,
+    mrLoteTallaPendiente, mrLoteTallaDescuadrada, mrLoteTallasDescuadradas,
+    mrLoteTotalDeProducto, mrLoteMargenTotal, mrLoteTotalFueraDeMargen,
     loadSolicitud, crearSolicitud, guardarSolicitud, validarSolicitud,
     loadDocCompra, selectOC, selectOcLote, selectRfq, selectSq, guardarDocCompra, validarDocCompra, revisarDocCompra, jalarPreciosOC,
     // doble validación (Enviar -> Revisor -> Aprobador) -- hoy solo la Orden de Compra

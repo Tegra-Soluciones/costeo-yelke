@@ -1750,7 +1750,7 @@
               <div class="flex items-center justify-between mb-1.5">
                 <div>
                   <p class="section-title">Lotes de entrega (opcional)</p>
-                  <p class="text-[11px] text-ink-light">Si la producción se va a escalonar en varias tandas, indica aquí cuántas PRENDAS lleva cada lote — la materia prima que le corresponde se calcula sola. Al validar se crean todas las órdenes de compra de un jalón, ya con su cantidad y fecha.</p>
+                  <p class="text-[11px] text-ink-light">Si la producción se va a escalonar en varias tandas, indica aquí cuántas PRENDAS lleva cada lote — la materia prima que le corresponde se calcula sola. Al validar se crean todas las órdenes de compra de un jalón, ya con su cantidad y fecha.<template v-if="hayTallasEnLotes"> Los productos con tallas capturadas en la orden de venta se reparten TALLA POR TALLA: cada talla debe sumar exacto lo que pide la orden de venta, y las prendas del lote salen de esa suma.</template></p>
                 </div>
                 <button class="add-link shrink-0" @click="addMrLote(); actualizarPreviewLotes()"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Lote</button>
               </div>
@@ -1762,8 +1762,10 @@
                     <span class="text-[11px] text-ink-light flex-1">Fecha requerida — si no divide exacto, el último lote se queda con el registro del resto.</span>
                     <button class="del-btn" @click="removeMrLote(lote.id)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
                   </div>
+                  <!-- Productos SIN desglose por talla en la orden de venta: una sola
+                       cantidad de prendas, igual que siempre. -->
                   <div class="grid grid-cols-2 gap-x-4 gap-y-1">
-                    <div v-for="p in planDetail.po_items" :key="p.item_code" class="flex items-center gap-2">
+                    <div v-for="p in (planDetail.po_items || []).filter((x) => !tieneTallas(x.item_code))" :key="p.item_code" class="flex items-center gap-2">
                       <span class="text-[11.5px] font-mono flex-1 truncate" :title="`de ${p.planned_qty} pzas`">{{ p.item_code }}</span>
                       <input
                         v-model.number="lote.piezas[p.item_code]" type="number" min="0"
@@ -1771,6 +1773,38 @@
                         :class="mrLoteProductoExcedido(p.item_code) ? 'border-red-400 ring-1 ring-red-400' : ''"
                         @input="actualizarPreviewLotes()"
                       />
+                    </div>
+                  </div>
+                  <!-- Productos CON desglose: se captura talla por talla. Las prendas del
+                       lote NO se capturan, se derivan de la suma (api/tallas_lote.py), para
+                       que el número grande y el detalle no puedan contradecirse. -->
+                  <div
+                    v-for="p in (planDetail.po_items || []).filter((x) => tieneTallas(x.item_code))"
+                    v-show="lote.tallas && lote.tallas[p.item_code]"
+                    :key="`tallas_${p.item_code}`" class="mt-1.5 first:mt-0"
+                  >
+                    <div class="flex items-baseline gap-2 mb-1">
+                      <span class="text-[11.5px] font-mono truncate">{{ p.item_code }}</span>
+                      <span
+                        class="text-[11px]"
+                        :class="mrLoteTotalFueraDeMargen(p.item_code) ? 'text-red-600 font-medium' : 'text-ink-light'"
+                        :title="`entre todos los lotes: ${mrLoteTotalDeProducto(p.item_code)} de ${mrLoteMargenTotal(p.item_code).planned} (se permite de ${mrLoteMargenTotal(p.item_code).piso} a ${mrLoteMargenTotal(p.item_code).tope})`"
+                      >{{ lote.piezas[p.item_code] || 0 }} prendas en este lote</span>
+                    </div>
+                    <div class="flex flex-wrap gap-1.5">
+                      <label v-for="f in tallasDeLote(p.item_code)" :key="f.clave" class="flex flex-col">
+                        <span
+                          class="text-[10px] leading-none mb-0.5 text-center"
+                          :class="mrLoteTallaDescuadrada(p.item_code, f.clave) ? 'text-amber-700 font-medium' : 'text-ink-light'"
+                          :title="`${f.etiqueta || f.talla}: la orden de venta pide ${f.cantidad}`"
+                        >{{ f.talla || f.etiqueta }}</span>
+                        <input
+                          v-model.number="lote.tallas[p.item_code][f.clave]" type="number" min="0"
+                          class="field-input w-14 text-right text-[11.5px]"
+                          :class="mrLoteTallaDescuadrada(p.item_code, f.clave) ? 'border-amber-400 ring-1 ring-amber-400' : ''"
+                          @input="sincronizarPiezasDeTallas(lote); actualizarPreviewLotes()"
+                        />
+                      </label>
                     </div>
                   </div>
                   <div v-if="mrLotesPreview[lote.lote_ref] && Object.keys(mrLotesPreview[lote.lote_ref]).length" class="mt-2 pt-2 border-t border-surface-border text-[11px] text-ink-light">
@@ -1788,10 +1822,28 @@
                     >{{ i > 0 ? ' · ' : '' }}{{ p.item_code }}: {{ mrLotePendiente(p.item_code) }} pzas</span>
                   </p>
                 </div>
+                <!-- Qué talla falta (o sobra) para cuadrar con la orden de venta: sin
+                     esto hay que ir sumando columna por columna a mano. -->
+                <p
+                  v-for="p in (planDetail.po_items || []).filter((x) => mrLoteTallasDescuadradas(x.item_code))"
+                  :key="`desc_${p.item_code}`" class="text-[11px] mt-0.5 text-amber-700"
+                >
+                  <span class="font-mono">{{ p.item_code }}</span> —
+                  <template v-for="(f, i) in tallasDeLote(p.item_code).filter((x) => mrLoteTallaDescuadrada(p.item_code, x.clave))" :key="f.clave">
+                    {{ i > 0 ? ' · ' : '' }}{{ f.talla || f.etiqueta }}:
+                    {{ mrLoteTallaPendiente(p.item_code, f.clave) > 0
+                       ? `faltan ${mrLoteTallaPendiente(p.item_code, f.clave)}`
+                       : `sobran ${-mrLoteTallaPendiente(p.item_code, f.clave)}` }}
+                  </template>
+                </p>
                 <p v-if="mrLotesInvalidos" class="text-[11.5px] mt-1" :class="(planDetail.po_items || []).some((p) => mrLoteProductoExcedido(p.item_code)) ? 'text-red-600' : 'text-amber-700'">
-                  {{ (planDetail.po_items || []).some((p) => mrLoteProductoExcedido(p.item_code))
-                    ? 'Algún producto tiene más piezas repartidas entre los lotes de las que pide el plan — ajústalo antes de validar.'
-                    : 'Todavía quedan piezas sin repartir en ningún lote — los lotes deben sumar exacto el total del plan antes de validar.' }}
+                  {{ (planDetail.po_items || []).some((p) => mrLoteTotalFueraDeMargen(p.item_code))
+                    ? 'El total repartido de algún producto se sale del 5% que permite el plan — ajústalo antes de validar.'
+                    : (planDetail.po_items || []).some((p) => mrLoteTallasDescuadradas(p.item_code))
+                      ? 'El reparto por talla no cuadra con la orden de venta — cada talla debe sumar exacto entre todos los lotes.'
+                      : (planDetail.po_items || []).some((p) => mrLoteProductoExcedido(p.item_code))
+                        ? 'Algún producto tiene más piezas repartidas entre los lotes de las que pide el plan — ajústalo antes de validar.'
+                        : 'Todavía quedan piezas sin repartir en ningún lote — los lotes deben sumar exacto el total del plan antes de validar.' }}
                 </p>
               </template>
             </div>
@@ -3985,6 +4037,9 @@ const {
   docCompra, docCompraItems, docCompraForm, docCompraValidated, ocSelected,
   mrLotes, addMrLote, removeMrLote, repartirMrLotesIgual, mrLotePendiente,
   mrLotesPreview, actualizarPreviewLotes, mrLoteProductoExcedido, mrLoteProductoIncompleto, mrLotesInvalidos,
+  tallasDe: tallasDeLote, tieneTallas, hayTallasEnLotes, sincronizarPiezasDeTallas,
+  mrLoteTallaPendiente, mrLoteTallaDescuadrada, mrLoteTallasDescuadradas,
+  mrLoteMargenTotal, mrLoteTotalDeProducto, mrLoteTotalFueraDeMargen,
   loadSolicitud, crearSolicitud, guardarSolicitud, validarSolicitud,
   selectOC, selectOcLote, selectRfq, selectSq, guardarDocCompra, validarDocCompra, revisarDocCompra, jalarPreciosOC,
   permisosValidacion, loadPermisosValidacion,

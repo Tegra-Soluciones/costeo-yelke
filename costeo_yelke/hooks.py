@@ -97,6 +97,9 @@ doctype_js = {
 jinja = {
 	# OM de cada taller dentro del formato "Orden de Maquila".
 	"methods": ["costeo_yelke.api.om_general.om_de_oc",
+		# Tallas del lote dentro del formato "Encargo a Taller" (la OC de
+		# subcontratación cubre todos los lotes; el encargo es de uno solo).
+		"costeo_yelke.api.tallas_lote.tallas_de_encargo",
 		"costeo_yelke.api.impresion.firmas_documento",
 		"costeo_yelke.api.impresion.fuentes_css",
 		"costeo_yelke.api.impresion.logo_yelke",

@@ -8,7 +8,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, cint, flt, formatdate, getdate, nowdate
 
-from costeo_yelke.api import item_api
+from costeo_yelke.api import item_api, tallas_lote
 from costeo_yelke.roles import (
     puede_aprobar_documentos,
     puede_revisar_documentos,
@@ -5772,6 +5772,24 @@ def mr_dividir_en_lotes_por_piezas(mr: str, plan: str, lotes) -> dict:
 
     pp = frappe.get_doc("Production Plan", plan)
     planned_por_producto = {r.item_code: flt(r.planned_qty) for r in pp.get("po_items") or []}
+
+    # Reparto por TALLA (api/tallas_lote.py). Solo aplica a los productos que la
+    # orden de venta trae desglosados: para ellos la suma de cada talla tiene que
+    # cuadrar exacto y las prendas del lote se DERIVAN de ese desglose, así que su
+    # cantidad ya no se toma de lo que venga en `piezas`. Un producto sin desglose
+    # -- o un costeo de antes -- no pasa por aquí y se valida como siempre.
+    desglose_ov = tallas_lote.desglose_ov(pp.get("costeo"), tallas_lote.ov_del_plan(plan))
+    reparto_tallas = tallas_lote.validar_reparto(desglose_ov, lotes, planned_por_producto) if desglose_ov else {}
+    piezas_derivadas = tallas_lote.piezas_derivadas(reparto_tallas)
+    con_tallas = {prod for productos in reparto_tallas.values() for prod in productos}
+    for lote in lotes:
+        derivadas = piezas_derivadas.get(lote.get("lote_ref") or "") or {}
+        piezas = dict(lote.get("piezas") or {})
+        for prod in con_tallas:
+            piezas.pop(prod, None)
+        piezas.update(derivadas)
+        lote["piezas"] = piezas
+
     asignado_por_producto = {}
     for lote in lotes:
         for producto, piezas in (lote.get("piezas") or {}).items():
@@ -5781,7 +5799,10 @@ def mr_dividir_en_lotes_por_piezas(mr: str, plan: str, lotes) -> dict:
             producto, round(asignado, 2), round(planned_por_producto.get(producto, 0), 2)
         )
         for producto, asignado in asignado_por_producto.items()
-        if asignado > planned_por_producto.get(producto, 0) + 0.001
+        # Los productos con desglose por talla ya los validó validar_reparto con su
+        # margen del 5% contra el plan; volver a exigirles "ni una pieza de más"
+        # los bloquearía justo cuando el plan viene inflado a propósito.
+        if producto not in con_tallas and asignado > planned_por_producto.get(producto, 0) + 0.001
     ]
     if excesos:
         frappe.throw(_("La cantidad de algún producto excede lo que pide el plan -- {0}").format("; ".join(excesos)))
@@ -5871,17 +5892,23 @@ def mr_dividir_en_lotes_por_piezas(mr: str, plan: str, lotes) -> dict:
     # derivar la materia prima y se perdían, y después la pantalla de Producción --
     # que saca la cantidad del lote de las Subcontracting Order existentes -- se
     # encontraba el lote "sin cantidad" y volvía a pedir un número ya capturado.
-    _guardar_piezas_por_lote(pp.get("costeo"), lotes)
+    _guardar_piezas_por_lote(pp.get("costeo"), lotes, reparto_tallas)
 
     return mr_dividir_en_lotes(mr, lotes_items)
 
 
-def _guardar_piezas_por_lote(costeo, lotes):
+def _guardar_piezas_por_lote(costeo, lotes, reparto_tallas=None):
     """Persiste ``[{lote_ref, schedule_date, piezas:{producto: qty}}]`` en
     Costeo.tabla_lotes_costeo, reemplazando lo que hubiera de esos mismos lotes
-    (los demás se respetan: se puede redividir un lote sin tocar los otros)."""
+    (los demás se respetan: se puede redividir un lote sin tocar los otros).
+
+    ``reparto_tallas`` ({lote_ref: {producto: [filas]}}, ver api/tallas_lote.py)
+    guarda además qué tallas lleva cada lote. Sin él -- productos sin desglose en la
+    orden de venta, o costeos de antes -- la fila queda igual que siempre."""
     if not costeo or not frappe.get_meta("Costeo").get_field("tabla_lotes_costeo"):
         return
+    reparto_tallas = reparto_tallas or {}
+    guarda_tallas = frappe.get_meta("Costeo Lote").get_field("desglose_tallas") is not None
     doc = frappe.get_doc("Costeo", costeo)
     refs = {l.get("lote_ref") for l in lotes if l.get("lote_ref")}
     for row in list(doc.get("tabla_lotes_costeo") or []):
@@ -5894,12 +5921,16 @@ def _guardar_piezas_por_lote(costeo, lotes):
         for producto, piezas in (l.get("piezas") or {}).items():
             if flt(piezas) <= 0:
                 continue
-            doc.append("tabla_lotes_costeo", {
+            fila = {
                 "lote_ref": ref,
                 "producto_terminado": producto,
                 "piezas": flt(piezas),
                 "schedule_date": l.get("schedule_date") or None,
-            })
+            }
+            filas_talla = (reparto_tallas.get(ref) or {}).get(producto)
+            if guarda_tallas and filas_talla:
+                fila["desglose_tallas"] = json.dumps(filas_talla, ensure_ascii=False)
+            doc.append("tabla_lotes_costeo", fila)
     doc.flags.ignore_permissions = True
     doc.flags.ignore_validate_update_after_submit = True
     doc.save()

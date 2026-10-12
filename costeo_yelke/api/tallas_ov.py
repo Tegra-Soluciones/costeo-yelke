@@ -116,6 +116,59 @@ def guardar_desglose_tallas_ov(sales_order: str, row: str, filas) -> dict:
     return {"ok": True, "description": it.description, "filas": limpias}
 
 
+def _filas_de_renglon(r, generos):
+    """Filas canónicas de UN renglón de la OV: clave, etiqueta, género, talla y
+    cantidad.
+
+    La CLAVE es lo que identifica a la talla de forma estable para poder sumar y
+    comparar (es contra ella que se valida el reparto por lote, ver
+    api/tallas_lote.py): el código de Talla cuando el renglón trae el JSON -- lo
+    normal -- y la etiqueta con prefijo ``txt:`` cuando solo existe como texto en la
+    descripción (renglones viejos y líneas de tallas extra). El prefijo garantiza
+    que una etiqueta nunca se confunda con un código real."""
+    filas = []
+    if r.get("desglose_tallas"):
+        for f in json.loads(r["desglose_tallas"]):
+            genero = f.get("genero") or ""
+            etiqueta = f.get("etiqueta") or ""
+            talla = etiqueta[len(genero) + 1:] if (genero and etiqueta.startswith(genero + " ")) else etiqueta
+            filas.append({"clave": f.get("talla") or ("txt:" + etiqueta), "etiqueta": etiqueta or talla,
+                          "genero": genero, "talla": talla, "cantidad": flt(f.get("qty"))})
+    else:
+        for linea in texto_plano(r.get("description")).splitlines():
+            m = _LINEA_TALLA.match(linea)
+            if m:
+                talla = m.group(1).strip()
+                filas.append({"clave": "txt:" + talla, "etiqueta": talla,
+                              "genero": generos.get(r.get("item_code"), ""), "talla": talla,
+                              "cantidad": flt(m.group(2).replace(",", ""))})
+    return filas
+
+
+def desglose_canonico_de_ov(sales_order, generos=None):
+    """{item_code: [{clave, etiqueta, genero, talla, cantidad}]} -- el desglose por
+    talla de la OV con su clave estable y SUMANDO los renglones repetidos del mismo
+    artículo (un producto con tallas extra trae varias líneas de la misma clave).
+
+    Es la base contra la que se valida el reparto por talla de los lotes; a
+    diferencia de desglose_de_ov (que es para imprimir y conserva un renglón por
+    línea), aquí cada talla aparece UNA sola vez con su total."""
+    if not sales_order:
+        return {}
+    generos = generos or {}
+    out, indice = {}, {}
+    for r in frappe.get_all("Sales Order Item", filters={"parent": sales_order},
+                            fields=["item_code", "description", "desglose_tallas"], order_by="idx"):
+        for f in _filas_de_renglon(r, generos):
+            llave = (r.item_code, f["clave"])
+            if llave in indice:
+                indice[llave]["cantidad"] += f["cantidad"]
+            else:
+                indice[llave] = dict(f)
+                out.setdefault(r.item_code, []).append(indice[llave])
+    return out
+
+
 def desglose_de_ov(sales_order, generos=None):
     """{item_code: [{"genero", "talla", "cantidad"}]} con lo capturado en la OV.
     Usa el JSON guardado; para líneas viejas sin JSON (tallas extra de antes) lee
@@ -127,20 +180,8 @@ def desglose_de_ov(sales_order, generos=None):
     out = {}
     for r in frappe.get_all("Sales Order Item", filters={"parent": sales_order},
                             fields=["item_code", "description", "desglose_tallas"], order_by="idx"):
-        filas = []
-        if r.get("desglose_tallas"):
-            for f in json.loads(r.desglose_tallas):
-                genero = f.get("genero") or ""
-                talla = f.get("etiqueta") or ""
-                if genero and talla.startswith(genero + " "):
-                    talla = talla[len(genero) + 1:]
-                filas.append({"genero": genero, "talla": talla, "cantidad": flt(f.get("qty"))})
-        else:
-            for linea in texto_plano(r.description).splitlines():
-                m = _LINEA_TALLA.match(linea)
-                if m:
-                    filas.append({"genero": generos.get(r.item_code, ""), "talla": m.group(1).strip(),
-                                  "cantidad": flt(m.group(2).replace(",", ""))})
+        filas = [{"genero": f["genero"], "talla": f["talla"], "cantidad": f["cantidad"]}
+                 for f in _filas_de_renglon(r, generos)]
         if filas:
             out.setdefault(r.item_code, []).extend(filas)
     return out

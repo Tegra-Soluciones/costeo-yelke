@@ -9,7 +9,8 @@
   "lote_ref",
   "producto_terminado",
   "piezas",
-  "schedule_date"
+  "schedule_date",
+  "desglose_tallas"
  ],
  "fields": [
   {
@@ -48,13 +49,21 @@
    "fieldtype": "Date",
    "in_list_view": 1,
    "label": "Fecha de entrega"
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "JSON con el reparto por talla de este lote para ese producto [{clave, etiqueta, genero, talla, cantidad}] -- lo escribe api/tallas_lote.py al dividir la solicitud. Vacío = lote sin desglose (producto sin tallas en la OV, o lote dividido antes de que existiera el reparto por talla).",
+   "fieldname": "desglose_tallas",
+   "fieldtype": "Long Text",
+   "label": "Desglose por talla",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-09-29 00:00:00.000000",
+ "modified": "2026-10-12 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Costeo Yelke",
  "name": "Costeo Lote",
