@@ -156,6 +156,17 @@ def validar_proveedor_flete(doc, method=None):
 
 
 def crear_polizas_flete(doc, method=None):
+    """Desde 2026-10-12 el flete se registra con la FACTURA del transportista (con IVA y
+    retención, ver api/fletes.py), no con póliza. Se conserva el nombre: es lo que
+    llaman los hooks de validar envío / recibo de taller."""
+    if not _aplica_flete(doc):
+        return
+    from costeo_yelke.api.fletes import facturas_costos_adicionales
+
+    facturas_costos_adicionales(doc)
+
+
+def _crear_polizas_flete_sin_iva(doc, method=None):
     """Una póliza por fila de costo adicional con monto y proveedor: cargo a la MISMA
     cuenta que el documento abonó al capitalizar el flete (expense_account de la fila,
     normalmente 'Gastos incluidos en la valoración') contra la cuenta por pagar del
@@ -193,6 +204,10 @@ def crear_polizas_flete(doc, method=None):
 
 
 def cancelar_polizas_flete(doc, method=None):
+    if frappe.db.has_column("Landed Cost Taxes and Charges", "factura_flete"):
+        from costeo_yelke.api.fletes import soltar_facturas_costos_adicionales
+
+        soltar_facturas_costos_adicionales(doc)
     if not frappe.db.has_column("Landed Cost Taxes and Charges", "poliza_flete"):
         return
     for r in doc.get("additional_costs") or []:

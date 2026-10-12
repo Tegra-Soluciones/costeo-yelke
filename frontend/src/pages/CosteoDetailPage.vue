@@ -2429,10 +2429,13 @@
                       <p v-if="!transCostos.length" class="prod-empty mb-1">Sin costos adicionales (fletes, maniobras…) — se capitalizan al valor del material transferido.</p>
                       <div v-for="(c, i) in transCostos" :key="i" class="flex items-center gap-2 mb-1.5">
                         <input v-model="c.description" placeholder="Descripción" :disabled="transValidated" class="field-input flex-1" />
-                        <div class="w-56 flex-shrink-0" :title="c.poliza_flete ? 'Póliza ' + c.poliza_flete : 'A quién se le paga el flete'">
+                        <div class="w-56 flex-shrink-0" :title="c.factura_flete ? 'Factura del flete ' + c.factura_flete : c.poliza_flete ? 'Póliza ' + c.poliza_flete : 'Proveedor de paquetería al que se le paga el flete'">
                           <LinkInput v-model="c.proveedor_flete" doctype="Supplier" placeholder="Transportista…" :readonly="transValidated" :error="!transValidated && c.amount > 0 && !c.proveedor_flete" />
                         </div>
                         <input v-model.number="c.amount" type="number" min="0" step="0.01" placeholder="Importe" :disabled="transValidated" class="field-input w-32 text-right" />
+                        <label class="flex items-center gap-1 text-[11.5px] text-ink-muted whitespace-nowrap" title="Marca si el importe que capturaste ya trae IVA. Al inventario va la base sin IVA; el IVA se acredita en la factura del flete.">
+                          <input v-model="c.flete_incluye_iva" type="checkbox" :true-value="1" :false-value="0" :disabled="transValidated" />IVA incluido
+                        </label>
                         <button v-if="!transValidated" class="del-btn" @click="removeCostoTrans(i)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
                       </div>
                       <div v-if="transCostos.length" class="mt-1">
@@ -2499,10 +2502,13 @@
                       <p v-if="!scrCostos.length" class="text-[12px] mb-1" :class="scrValidated ? 'text-ink-muted' : 'text-red-500'">{{ scrValidated ? 'Sin costos adicionales.' : 'Obligatorio -- agrega al menos uno (fletes, maniobras…), aunque sea con importe $0.' }}</p>
                       <div v-for="(c, i) in scrCostos" :key="i" class="flex items-center gap-2 mb-1.5">
                         <input v-model="c.description" placeholder="Descripción" :disabled="scrValidated" class="field-input flex-1" />
-                        <div class="w-56 flex-shrink-0" :title="c.poliza_flete ? 'Póliza ' + c.poliza_flete : 'A quién se le paga el flete'">
+                        <div class="w-56 flex-shrink-0" :title="c.factura_flete ? 'Factura del flete ' + c.factura_flete : c.poliza_flete ? 'Póliza ' + c.poliza_flete : 'Proveedor de paquetería al que se le paga el flete'">
                           <LinkInput v-model="c.proveedor_flete" doctype="Supplier" placeholder="Transportista…" :readonly="scrValidated" :error="!scrValidated && c.amount > 0 && !c.proveedor_flete" />
                         </div>
                         <input v-model.number="c.amount" type="number" min="0" step="0.01" placeholder="Importe" :disabled="scrValidated" class="field-input w-32 text-right" />
+                        <label class="flex items-center gap-1 text-[11.5px] text-ink-muted whitespace-nowrap" title="Marca si el importe que capturaste ya trae IVA. Al inventario va la base sin IVA; el IVA se acredita en la factura del flete.">
+                          <input v-model="c.flete_incluye_iva" type="checkbox" :true-value="1" :false-value="0" :disabled="scrValidated" />IVA incluido
+                        </label>
                         <button v-if="!scrValidated" class="del-btn" @click="removeCostoScr(i)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
                       </div>
                       <div v-if="scrCostos.length" class="mt-1">
@@ -2735,8 +2741,8 @@
               <input v-model="dnForm.posting_date" type="date" class="field-input mb-3" :disabled="dnValidated" />
             </div>
             <div>
-              <label class="field-label">Proveedor de transporte <span class="text-ink-light font-normal">(opcional)</span></label>
-              <LinkInput v-model="dnForm.flete_proveedor" doctype="Supplier" placeholder="Paquetería / transportista…" :readonly="dnValidated" class="mb-3" />
+              <label class="field-label">Proveedor de paquetería <span v-if="Number(dnForm.flete_costo) > 0" class="text-red-400">*</span><span v-else class="text-ink-light font-normal">(si hay costo de envío)</span></label>
+              <LinkInput v-model="dnForm.flete_proveedor" doctype="Supplier" placeholder="Paquetería / transportista…" :readonly="dnValidated" :error="!dnValidated && Number(dnForm.flete_costo) > 0 && !dnForm.flete_proveedor" class="mb-3" />
             </div>
             <div class="sm:col-span-2">
               <label class="field-label">Costo de envío</label>
@@ -2744,7 +2750,11 @@
                 <span class="pl-3 pr-1 text-sm text-ink-light select-none">$</span>
                 <input v-model.number="dnForm.flete_costo" type="number" min="0" step="0.01" :disabled="dnValidated" class="flex-1 min-w-0 py-2 pr-3 text-sm focus:outline-none bg-transparent disabled:bg-surface-raised/60" />
               </div>
-              <p v-if="!dnValidated" class="p-meta mb-3">Al validar se registra como póliza contable (cargo a Transporte y Fletes, contra la cuenta por pagar del proveedor).</p>
+              <label class="flex items-center gap-1.5 text-[12px] text-ink-muted mb-1">
+                <input v-model="dnForm.flete_incluye_iva" type="checkbox" :true-value="1" :false-value="0" :disabled="dnValidated" />El importe incluye IVA
+              </label>
+              <p v-if="!dnValidated" class="p-meta mb-3">Al validar se crea en borrador la factura del proveedor de paquetería (gasto de Transporte y Fletes sin IVA, IVA acreditable y, si aplica, retención de 4%). Ahí se captura el folio y se adjuntan el CFDI y la carta porte.</p>
+              <p v-else-if="dnDoc.flete_factura" class="p-meta mb-3">Factura del flete: <a :href="`/app/purchase-invoice/${dnDoc.flete_factura}`" target="_blank" class="text-brand-600 hover:underline">{{ dnDoc.flete_factura }}</a> · se completa en la bandeja de Facturas</p>
               <p v-else-if="dnDoc.flete_journal_entry" class="p-meta mb-3">Póliza: <a :href="`/app/journal-entry/${dnDoc.flete_journal_entry}`" target="_blank" class="text-brand-600 hover:underline">{{ dnDoc.flete_journal_entry }}</a></p>
             </div>
           </div>
@@ -3948,10 +3958,10 @@ watch(expandedSOName, (name) => { if (name) activeSOName.value = name; });
 const siForm = reactive({ posting_date: "", due_date: "", payment_terms_template: "", tc_name: "" });
 const dnDoc = ref(null);
 const dnSel = ref("");
-const dnForm = reactive({ posting_date: "", shipping_address_name: "", customer_address: "", flete_proveedor: "", flete_costo: 0 });
+const dnForm = reactive({ posting_date: "", shipping_address_name: "", customer_address: "", flete_proveedor: "", flete_costo: 0 , flete_incluye_iva: 0 });
 const reporte = ref(null);
 const reporteLoading = ref(false);
-const compras = reactive({ materiales: [], maquila: [] });
+const compras = reactive({ materiales: [], maquila: [], fletes: [] });
 const pinvSel = ref(null);
 const pinvDoc = ref(null);
 const pinvForm = reactive({ posting_date: "", due_date: "", bill_no: "", bill_date: "", payment_terms_template: "", tc_name: "", conversion_rate: 1 });
@@ -4332,7 +4342,8 @@ const conteosBandejas = computed(() => {
     }
   }
   const facturas = (compras.materiales || []).filter((m) => !m.invoice || m.invoice.docstatus === 0).length
-    + (compras.maquila || []).filter((m) => Number(m.pendiente_facturar || 0) > 0).length;
+    + (compras.maquila || []).filter((m) => Number(m.pendiente_facturar || 0) > 0).length
+    + (compras.fletes || []).filter((f) => f.docstatus === 0).length;
   return { envios, facturas };
 });
 const menuProduccion = computed(() => ({
@@ -4732,6 +4743,21 @@ const facturasFilas = computed(() => {
         : "",
     }, "Purchase Order"));
   }
+  // Facturas de FLETE (proveedor de paquetería): nacen solas en borrador al validar el
+  // envío; aquí se captura el folio, se adjuntan el CFDI y la carta porte y se validan.
+  const ORIGEN_FLETE = { "Purchase Receipt": "recibo de compra", "Stock Entry": "envío al taller",
+    "Subcontracting Receipt": "recibo del taller", "Delivery Note": "remisión" };
+  for (const f of compras.fletes || []) {
+    filas.push(conIr({
+      tipo: "flete", nombre: f.name, estado: f.docstatus === 1 ? "fac" : "wait",
+      titulo: f.supplier_name || f.supplier,
+      meta: ["Flete", `${ORIGEN_FLETE[f.flete_origen_doctype] || "documento"} ${f.flete_origen || ""}`, f.bill_no ? `folio ${f.bill_no}` : "sin folio"]
+        .filter(Boolean).join(" · "),
+      importe: Number(f.base_net_total || 0),
+      pill: f.docstatus === 1 ? { estado: "fac", texto: "Validada" } : { estado: "wait", texto: "Por completar" },
+      pendiente: f.docstatus !== 1,
+    }, "Purchase Invoice"));
+  }
   return filas
     .filter((f) => facTipo.value === "todo" || f.tipo === facTipo.value)
     .filter((f) => facEstado.value === "todas" || (facEstado.value === "validadas" ? !f.pendiente : f.pendiente))
@@ -4744,6 +4770,7 @@ const facEstadoOpciones = computed(() => [
 ]);
 const facTipoOpciones = [
   { valor: "todo", texto: "Todo" }, { valor: "material", texto: "Material" }, { valor: "maquila", texto: "Maquila" },
+  { valor: "flete", texto: "Fletes" },
 ];
 
 // ── Panel "Orden a un taller" (Preparación · paso 3) ──────────────────────────
@@ -7523,6 +7550,7 @@ async function loadRemisionDetalle(name) {
     dnForm.customer_address = dnDoc.value.customer_address || "";
     dnForm.flete_proveedor = dnDoc.value.flete_proveedor || "";
     dnForm.flete_costo = dnDoc.value.flete_costo || 0;
+    dnForm.flete_incluye_iva = dnDoc.value.flete_incluye_iva || 0;
   } catch { dnDoc.value = null; }
 }
 async function selectDn(name) {
@@ -7551,6 +7579,12 @@ async function crearRemisionLote(lote_ref) {
 // Factura de compra como ÚLTIMO paso de cada flujo (material o maquila), sin salir
 // de Producción: se carga la factura de esa fuente (o queda lista para crearla).
 async function abrirFacturaFuente(source_doctype, source_name, supplier_name) {
+  // Factura de flete: ya existe (se creó sola al validar el envío), se abre directo.
+  if (source_doctype === "Purchase Invoice") {
+    pinvSel.value = { source_doctype, source_name, supplier_name, pendiente: 0 };
+    await loadPinv(source_name);
+    return;
+  }
   await loadCompras();
   const fila = [...compras.materiales, ...compras.maquila].find((m) => m.name === source_name);
   if (fila) await selectCompra(source_doctype, fila);
@@ -7588,6 +7622,7 @@ async function guardarRemision() {
       customer_address: dnForm.customer_address || null,
       flete_proveedor: dnForm.flete_proveedor || null,
       flete_costo: dnForm.flete_costo || 0,
+      flete_incluye_iva: dnForm.flete_incluye_iva ? 1 : 0,
     });
     await loadRemisionDetalle(dnDoc.value.name);
     showToast("Remisión guardada");
@@ -7605,6 +7640,7 @@ async function validarRemision() {
       customer_address: dnForm.customer_address || null,
       flete_proveedor: dnForm.flete_proveedor || null,
       flete_costo: dnForm.flete_costo || 0,
+      flete_incluye_iva: dnForm.flete_incluye_iva ? 1 : 0,
     });
     const rv = await call("costeo_yelke.api.costeo_api.validar_remision", { name: dnDoc.value.name });
     await loadRemisionDetalle(dnDoc.value.name);
@@ -7664,7 +7700,7 @@ async function loadCompras() {
     const r = await call("costeo_yelke.api.costeo_api.get_facturas_compra", {
       costeo: docName.value, sales_order: activeSOName.value || null,
     });
-    compras.materiales = r.materiales || []; compras.maquila = r.maquila || [];
+    compras.materiales = r.materiales || []; compras.maquila = r.maquila || []; compras.fletes = r.fletes || [];
   } catch { /* ignore */ }
 }
 async function selectCompra(source_doctype, row) {

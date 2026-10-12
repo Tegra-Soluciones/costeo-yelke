@@ -47,6 +47,11 @@
           <span v-if="doc.grand_total !== undefined" class="text-ink-muted">Total con impuestos <span class="font-medium text-ink tabular-nums">{{ money(doc.grand_total, extranjera ? doc.currency : undefined) }}</span></span>
           <span v-if="extranjera" class="text-ink-muted">En {{ doc.company_currency }} <span class="font-medium text-ink tabular-nums">{{ money(doc.base_grand_total, doc.company_currency) }}</span></span>
         </div>
+        <!-- Respaldos de la factura: CFDI (XML y PDF) y, en fletes, la carta porte. -->
+        <div class="border-t border-surface-border pt-2.5 mb-3">
+          <p class="text-[12px] font-medium text-ink mb-1">Adjuntos <span class="font-normal text-ink-muted">· CFDI (XML y PDF){{ doc.es_factura_flete ? " y carta porte" : "" }}</span></p>
+          <AttachmentsPanel doctype="Purchase Invoice" :docname="doc.name" />
+        </div>
         <div v-if="!sinAcciones" class="flex flex-wrap items-center gap-2">
           <template v-if="!validated">
             <button :disabled="advancing" class="h-8 px-3 text-[13px] font-medium text-ink border border-surface-border rounded-lg hover:bg-surface-raised disabled:opacity-50" @click="$emit('guardar')">Guardar cambios</button>
@@ -71,6 +76,7 @@
 
 <script setup>
 import { computed, reactive } from "vue";
+import AttachmentsPanel from "./AttachmentsPanel.vue";
 import { call } from "@/utils/frappe.js";
 
 const props = defineProps({

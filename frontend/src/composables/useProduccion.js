@@ -112,7 +112,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
 
   const docCompra = ref(null);
   const docCompraItems = ref([]);
-  const docCompraForm = reactive({ schedule_date: "", valid_till: "", payment_terms_template: "", tc_name: "", shipping_cost: 0, supplier: "", currency: "", conversion_rate: 1 });
+  const docCompraForm = reactive({ schedule_date: "", valid_till: "", payment_terms_template: "", tc_name: "", shipping_cost: 0, supplier: "", currency: "", conversion_rate: 1, flete_modo: "", flete_proveedor: "", flete_incluye_iva: 0 });
   const docCompraValidated = computed(() => docCompra.value?.docstatus === 1);
   const docCompraHasRate = computed(() => docCompraItems.value.some((i) => i.has_rate));
   const ocSelected = ref("");
@@ -498,6 +498,9 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     docCompraForm.shipping_cost = r.shipping_cost || 0;
     docCompraForm.supplier = r.supplier || "";
     docCompraForm.currency = r.currency || "";
+    docCompraForm.flete_modo = r.flete_modo || "Lo cobra el proveedor";
+    docCompraForm.flete_proveedor = r.flete_proveedor || "";
+    docCompraForm.flete_incluye_iva = r.flete_incluye_iva || 0;
     docCompraForm.conversion_rate = r.conversion_rate || 1;
     previewKey.value++;
   }
@@ -521,6 +524,8 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
         shipping_cost: docCompra.value.has_shipping ? (docCompraForm.shipping_cost || 0) : null,
         supplier: docCompraForm.supplier || null,
         currency: docCompra.value.has_currency ? (docCompraForm.currency || null) : null,
+        ...(docCompra.value.has_shipping ? { flete_modo: docCompraForm.flete_modo || "", flete_proveedor: docCompraForm.flete_proveedor || "",
+          flete_incluye_iva: docCompraForm.flete_incluye_iva ? 1 : 0 } : {}),
         conversion_rate: docCompra.value.has_currency && docCompraForm.currency !== docCompra.value.company_currency ? (Number(docCompraForm.conversion_rate) || null) : null,
       });
       await loadDocCompra(docCompra.value.doctype, docCompra.value.name);
@@ -542,6 +547,8 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
         shipping_cost: docCompra.value.has_shipping ? (docCompraForm.shipping_cost || 0) : null,
         supplier: docCompraForm.supplier || null,
         currency: docCompra.value.has_currency ? (docCompraForm.currency || null) : null,
+        ...(docCompra.value.has_shipping ? { flete_modo: docCompraForm.flete_modo || "", flete_proveedor: docCompraForm.flete_proveedor || "",
+          flete_incluye_iva: docCompraForm.flete_incluye_iva ? 1 : 0 } : {}),
         conversion_rate: docCompra.value.has_currency && docCompraForm.currency !== docCompra.value.company_currency ? (Number(docCompraForm.conversion_rate) || null) : null,
       });
       await call("costeo_yelke.api.costeo_api.validar_documento", { doctype: docCompra.value.doctype, name: docCompra.value.name });
@@ -593,7 +600,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   const reciboOcSel = ref("");
   const reciboPr = ref(null);
   const reciboItems = ref([]);
-  const reciboForm = reactive({ posting_date: "", shipping_cost: null, conversion_rate: 1 });
+  const reciboForm = reactive({ posting_date: "", shipping_cost: null, conversion_rate: 1, flete_modo: "", flete_proveedor: "", flete_incluye_iva: 0 });
   const reciboValidated = computed(() => reciboPr.value?.docstatus === 1);
   // % de avance de materia prima -- ya calculado en el backend contra el total de
   // TODA la Solicitud de Material (los 3 lotes, aunque sus OC individuales no
@@ -661,6 +668,9 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     // ver PurchaseDocPanel shipping-required), distinto de "0 porque no hubo envío".
     reciboForm.shipping_cost = r.shipping_cost;
     reciboForm.conversion_rate = r.conversion_rate || 1;
+    reciboForm.flete_modo = r.flete_modo || "Lo cobra el proveedor";
+    reciboForm.flete_proveedor = r.flete_proveedor || "";
+    reciboForm.flete_incluye_iva = r.flete_incluye_iva || 0;
   }
   async function crearRecibo() {
     if (!reciboOcSel.value) return;
@@ -673,6 +683,9 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     } catch (e) { showToast(e.message || "Error al crear el recibo", "error"); }
     finally { advancing.value = false; }
   }
+  // Quién cobra el envío del recibo (ver PurchaseDocPanel / api/fletes.py).
+  const fleteRecibo = () => ({ flete_modo: reciboForm.flete_modo || "", flete_proveedor: reciboForm.flete_proveedor || "",
+    flete_incluye_iva: reciboForm.flete_incluye_iva ? 1 : 0 });
   // Solo en moneda extranjera: el tipo de cambio del recibo (ver PurchaseDocPanel).
   const tcRecibo = () => (reciboPr.value && reciboPr.value.currency !== reciboPr.value.company_currency
     ? (Number(reciboForm.conversion_rate) || null) : null);
@@ -685,6 +698,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
         posting_date: reciboForm.posting_date || null, items: JSON.stringify(reciboItems.value),
         shipping_cost: reciboForm.shipping_cost === "" ? null : reciboForm.shipping_cost,
         conversion_rate: tcRecibo(),
+        ...fleteRecibo(),
       });
       await loadRecibo(reciboPr.value.name);
       showToast("Recibo guardado");
@@ -697,6 +711,10 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
       showToast("Captura el costo de envío antes de validar (pon 0 si no hubo)", "error");
       return;
     }
+    if (Number(reciboForm.shipping_cost) > 0 && reciboForm.flete_modo === "Paquetería externa" && !reciboForm.flete_proveedor) {
+      showToast("Indica el proveedor de paquetería que cobró el envío", "error");
+      return;
+    }
     advancing.value = true;
     try {
       // guarda cambios pendientes (cantidades, fecha…) antes de validar -- si no, se
@@ -706,6 +724,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
         posting_date: reciboForm.posting_date || null, items: JSON.stringify(reciboItems.value),
         shipping_cost: reciboForm.shipping_cost,
         conversion_rate: tcRecibo(),
+        ...fleteRecibo(),
       });
       await call("costeo_yelke.api.costeo_api.validar_documento", { doctype: "Purchase Receipt", name: reciboPr.value.name });
       await loadRecibo(reciboPr.value.name);

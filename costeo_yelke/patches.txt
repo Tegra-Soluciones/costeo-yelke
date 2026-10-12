@@ -78,3 +78,4 @@ costeo_yelke.patches.v0_2_53.desglose_tallas_ov
 costeo_yelke.patches.v0_2_54.contacto_companias
 costeo_yelke.patches.v0_2_55.formatos_recepciones_facturas
 costeo_yelke.patches.v0_2_56.oc_cliente_adjunta
+costeo_yelke.patches.v0_2_56.fletes_paqueteria

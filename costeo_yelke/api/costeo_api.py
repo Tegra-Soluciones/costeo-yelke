@@ -2578,7 +2578,10 @@ def get_remision(name: str) -> dict:
         "contact_email": doc.get("contact_email") or "",
         "contact_mobile": doc.get("contact_mobile") or "",
         "flete_proveedor": doc.get("flete_proveedor") or "",
-        "flete_costo": doc.get("flete_costo") or 0,
+        # lo que se capturó (con o sin IVA); flete_costo guarda la base sin IVA
+        "flete_costo": flt(doc.get("flete_importe_capturado")) or doc.get("flete_costo") or 0,
+        "flete_incluye_iva": cint(doc.get("flete_incluye_iva")),
+        "flete_factura": doc.get("flete_factura") or "",
         "flete_journal_entry": doc.get("flete_journal_entry") or "",
         "lote_ref": doc.get("lote_ref") or "",
         "address_options": _party_links("Address", doc.customer, link_doctype="Customer"),
@@ -2599,7 +2602,7 @@ def get_remision(name: str) -> dict:
 
 @frappe.whitelist()
 def actualizar_remision(name: str, posting_date=None, items=None, shipping_address_name=None, customer_address=None,
-                         flete_proveedor=None, flete_costo=None) -> dict:
+                         flete_proveedor=None, flete_costo=None, flete_incluye_iva=None) -> dict:
     """Actualiza fecha, almacén y cantidad de las líneas, y direcciones de envío/facturación
     de una remisión en borrador -- el cliente a veces recibe en una dirección distinta a la
     de facturación."""
@@ -2615,8 +2618,17 @@ def actualizar_remision(name: str, posting_date=None, items=None, shipping_addre
         doc.customer_address = customer_address or None
     if flete_proveedor is not None:
         doc.flete_proveedor = flete_proveedor or None
+    if flete_incluye_iva is not None and doc.meta.get_field("flete_incluye_iva"):
+        doc.flete_incluye_iva = 1 if cint(flete_incluye_iva) else 0
     if flete_costo is not None:
-        doc.flete_costo = flt(flete_costo)
+        # flete_costo = base sin IVA (lo que es gasto); lo capturado se conserva aparte
+        from costeo_yelke.api.fletes import base_sin_iva
+
+        if doc.meta.get_field("flete_importe_capturado"):
+            doc.flete_importe_capturado = flt(flete_costo)
+            doc.flete_costo = base_sin_iva(flete_costo, cint(doc.get("flete_incluye_iva")))
+        else:
+            doc.flete_costo = flt(flete_costo)
     if items is not None:
         rows = json.loads(items) if isinstance(items, str) else items
         by_name = {r.get("name"): r for r in rows}
@@ -3019,11 +3031,24 @@ def validar_remision(name: str) -> dict:
     contable, y -- solo si la Orden de Venta queda completamente entregada (puede haber
     varias remisiones parciales) -- marca el costeo como 'Entregado'."""
     doc = frappe.get_doc("Delivery Note", name)
+    if flt(doc.get("flete_costo")) > 0 and not doc.get("flete_proveedor"):
+        frappe.throw(_("Indica el proveedor de paquetería del envío al cliente."))
     doc.flags.ignore_permissions = True
     doc.submit()
-    je_name = _crear_poliza_flete_remision(doc)
-    if je_name:
-        frappe.db.set_value("Delivery Note", doc.name, "flete_journal_entry", je_name)
+    je_name = None
+    if doc.meta.get_field("flete_factura"):
+        # Factura del transportista (borrador, con IVA y retención) -- ver api/fletes.py.
+        from costeo_yelke.api import fletes
+
+        pi = fletes.crear_factura_flete(doc.company, doc.get("flete_proveedor"), flt(doc.get("flete_costo")),
+                                        fletes.cuenta_gasto_distribucion(doc.company), doc.posting_date,
+                                        doc.doctype, doc.name, _("Envío al cliente"), doc.get("costeo"))
+        if pi:
+            frappe.db.set_value("Delivery Note", doc.name, "flete_factura", pi)
+    else:
+        je_name = _crear_poliza_flete_remision(doc)
+        if je_name:
+            frappe.db.set_value("Delivery Note", doc.name, "flete_journal_entry", je_name)
     costeo = doc.get("costeo")
     if costeo and frappe.db.exists("Costeo", costeo):
         so_name = doc.items[0].against_sales_order if doc.items else None
@@ -3166,7 +3191,17 @@ def get_facturas_compra(costeo: str, sales_order: str = None) -> dict:
         }) if frappe.db.has_column("Subcontracting Order", "lote_ref") else []
         maquila.append(p)
 
-    return {"materiales": materiales, "maquila": maquila}
+    # Facturas de FLETE (proveedores de paquetería) de este costeo -- se crean solas en
+    # borrador al validar el documento con el envío (api/fletes.py); aquí se completan
+    # con el folio del CFDI y sus adjuntos y se validan.
+    fletes = []
+    if frappe.db.has_column("Purchase Invoice", "flete_costeo"):
+        fletes = frappe.get_all(
+            "Purchase Invoice", filters={"flete_costeo": costeo, "es_factura_flete": 1, "docstatus": ["<", 2]},
+            fields=["name", "supplier", "supplier_name", "base_net_total", "grand_total", "docstatus", "status",
+                    "flete_origen_doctype", "flete_origen", "bill_no", "posting_date"],
+            order_by="creation desc")
+    return {"materiales": materiales, "maquila": maquila, "fletes": fletes}
 
 
 def _pinvs_de_oc(po):
@@ -3361,6 +3396,9 @@ def get_factura_compra(name: str) -> dict:
         "company": doc.company,
         "company_currency": _moneda_compania(doc.company),
         "conversion_rate": flt(doc.conversion_rate) or 1.0,
+        "es_factura_flete": cint(doc.get("es_factura_flete")),
+        "flete_origen_doctype": doc.get("flete_origen_doctype") or "",
+        "flete_origen": doc.get("flete_origen") or "",
         "items": [
             {"item_code": r.item_code, "item_name": r.item_name, "qty": r.qty, "uom": r.uom, "rate": r.rate, "amount": r.amount}
             for r in (doc.items or [])
@@ -7508,8 +7546,10 @@ def sub_get_flujo(po: str) -> dict:
             "total_additional_costs": sco.total_additional_costs,
             "per_received": sco.per_received,
             "additional_costs": [
-                {"name": r.name, "description": r.description, "amount": r.amount, "expense_account": r.expense_account,
-                 "proveedor_flete": r.get("proveedor_flete"), "poliza_flete": r.get("poliza_flete")}
+                {"name": r.name, "description": r.description, "amount": flt(r.get("flete_importe_capturado")) or r.amount, "expense_account": r.expense_account,
+                 "proveedor_flete": r.get("proveedor_flete"), "poliza_flete": r.get("poliza_flete"),
+                 "flete_incluye_iva": cint(r.get("flete_incluye_iva")), "factura_flete": r.get("factura_flete"),
+                 "base": flt(r.get("amount"))}
                 for r in (sco.additional_costs or [])
             ],
             "supplied_items": [
@@ -8114,26 +8154,34 @@ def _default_landed_cost_account(company):
     )
 
 
-def _landed_cost_row(company, description, amount, expense_account=None, proveedor_flete=None):
+def _landed_cost_row(company, description, amount, expense_account=None, proveedor_flete=None, incluye_iva=0):
     """Arma una fila de 'Landed Cost Taxes and Charges' (additional_costs de SCO/Stock
     Entry/Subcontracting Receipt) con account_currency/base_amount ya resueltos -- en el
     escritorio de ERPNext esos dos campos los llena JS al capturar la fila; como aquí se
     guarda por API sin pasar por ese JS, hay que fijarlos a mano o el monto se posterga a
     0 en el asiento contable (base_amount queda vacío) y el documento truena al validar
     con 'Debit and Credit not equal'."""
-    amount = flt(amount)
+    from costeo_yelke.api.fletes import base_sin_iva
+
+    capturado = flt(amount)
+    # Al inventario va la BASE sin IVA: el IVA acreditable no es costo (ver api/fletes.py).
+    amount = base_sin_iva(capturado, cint(incluye_iva))
     currency = frappe.get_cached_value("Company", company, "default_currency")
-    return {
+    row = {
         "expense_account": expense_account or _default_landed_cost_account(company),
         "description": description,
         "amount": amount,
         "account_currency": currency,
         "exchange_rate": 1,
         "base_amount": amount,
-        # A quién se le paga el flete -- con esto se genera su póliza al validar
-        # (ver contabilidad.crear_polizas_flete). Campo de patch v0_2_44.
+        # A quién se le paga el flete -- con esto se genera su FACTURA (borrador, con IVA
+        # y retención) al validar (ver api/fletes.py). Campo de patch v0_2_44.
         "proveedor_flete": proveedor_flete or None,
     }
+    if frappe.db.has_column("Landed Cost Taxes and Charges", "flete_incluye_iva"):
+        row["flete_incluye_iva"] = 1 if cint(incluye_iva) else 0
+        row["flete_importe_capturado"] = capturado
+    return row
 
 
 @frappe.whitelist()
@@ -8166,7 +8214,7 @@ def sub_guardar_sco(sco: str, campos=None, costos=None) -> dict:
             amount = flt(r.get("amount"))
             if not (r.get("description") and amount):
                 continue
-            doc.append("additional_costs", _landed_cost_row(doc.company, r.get("description"), amount, r.get("expense_account"), r.get("proveedor_flete")))
+            doc.append("additional_costs", _landed_cost_row(doc.company, r.get("description"), amount, r.get("expense_account"), r.get("proveedor_flete"), r.get("flete_incluye_iva")))
 
     doc.flags.ignore_permissions = True
     doc.save()
@@ -8841,8 +8889,10 @@ def sub_get_transferencia(stock_entry: str) -> dict:
         "distribute_additional_costs_based_on": doc.get("distribute_additional_costs_based_on") or "Qty",
         "total_additional_costs": doc.get("total_additional_costs"),
         "additional_costs": [
-            {"name": r.name, "description": r.description, "amount": r.amount, "expense_account": r.expense_account,
-                 "proveedor_flete": r.get("proveedor_flete"), "poliza_flete": r.get("poliza_flete")}
+            {"name": r.name, "description": r.description, "amount": flt(r.get("flete_importe_capturado")) or r.amount, "expense_account": r.expense_account,
+                 "proveedor_flete": r.get("proveedor_flete"), "poliza_flete": r.get("poliza_flete"),
+                 "flete_incluye_iva": cint(r.get("flete_incluye_iva")), "factura_flete": r.get("factura_flete"),
+                 "base": flt(r.get("amount"))}
             for r in (doc.get("additional_costs") or [])
         ],
     }
@@ -8912,7 +8962,7 @@ def sub_guardar_transferencia(stock_entry: str, from_warehouse=None, to_warehous
             amount = flt(r.get("amount"))
             if not (r.get("description") and amount):
                 continue
-            doc.append("additional_costs", _landed_cost_row(doc.company, r.get("description"), amount, r.get("expense_account"), r.get("proveedor_flete")))
+            doc.append("additional_costs", _landed_cost_row(doc.company, r.get("description"), amount, r.get("expense_account"), r.get("proveedor_flete"), r.get("flete_incluye_iva")))
 
     doc.flags.ignore_permissions = True
     doc.save()
@@ -9799,8 +9849,10 @@ def sub_get_recibo(scr: str) -> dict:
         "distribute_additional_costs_based_on": doc.get("distribute_additional_costs_based_on") or "Qty",
         "total_additional_costs": doc.get("total_additional_costs"),
         "additional_costs": [
-            {"name": r.name, "description": r.description, "amount": r.amount, "expense_account": r.expense_account,
-                 "proveedor_flete": r.get("proveedor_flete"), "poliza_flete": r.get("poliza_flete")}
+            {"name": r.name, "description": r.description, "amount": flt(r.get("flete_importe_capturado")) or r.amount, "expense_account": r.expense_account,
+                 "proveedor_flete": r.get("proveedor_flete"), "poliza_flete": r.get("poliza_flete"),
+                 "flete_incluye_iva": cint(r.get("flete_incluye_iva")), "factura_flete": r.get("factura_flete"),
+                 "base": flt(r.get("amount"))}
             for r in (doc.get("additional_costs") or [])
         ],
     }
@@ -9857,7 +9909,7 @@ def sub_guardar_recibo(scr: str, set_warehouse=None, rejected_warehouse=None, su
             # como si estuviera vacía, o el candado obligatorio de abajo nunca la vería.
             if not r.get("description"):
                 continue
-            doc.append("additional_costs", _landed_cost_row(doc.company, r.get("description"), flt(r.get("amount")), r.get("expense_account"), r.get("proveedor_flete")))
+            doc.append("additional_costs", _landed_cost_row(doc.company, r.get("description"), flt(r.get("amount")), r.get("expense_account"), r.get("proveedor_flete"), r.get("flete_incluye_iva")))
 
     doc.flags.ignore_permissions = True
     doc.save()
@@ -9950,7 +10002,7 @@ def _get_shipping_row_amount(doc):
     return 0
 
 
-def _set_purchase_shipping_row(doc, amount):
+def _set_purchase_shipping_row(doc, amount, incluye_iva=None):
     """Agrega/edita la fila de flete en 'taxes' (Purchase Taxes and Charges),
     identificándola por su descripción para no duplicarla en guardados sucesivos.
     category='Valuation and Total' -> se suma al total a pagar AL PROVEEDOR y además
@@ -9961,19 +10013,33 @@ def _set_purchase_shipping_row(doc, amount):
     envío" tiene que quedar registrado como una respuesta explícita, distinta de
     "todavía nadie lo capturó" (sin fila). Eso es justo lo que usa el candado
     obligatorio del recibo -- ver _envio_capturado_taxes / _validar_envio_capturado_recibo."""
-    amount = flt(amount)
+    from costeo_yelke.api.fletes import base_sin_iva
+
+    capturado = flt(amount)
+    if incluye_iva is None:
+        incluye_iva = doc.get("flete_incluye_iva")
+    # Paquetería externa: el flete NO va en la factura del proveedor del material (lo
+    # cobra el transportista con su propia factura, ver api/fletes.py), solo se suma al
+    # costo del inventario -> "Valuation". Si lo cobra el mismo proveedor, va en su
+    # factura -> "Valuation and Total", como siempre. Al inventario, la base sin IVA.
+    externa = doc.get("flete_modo") == "Paquetería externa"
+    amount = base_sin_iva(capturado, cint(incluye_iva)) if externa else capturado
+    if doc.meta.get_field("flete_importe_capturado"):
+        doc.flete_importe_capturado = capturado
     rows = doc.get("taxes") or []
     existing = next((r for r in rows if r.description == FLETE_DESCRIPTION), None)
     account = _default_landed_cost_account(doc.company)
+    categoria = "Valuation" if externa else "Valuation and Total"
     if existing:
         existing.tax_amount = amount
         existing.account_head = account
+        existing.category = categoria
     else:
         doc.append("taxes", {
             "charge_type": "Actual",
             "account_head": account,
             "description": FLETE_DESCRIPTION,
-            "category": "Valuation and Total",
+            "category": categoria,
             "add_deduct_tax": "Add",
             "tax_amount": amount,
         })
@@ -10145,7 +10211,12 @@ def get_documento_compra(doctype: str, name: str) -> dict:
         # puede distinguir "$0 porque no hubo envío" (respuesta explícita) de "campo
         # vacío" (nadie lo llenó), que es justo lo que no se debe dejar pasar.
         "has_shipping": doctype == "Purchase Receipt",
-        "shipping_cost": flt(_get_shipping_row_amount(doc)) if _envio_capturado_taxes(doc) else None,
+        "shipping_cost": (flt(doc.get("flete_importe_capturado")) or flt(_get_shipping_row_amount(doc)))
+                         if _envio_capturado_taxes(doc) else None,
+        "flete_modo": doc.get("flete_modo") or "",
+        "flete_proveedor": doc.get("flete_proveedor") or "",
+        "flete_incluye_iva": cint(doc.get("flete_incluye_iva")),
+        "factura_flete": doc.get("factura_flete") or "",
         "enviado_el": str(doc.get("enviado_el") or "") if meta.get_field("enviado_el") else "",
         # Doble validación (Enviar -> Revisor -> Aprobador) -- hoy solo Purchase
         # Order (materia prima y subcontratada) tiene estos campos, ver patch
@@ -10177,7 +10248,8 @@ def preview_conversion_uom_oc(item_code: str, qty, conversion_factor_actual, nue
 def guardar_documento_compra(doctype: str, name: str, schedule_date=None, valid_till=None,
                              transaction_date=None, posting_date=None, payment_terms_template=None,
                              tc_name=None, items=None, shipping_cost=None, supplier=None,
-                             currency=None, conversion_rate=None) -> dict:
+                             currency=None, conversion_rate=None, flete_modo=None, flete_proveedor=None,
+                             flete_incluye_iva=None) -> dict:
     """Guarda ediciones de un documento de compra en borrador.
 
     La UDM de línea, y el proveedor del documento completo, solo se pueden cambiar en la
@@ -10308,6 +10380,17 @@ def guardar_documento_compra(doctype: str, name: str, schedule_date=None, valid_
     if doctype == "Purchase Order":
         _validar_sobrecompra_contra_solicitud(doc)
 
+    # Quién cobra el envío: el mismo proveedor (en su factura) o una paquetería externa
+    # (su propia factura con IVA y retención, ver api/fletes.py).
+    if doctype in ("Purchase Order", "Purchase Receipt") and meta.get_field("flete_modo"):
+        if flete_modo is not None:
+            doc.flete_modo = flete_modo or None
+        if flete_proveedor is not None:
+            doc.flete_proveedor = flete_proveedor or None
+        if flete_incluye_iva is not None:
+            doc.flete_incluye_iva = 1 if cint(flete_incluye_iva) else 0
+        if doc.flete_modo != "Paquetería externa":
+            doc.flete_proveedor = None
     if doctype in ("Purchase Order", "Purchase Receipt") and shipping_cost is not None and meta.get_field("taxes"):
         _set_purchase_shipping_row(doc, shipping_cost)
 

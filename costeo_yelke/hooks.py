@@ -188,7 +188,13 @@ doc_events = {
 	},
 	"Purchase Receipt": {
 		"validate": "costeo_yelke.api.contabilidad.validar_recepcion_contra_oc",
-		"before_submit": "costeo_yelke.api.costeo_api.validar_envio_capturado_recibo",
+		"before_submit": [
+			"costeo_yelke.api.costeo_api.validar_envio_capturado_recibo",
+			"costeo_yelke.api.fletes.validar_flete_recibo",
+		],
+		# Envío cobrado por una paquetería externa: su factura de flete (api/fletes.py).
+		"on_submit": "costeo_yelke.api.fletes.factura_flete_recibo",
+		"on_cancel": "costeo_yelke.api.fletes.soltar_factura_flete_recibo",
 	},
 	"Subcontracting Receipt": {
 		"validate": [
@@ -214,6 +220,9 @@ doc_events = {
 		"on_submit": "costeo_yelke.overrides.purchase_order.registrar_precios_oficiales",
 	},
 }
+
+# Remisión cancelada: su factura de flete (borrador) se va con ella (api/fletes.py).
+doc_events.setdefault("Delivery Note", {})["on_cancel"] = "costeo_yelke.api.fletes.soltar_factura_remision"
 
 # Un documento contable/de inventario CANCELADO no se borra: Frappe libera el folio
 # del último de la serie y el siguiente documento lo reutilizaría (ver

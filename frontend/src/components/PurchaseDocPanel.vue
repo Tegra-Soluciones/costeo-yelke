@@ -72,14 +72,46 @@
           <div v-else class="field-input bg-surface-raised/60 truncate">{{ form.tc_name || '—' }}</div>
         </div>
         <div v-if="doc.set_warehouse !== undefined"><label class="field-label">Almacén (aceptado)</label><div class="field-input bg-surface-raised/60 truncate">{{ doc.set_warehouse || (items[0] && items[0].warehouse) || '—' }}</div></div>
-        <div v-if="doc.has_shipping">
-          <label class="field-label">Costo de envío <span v-if="shippingRequired" class="text-red-400">*</span><span v-else class="text-ink-light font-normal">(flete)</span></label>
-          <div v-if="!isValidated" class="flex items-center border rounded-lg focus-within:ring-2 focus-within:ring-brand-500/30 bg-white" :class="shippingRequired && !shippingCaptured ? 'border-red-300 focus-within:border-red-400' : 'border-surface-border focus-within:border-brand-400'">
-            <span class="pl-3 pr-1 text-sm text-ink-light select-none">$</span>
-            <input v-model.number="form.shipping_cost" type="number" min="0" step="0.01" placeholder="0.00" class="flex-1 min-w-0 py-2 pr-3 text-sm focus:outline-none bg-transparent" />
+        <div v-if="doc.has_shipping" class="col-span-2">
+          <!-- Quién cobra el envío: el mismo proveedor del material (va en su factura,
+               como siempre) o una paquetería externa, a la que se le crea su propia
+               factura con IVA acreditable y retención de 4% si aplica (api/fletes.py). -->
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="field-label">Costo de envío <span v-if="shippingRequired" class="text-red-400">*</span><span v-else class="text-ink-light font-normal">(flete)</span></label>
+              <div v-if="!isValidated" class="flex items-center border rounded-lg focus-within:ring-2 focus-within:ring-brand-500/30 bg-white" :class="shippingRequired && !shippingCaptured ? 'border-red-300' : 'border-surface-border'">
+                <span class="pl-3 pr-1 text-sm text-ink-light select-none">$</span>
+                <input v-model.number="form.shipping_cost" type="number" min="0" step="0.01" placeholder="0.00" class="flex-1 min-w-0 py-2 pr-3 text-sm focus:outline-none bg-transparent" />
+              </div>
+              <div v-else class="field-input bg-surface-raised/60">${{ form.shipping_cost || 0 }}</div>
+              <p v-if="shippingRequired && !isValidated" class="text-[11px] text-ink-light mt-1">Obligatorio -- pon 0 si no hubo costo de envío.</p>
+            </div>
+            <div v-if="Number(form.shipping_cost) > 0 || form.flete_modo">
+              <label class="field-label">¿Quién cobra el envío?</label>
+              <select v-if="!isValidated" v-model="form.flete_modo" class="field-input">
+                <option value="Lo cobra el proveedor">El mismo proveedor (en su factura)</option>
+                <option value="Paquetería externa">Una paquetería externa</option>
+              </select>
+              <div v-else class="field-input bg-surface-raised/60">{{ form.flete_modo === "Paquetería externa" ? "Paquetería externa" : "El mismo proveedor" }}</div>
+            </div>
+            <template v-if="form.flete_modo === 'Paquetería externa' && (Number(form.shipping_cost) > 0 || isValidated)">
+              <div>
+                <label class="field-label">Proveedor de paquetería <span class="text-red-400">*</span></label>
+                <LinkInput v-if="!isValidated" v-model="form.flete_proveedor" doctype="Supplier" placeholder="Paquetería / transportista…" :error="!form.flete_proveedor" />
+                <div v-else class="field-input bg-surface-raised/60 truncate">{{ form.flete_proveedor || "—" }}</div>
+              </div>
+              <div class="flex flex-col justify-end">
+                <label class="flex items-center gap-1.5 text-[12px] text-ink-muted mb-2">
+                  <input v-model="form.flete_incluye_iva" type="checkbox" :true-value="1" :false-value="0" :disabled="isValidated" />El costo de envío incluye IVA
+                </label>
+              </div>
+              <p class="col-span-2 text-[11px] text-ink-light -mt-1">
+                Al inventario va {{ baseFlete.toLocaleString("es-MX", { style: "currency", currency: "MXN" }) }} (sin IVA).
+                Al validar el recibo se crea en borrador la factura del proveedor de paquetería con IVA acreditable y, si aplica, retención de 4%; ahí se adjuntan el CFDI y la carta porte.
+                <a v-if="doc.factura_flete" :href="`/app/purchase-invoice/${doc.factura_flete}`" target="_blank" class="text-brand-600 hover:underline">Factura del flete: {{ doc.factura_flete }}</a>
+              </p>
+            </template>
           </div>
-          <div v-else class="field-input bg-surface-raised/60">${{ form.shipping_cost || 0 }}</div>
-          <p v-if="shippingRequired && !isValidated" class="text-[11px] text-ink-light mt-1">Obligatorio -- pon 0 si no hubo costo de envío.</p>
         </div>
       </div>
 
@@ -230,6 +262,11 @@ const props = defineProps({
   puedeAprobar: { type: Boolean, default: true },
 });
 const emit = defineEmits(["save", "validate", "review", "pull-prices", "send", "preview", "shipping-missing"]);
+// Base sin IVA del flete externo (lo que se suma al inventario).
+const baseFlete = computed(() => {
+  const v = Number(props.form.shipping_cost) || 0;
+  return props.form.flete_incluye_iva ? Math.round((v / 1.16) * 100) / 100 : v;
+});
 // Moneda que tendrá el documento al guardar (la elegida o la que ya trae).
 const monedaActual = computed(() => props.form.currency || props.doc?.currency || "");
 const extranjera = computed(() => !!monedaActual.value && !!props.doc?.company_currency && monedaActual.value !== props.doc.company_currency);
