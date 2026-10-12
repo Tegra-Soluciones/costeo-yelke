@@ -177,6 +177,12 @@ doc_events = {
 		"validate": "costeo_yelke.api.bank_account_api.validar",
 		"on_update": "costeo_yelke.api.bank_account_api.sincronizar_proveedor",
 	},
+	# La orden de compra del CLIENTE va adjunta a la OV y es obligatoria para
+	# validarla (v0_2_56). El candado va en el doctype, no solo en la app, para que
+	# tampoco se pueda saltar desde el escritorio de ERPNext.
+	"Sales Order": {
+		"before_submit": "costeo_yelke.api.costeo_api.validar_oc_cliente_adjunta",
+	},
 	"Purchase Receipt": {
 		"validate": "costeo_yelke.api.contabilidad.validar_recepcion_contra_oc",
 		"before_submit": "costeo_yelke.api.costeo_api.validar_envio_capturado_recibo",

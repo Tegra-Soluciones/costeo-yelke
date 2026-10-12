@@ -885,13 +885,18 @@
                   <option v-for="t in cotDefaults.terms" :key="t.name" :value="t.name">{{ t.name }}</option>
                 </select>
 
-                <label class="field-label">OC del Cliente <span class="text-red-500">*</span></label>
+                <label class="field-label">OC del Cliente <span v-if="ocClienteEsArchivo" class="text-red-500">*</span></label>
+                <!-- Con el campo disponible (patch v0_2_56) la OC del cliente es el
+                     ARCHIVO y es obligatoria; en un sitio que todavía no lo corrió se
+                     sigue capturando el número, para no dejar el paso sin el dato. -->
                 <OcClienteAdjunto
+                  v-if="ocClienteEsArchivo"
                   v-model="soForm.oc_cliente_archivo" class="mb-3"
                   :solo-lectura="so.docstatus === 1" :subiendo="ocClienteSubiendo"
                   @archivo="(ev) => subirOcCliente(ev, 'Sales Order', so.name)"
                   @quitar="quitarOcCliente('Sales Order', so.name)"
                 />
+                <input v-else v-model="soForm.po_no" type="text" class="field-input mb-3" :disabled="so.docstatus === 1" placeholder="Número de orden de compra" />
 
                 <label class="field-label">Moneda</label>
                 <select v-model="soForm.currency" class="field-input mb-3" :disabled="so.docstatus === 1">
@@ -1044,13 +1049,15 @@
             <option v-for="t in cotDefaults.terms" :key="t.name" :value="t.name">{{ t.name }}</option>
           </select>
 
-          <label class="field-label">OC del Cliente <span class="text-red-500">*</span></label>
+          <label class="field-label">OC del Cliente <span v-if="ocClienteEsArchivo" class="text-red-500">*</span></label>
           <OcClienteAdjunto
+            v-if="ocClienteEsArchivo"
             v-model="soForm.oc_cliente_archivo" class="mb-3"
             :subiendo="ocClienteSubiendo"
             @archivo="(ev) => subirOcCliente(ev, 'Costeo', docName)"
             @quitar="quitarOcCliente('Costeo', docName)"
           />
+          <input v-else v-model="soForm.po_no" type="text" class="field-input mb-3" placeholder="Número de orden de compra" />
 
           <label class="field-label">Moneda</label>
           <select v-model="soForm.currency" class="field-input mb-3">
@@ -1634,19 +1641,43 @@
 
             <div class="border-t border-surface-border pt-3">
               <div class="prod-head"><span class="prod-title"><svg class="w-4 h-4 text-ink-light" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>Materias primas a comprar <span class="prod-count">{{ planDetail.mr_items.length }}</span></span></div>
-              <div v-for="it in planDetail.mr_items" :key="it.item_code" class="prod-row">
-                <span class="flex-1 min-w-0">
-                  <span class="block truncate font-mono text-[12px]">{{ it.item_code }}</span>
-                  <!-- Consumo por prenda capturado en el costeo, solo informativo: sirve
-                       para comprobar que el total de arriba cuadra. Si dos productos
-                       comparten el material, cada uno trae el suyo. -->
-                  <span v-if="it.consumo && it.consumo.length" class="block text-[11px] truncate"
-                        :class="consumoFueraDelCosteo(it) ? 'text-amber-700' : 'text-ink-light'"
-                        :title="consumoTitulo(it)">{{ consumoTexto(it) }}</span>
-                </span>
-                <span class="text-[13px] whitespace-nowrap">× {{ it.quantity }} {{ it.uom }}</span>
-                <span class="prod-status">{{ it.warehouse }}</span>
+              <!-- Una columna POR PRODUCTO con su consumo por prenda (lo capturado en
+                   el costeo), al lado del total que pide el plan. Es informativo: deja
+                   comprobar de un vistazo que el total cuadra, y con dos productos que
+                   comparten material se ve el renglón de cada uno sin leer un párrafo. -->
+              <div class="overflow-x-auto -mx-4">
+                <table class="p-tbl">
+                  <thead>
+                    <tr>
+                      <th>Material</th>
+                      <th v-for="col in columnasConsumo" :key="col.code" class="text-right whitespace-nowrap">
+                        {{ col.nombre }}<span class="block font-normal text-ink-xlight">por prenda</span>
+                      </th>
+                      <th class="text-right whitespace-nowrap">Total a comprar</th>
+                      <th>Almacén</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="it in planDetail.mr_items" :key="it.item_code">
+                      <td class="font-mono text-[12px]">{{ it.item_code }}</td>
+                      <td v-for="col in columnasConsumo" :key="col.code" class="text-right whitespace-nowrap p-num"
+                          :class="consumoDe(it, col.code)?.origen === 'bom' ? 'text-amber-700' : ''"
+                          :title="consumoTitulo(it)">
+                        <template v-if="consumoDe(it, col.code)">
+                          {{ fmtConsumo(consumoDe(it, col.code)) }}
+                          <span v-if="consumoDe(it, col.code).origen === 'bom'" title="Viene del BOM del producto: este costeo no lo declara, así que su costo no entró en el precio.">*</span>
+                        </template>
+                        <span v-else class="text-ink-xlight">—</span>
+                      </td>
+                      <td class="text-right whitespace-nowrap p-num">× {{ it.quantity }} {{ it.uom }}</td>
+                      <td><span class="prod-status">{{ it.warehouse }}</span></td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
+              <p v-if="planDetail.mr_items.some((x) => consumoFueraDelCosteo(x))" class="text-[11px] text-amber-700 mt-1.5">
+                * Sale del BOM del producto, no del costeo: se compra pero su costo no entró en el precio.
+              </p>
               <p v-if="!planDetail.mr_items.length" class="prod-empty">Sin faltantes (inventario suficiente) o pendiente de obtener.</p>
             </div>
 
@@ -3500,6 +3531,28 @@ async function toggleQuotation(q) {
   applyQuotToForm(q);
   await loadCotItems(q.name);
 }
+/** Las columnas de consumo: un producto terminado por columna. El orden lo manda el
+ *  plan (po_items), que es el mismo del costeo; si algún producto solo aparece en el
+ *  consumo, se agrega al final para no perderlo. */
+const columnasConsumo = computed(() => {
+  const nombres = new Map();
+  for (const it of planDetail.value?.mr_items || []) {
+    for (const c of it.consumo || []) {
+      if (!nombres.has(c.finished_item)) nombres.set(c.finished_item, c.item_name || c.finished_item);
+    }
+  }
+  const orden = (planDetail.value?.po_items || []).map((p) => p.item_code).filter((x) => nombres.has(x));
+  for (const code of nombres.keys()) if (!orden.includes(code)) orden.push(code);
+  return orden.map((code) => ({ code, nombre: nombres.get(code) }));
+});
+/** El consumo de ESE material para ESE producto, o null si no lo lleva. */
+function consumoDe(it, code) {
+  return (it.consumo || []).find((c) => c.finished_item === code) || null;
+}
+function fmtConsumo(c) {
+  return `${Number(c.qty || 0).toLocaleString("es-MX", { maximumFractionDigits: 4 })} ${c.uom || ""}`.trim();
+}
+
 /** Consumo por prenda de un material del plan, para la línea informativa.
  *  Con un solo producto se omite su nombre (sobra); con varios se listan todos,
  *  porque es justo lo que hay que poder comparar. */
@@ -3535,6 +3588,10 @@ function consumoTitulo(it) {
 
 // ── OC del cliente: el archivo, no un número escrito a mano ─────────────────
 const ocClienteSubiendo = ref(false);
+/** ¿Este sitio ya tiene el campo de archivo? Lo dice el backend (patch v0_2_56). Sin
+ *  él la pantalla sigue pidiendo el NÚMERO de OC, como siempre: nunca se queda sin el
+ *  dato por una migración pendiente. */
+const ocClienteEsArchivo = computed(() => !!cotDefaults.oc_cliente_archivo_disponible);
 /** Sube el archivo y lo deja adjunto a `doctype/docname`: la Orden de Venta cuando ya
  *  existe, o el Costeo mientras no -- un adjunto necesita un documento guardado. */
 async function subirOcCliente(ev, doctype, docname) {
@@ -3830,7 +3887,10 @@ const compras = reactive({ materiales: [], maquila: [] });
 const pinvSel = ref(null);
 const pinvDoc = ref(null);
 const pinvForm = reactive({ posting_date: "", due_date: "", bill_no: "", bill_date: "", payment_terms_template: "", tc_name: "" });
-const cotDefaults = reactive({ payment_terms_templates: [], terms: [], users: [], price_lists: [], currencies: [], tax_templates: [] });
+const cotDefaults = reactive({ payment_terms_templates: [], terms: [], users: [], price_lists: [], currencies: [], tax_templates: [],
+  // Lo rellena get_cotizacion_defaults; en falso la OC del cliente se captura como
+  // número (sitio sin el patch v0_2_56).
+  oc_cliente_archivo_disponible: false });
 const prepSteps = ref([]);
 
 const form = reactive({ titulo: "", cliente: "", fecha: today(), compania: "", proyecto: "", guardar_como_plantilla: false, centro_de_costos: "", almacen_materias_primas: "", almacen_trabajo_en_proceso: "" });
@@ -8274,6 +8334,7 @@ async function loadCotDefaults() {
     cotDefaults.payment_terms_templates = r.payment_terms_templates || [];
     cotDefaults.terms = r.terms || [];
     cotDefaults.users = r.users || [];
+    cotDefaults.oc_cliente_archivo_disponible = !!r.oc_cliente_archivo_disponible;
     cotDefaults.price_lists = r.price_lists || [];
     cotDefaults.currencies = r.currencies || [];
     cotDefaults.tax_templates = r.tax_templates || [];

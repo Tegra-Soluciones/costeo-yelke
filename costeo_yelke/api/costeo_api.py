@@ -1997,9 +1997,33 @@ def asignar_documento(doctype: str, name: str, assign_to: str, description: str 
     return {"ok": True, "assigned_to": users}
 
 
+def validar_oc_cliente_adjunta(doc, method=None):
+    """before_submit de Sales Order: sin la orden de compra del CLIENTE adjunta no se
+    valida la orden de venta.
+
+    Va como hook del DOCTYPE y no solo en validar_documento para que tampoco se pueda
+    saltar desde el escritorio de ERPNext: validar_documento es la puerta de la app y
+    ahí el aviso sale antes y mejor redactado, pero el candado de verdad es éste.
+
+    Si el Custom Field todavía no existe (sitio sin el patch v0_2_56) no bloquea nada
+    -- la regla aparece cuando el campo aparece, sin romper sitios a medio migrar.
+    """
+    if not frappe.db.has_column("Sales Order", "oc_cliente_archivo"):
+        return
+    if not (doc.get("oc_cliente_archivo") or "").strip():
+        frappe.throw(_(
+            "Falta adjuntar la orden de compra del cliente en la orden de venta "
+            "(campo 'OC del Cliente'). Sin ella no se puede validar."
+        ), title=_("Falta la OC del cliente"))
+
+
 @frappe.whitelist()
 def get_cotizacion_defaults(company: str = None) -> dict:
-    """Opciones para los campos manuales de la cotización/orden de venta."""
+    """Opciones para los campos manuales de la cotización/orden de venta.
+
+    Incluye `oc_cliente_archivo_disponible`: si el sitio todavía no corrió el patch
+    v0_2_56 el campo no existe, y la pantalla debe seguir mostrando el número de OC
+    de siempre en vez de un adjunto que no se podría guardar."""
     payment_terms = frappe.get_all("Payment Terms Template", fields=["name"], order_by="name asc")
     terms = frappe.get_all("Terms and Conditions", fields=["name"], order_by="name asc")
     users = frappe.get_all(
@@ -2022,6 +2046,8 @@ def get_cotizacion_defaults(company: str = None) -> dict:
     return {
         "payment_terms_templates": payment_terms, "terms": terms, "users": users,
         "price_lists": price_lists, "currencies": currencies, "tax_templates": tax_templates,
+        "oc_cliente_archivo_disponible": bool(
+            frappe.db.has_column("Sales Order", "oc_cliente_archivo")),
     }
 
 
