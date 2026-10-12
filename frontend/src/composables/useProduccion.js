@@ -593,7 +593,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   const reciboOcSel = ref("");
   const reciboPr = ref(null);
   const reciboItems = ref([]);
-  const reciboForm = reactive({ posting_date: "", shipping_cost: null });
+  const reciboForm = reactive({ posting_date: "", shipping_cost: null, conversion_rate: 1 });
   const reciboValidated = computed(() => reciboPr.value?.docstatus === 1);
   // % de avance de materia prima -- ya calculado en el backend contra el total de
   // TODA la Solicitud de Material (los 3 lotes, aunque sus OC individuales no
@@ -660,6 +660,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     // OJO: sin "|| 0" -- null significa "nadie lo ha capturado todavía" (obligatorio,
     // ver PurchaseDocPanel shipping-required), distinto de "0 porque no hubo envío".
     reciboForm.shipping_cost = r.shipping_cost;
+    reciboForm.conversion_rate = r.conversion_rate || 1;
   }
   async function crearRecibo() {
     if (!reciboOcSel.value) return;
@@ -672,6 +673,9 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     } catch (e) { showToast(e.message || "Error al crear el recibo", "error"); }
     finally { advancing.value = false; }
   }
+  // Solo en moneda extranjera: el tipo de cambio del recibo (ver PurchaseDocPanel).
+  const tcRecibo = () => (reciboPr.value && reciboPr.value.currency !== reciboPr.value.company_currency
+    ? (Number(reciboForm.conversion_rate) || null) : null);
   async function guardarRecibo() {
     if (!reciboPr.value) return;
     advancing.value = true;
@@ -680,6 +684,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
         doctype: "Purchase Receipt", name: reciboPr.value.name,
         posting_date: reciboForm.posting_date || null, items: JSON.stringify(reciboItems.value),
         shipping_cost: reciboForm.shipping_cost === "" ? null : reciboForm.shipping_cost,
+        conversion_rate: tcRecibo(),
       });
       await loadRecibo(reciboPr.value.name);
       showToast("Recibo guardado");
@@ -700,6 +705,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
         doctype: "Purchase Receipt", name: reciboPr.value.name,
         posting_date: reciboForm.posting_date || null, items: JSON.stringify(reciboItems.value),
         shipping_cost: reciboForm.shipping_cost,
+        conversion_rate: tcRecibo(),
       });
       await call("costeo_yelke.api.costeo_api.validar_documento", { doctype: "Purchase Receipt", name: reciboPr.value.name });
       await loadRecibo(reciboPr.value.name);

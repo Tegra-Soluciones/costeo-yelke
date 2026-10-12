@@ -22,10 +22,10 @@
           />
           <div v-else class="field-input bg-surface-raised/60 truncate">{{ doc.supplier }}</div>
         </div>
-        <!-- Moneda del proveedor (compras en USD…). El tipo de cambio de la orden es
-             de REFERENCIA: el que cuenta para la contabilidad se captura en la factura.
-             Al guardar con otra moneda, los precios se reexpresan en ella (ver
-             _aplicar_moneda en el backend). -->
+        <!-- Moneda del proveedor (compras en USD…). En la orden y el presupuesto se
+             elige; el recibo la hereda. El tipo de cambio se captura a mano o se toma
+             el de referencia del sistema ("Usar el del sistema"). Al guardar con otra
+             moneda, los precios se reexpresan en ella (ver _aplicar_moneda). -->
         <div v-if="doc.has_currency">
           <label class="field-label">Moneda</label>
           <select v-if="!isValidated" v-model="form.currency" class="field-input">
@@ -34,11 +34,16 @@
           <div v-else class="field-input bg-surface-raised/60">{{ doc.currency }}</div>
           <p v-if="!isValidated && form.currency && form.currency !== doc.currency" class="text-[11px] text-amber-700 mt-1">Al guardar, los precios se convierten a {{ form.currency }}.</p>
         </div>
-        <div v-if="doc.has_currency && form.currency && form.currency !== doc.company_currency">
-          <label class="field-label">Tipo de cambio <span class="text-ink-light font-normal">(referencia · 1 {{ form.currency }} = ? {{ doc.company_currency }})</span></label>
-          <input v-if="!isValidated" v-model.number="form.conversion_rate" type="number" min="0" step="0.0001" class="field-input" :placeholder="form.currency !== doc.currency ? 'Se toma el del día al guardar' : ''" />
+        <div v-else-if="extranjera"><label class="field-label">Moneda</label><div class="field-input bg-surface-raised/60">{{ doc.currency }}</div></div>
+        <div v-if="doc.edita_tipo_cambio && extranjera">
+          <div class="flex items-center justify-between gap-2">
+            <label class="field-label">Tipo de cambio <span class="text-ink-light font-normal">(1 {{ monedaActual }} = ? {{ doc.company_currency }})</span></label>
+            <button v-if="!isValidated" type="button" class="text-[11px] text-brand-600 hover:text-brand-700 mb-1" :disabled="buscandoTc.v" @click="usarTipoCambioSistema">{{ buscandoTc.v ? "Buscando…" : "Usar el del sistema" }}</button>
+          </div>
+          <input v-if="!isValidated" v-model.number="form.conversion_rate" type="number" min="0" step="0.0001" class="field-input" :placeholder="form.currency !== doc.currency ? 'Se toma el del sistema al guardar' : 'Captúralo o usa el del sistema'" />
           <div v-else class="field-input bg-surface-raised/60">{{ doc.conversion_rate }}</div>
-          <p v-if="!isValidated" class="text-[11px] text-ink-light mt-1">El que vale para la contabilidad se captura en la factura.</p>
+          <p v-if="buscandoTc.aviso" class="text-[11px] text-red-600 mt-1">{{ buscandoTc.aviso }}</p>
+          <p v-if="!isValidated" class="text-[11px] text-ink-light mt-1">{{ doc.doctype === "Purchase Receipt" ? "Valúa la entrada al almacén. El que vale para la deuda con el proveedor es el de la factura." : "De referencia: el que vale para la contabilidad es el de la factura." }}</p>
         </div>
         <div v-if="doc.transaction_date"><label class="field-label">Fecha</label><div class="field-input bg-surface-raised/60">{{ doc.transaction_date }}</div></div>
         <div v-if="doc.has_posting_date">
@@ -225,6 +230,23 @@ const props = defineProps({
   puedeAprobar: { type: Boolean, default: true },
 });
 const emit = defineEmits(["save", "validate", "review", "pull-prices", "send", "preview", "shipping-missing"]);
+// Moneda que tendrá el documento al guardar (la elegida o la que ya trae).
+const monedaActual = computed(() => props.form.currency || props.doc?.currency || "");
+const extranjera = computed(() => !!monedaActual.value && !!props.doc?.company_currency && monedaActual.value !== props.doc.company_currency);
+const buscandoTc = reactive({ v: false, aviso: "" });
+/** "Usar el del sistema": el tipo de cambio de referencia de la fecha del documento
+ *  (Currency Exchange / proveedor de ERPNext). Siempre se puede corregir a mano. */
+async function usarTipoCambioSistema() {
+  buscandoTc.v = true;
+  try {
+    const r = await call("costeo_yelke.api.costeo_api.tipo_cambio_referencia", {
+      moneda: monedaActual.value, company: props.doc.company,
+      fecha: props.form.posting_date || props.doc.posting_date || props.doc.transaction_date || null,
+    });
+    buscandoTc.aviso = r.tipo_cambio ? "" : "El sistema no tiene tipo de cambio para esa fecha; captúralo a mano.";
+    if (r.tipo_cambio) props.form.conversion_rate = r.tipo_cambio;
+  } finally { buscandoTc.v = false; }
+}
 // Al cambiar de moneda se suelta el tipo de cambio para que el backend tome el del
 // día (o el que se capture después); al volver a la moneda guardada, regresa el suyo.
 watch(() => props.form.currency, (nueva, vieja) => {

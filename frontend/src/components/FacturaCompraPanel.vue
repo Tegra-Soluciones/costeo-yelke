@@ -32,8 +32,12 @@
           <template v-if="extranjera">
             <div><label class="field-label">Moneda</label><div class="field-input bg-surface-raised/60 mb-3">{{ doc.currency }}</div></div>
             <div>
-              <label class="field-label">Tipo de cambio de la factura <span class="text-ink-light font-normal">(1 {{ doc.currency }} = ? {{ doc.company_currency }})</span></label>
-              <input v-model.number="form.conversion_rate" type="number" min="0" step="0.0001" :disabled="validated" class="field-input mb-3" placeholder="El del DOF de la fecha de la factura" />
+              <div class="flex items-center justify-between gap-2">
+                <label class="field-label">Tipo de cambio de la factura <span class="text-ink-light font-normal">(1 {{ doc.currency }} = ? {{ doc.company_currency }})</span></label>
+                <button v-if="!validated" type="button" class="text-[11px] text-brand-600 hover:text-brand-700 mb-1" :disabled="tc.buscando" @click="usarTipoCambioSistema">{{ tc.buscando ? "Buscando…" : "Usar el del sistema" }}</button>
+              </div>
+              <input v-model.number="form.conversion_rate" type="number" min="0" step="0.0001" :disabled="validated" class="field-input" :class="tc.aviso ? 'mb-1' : 'mb-3'" placeholder="El del CFDI del proveedor" />
+              <p v-if="tc.aviso" class="text-[11px] text-red-600 mb-3">{{ tc.aviso }}</p>
             </div>
           </template>
           <div><label class="field-label">Condiciones de pago</label><select v-model="form.payment_terms_template" :disabled="validated" class="field-input mb-3"><option value="">— Sin plantilla —</option><option v-for="p in paymentTermsOptions" :key="p.name" :value="p.name">{{ p.name }}</option></select></div>
@@ -66,7 +70,8 @@
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, reactive } from "vue";
+import { call } from "@/utils/frappe.js";
 
 const props = defineProps({
   doc: { type: Object, default: null },
@@ -86,5 +91,18 @@ const props = defineProps({
 });
 defineEmits(["crear", "guardar", "validar", "descargar", "imprimir", "ampliar"]);
 const money = (v, moneda) => (Number(v) || 0).toLocaleString("es-MX", { style: "currency", currency: moneda || props.doc?.company_currency || "MXN" });
+const tc = reactive({ buscando: false, aviso: "" });
+/** "Usar el del sistema": tipo de cambio de referencia de la fecha de la factura.
+ *  Lo normal es capturar el del CFDI del proveedor; esto es la alternativa. */
+async function usarTipoCambioSistema() {
+  tc.buscando = true;
+  try {
+    const r = await call("costeo_yelke.api.costeo_api.tipo_cambio_referencia", {
+      moneda: props.doc.currency, company: props.doc.company, fecha: props.form.posting_date || props.doc.posting_date || null,
+    });
+    tc.aviso = r.tipo_cambio ? "" : "El sistema no tiene tipo de cambio para esa fecha; captúralo a mano.";
+    if (r.tipo_cambio) props.form.conversion_rate = r.tipo_cambio;
+  } finally { tc.buscando = false; }
+}
 const extranjera = computed(() => !!props.doc?.currency && !!props.doc?.company_currency && props.doc.currency !== props.doc.company_currency);
 </script>

@@ -3358,6 +3358,7 @@ def get_factura_compra(name: str) -> dict:
         "grand_total": doc.grand_total,
         "base_grand_total": doc.base_grand_total,
         "currency": doc.currency,
+        "company": doc.company,
         "company_currency": _moneda_compania(doc.company),
         "conversion_rate": flt(doc.conversion_rate) or 1.0,
         "items": [
@@ -10038,6 +10039,17 @@ def _tipo_cambio(moneda, moneda_compania, fecha=None):
         return None
 
 
+@frappe.whitelist()
+def tipo_cambio_referencia(moneda: str, company: str, fecha: str = None) -> dict:
+    """El tipo de cambio de referencia del sistema para una fecha: registros de
+    Currency Exchange o el proveedor configurado en ERPNext (frankfurter.app, el del
+    Banco Central Europeo). Es el botón "Usar el del sistema"; capturarlo a mano
+    siempre es posible."""
+    mc = _moneda_compania(company)
+    tc = _tipo_cambio(moneda, mc, fecha)
+    return {"tipo_cambio": tc, "de": moneda, "a": mc, "fecha": fecha or nowdate()}
+
+
 def _aplicar_moneda(doc, moneda, tipo_cambio=None):
     """Cambia la moneda de un documento de compra en borrador conservando su VALOR: los
     precios estaban en la moneda anterior y se reexpresan en la nueva con el tipo de
@@ -10116,6 +10128,10 @@ def get_documento_compra(doctype: str, name: str) -> dict:
         "tc_name": doc.get("tc_name") or "",
         "currency": doc.get("currency"),
         "has_currency": doctype in ("Purchase Order", "Supplier Quotation") and bool(meta.get_field("currency")),
+        # El recibo hereda la moneda de la orden, pero su tipo de cambio se puede
+        # ajustar: con inventario perpetuo es el que valúa la entrada al almacén.
+        "edita_tipo_cambio": doctype in ("Purchase Order", "Supplier Quotation", "Purchase Receipt")
+                             and bool(meta.get_field("conversion_rate")),
         "company_currency": _moneda_compania(doc.get("company")),
         "conversion_rate": flt(doc.get("conversion_rate")) or 1.0,
         "monedas": _monedas_activas() if doctype in ("Purchase Order", "Supplier Quotation") else [],
@@ -10286,6 +10302,8 @@ def guardar_documento_compra(doctype: str, name: str, schedule_date=None, valid_
     # orden y el presupuesto; el recibo y la factura la heredan de la orden.
     if doctype in ("Purchase Order", "Supplier Quotation") and (currency or conversion_rate):
         _aplicar_moneda(doc, currency or doc.currency, conversion_rate)
+    elif doctype == "Purchase Receipt" and conversion_rate:
+        _aplicar_moneda(doc, doc.currency, conversion_rate)  # solo el tipo de cambio
 
     if doctype == "Purchase Order":
         _validar_sobrecompra_contra_solicitud(doc)
