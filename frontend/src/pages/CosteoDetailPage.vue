@@ -2459,6 +2459,12 @@
                     <p class="text-[12.5px] text-ink-muted">Genera el recibo de subcontratación para ingresar a inventario lo que produjo el taller.</p>
                   </div>
                   <template v-else>
+                    <TiraRecibos
+                      v-if="(scoSel?.receipts || []).length"
+                      :recibos="scoSel.receipts" :activo="scr?.name"
+                      :completo="scoSel.estado_recibos?.recibido_completo" :pendiente="scoSel.estado_recibos?.pendiente_recibir"
+                      @abrir="(n) => loadScr(n)"
+                    />
                     <div class="bg-white rounded-xl border border-surface-border p-4">
                       <div class="flex items-center justify-between mb-3">
                         <div class="flex items-center gap-2.5">
@@ -2829,6 +2835,15 @@
 
         <!-- Recibo de compra -->
         <div v-else-if="panelProv.tab === 'recibo'">
+          <!-- El proveedor puede entregar por partes: un recibo por entrega. La tira
+               dice cuántos van, cuál se está viendo y cuánto falta (ver
+               estado_recibos_oc en el backend). -->
+          <TiraRecibos
+            v-if="grpPanelProv?.po?.receipts?.length"
+            :recibos="grpPanelProv.po.receipts" :activo="reciboPr?.name"
+            :completo="grpPanelProv.po.recibido_completo" :pendiente="grpPanelProv.po.pendiente_recibir"
+            @abrir="(n) => loadRecibo(n)"
+          />
           <PurchaseDocPanel
             v-if="reciboPr" sin-acciones
             :doc="reciboPr" :items="reciboItems" :form="reciboForm"
@@ -3203,6 +3218,7 @@ import ProductionProgressBar from "@/components/ProductionProgressBar.vue";
 import PurchaseDocPanel from "@/components/PurchaseDocPanel.vue";
 import ReporteFinalPanel from "@/components/ReporteFinalPanel.vue";
 import OcClienteAdjunto from "@/components/OcClienteAdjunto.vue";
+import TiraRecibos from "@/components/TiraRecibos.vue";
 import OrdenManufacturaForm from "@/components/OrdenManufacturaForm.vue";
 import OmGeneralEditor from "@/components/OmGeneralEditor.vue";
 import OmTallerView from "@/components/OmTallerView.vue";
@@ -4044,7 +4060,7 @@ const {
   selectOC, selectOcLote, selectRfq, selectSq, guardarDocCompra, validarDocCompra, revisarDocCompra, jalarPreciosOC,
   permisosValidacion, loadPermisosValidacion,
   reciboPr, reciboItems, reciboForm,
-  selectReciboLote, guardarRecibo, validarRecibo,
+  selectReciboLote, nuevoReciboLote, loadRecibo, guardarRecibo, validarRecibo,
   subOcs, subPo, subItems, subForm, subValidated, validarOcsTallerPendientes,
   loadSubcontratos, crearSubcontratos, selectSub, guardarSub, validarSub, revisarSub,
   flujo, scoActivo, scoSel, scoValidated, materialesSco, piezasSco, serviciosSco, importeSco, scoForm, scoCostos, selectSco,
@@ -4052,7 +4068,7 @@ const {
   transDoc, transForm, transCostos, transValidated, transferDone, transferirMaterial, guardarTrans, validarTransferencia, enviarMaterialTaller,
   talleresSaldo, devolverMaterialTaller,
   addCostoTrans, removeCostoTrans,
-  scr, scrForm, scrCostos, scrValidated, crearReciboSub, guardarScr, validarScr,
+  scr, scrForm, scrCostos, scrValidated, crearReciboSub, loadScr, guardarScr, validarScr,
   addCostoScr, removeCostoScr,
   lotesProduccion, productosCosteo, loteActivoRef, loteParadaActiva, nuevoLoteForm,
   loteActivo, paradaActiva, tracksLote, paradaEstado,
@@ -4562,8 +4578,10 @@ const envSecciones = computed(() => {
     for (const po of l.material_pos || []) {
       if (po.docstatus === 1 && !po.receipt_validated) {
         entradas.push({ estado: "wait", titulo: `${po.supplier_name || po.supplier}`,
-          meta: `${l.lote_ref} · ${po.name}${po.receipt ? ` · recibo ${po.receipt.name} en borrador` : ""}`,
-          pill: { estado: po.receipt ? "wait" : "off", texto: po.receipt ? "Por validar" : "Por recibir" },
+          meta: `${l.lote_ref} · ${po.name}` + (po.receipt?.docstatus === 0 ? ` · recibo ${po.receipt.name} en borrador`
+            : po.recibido_parcial ? ` · ${po.receipts.length} recibo(s), faltan ${fmtCantidad(po.pendiente_recibir)}` : ""),
+          pill: po.receipt?.docstatus === 0 ? { estado: "wait", texto: "Por validar" }
+            : po.recibido_parcial ? { estado: "wait", texto: "Parcial" } : { estado: "off", texto: "Por recibir" },
           ir: () => irProduccion({ vista: "lote", lote: l.lote_ref, paso: "materia" }) });
       } else if (po.receipt_validated) {
         historial.push({ estado: "ok", titulo: `Recibo de compra ${po.receipt.name}`,
@@ -4581,8 +4599,10 @@ const envSecciones = computed(() => {
             pill: { estado: "now", texto: "Por enviar" }, ir: destino });
         } else if (e.transfer_done && !e.receipt_validated) {
           regresos.push({ estado: "wait", titulo: `${pa.supplier} · ${pa.titulo}`,
-            meta: `${l.lote_ref} · ${e.sco} · material ya en el taller`,
-            pill: { estado: "wait", texto: "Por recibir" }, ir: destino });
+            meta: `${l.lote_ref} · ${e.sco} · ` + (e.recibido_parcial
+              ? `${(e.receipts || []).length} recibo(s), faltan ${fmtCantidad(e.pendiente_recibir)}`
+              : "material ya en el taller"),
+            pill: { estado: "wait", texto: e.recibido_parcial ? "Parcial" : "Por recibir" }, ir: destino });
         } else if (e.receipt_validated) {
           historial.push({ estado: "ok", titulo: `Recibo de maquila ${e.receipt?.name || ""}`,
             meta: `${l.lote_ref} · ${pa.supplier} · ${pa.titulo}`,
@@ -5169,7 +5189,7 @@ const pasosPanelProv = computed(() => {
     rfq: "", sq: "",
     oc: "",
     recibo: po?.docstatus === 1 ? "" : "Primero valida la orden de compra",
-    factura: po?.receipt_validated ? "" : "Primero valida el recibo de compra",
+    factura: po?.hay_recibo_validado ? "" : "Primero valida el recibo de compra",
   };
   return caminoProveedor(grp, { conOpcionales: true }).map((x) => {
     const permitido = x.clave === "factura" ? puedeVer("facturas") : puedeVer("materia") || puedeVer("envios");
@@ -5255,8 +5275,15 @@ const accionesPanelProv = computed(() => {
     return [sec("Guardar", guardarPinv), pri("Validar factura", validarFacturaInline)];
   }
   if (panelProv.tab === "recibo") {
-    // Recibo ya validado: lo que sigue es la factura del proveedor.
+    // Recibo ya validado: si la orden todavía tiene pendiente (entrega parcial), se
+    // puede registrar otro recibo con lo que falta; la factura ya se puede hacer con
+    // lo recibido hasta ahora.
     if (reciboPr.value && Number(reciboPr.value.docstatus) === 1) {
+      const po = grpPanelProv.value?.po;
+      if (po?.puede_nuevo_recibo) {
+        return [accionPasarA("recibo"), pri(`Registrar otro recibo · faltan ${fmtCantidad(po.pendiente_recibir)}`,
+          () => nuevoReciboLote(po))].filter(Boolean).map((a, i, arr) => (arr.length > 1 && i === 0 ? { ...a, tipo: "secundaria" } : a));
+      }
       return [accionPasarA("recibo")].filter(Boolean);
     }
     if (!reciboPr.value) {
@@ -5333,6 +5360,12 @@ async function validarReciboYSeguir() {
   if (Number(reciboPr.value?.docstatus) !== 1) return;
   await loadLotesProduccion();
   await nextTick();
+  // Entrega parcial: se queda en el recibo, donde está "Registrar otro recibo".
+  const po = grpPanelProv.value?.po;
+  if (po?.puede_nuevo_recibo) {
+    showToast(`Entrega parcial registrada · faltan ${fmtCantidad(po.pendiente_recibir)} por recibir`);
+    return;
+  }
   await irPasoProveedor("factura", { forzar: true });
 }
 
@@ -5538,6 +5571,8 @@ function pasosDeCelda(c) {
 // centro, una línea que explica por qué el botón está como está.
 const sec = (texto, accion, extra = {}) => ({ texto, tipo: "secundaria", accion, ...extra });
 const pri = (texto, accion, extra = {}) => ({ texto, tipo: "primaria", accion, ...extra });
+/** Cantidad corta para avisos ("1,250" o "217.5"). */
+const fmtCantidad = (n) => Number(n || 0).toLocaleString("es-MX", { maximumFractionDigits: 3 });
 
 /** Lote siguiente al activo (para el "Siguiente: Lote N →" del último paso). */
 const loteSiguiente = computed(() => {
@@ -5826,6 +5861,13 @@ function barraDocTaller() {
         estado: faltanCostos ? { color: "wait", texto: "Costos adicionales obligatorios (pon 0 si no hubo)" }
                              : { color: "wait", texto: `Recibo ${scr.value.name} en borrador` },
         acciones: [sec("Guardar", guardarScr), pri("Validar recibo", onValidarScr)] };
+    }
+    // Recibo validado pero el taller todavía debe piezas: entrega por partes.
+    const est = scoSel.value?.estado_recibos;
+    if (est?.puede_nuevo_recibo) {
+      return { atras,
+        estado: { color: "wait", texto: `Entrega parcial: faltan ${fmtCantidad(est.pendiente_recibir)} por recibir` },
+        acciones: [pri(`Registrar otro recibo · faltan ${fmtCantidad(est.pendiente_recibir)}`, () => crearReciboSub(true))] };
     }
   }
   return null;
@@ -6310,7 +6352,10 @@ async function toggleLoteDoc(lote, grp, tab, { crear = false } = {}) {
     // cuando lo pidió el botón.
     if (grp.po?.docstatus === 1 && (grp.po.receipt || crear)) await selectReciboLote(grp.po);
   } else if (tab === "factura") {
-    if (grp.po?.receipt?.name) await abrirFacturaFuente("Purchase Receipt", grp.po.receipt.name, grp.supplier);
+    // Con varios recibos, la factura junta todos los validados sin facturar (ver
+    // crear_factura_compra): cualquiera de ellos sirve de punto de partida.
+    const fuente = grp.po?.ultimo_recibo_validado || grp.po?.receipt?.name;
+    if (fuente) await abrirFacturaFuente("Purchase Receipt", fuente, grp.supplier);
   }
 }
 

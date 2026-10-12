@@ -631,6 +631,21 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     } catch (e) { showToast(e.message || "Error", "error"); }
     finally { advancing.value = false; }
   }
+  /** "Registrar otro recibo": el proveedor entregó por partes. El backend crea uno
+   *  nuevo solo con lo pendiente, y se niega si hay un borrador abierto o si ya se
+   *  recibió todo (ver crear_recibo_oc). */
+  async function nuevoReciboLote(po) {
+    if (!po?.name) return;
+    advancing.value = true;
+    try {
+      const r = await call("costeo_yelke.api.costeo_api.crear_recibo_oc", { po: po.name, nuevo: 1 });
+      reciboOcSel.value = po.name;
+      await loadLotesProduccion();
+      if (r.name) await loadRecibo(r.name);
+      showToast("Recibo nuevo con lo que falta por recibir");
+    } catch (e) { showToast(e.message || "No se pudo crear el recibo", "error"); }
+    finally { advancing.value = false; }
+  }
   async function loadRecibo(pr) {
     const r = await call("costeo_yelke.api.costeo_api.get_documento_compra", { doctype: "Purchase Receipt", name: pr });
     reciboPr.value = r;
@@ -855,7 +870,9 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     scoForm.shipping_address = s.shipping_address || "";
     scoForm.distribute_additional_costs_based_on = s.distribute_additional_costs_based_on || "Qty";
     scoCostos.value = (s.additional_costs || []).map((c) => ({ ...c }));
-    if ((s.receipts || []).length) { await loadScr(s.receipts[0].name); }
+    // Con varios recibos se abre el borrador, o si no hay, el último validado.
+    const abrir = s.estado_recibos?.receipt?.name || (s.receipts || [])[(s.receipts || []).length - 1]?.name;
+    if (abrir) { await loadScr(abrir); }
     else { scr.value = null; }
     const te = (s.transfer?.entries || []);
     const target = te.find((e) => e.docstatus === 0) || te[te.length - 1];
@@ -1003,14 +1020,17 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     finally { advancing.value = false; }
   }
 
-  async function crearReciboSub() {
+  /** `nuevo`: otro recibo del mismo encargo (el taller entrega por partes), solo
+   *  con lo pendiente -- ver sub_crear_recibo. */
+  async function crearReciboSub(nuevo = false) {
     if (!scoSel.value) return;
     advancing.value = true;
     try {
-      const r = await call("costeo_yelke.api.costeo_api.sub_crear_recibo", { sco: scoSel.value.name });
+      const r = await call("costeo_yelke.api.costeo_api.sub_crear_recibo", { sco: scoSel.value.name, nuevo: nuevo === true ? 1 : 0 });
       await loadFlujo(subPo.value.name);
       if (r.scr) await loadScr(r.scr);
-      showToast("Recibo de subcontratación creado");
+      if (nuevo === true) await loadLotesProduccion();
+      showToast(nuevo === true ? "Recibo nuevo con lo que falta por entregar" : "Recibo de subcontratación creado");
     } catch (e) { showToast(e.message || "No se pudo crear el recibo", "error"); }
     finally { advancing.value = false; }
   }
@@ -2038,7 +2058,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     permisosValidacion, loadPermisosValidacion,
     // recibo de compra
     reciboOcs, reciboOcSel, reciboPr, reciboItems, reciboForm, reciboValidated,
-    loadRecibos, selectReciboOc, selectReciboLote, loadRecibo, crearRecibo, guardarRecibo, validarRecibo,
+    loadRecibos, selectReciboOc, selectReciboLote, nuevoReciboLote, loadRecibo, crearRecibo, guardarRecibo, validarRecibo,
     // subcontratación
     subOcs, subSel, subPo, subItems, subForm, subValidated, subHasRate, subDone,
     loadSubcontratos, crearSubcontratos, selectSub, loadSub, guardarSub, validarSub, revisarSub,

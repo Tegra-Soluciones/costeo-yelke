@@ -3269,6 +3269,28 @@ def crear_factura_compra(source_doctype: str, source_name: str) -> dict:
             if facturas:
                 return {"name": facturas[-1].name, "docstatus": facturas[-1].docstatus}
 
+    # Materia prima recibida en VARIAS entregas: una factura junta todos los recibos
+    # validados de la OC que aún no se facturan (mapeo nativo recibo -> factura,
+    # encadenado). Un borrador abierto de cualquiera de ellos se reutiliza.
+    if source_doctype == "Purchase Receipt":
+        po = frappe.db.get_value("Purchase Receipt Item", {"parent": source_name}, "purchase_order")
+        if po:
+            recibos = [r["name"] for r in estado_recibos_oc(po)["receipts"] if r["docstatus"] == 1]
+            borrador = frappe.db.get_value(
+                "Purchase Invoice Item", {"purchase_receipt": ["in", recibos or [""]], "docstatus": 0}, "parent")
+            if borrador:
+                return {"name": borrador}
+            sin_facturar = [r for r in recibos if flt(frappe.db.get_value("Purchase Receipt", r, "per_billed")) < 100]
+            if sin_facturar:
+                from erpnext.stock.doctype.purchase_receipt.purchase_receipt import make_purchase_invoice as _pr_a_pi
+                pinv = None
+                for r in sin_facturar:
+                    pinv = _pr_a_pi(r, target_doc=pinv)
+                pinv.flags.ignore_permissions = True
+                pinv.flags.ignore_mandatory = True
+                pinv.insert()
+                return {"name": pinv.name, "docstatus": pinv.docstatus}
+
     existing = frappe.db.get_value("Purchase Invoice Item", {field: source_name, "docstatus": ["<", 2]}, "parent")
     if existing:
         return {"name": existing}
@@ -6196,6 +6218,7 @@ def get_recibos(plan: str) -> dict:
             o["receipts"] = list(dict.fromkeys(
                 frappe.get_all("Purchase Receipt Item", filters={"purchase_order": o.name}, pluck="parent")
             ))
+            o["estado_recibos"] = estado_recibos_oc(o.name)
             ocs.append(o)
 
     # % de avance de materia prima recibida -- ponderado por el precio del COSTEO
@@ -6237,30 +6260,96 @@ def get_recibos(plan: str) -> dict:
     return {"ocs": ocs, "pct_recibido": pct_recibido_mp}
 
 
+# ── Recibos parciales ────────────────────────────────────────────────────────
+# Una OC (materia prima) o un encargo a taller (Subcontracting Order) se puede
+# recibir en VARIAS entregas: el proveedor manda por partes. ERPNext ya lo soporta
+# (cada recibo nuevo se arma solo con lo pendiente y lleva received_qty en la OC);
+# la app lo controla con dos candados:
+#   · un solo recibo en BORRADOR a la vez -- si hay uno abierto se regresa ese;
+#   · con todo recibido ya no se crea otro (se avisa, no se duplica).
+# "Recibido completo" -- y no "hay un recibo validado" -- es lo que marca el paso
+# Recibo como hecho en toda la pantalla (receipt_validated en get_lotes_produccion).
+
+_TOL_RECIBO = 1e-6
+
+
+def _pendiente_por_recibir(items):
+    """Cantidad total que falta por recibir de los renglones de una OC o encargo
+    (qty contra received_qty, que ERPNext lleva solo con recibos VALIDADOS)."""
+    return sum(max(flt(r.qty) - flt(r.received_qty), 0) for r in items)
+
+
+def _recibos_de(doctype_recibo, campo, origen):
+    """Recibos (no cancelados) de una OC o encargo, del más viejo al más nuevo:
+    [{name, docstatus, posting_date, qty}]."""
+    item_dt = doctype_recibo + " Item"
+    padres = list(dict.fromkeys(frappe.get_all(item_dt, filters={campo: origen, "docstatus": ["<", 2]},
+                                               pluck="parent", order_by="creation asc")))
+    if not padres:
+        return []
+    filas = frappe.get_all(doctype_recibo, filters={"name": ["in", padres], "docstatus": ["<", 2]},
+                           fields=["name", "docstatus", "posting_date", "total_qty"], order_by="creation asc")
+    return [{"name": f.name, "docstatus": f.docstatus, "qty": flt(f.total_qty),
+             "posting_date": str(f.posting_date) if f.posting_date else ""} for f in filas]
+
+
+def _estado_recibos(recibos, pendiente):
+    """Resumen para la pantalla. ``receipt`` es el que se abre al entrar al paso: el
+    borrador si hay uno, si no el último validado."""
+    borrador = next((r for r in recibos if r["docstatus"] == 0), None)
+    validados = [r for r in recibos if r["docstatus"] == 1]
+    completo = bool(validados) and pendiente <= _TOL_RECIBO and not borrador
+    return {
+        "receipts": recibos,
+        "receipt": borrador or (validados[-1] if validados else None),
+        "receipt_validated": completo,
+        "recibido_completo": completo,
+        "recibido_parcial": bool(validados) and not completo,
+        "pendiente_recibir": round(pendiente, 6),
+        "hay_recibo_validado": bool(validados),
+        "ultimo_recibo_validado": validados[-1]["name"] if validados else None,
+        "puede_nuevo_recibo": not borrador and pendiente > _TOL_RECIBO,
+    }
+
+
+def estado_recibos_oc(po):
+    items = frappe.get_all("Purchase Order Item", filters={"parent": po}, fields=["qty", "received_qty"])
+    return _estado_recibos(_recibos_de("Purchase Receipt", "purchase_order", po), _pendiente_por_recibir(items))
+
+
+def estado_recibos_sco(sco):
+    items = frappe.get_all("Subcontracting Order Item", filters={"parent": sco}, fields=["qty", "received_qty"])
+    return _estado_recibos(_recibos_de("Subcontracting Receipt", "subcontracting_order", sco),
+                           _pendiente_por_recibir(items))
+
+
 @frappe.whitelist()
-def crear_recibo_oc(po: str) -> dict:
-    """Crea el Recibo de Compra desde la OC (entrada a inventario), poniendo el almacén
-    de materias primas del costeo y asegurando los impuestos de compra (IVA). Si ya
-    existe un recibo (borrador o validado) para esta OC lo regresa en vez de crear uno
-    duplicado -- se dispara solo al validar la OC, así que debe ser segura de llamar
-    más de una vez."""
+def crear_recibo_oc(po: str, nuevo=0) -> dict:
+    """Recibo de Compra de la OC (entrada a inventario), con el almacén de materias
+    primas del costeo y los impuestos de compra (IVA).
+
+    Sin ``nuevo`` (lo que se dispara solo al validar la OC y al abrir el paso) es
+    idempotente: regresa el borrador abierto o el último recibo, y solo crea el
+    primero. Con ``nuevo=1`` ("Registrar otro recibo") crea uno más por lo PENDIENTE,
+    siempre que no haya un borrador abierto ni esté ya todo recibido."""
     requiere_vista("materia", "envios")
     po_doc = frappe.get_doc("Purchase Order", po)
     if po_doc.docstatus != 1:
         frappe.throw(_("Valida la orden de compra primero."))
 
-    existing_names = frappe.get_all("Purchase Receipt Item", filters={"purchase_order": po}, pluck="parent")
-    if existing_names:
-        existing = frappe.get_all(
-            "Purchase Receipt", filters={"name": ["in", existing_names], "docstatus": ["<", 2]},
-            fields=["name"], order_by="creation desc", limit=1,
-        )
-        if existing:
-            return {"ok": True, "name": existing[0]["name"]}
+    est = estado_recibos_oc(po)
+    if est["receipt"] and est["receipt"]["docstatus"] == 0:
+        return {"ok": True, "name": est["receipt"]["name"]}
+    if est["receipts"] and not cint(nuevo):
+        return {"ok": True, "name": est["receipt"]["name"]}
+    if est["pendiente_recibir"] <= _TOL_RECIBO:
+        frappe.throw(_("La orden {0} ya se recibió completa: no hay nada pendiente por recibir.").format(po))
 
     from erpnext.buying.doctype.purchase_order.purchase_order import make_purchase_receipt
 
-    pr = make_purchase_receipt(po)
+    pr = make_purchase_receipt(po)  # solo trae lo pendiente de cada renglón
+    if not pr.items:
+        frappe.throw(_("La orden {0} ya no tiene nada pendiente por recibir.").format(po))
     costeo = po_doc.get("costeo")
     wh = frappe.db.get_value("Costeo", costeo, "almacen_materias_primas") if costeo else None
     if wh:
@@ -6273,6 +6362,31 @@ def crear_recibo_oc(po: str) -> dict:
     pr.flags.ignore_mandatory = True
     pr.insert()
     return {"ok": True, "name": pr.name}
+
+
+@frappe.whitelist()
+def get_estado_recibos(doctype: str, name: str) -> dict:
+    """Estado de recibos de una OC ("Purchase Order") o encargo ("Subcontracting Order")."""
+    if doctype == "Subcontracting Order":
+        return estado_recibos_sco(name)
+    return estado_recibos_oc(name)
+
+
+def _quitar_renglones_en_cero(doc):
+    """En un recibo PARCIAL lo que no llegó se deja en 0: esos renglones se quitan
+    (ERPNext no acepta renglones en cero). Si todos quedan en cero, se avisa."""
+    quedan = [it for it in doc.items if flt(it.qty) > 0 or flt(it.get("rejected_qty")) > 0]
+    if not quedan:
+        frappe.throw(_("Captura la cantidad que llegó en al menos un renglón."))
+    if len(quedan) != len(doc.items):
+        doc.set("items", quedan)
+        for i, it in enumerate(doc.items, 1):
+            it.idx = i
+    for it in doc.items:
+        # recibido = aceptado + rechazado; si no se ajusta, ERPNext rechaza el recibo
+        # al cambiar la cantidad aceptada.
+        if it.meta.get_field("received_qty"):
+            it.received_qty = flt(it.qty) + flt(it.get("rejected_qty"))
 
 
 _OM_GENERAL = ["om_modelo", "om_tela", "om_color", "om_color_principal", "om_forro", "om_combinacion",
@@ -6724,18 +6838,11 @@ def get_lotes_produccion(plan: str) -> dict:
         order_by="creation asc",
     ) if frappe.db.has_column("Purchase Order", "lote_ref") else []
     for p in material_pos:
-        rnames = frappe.get_all("Purchase Receipt Item", filters={"purchase_order": p["name"]}, pluck="parent")
-        receipt = None
-        if rnames:
-            r = frappe.get_all(
-                "Purchase Receipt", filters={"name": ["in", rnames]},
-                fields=["name", "docstatus"], order_by="creation desc", limit=1,
-            )
-            receipt = r[0] if r else None
-        p["receipt"] = receipt
-        p["receipt_validated"] = bool(receipt and receipt["docstatus"] == 1)
+        # Puede tener VARIOS recibos (el proveedor entrega por partes, ver
+        # estado_recibos_oc): receipt_validated = recibido COMPLETO.
+        p.update(estado_recibos_oc(p["name"]))
         # Factura de compra de lo recibido (borrador o validada).
-        p["factura"] = _factura_de_recepciones(set(rnames))
+        p["factura"] = _factura_de_recepciones({r["name"] for r in p["receipts"]})
     material_pos_by_lote = {}
     for p in material_pos:
         material_pos_by_lote.setdefault(p["lote_ref"], []).append(p)
@@ -6852,15 +6959,9 @@ def get_lotes_produccion(plan: str) -> dict:
         s["transfer_done"] = bool(frappe.db.exists("Stock Entry", {
             "subcontracting_order": s["name"], "purpose": "Send to Subcontractor", "docstatus": 1,
         }))
-        scr_names = frappe.get_all(
-            "Subcontracting Receipt Item", filters={"subcontracting_order": s["name"]}, pluck="parent"
-        )
-        scr = frappe.get_all(
-            "Subcontracting Receipt", filters={"name": ["in", scr_names or [""]]},
-            fields=["name", "docstatus"], order_by="creation desc", limit=1,
-        ) if scr_names else []
-        s["receipt"] = scr[0] if scr else None
-        s["receipt_validated"] = bool(scr and scr[0]["docstatus"] == 1)
+        # Varios recibos por encargo (el taller entrega por partes, ver
+        # estado_recibos_sco): receipt_validated = recibido COMPLETO.
+        s.update(estado_recibos_sco(s["name"]))
         s["facturado"], s["factura"] = (_estado_factura_sco(s["name"], s["purchase_order"], factura_po_cache)
                                         if s["receipt_validated"] else (False, None))
 
@@ -6994,6 +7095,9 @@ def get_lotes_produccion(plan: str) -> dict:
                 "transfer_done": s["transfer_done"],
                 "receipt": s["receipt"],
                 "receipt_validated": s["receipt_validated"],
+                "receipts": s.get("receipts") or [],
+                "recibido_parcial": s.get("recibido_parcial", False),
+                "pendiente_recibir": s.get("pendiente_recibir", 0),
             } for s in scos_parada]
 
             productos_parada = []
@@ -7418,6 +7522,7 @@ def sub_get_flujo(po: str) -> dict:
                      frappe.db.get_value("Subcontracting Receipt", p, ["name", "docstatus", "status"])))
             for p in scr_parents
         ]
+        entry["estado_recibos"] = estado_recibos_sco(sco.name)
         out["scos"].append(entry)
 
     return out
@@ -8788,18 +8893,28 @@ def sub_validar_transferencia(stock_entry: str) -> dict:
 
 
 @frappe.whitelist()
-def sub_crear_recibo(sco: str) -> dict:
-    """Crea el Subcontracting Receipt (borrador) para recibir el producto terminado del taller."""
+def sub_crear_recibo(sco: str, nuevo=0) -> dict:
+    """Subcontracting Receipt (borrador) para recibir lo que entregó el taller. Igual
+    que crear_recibo_oc: sin ``nuevo`` regresa el borrador o el último recibo (y solo
+    crea el primero); con ``nuevo=1`` crea otro por lo PENDIENTE del encargo -- el
+    taller entrega por partes -- mientras no haya borrador abierto ni esté todo
+    recibido."""
     requiere_vista("talleres", "envios")
     from erpnext.subcontracting.doctype.subcontracting_order.subcontracting_order import make_subcontracting_receipt
 
     if frappe.db.get_value("Subcontracting Order", sco, "docstatus") != 1:
         frappe.throw(_("Valida la orden de subcontratación primero."))
-    existing = frappe.db.get_value("Subcontracting Receipt Item", {"subcontracting_order": sco, "docstatus": ["<", 2]}, "parent")
-    if existing:
-        return {"ok": True, "scr": existing}
+    est = estado_recibos_sco(sco)
+    if est["receipt"] and est["receipt"]["docstatus"] == 0:
+        return {"ok": True, "scr": est["receipt"]["name"]}
+    if est["receipts"] and not cint(nuevo):
+        return {"ok": True, "scr": est["receipt"]["name"]}
+    if est["pendiente_recibir"] <= _TOL_RECIBO:
+        frappe.throw(_("El encargo {0} ya se recibió completo: no hay nada pendiente por recibir.").format(sco))
 
-    scr = make_subcontracting_receipt(sco)
+    scr = make_subcontracting_receipt(sco)  # solo trae lo pendiente
+    if not scr.items:
+        frappe.throw(_("El encargo {0} ya no tiene nada pendiente por recibir.").format(sco))
     scr.flags.ignore_permissions = True
     scr.flags.ignore_mandatory = True
     scr.insert()
@@ -9689,6 +9804,7 @@ def sub_guardar_recibo(scr: str, set_warehouse=None, rejected_warehouse=None, su
                 it.warehouse = r.get("warehouse")
             if r.get("rejected_warehouse"):
                 it.rejected_warehouse = r.get("rejected_warehouse")
+        _quitar_renglones_en_cero(doc)
 
     if distribute_additional_costs_based_on and doc.meta.get_field("distribute_additional_costs_based_on"):
         doc.distribute_additional_costs_based_on = distribute_additional_costs_based_on
@@ -10066,6 +10182,9 @@ def guardar_documento_compra(doctype: str, name: str, schedule_date=None, valid_
                 qty_entera = math.ceil(flt(it.qty) - 1e-6)
                 if abs(qty_entera - flt(it.qty)) > 1e-6:
                     it.qty = qty_entera
+
+    if doctype == "Purchase Receipt" and items:
+        _quitar_renglones_en_cero(doc)
 
     if doctype == "Purchase Order":
         _validar_sobrecompra_contra_solicitud(doc)
