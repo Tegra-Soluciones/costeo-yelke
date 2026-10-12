@@ -1,26 +1,48 @@
 <template>
   <div v-if="open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" @click.self="$emit('cancel')">
     <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-5">
-      <p class="text-sm font-semibold text-ink">Múltiplos de compra</p>
+      <p class="text-sm font-semibold text-ink">UDM y múltiplos de compra</p>
       <p class="text-[12px] text-ink-muted mt-0.5 mb-4">
-        Así les llama Yelke a las conversiones de unidad de este artículo (ej. Mazo,
-        Gruesa, Pieza) -- <span class="font-mono">{{ itemCode }}</span>.
+        "Múltiplos" es como Yelke le llama a las conversiones de unidad de este
+        artículo (ej. Mazo, Gruesa, Pieza) -- <span class="font-mono">{{ itemCode }}</span>.
+        Aquí se corrigen los factores, se marca cuáles se compran en paquete completo
+        y se agregan los que falten.
       </p>
 
       <div class="mb-4">
-        <label class="field-label mb-1.5">Ya tiene dado de alta</label>
+        <label class="field-label mb-1.5">UDM dadas de alta</label>
         <div v-if="loading" class="text-xs text-ink-light">Cargando…</div>
-        <ul v-else class="space-y-1">
-          <li v-for="u in existentes" :key="u.uom" class="flex items-center justify-between text-[12.5px] bg-surface-raised rounded-lg px-3 py-1.5">
-            <span class="font-medium text-ink flex items-center gap-1.5">
-              {{ u.uom }}
-              <span v-if="u.compra_por_paquete_completo" class="text-[10px] font-semibold text-amber-700 bg-amber-100 rounded-full px-1.5 py-0.5" title="No se puede pedir una fracción -- se redondea hacia arriba al comprar">paquete completo</span>
-            </span>
-            <span class="text-ink-muted">
-              {{ u.uom === stockUom ? "UDM base" : `1 ${u.uom} = ${fmt(u.conversion_factor)} ${stockUom}` }}
-            </span>
+        <ul v-else class="space-y-1.5">
+          <li v-for="(u, i) in existentes" :key="u.uom" class="bg-surface-raised rounded-lg px-3 py-2">
+            <div class="flex items-center gap-2 text-[12.5px]">
+              <span class="font-medium text-ink flex-1 min-w-0 truncate">
+                {{ u.uom }}<span v-if="u.uom === stockUom" class="ml-1 text-[10px] font-semibold text-ink-muted">UDM base</span>
+              </span>
+              <!-- La UDM base no tiene factor que editar: es 1 por definición. -->
+              <span v-if="u.uom === stockUom" class="text-ink-muted text-[11.5px]">factor 1</span>
+              <template v-else>
+                <span class="text-[11px] text-ink-light whitespace-nowrap">1 {{ u.uom }} =</span>
+                <input
+                  v-model.number="u.conversion_factor" type="number" min="0.0000001" step="any"
+                  class="w-28 border border-surface-border rounded-lg px-2 py-1 text-[12.5px] text-right bg-white focus:outline-none"
+                />
+                <span class="text-[11px] text-ink-light whitespace-nowrap">{{ stockUom }}</span>
+                <button
+                  type="button" title="Quitar este múltiplo"
+                  class="h-6 w-6 flex items-center justify-center text-ink-muted hover:bg-red-50 hover:text-red-500 rounded-lg shrink-0"
+                  @click="existentes.splice(i, 1)"
+                >✕</button>
+              </template>
+            </div>
+            <label class="flex items-center gap-1.5 text-[11.5px] text-ink-muted mt-1">
+              <input v-model="u.compra_por_paquete_completo" type="checkbox" class="rounded" />
+              Se compra en paquetes completos (no se puede pedir una fracción — se redondea hacia arriba)
+            </label>
           </li>
         </ul>
+        <p class="text-[11px] text-ink-light mt-1.5">
+          Cambiar un factor afecta a lo que se capture de aquí en adelante: los documentos ya validados conservan la cantidad con la que se guardaron.
+        </p>
       </div>
 
       <div class="mb-3">
@@ -111,9 +133,15 @@ watch(() => props.open, (isOpen) => {
 
 async function onConfirm() {
   const validos = nuevos.filter((r) => r.uom && r.conversion_factor > 0);
-  if (!validos.length) { errorMsg.value = "Indica la UOM y el factor de al menos un múltiplo nuevo."; return; }
+  // Ya no hace falta agregar nada: se puede abrir solo para corregir un factor o
+  // marcar el check de una UDM que ya existía (el caso de los artículos dados de
+  // alta antes de que el check existiera).
+  const aMedias = nuevos.find((r) => (r.uom && !(r.conversion_factor > 0)) || (!r.uom && r.conversion_factor > 0));
+  if (aMedias) { errorMsg.value = "Al múltiplo nuevo le falta la UOM o el factor — complétalo o quítalo de la lista."; return; }
+  const sinFactor = existentes.value.find((e) => e.uom !== stockUom.value && !(e.conversion_factor > 0));
+  if (sinFactor) { errorMsg.value = `El factor de ${sinFactor.uom} tiene que ser mayor que cero.`; return; }
   const yaExiste = validos.find((r) => existentes.value.some((e) => e.uom === r.uom));
-  if (yaExiste) { errorMsg.value = `${yaExiste.uom} ya está dado de alta -- bórralo de la lista de abajo si quieres cambiar su factor.`; return; }
+  if (yaExiste) { errorMsg.value = `${yaExiste.uom} ya está dado de alta — corrige su factor arriba en vez de agregarlo otra vez.`; return; }
 
   saving.value = true;
   errorMsg.value = "";
@@ -125,7 +153,7 @@ async function onConfirm() {
     await call("costeo_yelke.api.item_api.save_item_uoms", {
       item_code: props.itemCode, uoms: JSON.stringify(todos),
     });
-    emit("saved", validos[validos.length - 1].uom);
+    emit("saved", validos.length ? validos[validos.length - 1].uom : null);
   } catch (e) {
     errorMsg.value = e.message || "No se pudo guardar";
   } finally {

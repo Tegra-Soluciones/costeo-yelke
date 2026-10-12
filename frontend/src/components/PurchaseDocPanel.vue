@@ -67,6 +67,16 @@
             <td class="py-1.5 pr-2 font-mono text-[12px]">
               {{ it.item_code }}
               <span v-if="it._piezas > 1" class="ml-1.5 font-sans text-[11px] text-ink-muted">· {{ it._piezas }} piezas</span>
+              <!-- Corregir la UDM del ARTÍCULO sin salir de la orden: el factor de un
+                   múltiplo o el check de "paquete completo". Es dato maestro, así que
+                   se ofrece aunque la orden ya esté validada (arregla lo que sigue,
+                   no esta orden). -->
+              <button
+                v-if="!agrupaPiezas" type="button"
+                class="block mt-0.5 font-sans text-[11px] text-brand-600 hover:text-brand-700"
+                title="Corregir las unidades de medida de este artículo: factores de conversión y si se compra en paquete completo"
+                @click="abrirMultiploCompra(it)"
+              >UDM y múltiplos…</button>
             </td>
             <td class="py-1.5 pr-2"><input v-if="!isValidated && editableQty && !agrupaPiezas" v-model.number="it.qty" type="number" min="0" class="field-input text-right" /><span v-else class="block text-right">{{ it.qty }}</span></td>
             <td class="py-1.5 pr-2">
@@ -320,9 +330,12 @@ async function onSupplierChange(nuevoSupplier) {
   }
 }
 
-// "+ Agregar múltiplo de compra" (ver LinkInput extra-action-label) -- abre el
-// modal para dar de alta una conversión de UDM que se le haya pasado al artículo,
-// sin salir de la OC. Al guardar, esa línea se queda seleccionada en la UDM nueva.
+// Abre el modal de UDM del artículo sin salir de la orden -- desde el botón "UDM y
+// múltiplos…" de la línea o desde "+ Agregar múltiplo de compra" del selector de UDM
+// (ver LinkInput extra-action-label). Sirve para dar de alta una conversión que se le
+// haya pasado al artículo, corregir el factor de una existente o marcar el check de
+// "se compra en paquete completo" -- el que les falta a los artículos dados de alta
+// antes de que ese check existiera. Al guardar, la línea se recalcula.
 const multiploModal = reactive({ open: false, itemCode: "", row: null });
 function abrirMultiploCompra(row) {
   multiploModal.itemCode = row.item_code;
@@ -334,7 +347,9 @@ function onMultiploGuardado(nuevaUom) {
   // Siempre recalcula, aunque la fila ya estuviera en esta misma UDM -- lo que
   // cambió es el FACTOR del múltiplo (ej. el usuario lo corrigió), no el nombre
   // de la UDM, así que el atajo de onUomChange no debe aplicar aquí.
-  if (multiploModal.row) aplicarPreviewUom(multiploModal.row, nuevaUom);
+  // `nuevaUom` viene vacía cuando solo se corrigieron factores o checks: entonces la
+  // línea se queda en su UDM y se recalcula contra el factor ya corregido.
+  if (multiploModal.row) aplicarPreviewUom(multiploModal.row, nuevaUom || multiploModal.row.uom);
   multiploModal.open = false;
 }
 </script>

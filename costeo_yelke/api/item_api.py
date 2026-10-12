@@ -671,7 +671,13 @@ def _asegurar_allowance_si_paquete(doc, uoms_rows):
 
 @frappe.whitelist()
 def save_item_uoms(item_code, uoms):
-    """Replace the UOM conversion table (Item.uoms child) for an item.
+    """Reescribe las UDM de un artículo: la tabla de conversiones (Item.uoms) y la
+    marca de paquete completo de su UDM de almacén (Item.compra_por_paquete_completo).
+
+    Recibe la lista COMPLETA, no un delta: lo que no venga se borra. Sirve igual para
+    agregar un múltiplo nuevo, corregir el factor de uno existente o marcar/desmarcar
+    el check de "paquete completo" -- incluido el de la UDM base, que es el que les
+    faltó a los artículos dados de alta antes de que el check existiera.
 
     Cada fila puede traer `compra_por_paquete_completo` (opcional, default False) --
     ver UOM Conversion Detail.compra_por_paquete_completo / costeo_api.
@@ -689,12 +695,21 @@ def save_item_uoms(item_code, uoms):
     doc.uoms = []
     for row in uoms:
         uom = row.get("uom") or ""
-        factor = float(row.get("conversion_factor") or 1)
-        if uom and uom != doc.stock_uom:
-            doc.append("uoms", {
-                "uom": uom, "conversion_factor": factor,
-                "compra_por_paquete_completo": 1 if row.get("compra_por_paquete_completo") else 0,
-            })
+        if not uom:
+            continue
+        if uom == doc.stock_uom:
+            # La UDM de almacén no tiene renglón propio en la tabla de conversiones
+            # (su factor es 1 por definición), así que su marca de "paquete completo"
+            # vive en el ARTÍCULO -- ver costeo_api._es_compra_por_paquete. Sin esta
+            # rama el check de la UDM base se podía marcar en pantalla y no se
+            # guardaba nunca: es el caso de los productos que se dieron de alta antes
+            # de que el check existiera.
+            doc.compra_por_paquete_completo = 1 if row.get("compra_por_paquete_completo") else 0
+            continue
+        doc.append("uoms", {
+            "uom": uom, "conversion_factor": float(row.get("conversion_factor") or 1),
+            "compra_por_paquete_completo": 1 if row.get("compra_por_paquete_completo") else 0,
+        })
     _asegurar_allowance_si_paquete(doc, uoms)
 
     doc.flags.ignore_permissions = True
