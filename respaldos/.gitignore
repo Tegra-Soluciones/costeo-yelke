@@ -1,0 +1,5 @@
+# El volcado de los ejemplos trae datos comerciales reales (clientes, proveedores,
+# precios, facturas). Vive solo en disco y en el respaldo de base de datos; los
+# scripts de al lado si se versionan.
+capacitacion-*.json
+capacitacion-*.txt
