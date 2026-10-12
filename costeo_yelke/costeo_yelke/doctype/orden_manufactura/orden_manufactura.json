@@ -17,7 +17,6 @@
   "om_combinacion",
   "om_ubicacion",
   "om_aberturas",
-  "om_fecha_requerida",
   "om_bordado",
   "om_estampado",
   "om_sublimado",
@@ -101,11 +100,6 @@
    "label": "Aberturas"
   },
   {
-   "fieldname": "om_fecha_requerida",
-   "fieldtype": "Date",
-   "label": "Fecha requerida"
-  },
-  {
    "fieldname": "om_bordado",
    "fieldtype": "Check",
    "label": "Bordado"
@@ -183,7 +177,7 @@
   }
  ],
  "links": [],
- "modified": "2026-10-05 00:00:00.000000",
+ "modified": "2026-10-12 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Costeo Yelke",
  "name": "Orden Manufactura",

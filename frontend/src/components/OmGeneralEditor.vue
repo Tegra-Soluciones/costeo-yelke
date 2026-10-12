@@ -35,7 +35,6 @@
             <div><label class="field-label">Combinación</label><input v-model="form.general.om_combinacion" :disabled="disabled" class="field-input" /></div>
             <div><label class="field-label">Ubicación</label><input v-model="form.general.om_ubicacion" :disabled="disabled" class="field-input" /></div>
             <div><label class="field-label">Aberturas</label><input v-model.number="form.general.om_aberturas" type="number" min="0" :disabled="disabled" class="field-input" /></div>
-            <div><label class="field-label">Fecha requerida</label><input v-model="form.general.om_fecha_requerida" type="date" :disabled="disabled" class="field-input" /></div>
           </div>
           <div class="flex items-center gap-4 mt-2 text-[13px]">
             <label v-for="c in checks" :key="c.f" class="flex items-center gap-1.5"><input type="checkbox" v-model="form.general[c.f]" :true-value="1" :false-value="0" :disabled="disabled" class="accent-brand-500" />{{ c.label }}</label>

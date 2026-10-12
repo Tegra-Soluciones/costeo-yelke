@@ -21,8 +21,11 @@ from costeo_yelke.api import tallas_lote
 from costeo_yelke.api.costeo_api import _om_decode_tables, _om_encode_tables, get_om
 from costeo_yelke.roles import requiere_vista
 
+# La fecha requerida NO va aquí: la ficha de manufactura es una sola para todo el
+# costeo y la fecha de entrega es de cada encargo (Subcontracting Order.schedule_date,
+# capturada al abrir el lote), así que en la ficha solo podía estar mal o repetida.
 GENERAL = ["om_modelo", "om_tela", "om_color", "om_color_principal", "om_forro", "om_combinacion",
-           "om_ubicacion", "om_aberturas", "om_fecha_requerida", "om_bordado", "om_estampado",
+           "om_ubicacion", "om_aberturas", "om_bordado", "om_estampado",
            "om_sublimado", "om_reflejante"]
 
 
@@ -184,7 +187,7 @@ def _om_doc(costeo, producto):
 def _serializar(om):
     if not om:
         return None
-    general = {f: (str(om.get(f)) if f == "om_fecha_requerida" and om.get(f) else om.get(f)) for f in GENERAL}
+    general = {f: om.get(f) for f in GENERAL}
     return {
         "name": om.name,
         "general": general,

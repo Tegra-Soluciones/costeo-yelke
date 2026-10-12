@@ -51,13 +51,10 @@ const campos = [
   { f: "om_modelo", label: "Modelo" }, { f: "om_tela", label: "Tela" }, { f: "om_color", label: "Color" },
   { f: "om_color_principal", label: "Color principal" }, { f: "om_forro", label: "Forro" },
   { f: "om_combinacion", label: "Combinación" }, { f: "om_ubicacion", label: "Ubicación" },
-  { f: "om_aberturas", label: "Aberturas" }, { f: "om_fecha_requerida", label: "Fecha requerida" },
+  { f: "om_aberturas", label: "Aberturas" },
 ];
-function valor(g, f) {
-  const v = g[f];
-  if (f === "om_fecha_requerida" && v) { const [y, m, d] = String(v).slice(0, 10).split("-"); return `${d}/${m}/${y}`; }
-  return v;
-}
+// La fecha requerida ya no vive en la ficha: es de cada encargo al taller.
+function valor(g, f) { return g[f]; }
 const marcas = (g) => [["om_bordado", "Bordado"], ["om_estampado", "Estampado"], ["om_sublimado", "Sublimado"], ["om_reflejante", "Reflejante"]]
   .filter(([f]) => Number(g[f])).map(([, l]) => l).join(", ");
 const esImagen = (u) => /\.(png|jpe?g|gif|webp|svg|bmp)(\?.*)?$/i.test(u || "");
