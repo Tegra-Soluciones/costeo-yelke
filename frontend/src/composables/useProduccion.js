@@ -112,7 +112,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
 
   const docCompra = ref(null);
   const docCompraItems = ref([]);
-  const docCompraForm = reactive({ schedule_date: "", valid_till: "", payment_terms_template: "", tc_name: "", shipping_cost: 0, supplier: "" });
+  const docCompraForm = reactive({ schedule_date: "", valid_till: "", payment_terms_template: "", tc_name: "", shipping_cost: 0, supplier: "", currency: "", conversion_rate: 1 });
   const docCompraValidated = computed(() => docCompra.value?.docstatus === 1);
   const docCompraHasRate = computed(() => docCompraItems.value.some((i) => i.has_rate));
   const ocSelected = ref("");
@@ -497,6 +497,8 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     docCompraForm.tc_name = r.tc_name || "";
     docCompraForm.shipping_cost = r.shipping_cost || 0;
     docCompraForm.supplier = r.supplier || "";
+    docCompraForm.currency = r.currency || "";
+    docCompraForm.conversion_rate = r.conversion_rate || 1;
     previewKey.value++;
   }
   async function selectOC(po) { ocSelected.value = po; advancing.value = true; try { await loadDocCompra("Purchase Order", po); } finally { advancing.value = false; } }
@@ -518,6 +520,8 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
         items: JSON.stringify(docCompraItems.value),
         shipping_cost: docCompra.value.has_shipping ? (docCompraForm.shipping_cost || 0) : null,
         supplier: docCompraForm.supplier || null,
+        currency: docCompra.value.has_currency ? (docCompraForm.currency || null) : null,
+        conversion_rate: docCompra.value.has_currency && docCompraForm.currency !== docCompra.value.company_currency ? (Number(docCompraForm.conversion_rate) || null) : null,
       });
       await loadDocCompra(docCompra.value.doctype, docCompra.value.name);
       showToast("Guardado");
@@ -537,6 +541,8 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
         items: JSON.stringify(docCompraItems.value),
         shipping_cost: docCompra.value.has_shipping ? (docCompraForm.shipping_cost || 0) : null,
         supplier: docCompraForm.supplier || null,
+        currency: docCompra.value.has_currency ? (docCompraForm.currency || null) : null,
+        conversion_rate: docCompra.value.has_currency && docCompraForm.currency !== docCompra.value.company_currency ? (Number(docCompraForm.conversion_rate) || null) : null,
       });
       await call("costeo_yelke.api.costeo_api.validar_documento", { doctype: docCompra.value.doctype, name: docCompra.value.name });
       const poName = docCompra.value.doctype === "Purchase Order" ? docCompra.value.name : null;

@@ -3354,8 +3354,12 @@ def get_factura_compra(name: str) -> dict:
         "payment_terms_template": doc.payment_terms_template,
         "tc_name": doc.tc_name,
         "base_net_total": doc.base_net_total,
+        "net_total": doc.net_total,
         "grand_total": doc.grand_total,
+        "base_grand_total": doc.base_grand_total,
         "currency": doc.currency,
+        "company_currency": _moneda_compania(doc.company),
+        "conversion_rate": flt(doc.conversion_rate) or 1.0,
         "items": [
             {"item_code": r.item_code, "item_name": r.item_name, "qty": r.qty, "uom": r.uom, "rate": r.rate, "amount": r.amount}
             for r in (doc.items or [])
@@ -3365,7 +3369,7 @@ def get_factura_compra(name: str) -> dict:
 
 @frappe.whitelist()
 def actualizar_factura_compra(name: str, posting_date=None, due_date=None, bill_no=None, bill_date=None,
-                              payment_terms_template=None, tc_name=None) -> dict:
+                              payment_terms_template=None, tc_name=None, conversion_rate=None) -> dict:
     """Actualiza los datos manuales de una factura de compra en borrador."""
     requiere_vista("facturas")
     doc = frappe.get_doc("Purchase Invoice", name)
@@ -3383,6 +3387,10 @@ def actualizar_factura_compra(name: str, posting_date=None, due_date=None, bill_
     doc.payment_terms_template = payment_terms_template or None
     doc.tc_name = tc_name or None
     doc.terms = resolver_terminos(tc_name)
+    # Factura en moneda extranjera: el tipo de cambio que vale es el de la factura
+    # (el del DOF de su fecha), capturado a mano.
+    if doc.currency != _moneda_compania(doc.company) and flt(conversion_rate) > 0:
+        doc.conversion_rate = flt(conversion_rate)
     doc.flags.ignore_permissions = True
     doc.save()
     return {"name": doc.name}
@@ -10004,6 +10012,58 @@ def validar_envio_capturado_recibo(doc, method=None):
             frappe.throw(_("Registra al menos un costo adicional antes de validar el recibo (pon 0 si no hubo)."))
 
 
+# ── Moneda y tipo de cambio de las compras ──────────────────────────────────
+# Compras a proveedores en USD (u otra moneda): la orden se captura en la moneda del
+# proveedor con un tipo de cambio de REFERENCIA (el del día, editable); el que vale
+# para la contabilidad es el de la FACTURA, que se captura a mano (el del DOF de su
+# fecha). ERPNext ya lleva todo lo demás (importes en moneda de la compañía, etc.).
+
+def _monedas_activas():
+    return frappe.get_all("Currency", filters={"enabled": 1}, fields=["name", "symbol"], order_by="name asc")
+
+
+def _moneda_compania(company):
+    return frappe.get_cached_value("Company", company, "default_currency") if company else None
+
+
+def _tipo_cambio(moneda, moneda_compania, fecha=None):
+    """Tipo de cambio moneda -> moneda de la compañía (registros de Currency Exchange
+    o, si está configurado, el proveedor externo de ERPNext). None si no hay."""
+    if not moneda or moneda == moneda_compania:
+        return 1.0
+    try:
+        from erpnext.setup.utils import get_exchange_rate
+        return flt(get_exchange_rate(moneda, moneda_compania, fecha or nowdate(), "for_buying")) or None
+    except Exception:
+        return None
+
+
+def _aplicar_moneda(doc, moneda, tipo_cambio=None):
+    """Cambia la moneda de un documento de compra en borrador conservando su VALOR: los
+    precios estaban en la moneda anterior y se reexpresan en la nueva con el tipo de
+    cambio (así un precio del costeo en MXN se ve ya en USD y solo se ajusta al del
+    proveedor). Sin cambio de moneda, solo actualiza el tipo de cambio si se mandó."""
+    mc = _moneda_compania(doc.company)
+    if not moneda or not doc.meta.get_field("currency"):
+        return
+    fecha = doc.get("transaction_date") or doc.get("posting_date")
+    if moneda == doc.currency:
+        if moneda != mc and flt(tipo_cambio) > 0:
+            doc.conversion_rate = flt(tipo_cambio)
+        return
+    anterior = flt(doc.get("conversion_rate")) or 1.0
+    nuevo = 1.0 if moneda == mc else (flt(tipo_cambio) or _tipo_cambio(moneda, mc, fecha))
+    if not nuevo:
+        frappe.throw(_("No hay tipo de cambio registrado de {0} a {1} para el {2}. Captúralo en el documento.")
+                     .format(moneda, mc, formatdate(fecha)))
+    doc.currency = moneda
+    doc.conversion_rate = nuevo
+    for it in doc.get("items") or []:
+        for campo in ("rate", "price_list_rate"):
+            if it.meta.get_field(campo) and flt(it.get(campo)):
+                it.set(campo, flt(it.get(campo)) * anterior / nuevo)
+
+
 @frappe.whitelist()
 def get_documento_compra(doctype: str, name: str) -> dict:
     """Detalle genérico de un documento de compra (OC / RFQ / Presupuesto de proveedor)."""
@@ -10055,6 +10115,10 @@ def get_documento_compra(doctype: str, name: str) -> dict:
         "has_tc": bool(meta.get_field("tc_name")),
         "tc_name": doc.get("tc_name") or "",
         "currency": doc.get("currency"),
+        "has_currency": doctype in ("Purchase Order", "Supplier Quotation") and bool(meta.get_field("currency")),
+        "company_currency": _moneda_compania(doc.get("company")),
+        "conversion_rate": flt(doc.get("conversion_rate")) or 1.0,
+        "monedas": _monedas_activas() if doctype in ("Purchase Order", "Supplier Quotation") else [],
         "grand_total": doc.get("grand_total"),
         "contact_email": doc.get("contact_email") or "",
         "contact_mobile": doc.get("contact_mobile") or "",
@@ -10096,7 +10160,8 @@ def preview_conversion_uom_oc(item_code: str, qty, conversion_factor_actual, nue
 @frappe.whitelist()
 def guardar_documento_compra(doctype: str, name: str, schedule_date=None, valid_till=None,
                              transaction_date=None, posting_date=None, payment_terms_template=None,
-                             tc_name=None, items=None, shipping_cost=None, supplier=None) -> dict:
+                             tc_name=None, items=None, shipping_cost=None, supplier=None,
+                             currency=None, conversion_rate=None) -> dict:
     """Guarda ediciones de un documento de compra en borrador.
 
     La UDM de línea, y el proveedor del documento completo, solo se pueden cambiar en la
@@ -10204,7 +10269,8 @@ def guardar_documento_compra(doctype: str, name: str, schedule_date=None, valid_
             if doctype == "Purchase Order" and (uom_changed or supplier_changed):
                 precio = _precio_para_oc(it.item_code, doc.supplier, doc.company, costeo=costeo, uom=it.uom)
                 if precio is not None:
-                    it.rate = flt(precio)
+                    # el precio de referencia está en moneda de la compañía
+                    it.rate = flt(precio) / (flt(doc.get("conversion_rate")) or 1.0)
             # Red de seguridad: no se puede pedir una fracción de paquete completo
             # (Mazo/Gruesa/Pieza...) -- normalmente ya llega entero desde mr_crear_oc,
             # pero un cambio de UDM o una captura a mano podrían dejarlo fraccionado.
@@ -10215,6 +10281,11 @@ def guardar_documento_compra(doctype: str, name: str, schedule_date=None, valid_
 
     if doctype == "Purchase Receipt" and items:
         _quitar_renglones_en_cero(doc)
+
+    # Moneda del proveedor (USD…) y su tipo de cambio de referencia -- solo en la
+    # orden y el presupuesto; el recibo y la factura la heredan de la orden.
+    if doctype in ("Purchase Order", "Supplier Quotation") and (currency or conversion_rate):
+        _aplicar_moneda(doc, currency or doc.currency, conversion_rate)
 
     if doctype == "Purchase Order":
         _validar_sobrecompra_contra_solicitud(doc)

@@ -3954,7 +3954,7 @@ const reporteLoading = ref(false);
 const compras = reactive({ materiales: [], maquila: [] });
 const pinvSel = ref(null);
 const pinvDoc = ref(null);
-const pinvForm = reactive({ posting_date: "", due_date: "", bill_no: "", bill_date: "", payment_terms_template: "", tc_name: "" });
+const pinvForm = reactive({ posting_date: "", due_date: "", bill_no: "", bill_date: "", payment_terms_template: "", tc_name: "", conversion_rate: 1 });
 const cotDefaults = reactive({ payment_terms_templates: [], terms: [], users: [], price_lists: [], currencies: [], tax_templates: [],
   // Lo rellena get_cotizacion_defaults; en falso la OC del cliente se captura como
   // número (sitio sin el patch v0_2_56).
@@ -7691,6 +7691,7 @@ async function loadPinv(name) {
     pinvForm.posting_date = r.posting_date || ""; pinvForm.due_date = r.due_date || "";
     pinvForm.bill_no = r.bill_no || ""; pinvForm.bill_date = r.bill_date || "";
     pinvForm.payment_terms_template = r.payment_terms_template || ""; pinvForm.tc_name = r.tc_name || "";
+    pinvForm.conversion_rate = r.conversion_rate || 1;
     ensurePrintFmt("Purchase Invoice"); previewKey.value++;
   } catch { /* ignore */ }
 }
@@ -7702,6 +7703,7 @@ async function guardarPinv() {
       name: pinvDoc.value.name, posting_date: pinvForm.posting_date || null, due_date: pinvForm.due_date || null,
       bill_no: pinvForm.bill_no || "", bill_date: pinvForm.bill_date || null,
       payment_terms_template: pinvForm.payment_terms_template || null, tc_name: pinvForm.tc_name || null,
+      conversion_rate: Number(pinvForm.conversion_rate) || null,
     });
     await loadPinv(pinvDoc.value.name);
     showToast("Factura de compra guardada");

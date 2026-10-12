@@ -27,11 +27,21 @@
           <div><label class="field-label">Folio del proveedor (factura)</label><input v-model="form.bill_no" :disabled="validated" class="field-input mb-3" placeholder="Nº de factura del proveedor" /></div>
           <div><label class="field-label">Fecha de factura</label><input v-model="form.posting_date" type="date" :disabled="validated" class="field-input mb-3" /></div>
           <div><label class="field-label">Vencimiento</label><input v-model="form.due_date" type="date" :disabled="validated" class="field-input mb-3" /></div>
+          <!-- Factura en moneda extranjera: el tipo de cambio de la FACTURA (el del DOF
+               de su fecha) es el que vale para la contabilidad; se captura a mano. -->
+          <template v-if="extranjera">
+            <div><label class="field-label">Moneda</label><div class="field-input bg-surface-raised/60 mb-3">{{ doc.currency }}</div></div>
+            <div>
+              <label class="field-label">Tipo de cambio de la factura <span class="text-ink-light font-normal">(1 {{ doc.currency }} = ? {{ doc.company_currency }})</span></label>
+              <input v-model.number="form.conversion_rate" type="number" min="0" step="0.0001" :disabled="validated" class="field-input mb-3" placeholder="El del DOF de la fecha de la factura" />
+            </div>
+          </template>
           <div><label class="field-label">Condiciones de pago</label><select v-model="form.payment_terms_template" :disabled="validated" class="field-input mb-3"><option value="">— Sin plantilla —</option><option v-for="p in paymentTermsOptions" :key="p.name" :value="p.name">{{ p.name }}</option></select></div>
         </div>
         <div class="border-t border-surface-border pt-2.5 mb-3 flex flex-wrap gap-x-6 gap-y-1 text-[13px]">
-          <span class="text-ink-muted">Subtotal <span class="font-medium text-ink tabular-nums">{{ money(doc.base_net_total) }}</span></span>
-          <span v-if="doc.grand_total !== undefined" class="text-ink-muted">Total con impuestos <span class="font-medium text-ink tabular-nums">{{ money(doc.grand_total) }}</span></span>
+          <span class="text-ink-muted">Subtotal <span class="font-medium text-ink tabular-nums">{{ extranjera ? money(doc.net_total, doc.currency) : money(doc.base_net_total) }}</span></span>
+          <span v-if="doc.grand_total !== undefined" class="text-ink-muted">Total con impuestos <span class="font-medium text-ink tabular-nums">{{ money(doc.grand_total, extranjera ? doc.currency : undefined) }}</span></span>
+          <span v-if="extranjera" class="text-ink-muted">En {{ doc.company_currency }} <span class="font-medium text-ink tabular-nums">{{ money(doc.base_grand_total, doc.company_currency) }}</span></span>
         </div>
         <div v-if="!sinAcciones" class="flex flex-wrap items-center gap-2">
           <template v-if="!validated">
@@ -56,7 +66,9 @@
 </template>
 
 <script setup>
-defineProps({
+import { computed } from "vue";
+
+const props = defineProps({
   doc: { type: Object, default: null },
   form: { type: Object, required: true },
   validated: { type: Boolean, default: false },
@@ -73,5 +85,6 @@ defineProps({
   sinAcciones: { type: Boolean, default: false },
 });
 defineEmits(["crear", "guardar", "validar", "descargar", "imprimir", "ampliar"]);
-const money = (v) => (Number(v) || 0).toLocaleString("es-MX", { style: "currency", currency: "MXN" });
+const money = (v, moneda) => (Number(v) || 0).toLocaleString("es-MX", { style: "currency", currency: moneda || props.doc?.company_currency || "MXN" });
+const extranjera = computed(() => !!props.doc?.currency && !!props.doc?.company_currency && props.doc.currency !== props.doc.company_currency);
 </script>

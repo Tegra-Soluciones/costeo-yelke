@@ -22,6 +22,24 @@
           />
           <div v-else class="field-input bg-surface-raised/60 truncate">{{ doc.supplier }}</div>
         </div>
+        <!-- Moneda del proveedor (compras en USD…). El tipo de cambio de la orden es
+             de REFERENCIA: el que cuenta para la contabilidad se captura en la factura.
+             Al guardar con otra moneda, los precios se reexpresan en ella (ver
+             _aplicar_moneda en el backend). -->
+        <div v-if="doc.has_currency">
+          <label class="field-label">Moneda</label>
+          <select v-if="!isValidated" v-model="form.currency" class="field-input">
+            <option v-for="m in (doc.monedas || [])" :key="m.name" :value="m.name">{{ m.name }}{{ m.symbol ? ` (${m.symbol})` : "" }}</option>
+          </select>
+          <div v-else class="field-input bg-surface-raised/60">{{ doc.currency }}</div>
+          <p v-if="!isValidated && form.currency && form.currency !== doc.currency" class="text-[11px] text-amber-700 mt-1">Al guardar, los precios se convierten a {{ form.currency }}.</p>
+        </div>
+        <div v-if="doc.has_currency && form.currency && form.currency !== doc.company_currency">
+          <label class="field-label">Tipo de cambio <span class="text-ink-light font-normal">(referencia · 1 {{ form.currency }} = ? {{ doc.company_currency }})</span></label>
+          <input v-if="!isValidated" v-model.number="form.conversion_rate" type="number" min="0" step="0.0001" class="field-input" :placeholder="form.currency !== doc.currency ? 'Se toma el del día al guardar' : ''" />
+          <div v-else class="field-input bg-surface-raised/60">{{ doc.conversion_rate }}</div>
+          <p v-if="!isValidated" class="text-[11px] text-ink-light mt-1">El que vale para la contabilidad se captura en la factura.</p>
+        </div>
         <div v-if="doc.transaction_date"><label class="field-label">Fecha</label><div class="field-input bg-surface-raised/60">{{ doc.transaction_date }}</div></div>
         <div v-if="doc.has_posting_date">
           <label class="field-label">Fecha de recepción</label>
@@ -61,7 +79,7 @@
       </div>
 
       <table class="w-full text-sm mt-3">
-        <thead><tr class="text-left text-xs font-semibold text-ink-light border-b border-surface-border"><th class="py-2">Artículo</th><th class="py-2 w-20 text-right">Cant.</th><th class="py-2 w-16">UOM</th><th v-if="hasRate" class="py-2 w-24 text-right">Precio</th><th v-if="showWarehouse" class="py-2">Almacén</th></tr></thead>
+        <thead><tr class="text-left text-xs font-semibold text-ink-light border-b border-surface-border"><th class="py-2">Artículo</th><th class="py-2 w-20 text-right">Cant.</th><th class="py-2 w-16">UOM</th><th v-if="hasRate" class="py-2 w-24 text-right">Precio<span v-if="doc.currency && doc.currency !== doc.company_currency"> {{ doc.currency }}</span></th><th v-if="showWarehouse" class="py-2">Almacén</th></tr></thead>
         <tbody>
           <tr v-for="it in filas" :key="it.name" class="border-b border-surface-border/60">
             <td class="py-1.5 pr-2 font-mono text-[12px]">
@@ -207,6 +225,12 @@ const props = defineProps({
   puedeAprobar: { type: Boolean, default: true },
 });
 const emit = defineEmits(["save", "validate", "review", "pull-prices", "send", "preview", "shipping-missing"]);
+// Al cambiar de moneda se suelta el tipo de cambio para que el backend tome el del
+// día (o el que se capture después); al volver a la moneda guardada, regresa el suyo.
+watch(() => props.form.currency, (nueva, vieja) => {
+  if (!vieja || nueva === vieja) return;
+  props.form.conversion_rate = nueva === props.doc?.currency ? props.doc?.conversion_rate : null;
+});
 
 const isValidated = computed(() => Number(props.doc.docstatus) === 1);
 const hasRate = computed(() => props.items.some((i) => i.has_rate));
