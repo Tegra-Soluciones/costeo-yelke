@@ -90,6 +90,32 @@ class Costeo(Document):
         # (borrador incluido) y un Costeo a medio capturar debe poderse guardar tal
         # cual. Lo obligatorio se exige solo al validar (enviar), ver before_submit.
         self.cleanup_orphan_children()
+        self.derivar_precio_unitario()
+
+    def derivar_precio_unitario(self):
+        """`unit_price` SIEMPRE es el precio por UDM base; lo que se captura puede ser
+        el de la UDM de compra.
+
+        El proveedor cotiza como vende -- $725.76 el Mazo --, pero la prenda consume
+        4 piezas, así que el costeo necesita el precio por pieza. Se guardan las dos
+        caras: `precio_compra` (lo que se tecleó, en `supplier_uom`) y `unit_price`
+        (el derivado), para no perder el dato original ni obligar a nadie a dividir a
+        mano. Todo lo demás -- costo del producto, orden de compra, reporte final --
+        sigue leyendo `unit_price` y no se entera del cambio.
+
+        Se deriva aquí y no solo en la pantalla para que valga igual si el costeo se
+        guarda desde el escritorio, por API o al duplicar una plantilla."""
+        for d in self.get("costeo_producto_detalle") or []:
+            factor = flt(d.get("conversion_factor"))
+            # Sin UDM de compra distinta no hay nada que derivar: el precio capturado
+            # ya está en la base (el caso de siempre).
+            if not d.get("supplier_uom") or d.get("supplier_uom") == d.get("internal_uom") or factor <= 0:
+                if d.get("precio_compra") is None or flt(d.get("precio_compra")) == 0:
+                    d.precio_compra = flt(d.get("unit_price"))
+                d.conversion_factor = flt(d.get("conversion_factor")) or 1
+                continue
+            if flt(d.get("precio_compra")):
+                d.unit_price = flt(d.precio_compra) / factor
 
     def before_submit(self):
         """Aquí sí se exige todo lo obligatorio -- 'antes solo lo checaba el SPA

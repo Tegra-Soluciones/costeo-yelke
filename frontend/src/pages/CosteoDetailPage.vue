@@ -402,7 +402,13 @@
                               </td>
                               <td class="py-1 pr-2">
                                 <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
-                                <select v-model="d.internal_uom" class="field-input" :disabled="!d.tipo_material" @change="onUdmSelectChange(d, prod)">
+                                <!-- Con articulo elegido, la UDM es la BASE de ese articulo y no se
+                                     escoge a mano: el consumo del costeo siempre va en esa unidad.
+                                     Sin articulo (material en texto libre) sigue el selector por tipo. -->
+                                <div v-if="d.item && udmBaseDe(d)" class="field-input bg-surface-raised/60 truncate" :title="`UDM base de ${d.item} — el consumo se captura en esta unidad`">
+                                  {{ udmBaseDe(d) }}
+                                </div>
+                                <select v-else v-model="d.internal_uom" class="field-input" :disabled="!d.tipo_material" @change="onUdmSelectChange(d, prod)">
                                   <option value="">{{ d.tipo_material ? '— UDM —' : 'Elige tipo' }}</option>
                                   <option v-for="o in udmOptionsFor(d)" :key="o.value" :value="o.value">{{ o.label }}</option>
                                 </select>
@@ -431,7 +437,7 @@
                                 <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
                                 <div class="relative">
                                   <span class="prefix text-xs">$</span>
-                                  <input v-model.number="d.unit_price" type="number" min="0" step="0.01" class="field-input text-right pl-5" :class="d.tipo_material === 'Tela' ? 'pr-6' : ''" @input="recalcDetalle(d, prod)" />
+                                  <input v-model.number="d.precio_compra" type="number" min="0" step="0.01" class="field-input text-right pl-5" :class="d.tipo_material === 'Tela' ? 'pr-6' : ''" @input="onPrecioCompraInput(d, prod)" />
                                   <button v-if="d.tipo_material === 'Tela'" type="button" class="absolute right-1 top-1/2 -translate-y-1/2 text-ink-light hover:text-brand-600" title="Convertir precio de $/kg a $/m" @click="openTelaConvert(d, prod)">
                                     <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><rect x="5" y="3" width="14" height="18" rx="2"/><path stroke-linecap="round" d="M8 7h8M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01"/></svg>
                                   </button>
@@ -454,6 +460,23 @@
                                     </div>
                                   </template>
                                 </div>
+                                <!-- En que UDM cotiza el proveedor. El precio se teclea tal como lo
+                                     da (725.76 el Mazo) y el unitario por UDM base se deriva solo:
+                                     asi nadie tiene que dividir a mano. Solo aparece cuando el
+                                     articulo tiene mas de una UDM dada de alta. -->
+                                <select
+                                  v-if="udmsCompraDe(d).length > 1"
+                                  v-model="d.supplier_uom" class="field-input mt-1 text-[11px] py-0.5"
+                                  title="UDM en la que el proveedor cotiza este precio"
+                                  @change="onUdmCompraChange(d, prod)"
+                                >
+                                  <option v-for="u in udmsCompraDe(d)" :key="u.uom" :value="u.uom">
+                                    por {{ u.uom }}{{ u.uom === udmBaseDe(d) ? '' : ` (${fmtQty(u.conversion_factor)} ${udmBaseDe(d)})` }}
+                                  </option>
+                                </select>
+                                <p v-if="factorCompra(d) !== 1" class="text-[10.5px] text-ink-light mt-0.5 text-right">
+                                  = {{ fmtC(d.unit_price) }} / {{ udmBaseDe(d) || 'UDM' }}
+                                </p>
                               </td>
                               <td class="py-1 pr-2 text-right font-medium text-ink">
                                 <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
@@ -6863,7 +6886,7 @@ function pickImage(prod) {
   };
   input.click();
 }
-function addDetalle(prod, type) { detalles.value.push({ _tid: uid(), material_id: genStageId(), finished_item: prod.finished_item, concept_type: type, item: "", supplier: "", tipo_material: "", internal_uom: "", rendimiento: 0, internal_qty: 0, supplier_qty: 0, unit_price: 0, total: 0, etapa: "", _supplierOptions: [], _qtyMode: "rendimiento" }); }
+function addDetalle(prod, type) { detalles.value.push({ _tid: uid(), material_id: genStageId(), finished_item: prod.finished_item, concept_type: type, item: "", supplier: "", tipo_material: "", internal_uom: "", rendimiento: 0, internal_qty: 0, supplier_qty: 0, unit_price: 0, precio_compra: 0, supplier_uom: "", conversion_factor: 1, total: 0, etapa: "", _supplierOptions: [], _qtyMode: "rendimiento" }); }
 // ── Tipo de materia prima (Tela/Avío) ──
 // Filtra qué UDM tiene sentido según el tipo, y para avíos que se compran por Mazo o
 // Gruesa (botones, broches…) ya trae la equivalencia fija en piezas, para poder
@@ -6884,6 +6907,43 @@ const UDM_POR_TIPO = {
 };
 const PIEZAS_POR_UDM = { Mazo: 1728, Gruesa: 144 };
 function udmOptionsFor(d) { return UDM_POR_TIPO[d.tipo_material] || []; }
+
+// ── UDM reales de cada artículo (api/item_api.get_item_uoms) ──────────────
+// El costeo siempre consume en la UDM BASE del artículo: si el botón se da de alta
+// en piezas, el consumo es "4 piezas por prenda" y no "0.0023 mazos". El precio, en
+// cambio, se captura como lo cotiza el proveedor (el mazo) y se deriva el unitario.
+// Antes la UDM salía de una lista fija por tipo de material (UDM_POR_TIPO), que no
+// sabía nada del artículo.
+const uomsPorItem = reactive({});
+async function cargarUomsDeItem(code) {
+  if (!code || uomsPorItem[code]) return uomsPorItem[code];
+  try {
+    const r = await call("costeo_yelke.api.item_api.get_item_uoms", { item_code: code });
+    uomsPorItem[code] = { base: r.stock_uom || "", uoms: r.uoms || [] };
+  } catch { uomsPorItem[code] = { base: "", uoms: [] }; }
+  return uomsPorItem[code];
+}
+function udmBaseDe(d) { return d.item ? (uomsPorItem[d.item]?.base || "") : ""; }
+function udmsCompraDe(d) { return d.item ? (uomsPorItem[d.item]?.uoms || []) : []; }
+function factorDeUdm(d, uom) {
+  const fila = udmsCompraDe(d).find(u => u.uom === uom);
+  return Number(fila?.conversion_factor) || 1;
+}
+// Cuántas UDM base trae una unidad de compra; 1 cuando se cotiza en la base.
+function factorCompra(d) { return Number(d.conversion_factor) || 1; }
+function precioDerivado(d) {
+  const f = factorCompra(d);
+  return f > 0 ? round8((Number(d.precio_compra) || 0) / f) : 0;
+}
+function onPrecioCompraInput(d, prod) {
+  d.unit_price = precioDerivado(d);
+  recalcDetalle(d, prod);
+}
+function onUdmCompraChange(d, prod) {
+  d.conversion_factor = factorDeUdm(d, d.supplier_uom);
+  d.unit_price = precioDerivado(d);
+  recalcDetalle(d, prod);
+}
 function esUdmPorPiezas(d) { return d.internal_uom in PIEZAS_POR_UDM; }
 function piezasPorUdm(d) { return PIEZAS_POR_UDM[d.internal_uom] || 0; }
 // La UDM ya dice qué modo corresponde -- no hace falta guardar el modo aparte ni un
@@ -7293,8 +7353,13 @@ function closeTelaConvert() { telaConvertModal.open = false; telaConvertModal.d 
 async function aplicarTelaConvert() {
   const d = telaConvertModal.d, prod = telaConvertModal.prod;
   if (!d) return;
+  // El convertidor entrega el precio YA por metro, que aqui pasa a ser la UDM base
+  // del renglon: queda cotizado en su propia unidad, sin factor.
   d.unit_price = telaConvertPrecioM.value;
+  d.precio_compra = telaConvertPrecioM.value;
   d.internal_uom = "MTR - Metro";
+  d.supplier_uom = "MTR - Metro";
+  d.conversion_factor = 1;
   onUdmSelectChange(d, prod);
   if (telaConvertModal.itemExists && telaConvertModal.metros_por_kilo) {
     try { await call("costeo_yelke.api.item_api.guardar_tela_conversion", { item_code: d.item, metros_por_kilo: telaConvertModal.metros_por_kilo }); }
@@ -7315,8 +7380,17 @@ async function onDetalleItemChange(d, prod) {
   d._supplierOptions = [];
   d.supplier = "";
   d.unit_price = 0;
+  d.precio_compra = 0;
   if (!d.item) { recalcDetalle(d, prod); return; }
   try {
+    // La UDM del artículo manda sobre la lista por tipo de material: el consumo se
+    // captura en la base y el precio arranca cotizado en esa misma base.
+    const info = await cargarUomsDeItem(d.item);
+    if (info.base) {
+      d.internal_uom = info.base;
+      d.supplier_uom = info.base;
+      d.conversion_factor = 1;
+    }
     d._supplierOptions = await call("costeo_yelke.api.costeo_api.proveedores_para_item", { item_code: d.item }) || [];
     // Si solo hay un proveedor con precio, selecciónalo y aplica su precio
     if (d._supplierOptions.length === 1) {
@@ -7327,6 +7401,8 @@ async function onDetalleItemChange(d, prod) {
       const res = await call("costeo_yelke.api.costeo_api.get_item_price", { item_code: d.item, price_list: "Compra estandar" });
       if (res?.price) d.unit_price = res.price;
     }
+    // El precio que llega de la lista o del proveedor viene por UDM base.
+    d.precio_compra = d.unit_price;
     if (!d.tipo_material) {
       const item = await call("frappe.client.get_value", { doctype: "Item", filters: d.item, fieldname: "metros_por_kilo" });
       if (item?.metros_por_kilo) d.tipo_material = "Tela";
@@ -7442,7 +7518,18 @@ async function fillFromDoc(data) {
     ? false : !!Number(data.guardar_como_plantilla);
   form.centro_de_costos = data.centro_de_costos || ""; form.almacen_materias_primas = data.almacen_materias_primas || ""; form.almacen_trabajo_en_proceso = data.almacen_trabajo_en_proceso || "";
   productos.value = (data.costeo_producto || []).map(r => ({ _tid: uid(), image: "", description: "", precio_manual: 0, ...r, _lastFinishedItem: r.finished_item || "" }));
-  detalles.value = (data.costeo_producto_detalle || []).map(r => ({ _tid: uid(), _supplierOptions: [], _qtyMode: "rendimiento", ...r, material_id: r.material_id || genStageId() }));
+  // Los renglones anteriores a la captura por UDM de compra no traen precio_compra
+  // ni factor: su precio ya estaba en la UDM base, asi que se copia tal cual.
+  detalles.value = (data.costeo_producto_detalle || []).map(r => ({
+    _tid: uid(), _supplierOptions: [], _qtyMode: "rendimiento", ...r,
+    material_id: r.material_id || genStageId(),
+    conversion_factor: Number(r.conversion_factor) || 1,
+    supplier_uom: r.supplier_uom || r.internal_uom || "",
+    precio_compra: Number(r.precio_compra) || Number(r.unit_price) || 0,
+  }));
+  // Las UDM de cada articulo se piden en segundo plano: el selector de precio las
+  // necesita, pero la tabla ya se puede ver mientras llegan.
+  [...new Set(detalles.value.map(d => d.item).filter(Boolean))].forEach(cargarUomsDeItem);
   // La etapa se captura SIEMPRE como cantidad x costo (multiplicación). Los costeos
   // viejos que usaban precio por lote (precio ÷ lote_qty) se convierten al abrirlos:
   // 1 operación al precio por pieza que ya tenían, con lote_qty de vuelta en 1 --
