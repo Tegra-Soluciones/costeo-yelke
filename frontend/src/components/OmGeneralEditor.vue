@@ -117,7 +117,25 @@
               <table class="w-full text-[13px]">
                 <tbody>
                   <tr v-for="(r, ri) in t.rows" :key="r.id">
-                    <td v-for="c in t.columns" :key="c" class="p-0.5"><input v-model="r.cells[c]" :disabled="disabled" class="field-input text-center" /></td>
+                    <!-- Una celda puede llevar texto o una IMAGEN: se pega con Ctrl+V
+                         encima del campo (un diagrama por renglón de la tabla de medidas). -->
+                    <td v-for="c in t.columns" :key="c" class="p-0.5">
+                      <div v-if="esImagen(r.cells[c])" class="relative inline-block">
+                        <a :href="r.cells[c]" target="_blank">
+                          <img :src="r.cells[c]" class="h-12 max-w-[96px] object-contain rounded border border-surface-border bg-white" alt="" />
+                        </a>
+                        <button
+                          v-if="!disabled" type="button" title="Quitar la imagen de esta celda"
+                          class="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-white border border-surface-border text-[9px] leading-none text-ink-muted hover:text-red-500"
+                          @click="r.cells[c] = ''"
+                        >✕</button>
+                      </div>
+                      <input
+                        v-else v-model="r.cells[c]" :disabled="disabled" class="field-input text-center"
+                        title="Escribe un valor, o pega una imagen con Ctrl+V"
+                        @paste="pegarEnCelda($event, r, c)"
+                      />
+                    </td>
                     <td class="p-0.5 w-6 text-center"><button v-if="!disabled && t.rows.length > 1" type="button" class="text-ink-muted hover:text-red-500" @click="t.rows.splice(ri, 1)">✕</button></td>
                   </tr>
                 </tbody>
@@ -134,21 +152,33 @@
           </div>
         </div>
 
-        <!-- Diagramas / imágenes -->
-        <div>
+        <!-- Diagramas / imágenes. Se puede soltar o pegar (Ctrl+V) sobre esta zona:
+             es como llega la mayoría de los planos, de una captura o de una carpeta. -->
+        <div
+          @dragover.prevent="arrastrando = true" @dragenter.prevent="arrastrando = true"
+          @dragleave="arrastrando = false" @drop.prevent="soltar($event)"
+        >
           <div class="flex items-center justify-between mb-1">
             <p class="text-[11px] font-semibold text-ink-muted uppercase tracking-wider">Diagramas / imágenes de referencia</p>
             <label v-if="!disabled" class="add-link cursor-pointer">
-              {{ subiendo ? 'Subiendo…' : '+ Imagen / archivo' }}
-              <input type="file" multiple accept="image/*,.pdf" class="hidden" :disabled="subiendo" @change="subir($event)" />
+              {{ subiendo ? 'Subiendo…' : '+ Imagen / PDF' }}
+              <input type="file" multiple :accept="ACCEPT" class="hidden" :disabled="subiendo" @change="subir($event)" />
             </label>
+          </div>
+          <div
+            class="rounded-lg border border-dashed px-3 py-2 mb-2 text-[11px] transition-colors"
+            :class="arrastrando ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-surface-border text-ink-light'"
+          >
+            {{ arrastrando ? 'Suelta aquí los archivos' : 'Arrastra archivos aquí o pégalos con Ctrl+V. Solo imágenes (PNG, JPG, GIF, WEBP, BMP) y PDF — los PDF se unen al final de la ficha impresa, como hojas aparte.' }}
           </div>
           <p v-if="!form.archivos.length" class="prod-empty">Sin imágenes ni archivos.</p>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div v-for="(a, i) in form.archivos" :key="'a' + i" class="flex gap-2 border border-surface-border rounded-lg p-2 bg-surface-raised/40">
               <a :href="a.archivo" target="_blank" class="shrink-0">
                 <img v-if="esImagen(a.archivo)" :src="a.archivo" class="w-14 h-14 object-cover rounded border border-surface-border" alt="" />
-                <span v-else class="w-14 h-14 flex items-center justify-center rounded border border-surface-border text-[10px] text-ink-muted">PDF</span>
+                <span v-else class="w-14 h-14 flex flex-col items-center justify-center rounded border border-surface-border text-[10px] text-ink-muted leading-tight">
+                  <b>PDF</b><span class="text-[8.5px]">anexo</span>
+                </span>
               </a>
               <div class="flex-1 min-w-0 space-y-1">
                 <input v-model="a.descripcion" placeholder="Descripción…" :disabled="disabled" class="field-input" />
@@ -172,7 +202,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from "vue";
+import { ref, onMounted, onBeforeUnmount, watch } from "vue";
 import { call, uploadFile } from "@/utils/frappe.js";
 import ParaTalleres from "@/components/ParaTalleres.vue";
 
@@ -244,19 +274,86 @@ function toggle(p) {
   abierto.value = p.producto;
 }
 const esImagen = (u) => /\.(png|jpe?g|gif|webp|svg|bmp)(\?.*)?$/i.test(u || "");
-async function subir(ev) {
-  const files = Array.from(ev.target.files || []);
-  if (!files.length) return;
+// Lo único que el formato sabe imprimir: la imagen entra en la galería y el PDF se
+// une al final como hojas aparte. Un .docx o un .xlsx habría que convertirlos, así
+// que se rechazan aquí y el backend lo vuelve a validar (impresion.validar_adjuntos_om).
+const EXT_IMG = ["png", "jpg", "jpeg", "gif", "webp", "bmp"];
+const EXT_OK = [...EXT_IMG, "pdf"];
+const ACCEPT = EXT_OK.map((e) => "." + e).join(",");
+const arrastrando = ref(false);
+
+const ext = (n) => (n || "").split("?")[0].split(".").pop().toLowerCase();
+async function subirUno(file) {
+  const res = await uploadFile(file, form.value.name
+    ? { doctype: "Orden Manufactura", docname: form.value.name }
+    : { doctype: "Costeo", docname: props.costeo });
+  return res?.file_url || null;
+}
+// Una captura pegada del portapapeles suele llegar sin nombre (o como "image.png"):
+// se le pone uno con extensión para que el servidor la acepte y se vea qué es.
+function conNombre(file) {
+  if (EXT_OK.includes(ext(file.name))) return file;
+  const tipo = (file.type || "").split("/")[1] || "png";
+  return new File([file], `pegado-${Date.now()}.${tipo === "jpeg" ? "jpg" : tipo}`, { type: file.type });
+}
+// Pegar una imagen DENTRO de una celda de la tabla de medidas. El pegado de texto
+// se deja pasar tal cual: ahí manda el navegador.
+async function pegarEnCelda(ev, fila, columna) {
+  if (props.disabled) return;
+  const img = Array.from(ev.clipboardData?.files || []).find((f) => /^image\//.test(f.type) || EXT_IMG.includes(ext(f.name)));
+  if (!img) return;
+  ev.preventDefault();
+  ev.stopPropagation();
   subiendo.value = true;
   try {
-    for (const f of files) {
-      const res = await uploadFile(f, form.value.name ? { doctype: "Orden Manufactura", docname: form.value.name } : { doctype: "Costeo", docname: props.costeo });
-      if (res?.file_url) form.value.archivos.push({ archivo: res.file_url, descripcion: res.file_name || "", proveedores: [] });
-    }
-    props.showToast("Archivo(s) subido(s). Recuerda guardar.");
-  } catch (e) { props.showToast(e.message || "Error al subir", "error"); }
-  finally { subiendo.value = false; ev.target.value = ""; }
+    const url = await subirUno(conNombre(img));
+    if (url) { fila.cells[columna] = url; props.showToast("Imagen pegada en la celda. Recuerda guardar."); }
+  } catch (e) { props.showToast(e.message || "No se pudo pegar la imagen", "error"); }
+  finally { subiendo.value = false; }
 }
+
+async function subirArchivos(files) {
+  const lista = Array.from(files || []).filter(Boolean);
+  if (!lista.length) return;
+  const buenos = lista.filter((f) => EXT_OK.includes(ext(f.name)));
+  const malos = lista.filter((f) => !EXT_OK.includes(ext(f.name)));
+  if (malos.length) {
+    props.showToast(`Solo imágenes o PDF — conviértelo antes de subirlo: ${malos.map((f) => f.name).join(", ")}`, "error");
+  }
+  if (!buenos.length) return;
+  subiendo.value = true;
+  try {
+    for (const f of buenos) {
+      const url = await subirUno(f);
+      if (url) form.value.archivos.push({ archivo: url, descripcion: f.name || "", proveedores: [] });
+    }
+    props.showToast(`${buenos.length} archivo(s) subido(s). Recuerda guardar.`);
+  } catch (e) { props.showToast(e.message || "Error al subir", "error"); }
+  finally { subiendo.value = false; }
+}
+async function subir(ev) {
+  await subirArchivos(ev.target.files);
+  ev.target.value = "";
+}
+async function soltar(ev) {
+  arrastrando.value = false;
+  if (props.disabled || !form.value) return;
+  await subirArchivos(ev.dataTransfer?.files);
+}
+// Pegar (Ctrl+V) una captura o un archivo del explorador. Solo actúa con una ficha
+// abierta y editable, y nunca cuando se está escribiendo en un campo: ahí el pegado
+// es texto y le toca al navegador.
+async function pegar(ev) {
+  if (props.disabled || !abierto.value || !form.value) return;
+  const activo = document.activeElement;
+  if (activo && /^(INPUT|TEXTAREA)$/.test(activo.tagName)) return;
+  const files = Array.from(ev.clipboardData?.files || []);
+  if (!files.length) return;
+  ev.preventDefault();
+  await subirArchivos(files);
+}
+onMounted(() => document.addEventListener("paste", pegar));
+onBeforeUnmount(() => document.removeEventListener("paste", pegar));
 async function guardar(p) {
   guardando.value = true;
   try {

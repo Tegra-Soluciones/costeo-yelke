@@ -11,10 +11,13 @@ personas que de verdad intervinieron, con su firma de User.firma (patch v0_2_52)
 cambio docstatus 0 -> 1, así sirve también para documentos ya validados.
 """
 import base64
+import io
+import os
 from functools import lru_cache
 
 import frappe
-from frappe.utils import formatdate
+from frappe import _
+from frappe.utils import cint, formatdate
 
 
 def _persona(usuario):
@@ -108,7 +111,6 @@ def firmas_documento(doc):
 # wkhtmltopdf no puede depender de internet: fuentes y logo van incrustados en
 # base64. Se leen una vez por proceso (lru_cache).
 import base64
-import os
 import re
 from functools import lru_cache
 
@@ -342,3 +344,136 @@ def descripcion_html(desc, item_name=None):
             partes.append(f"<div>{escape_html(linea)}</div>")
     cerrar_lista()
     return "".join(partes)
+
+
+# ── Adjuntos de la ficha de manufactura ──────────────────────────────────────
+# Qué se deja subir a la Orden de Manufactura. La idea es que lo que se adjunte se
+# pueda IMPRIMIR tal cual: una imagen entra en la galería del PDF y un PDF se une al
+# final como hojas aparte. Un .docx o un .xlsx no se pueden imprimir sin convertirlos,
+# así que se rechazan de entrada y quien los tenga los convierte por su cuenta.
+# Fuera también el SVG: no es un formato "simple" (puede traer scripts) y wkhtmltopdf
+# lo rasteriza de forma inconsistente.
+EXT_IMAGEN = ("png", "jpg", "jpeg", "gif", "webp", "bmp")
+EXT_ADJUNTO_OM = EXT_IMAGEN + ("pdf",)
+
+
+def extension(url):
+    """Extensión en minúsculas de una URL de archivo, sin punto ni query."""
+    nombre = (url or "").split("?")[0].rstrip("/")
+    return nombre.rsplit(".", 1)[-1].lower() if "." in nombre.rsplit("/", 1)[-1] else ""
+
+
+def es_imagen(url):
+    return extension(url) in EXT_IMAGEN
+
+
+def es_pdf(url):
+    return extension(url) == "pdf"
+
+
+def validar_adjuntos_om(archivos, ya_guardados=()):
+    """Rechaza los adjuntos de la ficha que no sean imagen simple o PDF.
+
+    ``ya_guardados`` son las URL que la ficha YA tenía: lo que se subió antes de esta
+    regla se respeta (si no, una ficha vieja con un .docx no se podría ni guardar) --
+    solo se valida lo que entra nuevo."""
+    previos = set(ya_guardados or ())
+    malos = []
+    for a in archivos or []:
+        url = (a.get("archivo") if isinstance(a, dict) else a) or ""
+        if not url or url in previos:
+            continue
+        if extension(url) not in EXT_ADJUNTO_OM:
+            malos.append(url.rsplit("/", 1)[-1])
+    if malos:
+        frappe.throw(
+            _("Solo se pueden adjuntar imágenes ({0}) o PDF. Conviértelo antes de subirlo: {1}").format(
+                ", ".join(EXT_IMAGEN).upper(), ", ".join(malos)),
+            title=_("Formato de archivo no admitido"))
+
+
+def validar_imagenes_tablas(tablas):
+    """Una celda de tabla de medidas puede llevar texto o una IMAGEN pegada; lo que no
+    puede es apuntar a un archivo que el PDF no sabe dibujar (un PDF dentro de una
+    celda no se ve). Solo se revisan los valores que son ruta de archivo subido."""
+    malos = []
+    for t in tablas or []:
+        for fila in (t.get("rows") or []):
+            for valor in (fila.get("cells") or {}).values():
+                v = str(valor or "")
+                if v.startswith(("/files/", "/private/files/")) and not es_imagen(v):
+                    malos.append(v.rsplit("/", 1)[-1])
+    if malos:
+        frappe.throw(
+            _("Dentro de una tabla de medidas solo se puede pegar una imagen ({0}): {1}").format(
+                ", ".join(EXT_IMAGEN).upper(), ", ".join(malos)),
+            title=_("Archivo no admitido en la tabla"))
+
+
+def _contenido_de_archivo(file_url):
+    """Bytes de un adjunto, público o privado. None si ya no existe."""
+    if not file_url:
+        return None
+    nombre = frappe.db.get_value("File", {"file_url": file_url}, "name")
+    if not nombre:
+        return None
+    try:
+        return frappe.get_doc("File", nombre).get_content()
+    except Exception:
+        return None
+
+
+def unir_pdfs(principal, extras):
+    """El PDF del formato con los PDF adjuntos añadidos al final, como hojas aparte
+    (lo que hace "unir PDF" de toda la vida).
+
+    Un adjunto ilegible o protegido con contraseña se SALTA en vez de tumbar la
+    descarga completa: vale más entregar la ficha sin ese anexo que no entregar nada.
+    Si no hay nada que unir devuelve el PDF original intacto."""
+    extras = [e for e in (extras or []) if e]
+    if not extras:
+        return principal
+    from pypdf import PdfReader, PdfWriter
+
+    salida = PdfWriter()
+    salida.append(io.BytesIO(principal))
+    for datos in extras:
+        try:
+            salida.append(PdfReader(io.BytesIO(datos)))
+        except Exception:
+            frappe.log_error(title="Adjunto PDF ilegible en la orden de manufactura")
+    buf = io.BytesIO()
+    salida.write(buf)
+    return buf.getvalue()
+
+
+def _pdfs_anexos_de_oc(po):
+    """Bytes de los PDF adjuntos de la ficha de ESE taller, en el orden en que salen
+    en el documento. Respeta "Para": om_de_oc ya filtró por proveedor."""
+    from costeo_yelke.api.om_general import om_de_oc
+
+    datos = []
+    for registro in om_de_oc(po):
+        for a in registro.get("archivos") or []:
+            if es_pdf(a.get("archivo")):
+                contenido = _contenido_de_archivo(a.get("archivo"))
+                if contenido:
+                    datos.append(contenido)
+    return datos
+
+
+def pdf_om_con_anexos(po, no_letterhead=0):
+    """Bytes del PDF de la Orden de Manufactura de un taller con sus anexos unidos."""
+    principal = frappe.get_print("Purchase Order", po, print_format="Orden de Manufactura",
+                                 no_letterhead=cint(no_letterhead), as_pdf=True)
+    return unir_pdfs(principal, _pdfs_anexos_de_oc(po))
+
+
+@frappe.whitelist()
+def descargar_om(po: str, no_letterhead: int = 0):
+    """Descarga la ficha de manufactura de un taller en UN solo PDF: el formato más
+    los PDF que se le adjuntaron, como hojas aparte."""
+    frappe.has_permission("Purchase Order", "read", doc=po, throw=True)
+    frappe.local.response.filename = f"Ficha de manufactura - {po}.pdf"
+    frappe.local.response.filecontent = pdf_om_con_anexos(po, no_letterhead)
+    frappe.local.response.type = "pdf"

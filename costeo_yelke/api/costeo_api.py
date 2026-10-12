@@ -10725,8 +10725,16 @@ def enviar_por_correo(doctype: str, name: str, recipients: str, subject: str = N
     body = message or f"Adjunto {doctype} {name}."
     used = "pdf"
 
+    def _adjunto(formato):
+        # La ficha de manufactura viaja con sus PDF anexos unidos al final, igual que
+        # al descargarla: si no, el taller recibiría la ficha sin los planos.
+        if doctype == "Purchase Order" and formato == "Orden de Manufactura":
+            from costeo_yelke.api.impresion import pdf_om_con_anexos
+            return {"fname": f"Ficha de manufactura - {name}.pdf", "fcontent": pdf_om_con_anexos(name)}
+        return frappe.attach_print(doctype, name, print_format=formato)
+
     try:
-        attachments = [frappe.attach_print(doctype, name, print_format=f) for f in formatos]
+        attachments = [_adjunto(f) for f in formatos]
     except Exception:
         # Sin wkhtmltopdf: incrustar el documento como HTML en el cuerpo del correo.
         used = "html"

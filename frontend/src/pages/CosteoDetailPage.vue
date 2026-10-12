@@ -2876,8 +2876,8 @@
                la ficha se reenvía sola, sin volver a mandar la orden. -->
           <button v-if="subPo" class="p-btn-ghost h-8 text-[12.5px] px-2" title="PDF de la orden de compra a este taller"
                   @click="downloadPdfFmt('Purchase Order', subPo.name, 'Orden de Maquila')">Orden ⤓</button>
-          <button v-if="subPo" class="p-btn-ghost h-8 text-[12.5px] px-2" title="PDF de la ficha de manufactura de este taller"
-                  @click="downloadPdfFmt('Purchase Order', subPo.name, 'Orden de Manufactura')">Ficha ⤓</button>
+          <button v-if="subPo" class="p-btn-ghost h-8 text-[12.5px] px-2" title="PDF de la ficha de manufactura de este taller, con sus PDF anexos unidos al final"
+                  @click="descargarFicha(subPo.name)">Ficha ⤓</button>
           <button v-if="subPo" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="openPdf('Purchase Order', subPo.name)">Vista previa</button>
           <a v-if="subPo" class="p-btn-ghost h-8 text-[12.5px] px-2" :href="`/app/purchase-order/${subPo.name}`" target="_blank">ERPNext ↗</a>
         </template>
@@ -4748,6 +4748,13 @@ async function cargarContactoTaller(supplier) {
   } catch { /* sin contacto: el envío se abre con el correo vacío */ }
 }
 /** Manda al taller su orden Y su ficha en un solo correo (dos PDF adjuntos). */
+// La ficha NO se descarga con el visor de impresión como los demás documentos: pasa
+// por su propio endpoint, que le une los PDF adjuntos al final como hojas aparte
+// (impresion.descargar_om). El navegador no sabe unir PDF.
+function descargarFicha(po) {
+  window.open(`/api/method/costeo_yelke.api.impresion.descargar_om?po=${encodeURIComponent(po)}`, "_blank");
+}
+
 function enviarOrdenAlTaller() {
   if (!subPo.value) return;
   if (!contactoTaller.email) {

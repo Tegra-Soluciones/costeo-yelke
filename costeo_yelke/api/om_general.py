@@ -18,6 +18,7 @@ from frappe import _
 from frappe.utils import flt
 
 from costeo_yelke.api import tallas_lote
+from costeo_yelke.api.impresion import validar_adjuntos_om, validar_imagenes_tablas
 from costeo_yelke.api.costeo_api import _om_decode_tables, _om_encode_tables, get_om
 from costeo_yelke.roles import requiere_vista
 
@@ -252,7 +253,12 @@ def guardar_om_general(costeo: str, producto: str, datos) -> dict:
     om.set("om_observaciones", [
         {"texto": r.get("texto"), "proveedores": ", ".join(_lista(r.get("proveedores")))}
         for r in (datos.get("observaciones") or []) if (r.get("texto") or "").strip()])
+    validar_imagenes_tablas(datos.get("tablas"))
     _om_encode_tables(om, datos.get("tablas") or [])
+    # Solo imagen simple o PDF: es lo único que el formato puede imprimir (la imagen
+    # en la galería, el PDF unido al final como hojas aparte). Lo ya guardado antes
+    # de esta regla se respeta -- ver validar_adjuntos_om.
+    validar_adjuntos_om(datos.get("archivos"), [r.archivo for r in (om.get("om_archivos") or [])])
     om.set("om_archivos", [
         {"archivo": r.get("archivo"), "descripcion": r.get("descripcion"),
          "proveedores": ", ".join(_lista(r.get("proveedores")))}
