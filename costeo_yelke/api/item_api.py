@@ -664,7 +664,9 @@ def _asegurar_allowance_si_paquete(doc, uoms_rows):
     con "This document is over limit" (ver mr_crear_oc / guardar_documento_compra,
     que ya redondean, pero no pueden hacer nada contra este candado nativo). Nunca
     lo baja si ya estaba en algo mayor -- solo sube el mínimo necesario."""
-    if any(r.get("compra_por_paquete_completo") for r in (uoms_rows or [])):
+    # La marca de la UDM base no viaja en uoms_rows en todos los llamadores (en Alta de
+    # Productos es un campo aparte del artículo), así que se mira también en el doc.
+    if doc.get("compra_por_paquete_completo") or any(r.get("compra_por_paquete_completo") for r in (uoms_rows or [])):
         if flt(doc.get("over_delivery_receipt_allowance")) < ALLOWANCE_PAQUETE_COMPLETO:
             doc.over_delivery_receipt_allowance = ALLOWANCE_PAQUETE_COMPLETO
 
@@ -830,6 +832,9 @@ def get_item(item_code):
         "sales_uom": doc.sales_uom,
         "max_discount": doc.max_discount,
         "purchase_uom": doc.purchase_uom,
+        # Marca de "se compra en paquetes completos" de la UDM BASE (la stock_uom no
+        # tiene renglón en la tabla de conversiones) -- ver costeo_api._es_compra_por_paquete.
+        "compra_por_paquete_completo": bool(doc.get("compra_por_paquete_completo")),
         "min_order_qty": doc.min_order_qty,
         "lead_time_days": doc.lead_time_days,
         "has_batch_no": doc.has_batch_no,
@@ -867,7 +872,7 @@ def update_item(item_code, data):
         "has_batch_no", "batch_number_series",
         "has_serial_no", "serial_no_series",
         "country_of_origin", "customs_tariff_number",
-        "default_bom",
+        "default_bom", "compra_por_paquete_completo",
     ]
 
     for field in editable_fields:
@@ -936,6 +941,10 @@ def create_item(data, ignore_mandatory=False):
         "over_delivery_receipt_allowance", "over_billing_allowance",
         "allow_negative_stock",
     ]
+    # Va aparte del bucle de abajo: ese se salta los vacíos, y aquí "desmarcado" (0 o
+    # False) es un valor que sí hay que guardar.
+    if "compra_por_paquete_completo" in data:
+        doc.compra_por_paquete_completo = 1 if data.get("compra_por_paquete_completo") else 0
 
     for field in scalar_fields:
         val = data.get(field)

@@ -265,12 +265,22 @@
               </button>
             </div>
 
-            <!-- Stock UOM row (read-only reference) -->
-            <div class="flex items-center gap-3 px-4 py-3 bg-gray-50 rounded-xl border border-gray-200 text-sm">
+            <!-- UDM base. Su factor es 1 por definición, pero su check de "paquete
+                 completo" SÍ se captura: no tiene renglón en la tabla de conversiones,
+                 vive en el artículo (ver costeo_api._es_compra_por_paquete). Sin esto
+                 solo se podía marcar desde la orden de compra. -->
+            <div
+              class="flex items-center gap-3 px-4 py-3 rounded-xl border text-sm"
+              :class="baseDirty ? 'border-amber-300 bg-amber-50/40' : 'border-gray-200 bg-gray-50'"
+            >
               <div class="flex-1">
                 <span class="font-semibold text-gray-700">{{ item.stock_uom }}</span>
                 <span class="ml-2 text-xs text-gray-400">(UOM base / stock)</span>
               </div>
+              <label class="w-44 flex items-center gap-1.5 text-[11.5px] text-gray-500 leading-tight">
+                <input v-model="baseEsPaquete" type="checkbox" class="rounded" @change="baseDirty = true" />
+                Paquete completo
+              </label>
               <div class="w-32 text-right">
                 <span class="text-xs text-gray-400">Factor: </span>
                 <span class="font-semibold text-gray-700">1.000</span>
@@ -738,6 +748,10 @@ const itemFormOriginal = ref({});
 const itemPrices   = ref([]);
 const itemRules    = ref([]);
 const itemUomRows  = ref([]); // {uom, conversion_factor, _dirty}
+// Check de la UDM base (Item.compra_por_paquete_completo). Va aparte de itemUomRows
+// porque la UDM base no es un renglón de conversión.
+const baseEsPaquete = ref(false);
+const baseDirty = ref(false);
 
 const defaultCurrency = computed(() =>
   defaults.price_lists[0]?.currency || "MXN"
@@ -758,7 +772,7 @@ const visibleTabs = computed(() => TABS_BASE);
 const pricesDirty = computed(() =>
   itemPrices.value.some(r => r._dirty) || itemRules.value.some(r => r._dirty)
 );
-const uomDirty = computed(() => itemUomRows.value.some(r => r._dirty));
+const uomDirty = computed(() => baseDirty.value || itemUomRows.value.some(r => r._dirty));
 const generalDirty = computed(() => {
   const orig = itemFormOriginal.value;
   return Object.keys(itemForm).some(k => itemForm[k] !== orig[k]);
@@ -790,12 +804,17 @@ function removeUomRow(idx) {
 async function saveUoms() {
   savingUoms.value = true;
   try {
-    const payload = itemUomRows.value
-      .filter(r => r.uom)
-      .map(r => ({
-        uom: r.uom, conversion_factor: r.conversion_factor || 1,
-        compra_por_paquete_completo: !!r.compra_por_paquete_completo,
-      }));
+    // La UDM base viaja como un renglón más: save_item_uoms la reconoce y guarda su
+    // check en el artículo en vez de en la tabla de conversiones.
+    const payload = [
+      { uom: item.value.stock_uom, conversion_factor: 1, compra_por_paquete_completo: !!baseEsPaquete.value },
+      ...itemUomRows.value
+        .filter(r => r.uom && r.uom !== item.value.stock_uom)
+        .map(r => ({
+          uom: r.uom, conversion_factor: r.conversion_factor || 1,
+          compra_por_paquete_completo: !!r.compra_por_paquete_completo,
+        })),
+    ];
     await call("costeo_yelke.api.item_api.save_item_uoms", {
       item_code: props.name,
       uoms: JSON.stringify(payload),
@@ -803,7 +822,10 @@ async function saveUoms() {
     // Refresh from server
     const fresh = await call("costeo_yelke.api.item_api.get_item", { item_code: props.name });
     itemUomRows.value = (fresh.uom_conversions || []).map(r => ({ ...r, _dirty: false }));
-    showToast(`Guardado: ${payload.length} equivalencia${payload.length !== 1 ? 's' : ''}`, "success");
+    baseEsPaquete.value = !!fresh.compra_por_paquete_completo;
+    baseDirty.value = false;
+    const equivalencias = payload.length - 1; // la UDM base no es una equivalencia
+    showToast(`Guardado: ${equivalencias} equivalencia${equivalencias !== 1 ? 's' : ''}`, "success");
   } catch (e) {
     showToast(e.message || "Error al guardar equivalencias", "error");
   } finally {
@@ -907,6 +929,8 @@ onMounted(async () => {
     itemPrices.value   = (itemData.item_prices    || []).map(p => ({ ...p, _dirty: false }));
     itemRules.value    = (itemData.pricing_rules  || []).map(r => ({ ...r, _dirty: false }));
     itemUomRows.value  = (itemData.uom_conversions || []).map(r => ({ ...r, _dirty: false }));
+    baseEsPaquete.value = !!itemData.compra_por_paquete_completo;
+    baseDirty.value = false;
     syncFormFromItem(itemData);
   } catch (e) {
     error.value = e.message || "No se pudo cargar el artículo";

@@ -199,12 +199,19 @@
                 ⚠ Primero selecciona la UOM base en la pestaña General
               </p>
 
-              <!-- Stock UOM reference row -->
+              <!-- UDM base. Su factor es 1 por definición, pero su check de "paquete
+                   completo" sí se captura: no tiene renglón en la tabla de conversiones,
+                   vive en el artículo (ver costeo_api._es_compra_por_paquete). Marcarlo
+                   desde el alta evita el trabajo de ir a corregirlo después. -->
               <div v-if="form.stock_uom" class="flex items-center gap-3 px-4 py-3 bg-gray-50 rounded-lg border border-gray-200 text-sm mb-3">
                 <div class="flex-1">
                   <span class="font-semibold text-gray-700">{{ form.stock_uom }}</span>
                   <span class="ml-2 text-xs text-gray-400">(UOM base)</span>
                 </div>
+                <label class="w-36 flex items-center gap-1.5 text-[11.5px] text-gray-500 leading-tight">
+                  <input v-model="form.compra_por_paquete_completo" type="checkbox" class="rounded" />
+                  Paquete completo
+                </label>
                 <div class="w-32 text-right text-xs text-gray-400">Factor: <span class="font-semibold text-gray-700">1.000</span></div>
               </div>
 
@@ -754,6 +761,7 @@ function blankForm() {
     country_of_origin: "", customs_tariff_number: "",
     item_defaults: [],
     uom_conversions: [],
+    compra_por_paquete_completo: false,
     item_prices: [],
     pricing_rules: [],
     supplier_items: [],
