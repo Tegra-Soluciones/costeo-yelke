@@ -368,6 +368,29 @@
               </div>
             </div>
 
+
+            <!-- Aviso cuando alguna UDM de compra trae VARIAS unidades base (1 Mazo =
+                 1,728 piezas). Es el caso que mas confusion causo: el articulo se da
+                 de alta en la unidad del paquete, y entonces el inventario, el
+                 consumo del costeo y el precio unitario quedan todos en mazos. -->
+            <div v-if="udmMultiples.length" class="mt-4 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+              <p class="text-[12.5px] font-semibold text-amber-900">Este artículo se compra por paquete</p>
+              <ul class="mt-1 text-[12px] text-amber-900/90 list-disc pl-5 space-y-0.5">
+                <li v-for="u in udmMultiples" :key="u.uom">
+                  1 <strong>{{ u.uom }}</strong> trae <strong>{{ Number(u.conversion_factor).toLocaleString('es-MX') }}</strong> {{ udmBase }}
+                </li>
+              </ul>
+              <p class="mt-2 text-[12px] text-amber-900/90 leading-relaxed">
+                La <strong>UDM base ({{ udmBase }})</strong> es la que manda: el inventario, el consumo del
+                costeo y el precio unitario van en esa unidad. Al costear captura el consumo por prenda
+                en {{ udmBase }} (ej. 4) y el precio <em>como te lo cotizan</em> — eligiendo
+                “por {{ udmMultiples[0].uom }}” en el renglón —, y el sistema deriva el unitario.
+              </p>
+              <p class="mt-1.5 text-[12px] text-amber-900/90 leading-relaxed">
+                Marca <strong>“Paquete completo”</strong> en {{ udmMultiples.map(u => u.uom).join(', ') }}
+                para que la orden de compra nunca le pida una fracción al proveedor.
+              </p>
+            </div>
             <!-- Footer save -->
             <div v-if="uomDirty" class="flex justify-end pt-4 border-t border-gray-100">
               <button
@@ -751,6 +774,10 @@ const itemUomRows  = ref([]); // {uom, conversion_factor, _dirty}
 // Check de la UDM base (Item.compra_por_paquete_completo). Va aparte de itemUomRows
 // porque la UDM base no es un renglón de conversión.
 const baseEsPaquete = ref(false);
+// UDM de compra que traen VARIAS unidades base: las que disparan el aviso.
+const udmBase = computed(() => item.value?.stock_uom || "UDM base");
+const udmMultiples = computed(() => itemUomRows.value.filter(
+  (r) => r.uom && r.uom !== item.value?.stock_uom && Number(r.conversion_factor) > 1));
 const baseDirty = ref(false);
 
 const defaultCurrency = computed(() =>

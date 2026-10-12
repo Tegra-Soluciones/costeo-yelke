@@ -274,6 +274,29 @@
               </div>
             </div>
 
+
+            <!-- Aviso cuando alguna UDM de compra trae VARIAS unidades base (1 Mazo =
+                 1,728 piezas). Es el caso que mas confusion causo: el articulo se da
+                 de alta en la unidad del paquete, y entonces el inventario, el
+                 consumo del costeo y el precio unitario quedan todos en mazos. -->
+            <div v-if="udmMultiples.length" class="mt-4 mb-2 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+              <p class="text-[12.5px] font-semibold text-amber-900">Este artículo se compra por paquete</p>
+              <ul class="mt-1 text-[12px] text-amber-900/90 list-disc pl-5 space-y-0.5">
+                <li v-for="u in udmMultiples" :key="u.uom">
+                  1 <strong>{{ u.uom }}</strong> trae <strong>{{ Number(u.conversion_factor).toLocaleString('es-MX') }}</strong> {{ udmBase }}
+                </li>
+              </ul>
+              <p class="mt-2 text-[12px] text-amber-900/90 leading-relaxed">
+                La <strong>UDM base ({{ udmBase }})</strong> es la que manda: el inventario, el consumo del
+                costeo y el precio unitario van en esa unidad. Al costear captura el consumo por prenda
+                en {{ udmBase }} (ej. 4) y el precio <em>como te lo cotizan</em> — eligiendo
+                “por {{ udmMultiples[0].uom }}” en el renglón —, y el sistema deriva el unitario.
+              </p>
+              <p class="mt-1.5 text-[12px] text-amber-900/90 leading-relaxed">
+                Marca <strong>“Paquete completo”</strong> en {{ udmMultiples.map(u => u.uom).join(', ') }}
+                para que la orden de compra nunca le pida una fracción al proveedor.
+              </p>
+            </div>
             <!-- ── Ventas ── -->
             <div v-if="activeTab === 'ventas'">
               <SectionTitle>Configuración de Ventas</SectionTitle>
@@ -816,6 +839,12 @@ function addSupplier() {
     supplier: "", supplier_part_no: "", supplier_part_name: "", uom: "",
   });
 }
+
+// UDM de compra que traen VARIAS unidades base: las que disparan el aviso de
+// "este articulo se compra por paquete".
+const udmBase = computed(() => form.stock_uom || "UDM base");
+const udmMultiples = computed(() => (form.uom_conversions || []).filter(
+  (r) => r.uom && r.uom !== form.stock_uom && Number(r.conversion_factor) > 1));
 
 function addUomConversion() {
   form.uom_conversions.push({ uom: "", conversion_factor: 1, compra_por_paquete_completo: false });
