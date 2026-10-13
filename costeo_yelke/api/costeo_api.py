@@ -1873,8 +1873,11 @@ def get_permisos_validacion_yelke():
 
 def _contabilizar_overhead_factura(si_doc):
     """Al validar la factura de venta, registra el overhead absorbido como póliza
-    contable (ver _crear_poliza_overhead_venta) -- una sola vez por factura."""
-    if si_doc.get("overhead_journal_entry"):
+    contable (ver _crear_poliza_overhead_venta) -- una sola vez por factura. Una factura
+    corregida (amend) trae copiada la póliza de la cancelada, que ya se canceló con
+    ella (contabilidad.al_cancelar_factura_venta): esa no cuenta."""
+    previa = si_doc.get("overhead_journal_entry")
+    if previa and frappe.db.get_value("Journal Entry", previa, "docstatus") == 1:
         return
     so_name = next((it.sales_order for it in si_doc.items if it.get("sales_order")), None)
     costeo = frappe.db.get_value("Sales Order", so_name, "costeo") if so_name else None
@@ -3399,6 +3402,10 @@ def get_factura_compra(name: str) -> dict:
         "es_factura_flete": cint(doc.get("es_factura_flete")),
         "flete_origen_doctype": doc.get("flete_origen_doctype") or "",
         "flete_origen": doc.get("flete_origen") or "",
+        # Archivos de la factura (patch v0_2_58): el PDF es obligatorio para validar.
+        "archivos_factura": frappe.db.has_column("Purchase Invoice", "factura_pdf"),
+        "factura_pdf": doc.get("factura_pdf") or "",
+        "factura_xml": doc.get("factura_xml") or "",
         "items": [
             {"item_code": r.item_code, "item_name": r.item_name, "qty": r.qty, "uom": r.uom, "rate": r.rate, "amount": r.amount}
             for r in (doc.items or [])
@@ -4774,9 +4781,11 @@ def get_costeo_related(costeo: str, sales_order: str = None) -> dict:
             out["sales_invoice"] = frappe.db.get_value(
                 "Sales Invoice", si_parent,
                 ["name", "status", "docstatus", "grand_total", "currency", "posting_date",
-                 "due_date", "payment_terms_template", "tc_name", "contact_email", "contact_mobile"],
+                 "due_date", "payment_terms_template", "tc_name", "contact_email", "contact_mobile"]
+                + (["factura_pdf", "factura_xml"] if frappe.db.has_column("Sales Invoice", "factura_pdf") else []),
                 as_dict=True,
             )
+            out["sales_invoice"]["archivos_factura"] = frappe.db.has_column("Sales Invoice", "factura_pdf")
 
     # Reconcilia el estado del costeo con los documentos que EXISTEN realmente:
     # si borraron la cotización/OV desde ERPNext, baja el estado para no dejar
@@ -6180,6 +6189,23 @@ def mr_generar_oc_lote(mr: str, lote_ref: str, supplier: str = None) -> dict:
         rows = [it for it in doc.items if (not supplier or it.get("supplier") == supplier)]
     if not rows:
         frappe.throw(_("No hay materiales asignados a {0} en esta solicitud.").format(lote_ref))
+
+    # Un proveedor que YA tiene su OC viva de este lote no se vuelve a generar: un
+    # doble clic (o dos personas a la vez) creaba una segunda OC del mismo lote, que
+    # el neteo dejaba pasar porque el total del costeo todavía alcanzaba -- y le
+    # quitaba el material al lote siguiente. Se regresa la que ya existe.
+    existentes = {}
+    if frappe.db.has_column("Purchase Order", "lote_ref"):
+        for po in frappe.get_all(
+                "Purchase Order", filters={"lote_ref": lote_ref, "docstatus": ["<", 2], "is_subcontracted": 0},
+                fields=["name", "supplier"], order_by="creation asc"):
+            if frappe.db.exists("Purchase Order Item", {"parent": po.name, "material_request": mr}):
+                existentes.setdefault(po.supplier, po.name)
+    if existentes:
+        rows = [r for r in rows if not (r.get("supplier") and r.get("supplier") in existentes)]
+        if not rows:
+            suyas = [existentes[s] for s in existentes if not supplier or s == supplier]
+            return {"ok": True, "purchase_orders": suyas, "redondeos": [], "neteo": [], "ya_existia": True}
 
     # Neteo contra lo que este costeo YA tiene (MRP de libro: no se compra lo que
     # ya está en el almacén). Ver posicion_material_costeo. La OC se crea en
@@ -8428,7 +8454,13 @@ def sub_transferir_material(sco: str) -> dict:
     descontado = _descontar_lo_que_ya_tiene_el_taller(se, sco)
     ajustado = _ajustar_a_existencia(se, sco, ya_en_taller=descontado)
     se.flags.ignore_permissions = True
-    se.insert()
+    try:
+        se.insert()
+    except frappe.ValidationError:
+        # Una pieza que nunca ha tenido entradas truena aquí mismo ("Valuation Rate
+        # ... is required"); si es por falta de existencia, se dice así.
+        _exigir_existencia_envio(se)
+        raise
     return {"ok": True, "stock_entry": se.name, "docstatus": se.docstatus,
             "descontado": descontado, "ajustado_a_existencia": ajustado}
 
@@ -8976,9 +9008,39 @@ def sub_validar_transferencia(stock_entry: str) -> dict:
     requiere_vista("talleres", "envios")
     doc = frappe.get_doc("Stock Entry", stock_entry)
     if doc.docstatus == 0:
+        _exigir_existencia_envio(doc)
         doc.flags.ignore_permissions = True
         doc.submit()
     return {"ok": True}
+
+
+def _exigir_existencia_envio(se):
+    """Antes de validar un envío al taller: si falta existencia de algo, lo dice claro.
+
+    Sin esto, mandar a confección las piezas que la etapa anterior todavía no entrega
+    tronaba con el "Valuation Rate ... is required" de ERPNext (la pieza nunca ha
+    tenido entradas), que no le dice nada a quien está en la pantalla. Con existencia
+    negativa permitida no se toca nada: ahí ERPNext deja pasar el envío a propósito."""
+    if cint(frappe.db.get_single_value("Stock Settings", "allow_negative_stock")):
+        return
+    pide = {}
+    for it in se.get("items") or []:
+        if it.s_warehouse and flt(it.transfer_qty or it.qty) > 0:
+            k = (it.item_code, it.s_warehouse)
+            pide[k] = pide.get(k, 0.0) + flt(it.transfer_qty or it.qty)
+    faltan = []
+    for (code, wh), qty in pide.items():
+        hay = flt(frappe.db.get_value("Bin", {"item_code": code, "warehouse": wh}, "actual_qty"))
+        if qty - hay > 1e-6:
+            faltan.append(_("{0}: se envían {1} y en {2} hay {3}").format(
+                frappe.bold(code), round(qty, 3), wh, round(hay, 3)))
+    if faltan:
+        frappe.local.message_log = []  # el aviso de ERPNext que trajo aquí ya no aporta
+        frappe.throw(
+            _("No hay existencia suficiente para enviar al taller:") + "<br>" + "<br>".join(faltan)
+            + "<br><br>" + _("Si son piezas de una etapa anterior, primero recibe lo que entregó ese taller; "
+                             "si es materia prima, recibe su compra."),
+            title=_("Falta material"))
 
 
 @frappe.whitelist()
@@ -9480,7 +9542,7 @@ def _ramas_por_pieza(doc, paradas, paradas_out, scos_lote, por_prenda_fg):
             precio = flt(ln.precio_unitario) if ln else 0.0
             pasos_por_pieza.setdefault(s.nombre, []).append({
                 "parada_id": parada.parada_id,
-                "titulo": po_out.get("titulo") or _titulo_parada(parada),
+                "titulo": po_out.get("titulo") or parada.supplier,
                 "supplier": parada.supplier,
                 "orden": parada.orden,
                 "estado": estado,
@@ -9525,7 +9587,7 @@ def _ramas_por_pieza(doc, paradas, paradas_out, scos_lote, por_prenda_fg):
         # Precio por prenda de la etapa = la suma de lo que cobran sus piezas.
         etapas.append({
             "parada_id": parada.parada_id,
-            "titulo": po_out.get("titulo") or _titulo_parada(parada),
+            "titulo": po_out.get("titulo") or parada.supplier,
             "supplier": parada.supplier,
             "orden": parada.orden,
             "precio_prenda": round(sum(flt(p["importe_prenda"]) for p in pasos_aqui), 4),
@@ -9542,7 +9604,7 @@ def _ramas_por_pieza(doc, paradas, paradas_out, scos_lote, por_prenda_fg):
             po_out = out_por_parada.get(parada.parada_id) or {}
             tarjeta = {
                 "parada_id": parada.parada_id,
-                "titulo": po_out.get("titulo") or _titulo_parada(parada),
+                "titulo": po_out.get("titulo") or parada.supplier,
                 "supplier": parada.supplier,
                 "estado": ("recibido" if po_out.get("receipt_validated")
                            else "enviado" if po_out.get("transfer_done")
@@ -9813,6 +9875,7 @@ def sub_enviar_material(sco: str) -> dict:
         ajustado = res.get("ajustado_a_existencia") or {}
         se = frappe.get_doc("Stock Entry", se_name)
         if se.docstatus == 0:
+            _exigir_existencia_envio(se)
             se.flags.ignore_permissions = True
             se.submit()
 

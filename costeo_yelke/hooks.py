@@ -222,7 +222,16 @@ doc_events = {
 }
 
 # Factura de flete: se valida con folio del CFDI y sus adjuntos (api/fletes.py).
-doc_events.setdefault("Purchase Invoice", {})["before_submit"] = "costeo_yelke.api.fletes.validar_factura_flete"
+doc_events.setdefault("Purchase Invoice", {})["before_submit"] = [
+	"costeo_yelke.api.contabilidad.validar_archivos_factura",
+	"costeo_yelke.api.fletes.validar_factura_flete",
+]
+# Toda factura (compra y venta) se valida con su PDF; el XML es opcional.
+doc_events.setdefault("Sales Invoice", {})["before_submit"] = "costeo_yelke.api.contabilidad.validar_archivos_factura"
+
+# Factura de venta cancelada: su póliza de overhead se cancela con ella.
+doc_events.setdefault("Sales Invoice", {})["on_cancel"] = "costeo_yelke.api.contabilidad.al_cancelar_factura_venta"
+doc_events["Sales Invoice"]["before_insert"] = "costeo_yelke.api.contabilidad.factura_venta_sin_poliza_heredada"
 
 # Remisión cancelada: su factura de flete (borrador) se va con ella (api/fletes.py).
 doc_events.setdefault("Delivery Note", {})["on_cancel"] = "costeo_yelke.api.fletes.soltar_factura_remision"

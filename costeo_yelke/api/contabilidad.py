@@ -134,6 +134,50 @@ def al_cancelar_recibo_taller(doc, method=None):
     cancelar_polizas_flete(doc)
 
 
+def validar_archivos_factura(doc, method=None):
+    """doc_events: Purchase Invoice / Sales Invoice before_submit -- toda factura se
+    valida con su PDF adjunto (el XML es opcional). Las facturas del sistema son para
+    contabilidad: la real es la del proveedor o la que se timbra en el otro sistema.
+
+    Sin el campo (sitio sin el patch v0_2_58) no bloquea: la regla aparece con él."""
+    if not frappe.db.has_column(doc.doctype, "factura_pdf") or doc.get("is_return"):
+        return
+    pdf = (doc.get("factura_pdf") or "").strip()
+    if not pdf:
+        frappe.throw(_("Adjunta el PDF de la factura (campo 'Factura (PDF)') antes de validarla."),
+                     title=_("Falta la factura en PDF"))
+    if not pdf.lower().endswith(".pdf"):
+        frappe.throw(_("El archivo de 'Factura (PDF)' debe ser un PDF."))
+    xml = (doc.get("factura_xml") or "").strip()
+    if xml and not xml.lower().endswith(".xml"):
+        frappe.throw(_("El archivo de 'Factura (XML)' debe ser un XML."))
+
+
+def factura_venta_sin_poliza_heredada(doc, method=None):
+    """doc_events: Sales Invoice before_insert -- una factura nueva nunca trae póliza de
+    overhead: la genera ella misma al validarse. Cubre las copias hechas por código
+    (frappe.copy_doc copia hasta los campos "no copiar")."""
+    if doc.get("overhead_journal_entry"):
+        doc.overhead_journal_entry = None
+
+
+def al_cancelar_factura_venta(doc, method=None):
+    """doc_events: Sales Invoice on_cancel -- la póliza de overhead nace al validar la
+    factura (costeo_api._contabilizar_overhead_factura) y se va con ella. Sin esto
+    quedaba viva y, al rehacer la factura, el overhead se registraba dos veces.
+
+    Se suelta además el vínculo: al corregir (amend) la factura, ERPNext copia el
+    campo aunque sea "no copiar", y una liga a una póliza cancelada no deja guardar
+    la corrección. La póliza sigue diciendo en su comentario de qué factura era."""
+    je = doc.get("overhead_journal_entry")
+    if je and frappe.db.get_value("Journal Entry", je, "docstatus") == 1:
+        d = frappe.get_doc("Journal Entry", je)
+        d.flags.ignore_permissions = True
+        d.cancel()
+    if je:
+        frappe.db.set_value("Sales Invoice", doc.name, "overhead_journal_entry", None, update_modified=False)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Pólizas de flete (costos adicionales con proveedor)
 # ─────────────────────────────────────────────────────────────────────────────

@@ -17,6 +17,7 @@ def execute():
                     "options": "Journal Entry",
                     "insert_after": "due_date",
                     "read_only": 1,
+                    "no_copy": 1,
                 },
             ],
         },

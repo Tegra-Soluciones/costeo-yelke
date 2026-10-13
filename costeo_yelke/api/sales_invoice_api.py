@@ -165,6 +165,10 @@ def get_sales_invoice(name):
         "company": doc.company,
         "posting_date": str(doc.posting_date) if doc.posting_date else "",
         "due_date": str(doc.due_date) if doc.due_date else "",
+        # Archivos de la factura (patch v0_2_58): el PDF es obligatorio para validar.
+        "archivos_factura": frappe.db.has_column("Sales Invoice", "factura_pdf"),
+        "factura_pdf": doc.get("factura_pdf") or "",
+        "factura_xml": doc.get("factura_xml") or "",
         "currency": doc.currency,
         "selling_price_list": doc.selling_price_list or "",
         "conversion_rate": float(doc.conversion_rate or 1),

@@ -3096,6 +3096,13 @@
           </div>
 
           <div v-else class="space-y-2">
+            <!-- La factura timbrada en el otro sistema: PDF obligatorio, XML opcional. -->
+            <FacturaArchivos
+              v-if="related.sales_invoice.archivos_factura" class="mb-2"
+              doctype="Sales Invoice" :docname="related.sales_invoice.name" apilado
+              v-model:pdf="related.sales_invoice.factura_pdf" v-model:xml="related.sales_invoice.factura_xml"
+              :solo-lectura="siValidated"
+            />
             <template v-if="!siValidated">
               <button :disabled="advancing" class="w-full h-9 text-sm font-medium text-ink border border-surface-border rounded-lg hover:bg-surface-raised disabled:opacity-50" @click="guardarFactura">Guardar cambios</button>
               <button :disabled="advancing" class="w-full h-9 text-sm font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex items-center justify-center gap-1.5" @click="validarFactura">
@@ -3240,6 +3247,7 @@ import Segmentado from "@/components/produccion/Segmentado.vue";
 import VacioEstado from "@/components/produccion/VacioEstado.vue";
 import { useProduccionRuta } from "@/composables/useProduccionRuta.js";
 import FacturaCompraPanel from "@/components/FacturaCompraPanel.vue";
+import FacturaArchivos from "@/components/FacturaArchivos.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import MaterializeProductModal from "@/components/MaterializeProductModal.vue";
 import HistorialModal from "@/components/HistorialModal.vue";
@@ -6272,6 +6280,24 @@ const guiaParada = computed(() => {
       titulo: `Siguiente: encargar el trabajo${dePieza}`,
       detalle: "Vuelve a Talleres, marca las piezas que vas a encargar y pulsa Crear orden.",
     };
+  }
+  if (estado === "encargado" && c && !celdaRef.value?.pieza) {
+    // Tarjeta de la cadena final (confección, acabado…): su encargo nace al abrir el
+    // lote, pero su material son las piezas de las etapas anteriores. Mientras no
+    // lleguen, enviar solo daría "falta material".
+    const i = cadenaFinal.value.findIndex((t) => t.parada_id === c.parada_id);
+    const previoOk = i <= 0
+      ? (c.piezas_listas ?? 0) >= (c.piezas_total ?? 0)
+      : cadenaFinal.value[i - 1]?.estado === "recibido";
+    if (!previoOk) {
+      return {
+        cls: "bg-surface-raised ring-1 ring-surface-border",
+        titulo: `Ya está encargado a ${taller}; falta que lleguen las piezas`,
+        detalle: i <= 0
+          ? `Llevas ${c.piezas_listas ?? 0} de ${c.piezas_total ?? 0} piezas listas. Cuando estén todas, aquí se habilita enviar el material.`
+          : `Espera a que ${cadenaFinal.value[i - 1]?.supplier || "el taller anterior"} entregue; en cuanto lo recibas se habilita.`,
+      };
+    }
   }
   if (estado === "encargado") {
     return {

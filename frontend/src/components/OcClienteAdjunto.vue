@@ -25,8 +25,8 @@
       <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
         <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v12m0-12l-4 4m4-4l4 4M4 20h16"/>
       </svg>
-      {{ subiendo ? "Subiendo…" : "Adjuntar la OC del cliente (PDF o imagen)" }}
-      <input type="file" accept=".pdf,image/*" class="hidden" :disabled="subiendo" @change="emit('archivo', $event)" />
+      {{ subiendo ? "Subiendo…" : texto }}
+      <input type="file" :accept="accept" class="hidden" :disabled="subiendo" @change="emit('archivo', $event)" />
     </label>
 
     <p v-else class="text-[12px] text-ink-light">Sin archivo adjunto.</p>
@@ -39,6 +39,9 @@ const props = defineProps({
   modelValue: { type: String, default: "" },
   soloLectura: { type: Boolean, default: false },
   subiendo: { type: Boolean, default: false },
+  // También lo usan los archivos de factura (FacturaArchivos.vue).
+  texto: { type: String, default: "Adjuntar la OC del cliente (PDF o imagen)" },
+  accept: { type: String, default: ".pdf,image/*" },
 });
 const emit = defineEmits(["update:modelValue", "archivo", "quitar"]);
 // El valor es la RUTA del archivo; para mostrarlo basta el último tramo.

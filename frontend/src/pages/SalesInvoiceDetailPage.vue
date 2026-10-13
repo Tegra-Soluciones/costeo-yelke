@@ -119,6 +119,12 @@
                 <input v-model="form.due_date" type="date" :disabled="!canEdit" class="field-input" />
               </div>
 
+              <!-- La factura timbrada en el otro sistema: PDF obligatorio para validar, XML opcional. -->
+              <div v-if="inv.name && inv.archivos_factura" class="col-span-2">
+                <FacturaArchivos doctype="Sales Invoice" :docname="inv.name"
+                  v-model:pdf="inv.factura_pdf" v-model:xml="inv.factura_xml" :solo-lectura="inv.docstatus !== 0" />
+              </div>
+
               <div>
                 <label class="field-label">Moneda</label>
                 <select v-model="form.currency" :disabled="!canEdit" class="field-input">
@@ -442,6 +448,7 @@
 import { ref, reactive, computed, onMounted, watch, defineComponent, h } from "vue";
 import { useRouter } from "vue-router";
 import PageHeader from "@/components/PageHeader.vue";
+import FacturaArchivos from "@/components/FacturaArchivos.vue";
 import { call, defaultPrintFormat } from "@/utils/frappe.js";
 
 const props  = defineProps({ name: { type: String, default: "" } });
@@ -492,6 +499,7 @@ const isNew = computed(() => !props.name || props.name === "nueva");
 const inv = reactive({
   name: "", docstatus: 0, status: "", creation: "", modified: "",
   total_taxes_and_charges: 0, outstanding_amount: 0, customer_name: "",
+  archivos_factura: false, factura_pdf: "", factura_xml: "",
 });
 
 const form = reactive({
@@ -602,6 +610,7 @@ function syncFromInv(data) {
     total_taxes_and_charges: data.total_taxes_and_charges || 0,
     outstanding_amount: data.outstanding_amount || 0,
     customer_name: data.customer_name || "",
+    archivos_factura: !!data.archivos_factura, factura_pdf: data.factura_pdf || "", factura_xml: data.factura_xml || "",
   });
   const scalars = ["customer","company","posting_date","due_date","currency",
     "selling_price_list","conversion_rate","taxes_and_charges","additional_discount_percentage",

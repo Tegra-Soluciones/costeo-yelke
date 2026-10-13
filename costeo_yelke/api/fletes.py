@@ -190,11 +190,14 @@ def soltar_factura_remision(doc, method=None):
 # ── Factura del flete ───────────────────────────────────────────────────────
 
 def validar_factura_flete(doc, method=None):
-    """Purchase Invoice before_submit: una factura de FLETE se valida con el folio del
-    CFDI y con su respaldo adjunto (CFDI XML/PDF y, si aplica, la carta porte)."""
+    """Purchase Invoice before_submit: una factura de FLETE se valida además con el
+    folio del CFDI. El PDF lo exige contabilidad.validar_archivos_factura para TODA
+    factura; la carta porte va en los adjuntos generales. Sin ese campo (sitio sin el
+    patch v0_2_58) se sigue pidiendo algún adjunto, como antes."""
     if not doc.get("es_factura_flete"):
         return
     if not (doc.get("bill_no") or "").strip():
         frappe.throw(_("Captura el folio del CFDI del proveedor de paquetería antes de validar la factura del flete."))
-    if not frappe.db.exists("File", {"attached_to_doctype": "Purchase Invoice", "attached_to_name": doc.name}):
+    if not frappe.db.has_column("Purchase Invoice", "factura_pdf") and not frappe.db.exists(
+            "File", {"attached_to_doctype": "Purchase Invoice", "attached_to_name": doc.name}):
         frappe.throw(_("Adjunta el CFDI (XML o PDF) y, si aplica, la carta porte antes de validar la factura del flete."))

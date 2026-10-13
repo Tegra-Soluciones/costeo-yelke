@@ -79,3 +79,5 @@ costeo_yelke.patches.v0_2_54.contacto_companias
 costeo_yelke.patches.v0_2_55.formatos_recepciones_facturas
 costeo_yelke.patches.v0_2_56.oc_cliente_adjunta
 costeo_yelke.patches.v0_2_56.fletes_paqueteria
+costeo_yelke.patches.v0_2_57.overhead_no_copiar
+costeo_yelke.patches.v0_2_58.archivos_factura
