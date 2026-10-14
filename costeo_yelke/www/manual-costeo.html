@@ -94,16 +94,19 @@
     <div>Sistema: Costeo Yelke, dentro de ERPNext</div>
     <div><span class="novedades">Novedades de esta versión:</span>
       <ul class="novedades-list">
-        <li><strong>Producción se rediseñó por completo</strong>: ya no es una pestaña con todo encimado, sino una app con menú lateral, pasos numerados y una barra de acciones fija que siempre dice qué sigue. Sección 6, reescrita entera.</li>
+        <li><strong>Producción se rediseñó por completo</strong>: ya no es una pestaña con todo encimado, sino una app con menú lateral, pasos numerados y una barra de acciones fija que siempre dice qué sigue. Sección 7, reescrita entera.</li>
         <li>Dos <strong>bandejas nuevas</strong>: «Envíos» (todo lo que sale y entra del almacén) y «Facturas» (todo lo que hay que capturar o pagar).</li>
         <li><strong>Control por talla</strong>: se captura el desglose en la orden de venta y se reparte talla por talla entre los lotes; cada taller recibe impresas solo las tallas de su lote.</li>
         <li>La <strong>unidad de medida</strong> dejó de ser un dolor de cabeza: el costeo consume en la unidad base del artículo y el precio se captura como lo cotiza el proveedor. Secciones 1, 2 y 4.</li>
-        <li><strong>Formatos de impresión propios de Yelke</strong> para todos los documentos, con membrete, firmas e importe con letra. Sección 11, nueva.</li>
+        <li><strong>Formatos de impresión propios de Yelke</strong> para todos los documentos, con membrete, firmas e importe con letra. Sección 12, nueva.</li>
         <li><strong>Recibos parciales</strong>: una orden de compra o un encargo a taller puede recibirse en varias entregas.</li>
         <li><strong>Compras en dólares</strong> con tipo de cambio, y <strong>fletes</strong> con su IVA acreditable y su retención del 4%.</li>
         <li>Toda <strong>factura se valida con su PDF adjunto</strong>; el XML es opcional. Y la orden de venta exige adjuntar la <strong>orden de compra del cliente</strong>.</li>
         <li><strong>Sub-ensamblajes declarados</strong> y <strong>punto de ensamble</strong>: la prenda puede armarse antes de la etapa final.</li>
-        <li>Nueve <strong>roles nuevos</strong>, uno por vista de Producción, para que cada quien vea solo lo suyo. Sección 10, ampliada.</li>
+        <li>Nueve <strong>roles nuevos</strong>, uno por vista de Producción, para que cada quien vea solo lo suyo. Sección 11, ampliada.</li>
+        <li>Sección 1, nueva: <strong>cómo está armado el sistema</strong> — las dos compañías, el catálogo de cuentas, los almacenes, las listas de precios, los impuestos y los folios.</li>
+        <li>Sección 15, nueva: <strong>la contabilidad del pedido</strong> — qué registra el sistema solo en cada documento, y cómo revisarlo.</li>
+        <li>Sección 16, nueva: <strong>reportes y cómo leerlos</strong> — inventario, contabilidad, compras y ventas, con la pregunta que responde cada uno.</li>
       </ul>
     </div>
   </div>
@@ -113,20 +116,23 @@
   <h2>Contenido</h2>
   <ol>
     <li><a href="#s0">Introducción — qué es este sistema y cómo entrar</a></li>
-    <li><a href="#s1">Los datos que hay que tener listos antes de costear</a></li>
-    <li><a href="#s2">Costear — calcular cuánto cuesta hacer una prenda</a></li>
-    <li><a href="#s3">Cotizar y vender</a></li>
-    <li><a href="#s4">Alta de productos</a></li>
-    <li><a href="#s5">Flujo de producción</a></li>
-    <li><a href="#s6">Producción por lotes</a></li>
-    <li><a href="#s7">Entrega al cliente</a></li>
-    <li><a href="#s8">Facturación</a></li>
-    <li><a href="#s9">Reporte final — lo estimado contra lo real</a></li>
-    <li><a href="#s10">Roles y flujos de aprobación</a></li>
-    <li><a href="#s11">Formatos de impresión y firmas</a></li>
-    <li><a href="#s12">Los demás listados del sistema</a></li>
-    <li><a href="#s13">Recordatorios de precio</a></li>
-    <li><a href="#s14">Glosario y preguntas frecuentes</a></li>
+    <li><a href="#s1">Cómo está armado el sistema</a></li>
+    <li><a href="#s2">Los datos que hay que tener listos antes de costear</a></li>
+    <li><a href="#s3">Costear — calcular cuánto cuesta hacer una prenda</a></li>
+    <li><a href="#s4">Cotizar y vender</a></li>
+    <li><a href="#s5">Alta de productos</a></li>
+    <li><a href="#s6">Flujo de producción</a></li>
+    <li><a href="#s7">Producción</a></li>
+    <li><a href="#s8">Entrega al cliente</a></li>
+    <li><a href="#s9">Facturación</a></li>
+    <li><a href="#s10">Reporte final — lo estimado contra lo real</a></li>
+    <li><a href="#s11">Roles y flujos de aprobación</a></li>
+    <li><a href="#s12">Formatos de impresión y firmas</a></li>
+    <li><a href="#s13">Los demás listados del sistema</a></li>
+    <li><a href="#s14">Recordatorios de precio</a></li>
+    <li><a href="#s15">La contabilidad del pedido</a></li>
+    <li><a href="#s16">Reportes y cómo leerlos</a></li>
+    <li><a href="#s17">Glosario y preguntas frecuentes</a></li>
   </ol>
 </nav>
 
@@ -141,7 +147,7 @@
   <p>Este manual explica cada parte del proceso, en orden, usando un ejemplo real ya <strong>completado</strong>: un pedido de <strong>7,494 camisolas de gabardina color naranja</strong>, con botones de pasta y cinta reflejante, para el cliente <strong>Ferrocarril Mexicano S.A. de C.V.</strong> (costeo <code>CST-FERROCARRIL-MEXI-2026-00004</code>, orden de venta <code>YT-OV-2026-152</code>), producido en dos lotes. Cada captura de pantalla de este manual es de ese pedido real, tomada directamente del sistema en producción, para que se vea exactamente cómo se ve el sistema con datos verdaderos, no con un ejemplo inventado. El pedido recorrió el sistema completo: se costeó, se cotizó, se vendió, se dio de alta lo que hacía falta, se armó su flujo de producción, se produjo en dos lotes de subcontratación, se entregó con una sola remisión, se facturó al cliente y también se facturaron todas las compras (materiales y maquila) que lo hicieron posible.</p>
 
   <h3>¿En qué dirección se abre el sistema?</h3>
-  <p>Todo el sistema —tanto la aplicación de Costeo como el escritorio general de ERPNext que se usa para los datos maestros (sección 1)— vive en una sola dirección de internet, a la que se entra desde cualquier navegador (Chrome, Edge, Safari) en la computadora o en el celular, sin instalar nada:</p>
+  <p>Todo el sistema —tanto la aplicación de Costeo como el escritorio general de ERPNext que se usa para los datos maestros (sección 2)— vive en una sola dirección de internet, a la que se entra desde cualquier navegador (Chrome, Edge, Safari) en la computadora o en el celular, sin instalar nada:</p>
   <p style="text-align:center;font-size:19px;font-weight:700;letter-spacing:-0.01em;margin:8px 0 20px;">erp.yelke.com.mx</p>
   <p>Esa dirección lleva primero a la pantalla de inicio de sesión. Una vez dentro, la parte del día a día —costear, cotizar, vender, producir— vive específicamente en <code>erp.yelke.com.mx/costeo-yelke/inicio</code>. Vale la pena <strong>guardar esa dirección como favorito del navegador</strong> desde el primer día, para no depender de recordar la ruta completa cada vez ni de navegar por el escritorio general de ERPNext para llegar a ella.</p>
 
@@ -168,7 +174,7 @@
     <figcaption>La pantalla de «Forgot Password»: solo pide el correo de la cuenta para mandar el enlace de restablecimiento. «Regresar para iniciar sesión» regresa a la pantalla anterior sin hacer nada.</figcaption>
   </figure>
 
-  <div class="callout"><b>Para quien es nuevo en el equipo:</b> no hace falta memorizar nada del sistema el primer día — este manual está pensado justo para acompañar los primeros pedidos reales. Lo único indispensable antes de empezar es: tener ya la cuenta creada (pídesela a tu responsable si no la tienes), saber qué <strong>rol</strong> te corresponde dentro del flujo (ver la sección 10, «Roles y flujos de aprobación», para entender qué puede hacer cada quién), y guardar como favorito la dirección de la app de Costeo mencionada arriba.</div>
+  <div class="callout"><b>Para quien es nuevo en el equipo:</b> no hace falta memorizar nada del sistema el primer día — este manual está pensado justo para acompañar los primeros pedidos reales. Lo único indispensable antes de empezar es: tener ya la cuenta creada (pídesela a tu responsable si no la tienes), saber qué <strong>rol</strong> te corresponde dentro del flujo (ver la sección 11, «Roles y flujos de aprobación», para entender qué puede hacer cada quién), y guardar como favorito la dirección de la app de Costeo mencionada arriba.</div>
 
   <h3>Qué se ve al entrar</h3>
   <p>Al iniciar sesión correctamente, el sistema lleva a la pantalla general de ERPNext (el escritorio completo, con todos los módulos del negocio). Para llegar de ahí a la aplicación de Costeo — donde en realidad se trabaja todos los días — hay que ir a la dirección <code>erp.yelke.com.mx/costeo-yelke/inicio</code> mencionada arriba (de ahí la importancia de guardarla como favorito). Una vez ahí, lo primero que se ve es el panel de control: un resumen con el número de costeos activos, cuánto se ha vendido, cuánto se ha facturado, cuánto se ha cobrado y el avance de cada etapa.</p>
@@ -193,7 +199,113 @@
 </section>
 
 <section id="s1">
-  <h2 class="sec-title">1. Los datos que hay que tener listos antes de costear</h2>
+  <h2 class="sec-title">1. Cómo está armado el sistema</h2>
+  <p class="sec-dek">Antes de capturar nada conviene entender sobre qué está parado todo: las compañías, el catálogo de cuentas, los almacenes y las listas que el sistema usa sin preguntar. Casi nada de esto se toca en el día a día, pero cuando algo sale raro, la explicación casi siempre está aquí.</p>
+
+  <h3>Dos sistemas en uno</h3>
+  <p>Lo que se usa todos los días es <strong>Costeo Yelke</strong>: la aplicación con el menú naranja, hecha a la medida del proceso de Yelke. Por debajo corre <strong>ERPNext</strong>, el sistema administrativo que guarda los documentos, lleva el inventario y hace la contabilidad.</p>
+  <p>A ERPNext se le llama «el escritorio». Se entra desde el enlace <strong>«Escritorio ERPNext»</strong> al final del menú de la izquierda, o desde el botón <strong>«ERPNext ↗»</strong> que tienen varios paneles para abrir el documento que estás viendo en su forma completa.</p>
+  <p>La regla práctica: <strong>el trabajo normal se hace en la app</strong>; al escritorio se entra para tres cosas — revisar la contabilidad, correr reportes y corregir algo que la app no deja editar. Las secciones 15 y 16 de este manual tratan justamente de eso.</p>
+
+  <h3>Las compañías</h3>
+  <p>El sistema maneja <strong>dos compañías</strong>, cada una con su propia contabilidad, sus propios almacenes y sus propios folios:</p>
+  <table>
+    <tr><th>Compañía</th><th>Abreviatura</th><th>Para qué</th></tr>
+    <tr><td>YELKE TEXTILES</td><td>YT</td><td>La operación principal.</td></tr>
+    <tr><td>SUS INDUSTRIAL</td><td>SI</td><td>La segunda razón social.</td></tr>
+  </table>
+  <p>Esa abreviatura — <code>YT</code> o <code>SI</code> — aparece al final de casi todo: las cuentas contables (<code>Ventas - YT</code>), los almacenes (<code>Materia Prima - YT</code>), los centros de costo y los folios de los documentos (<code>YT-OV-2026-307</code>). Es la forma más rápida de saber a qué compañía pertenece algo con solo mirarlo.</p>
+
+  <div class="callout warn"><b>El error más común y más caro.</b> Capturar un documento en la compañía equivocada. No falla de inmediato: falla más adelante y de forma confusa — una orden de compra de maquila que revienta al validar con «Warehouse … does not belong to company …» porque el almacén del taller se creó en la otra compañía. <strong>Revisa el selector de compañía</strong> arriba de la pantalla antes de empezar, y también dentro del formulario.</div>
+
+  <h3>El catálogo de cuentas</h3>
+  <p>Es la lista de cuentas contables de cada compañía: bancos, clientes, proveedores, inventarios, ventas, costos. El sistema ya tiene marcadas cuáles usar sin preguntar, y por eso casi ningún documento pide escoger cuenta:</p>
+  <table>
+    <tr><th>Para qué</th><th>YELKE TEXTILES</th><th>SUS INDUSTRIAL</th></tr>
+    <tr><td>Lo que nos deben los clientes</td><td>DEUDORES VARIOS - YT</td><td>CUENTAS POR COBRAR CLIENTES - SI</td></tr>
+    <tr><td>Lo que debemos a proveedores</td><td>CUENTAS POR PAGAR PROVEEDORES - YT</td><td>CUENTAS POR PAGAR PROVEEDORES - SI</td></tr>
+    <tr><td>Ingresos por venta</td><td>Ventas - YT</td><td>VENTAS NACIONALES - SI</td></tr>
+    <tr><td>Costo de lo vendido</td><td>Costo sobre ventas - YT</td><td>COSTO DE VENTAS - SI</td></tr>
+    <tr><td>Valor del inventario</td><td>Stock en mano - YT</td><td>INVENTARIOS - SI</td></tr>
+    <tr><td>Recibido y aún no facturado</td><td>Inventario Recibido pero no Facturado - YT</td><td>Stock recibidas, pero no facturada - SI</td></tr>
+    <tr><td>Gastos que suben el valor del material (fletes)</td><td>GASTOS DE VALORACIÓN - YT</td><td>Gastos incluidos en la valoración - SI</td></tr>
+  </table>
+  <p>Las cuentas se llaman distinto en cada compañía porque cada una trae su propio catálogo. Eso no es un problema: el sistema no busca por nombre, sino por el papel que cada cuenta tiene asignado en la ficha de la compañía.</p>
+
+  <h3>Inventario perpetuo: por qué hay contabilidad sin que nadie la capture</h3>
+  <p>Las dos compañías tienen encendido el <strong>inventario perpetuo</strong>. Significa que <em>cada movimiento de inventario genera su propia póliza contable, automáticamente</em>: cuando llega la tela, cuando sale al taller, cuando el taller devuelve la pieza, cuando se remisiona al cliente.</p>
+  <p>Por eso el saldo de la cuenta de inventario siempre refleja lo que hay en los almacenes, sin que nadie tenga que capturar pólizas a mano. Y por eso también un movimiento de inventario mal hecho <strong>sí afecta la contabilidad</strong> — no es «solo almacén». Es la razón por la que el sistema es estricto con los recibos y los envíos.</p>
+
+  <h3>Centros de costo</h3>
+  <p>Cada compañía tiene un centro de costo <strong>«Principal»</strong>, y es el que se usa en todo. Sirve para agrupar los gastos e ingresos de la operación. Se escoge solo al crear el costeo; no hay que pensarlo.</p>
+
+  <h3>Los almacenes</h3>
+  <p>Los almacenes están organizados en árbol, colgando de <strong>«Todos los almacenes»</strong>. Cada compañía tiene los suyos:</p>
+  <table>
+    <tr><th>Almacén</th><th>Qué guarda</th></tr>
+    <tr><td>Materia Prima</td><td>La tela, los botones, la cinta — todo lo que se compra para producir. Aquí entra lo que recibe el almacenista.</td></tr>
+    <tr><td>Trabajo en Proceso</td><td>Las piezas a medio hacer: lo que un taller ya entregó pero que todavía le falta pasar por otros.</td></tr>
+    <tr><td>Productos terminados</td><td>La prenda lista, esperando a remisionarse.</td></tr>
+    <tr><td>Las mercancías en tránsito</td><td>Lo que va en camino entre dos almacenes.</td></tr>
+    <tr><td>Sucursales</td><td>Para existencia fuera de la planta.</td></tr>
+  </table>
+
+  <h4>Un almacén por taller</h4>
+  <p>Además de esos, <strong>cada taller tiene su propio almacén</strong> — <code>ALMACEN ALEJANDRO - YT</code>, <code>ABRAHAM MAZARI AVELINO - YT</code>. Cuando se le manda material a un taller, el material no «desaparece»: se mueve al almacén de ese taller y ahí sigue siendo de Yelke, contablemente. Cuando el taller devuelve la pieza terminada, el material consumido sale de ahí y la pieza entra a Trabajo en Proceso.</p>
+  <p>Eso permite saber, en cualquier momento, <strong>cuánto material tiene cada taller en su poder</strong> — y también detectar sobrantes al final del lote, que se devuelven con un movimiento de material.</p>
+
+  <div class="callout warn"><b>El almacén del taller necesita su proveedor asociado.</b> Cada almacén de taller tiene un campo que dice a qué proveedor pertenece. Si falta, las órdenes de subcontratación de ese taller truenan al validar, porque el sistema no sabe a qué almacén mandar el material. Al dar de alta un taller nuevo hay que crear su almacén <em>y</em> llenarle ese campo.</div>
+
+  <h4>Cómo se crea un almacén</h4>
+  <ol class="steps">
+    <li><div class="step-body"><b>Entrar al escritorio de ERPNext</b><span>Desde el menú de la izquierda, «Escritorio ERPNext». Buscar «Almacén» en el buscador de arriba.</span></div></li>
+    <li><div class="step-body"><b>Nuevo</b><span>Nombre del almacén y, muy importante, la <strong>compañía</strong> correcta. El sistema le agrega solo la abreviatura al final.</span></div></li>
+    <li><div class="step-body"><b>Colgarlo del árbol</b><span>En «Almacén padre», elegir «Todos los almacenes» de esa misma compañía.</span></div></li>
+    <li><div class="step-body"><b>Si es de un taller, asociarlo</b><span>Llenar el campo del proveedor al que pertenece. Sin eso, las órdenes de maquila de ese taller fallan.</span></div></li>
+  </ol>
+
+  <h3>Listas de precios</h3>
+  <p>Hay dos: <strong>«Compra estandar»</strong>, donde viven los precios a los que se le compra a cada proveedor, y <strong>«Venta estándar»</strong>, donde viven los precios acordados con cada cliente. Las dos en pesos.</p>
+  <p>El costeo lee la de compra para sugerir precios de materiales, y escribe en la de venta el precio acordado del pedido, con su vigencia — que es lo que después vigilan los recordatorios de precio (sección 14).</p>
+
+  <h3>Impuestos</h3>
+  <p>Las plantillas de impuestos ya están armadas y el sistema escoge la que toca:</p>
+  <table>
+    <tr><th>Plantilla</th><th>Cuándo se usa</th></tr>
+    <tr><td>Mexico Tax</td><td>IVA 16% normal, de compra y de venta. Es la de siempre.</td></tr>
+    <tr><td>FLETE IVA 16%</td><td>Flete de un transportista que no retiene.</td></tr>
+    <tr><td>FLETE IVA 16% RET 4%</td><td>Flete terrestre de carga, con la retención del 4% que marca la ley.</td></tr>
+  </table>
+
+  <h3>Condiciones de pago</h3>
+  <p>Las plantillas que se pueden elegir en una cotización, una orden de venta o una factura: <em>una sola exhibición</em>, <em>30, 45, 60, 90, 120 y 300 días de crédito</em>, y <em>semanal</em>. Elegir la plantilla correcta importa: de ahí sale la fecha de vencimiento que después aparece en los reportes de cuentas por cobrar y por pagar.</p>
+
+  <h3>Grupos de artículo</h3>
+  <p>Todo producto pertenece a un grupo, y el grupo decide cómo se comporta:</p>
+  <table>
+    <tr><th>Grupo</th><th>Qué va ahí</th></tr>
+    <tr><td>Materia prima</td><td>Tela, botones, cierres, cinta. Lo que se compra y se consume.</td></tr>
+    <tr><td>Productos Terminados</td><td>La prenda que se le vende al cliente.</td></tr>
+    <tr><td>Sub-Ensamblajes</td><td>Las piezas: frente, espalda, mangas, puños.</td></tr>
+    <tr><td>Productos en Proceso</td><td>Lo que está a medio camino.</td></tr>
+    <tr><td>Servicios</td><td>Corte, confección, bordado, flete. No son cosas, son trabajos — por eso no llevan inventario.</td></tr>
+    <tr><td>Consumible</td><td>Lo que se gasta pero no forma parte de la prenda.</td></tr>
+  </table>
+
+  <h3>Unidades de medida</h3>
+  <p>El catálogo trae más de doscientas unidades. En la práctica se usan unas pocas — <strong>Pieza</strong>, <strong>Metro</strong>, <strong>Kilogramo</strong>, <strong>Rollo</strong>, <strong>Mazo</strong>, <strong>Gruesa</strong>, <strong>Millar</strong>, <strong>Paquete</strong> — y la diferencia entre unidad base y unidad de compra se explica con detalle en la sección 2.</p>
+  <p>Una regla del catálogo: <strong>el nombre de una unidad no lleva la medida</strong>. «Rollo» sí; «Rollo de 100 mts» no, porque cuántos metros trae el rollo depende del artículo y del proveedor, y eso va en el factor de conversión, no en el nombre.</p>
+
+  <h3>Usuarios, roles y firma</h3>
+  <p>Cada persona entra con su propio usuario. Lo que puede ver y hacer depende de sus <strong>roles</strong> (sección 11). Y en su perfil puede guardar su <strong>firma</strong>, que es la que sale impresa en los documentos que elabora, revisa o aprueba (sección 12).</p>
+  <p>Un detalle que conviene saber: si a un usuario se le asignó un <strong>perfil de rol</strong>, sus roles se toman del perfil y no de su ficha. Asignarle roles sueltos a esa persona no sirve de nada — hay que agregarlos al perfil.</p>
+
+  <h3>Los folios</h3>
+  <p>Cada tipo de documento tiene su serie, y la serie incluye la abreviatura de la compañía y el año: <code>YT-COT-2026-148</code> para una cotización, <code>YT-OV-2026-307</code> para una orden de venta, <code>YT-OC-2026-382</code> para una orden de compra. Los folios son consecutivos y <strong>no se reutilizan</strong>: si un documento se cancela, su número se queda apartado para siempre, que es justamente lo que exige una contabilidad auditable.</p>
+</section>
+
+<section id="s2">
+  <h2 class="sec-title">2. Los datos que hay que tener listos antes de costear</h2>
 
   <p>Antes de calcular el costo de una prenda, el sistema necesita conocer al cliente, a los proveedores, los materiales y los almacenes que se van a usar. Esto se llama «datos maestros»: información que se captura una sola vez y que después se reutiliza en todos los pedidos.</p>
   <p>Estos datos no se capturan dentro de la aplicación de Costeo, sino en el escritorio general de ERPNext (el sistema completo del que Costeo Yelke es una parte). Se llega ahí desde el enlace <strong>«Escritorio ERPNext»</strong>, al final del menú izquierdo de la aplicación de Costeo.</p>
@@ -241,7 +353,7 @@
     <li><div class="step-body"><b>«Tipo de Cliente»</b><span>— «Compañía» o «Individual», según si se le vende a una empresa o a una persona física.</span></div></li>
     <li><div class="step-body"><b>«Territorio»</b><span>— el país o región del cliente (normalmente «Mexico»). Se usa para reportes y para algunas reglas de impuestos.</span></div></li>
     <li><div class="step-body"><b>Bloque «Predeterminados»</b><span>— moneda de facturación (MXN en casi todos los casos) y, si aplica, la lista de precios que se le debe aplicar por defecto a este cliente.</span></div></li>
-    <li><div class="step-body"><b>Pestaña «Dirección y Contacto»</b><span>— aquí se agregan, una por una, todas las direcciones del cliente (facturación, entregas en distintas plantas, etc.) y sus contactos (nombre, correo, teléfono) — la sección 7 de este manual explica cómo estas direcciones se eligen después al generar una remisión.</span></div></li>
+    <li><div class="step-body"><b>Pestaña «Dirección y Contacto»</b><span>— aquí se agregan, una por una, todas las direcciones del cliente (facturación, entregas en distintas plantas, etc.) y sus contactos (nombre, correo, teléfono) — la sección 8 de este manual explica cómo estas direcciones se eligen después al generar una remisión.</span></div></li>
     <li><div class="step-body"><b>Pestaña «Impuesto»</b><span>— para clientes mexicanos, el RFC y el «Uso de CFDI» que después se usan automáticamente al timbrar la factura de venta.</span></div></li>
     <li><div class="step-body"><b>Guardar</b><span>— con el botón «Guardar» de la esquina superior derecha (o Ctrl/⌘ + S). El cliente queda disponible de inmediato para usarse en un costeo nuevo.</span></div></li>
   </ol>
@@ -283,7 +395,7 @@
     <li><div class="step-body"><b>«Grupo de proveedores».</b><span>Lo más importante para que después sea fácil filtrar: normalmente «Materia prima» para quien vende telas/avíos, o «Servicios» para un taller de maquila.</span></div></li>
     <li><div class="step-body"><b>«Tipo de proveedor».</b><span>«Individual» (persona física, muy común entre talleres de maquila pequeños) o «Compañía».</span></div></li>
     <li><div class="step-body"><b>«País».</b><span>Casi siempre «México» — se usa para reglas de impuestos y de moneda.</span></div></li>
-    <li><div class="step-body"><b>Guardar.</b><span>El proveedor queda disponible de inmediato para asignarse como proveedor de un servicio o de un material dentro de un punto del costeo (sección 2).</span></div></li>
+    <li><div class="step-body"><b>Guardar.</b><span>El proveedor queda disponible de inmediato para asignarse como proveedor de un servicio o de un material dentro de un punto del costeo (sección 3).</span></div></li>
   </ol>
 
   <figure>
@@ -308,7 +420,7 @@
     <figcaption>El mismo material del ejemplo anterior, ya corregido: código <code>CINTA-REFLEJANTE-GRIS-3M-8906</code> y nombre «REFLEJANTE GRIS 1.5" MARCA 3M MOD.8906» — reconocible de inmediato en cualquier lista del sistema.</figcaption>
   </figure>
 
-  <p>Una parte importante de este manual — la sección 4, «Alta de productos» — explica que <strong>no todos los materiales o servicios necesitan existir como producto desde el principio.</strong> Al costear un pedido nuevo, es normal escribir el nombre de una tela o un servicio como simple texto libre, sin tener todavía su ficha completa en el sistema. Solo cuando el pedido se confirma de verdad (se convierte en una Orden de Venta) es cuando conviene «darlos de alta» como productos reales — así no se llena el catálogo con materiales de pedidos que a lo mejor nunca se concretan. Aun así, para materiales que se sabe que se van a volver a usar seguido (una tela base, un tipo de botón estándar), suele ser más práctico darlos de alta aquí desde el principio, siguiendo los pasos de abajo.</p>
+  <p>Una parte importante de este manual — la sección 5, «Alta de productos» — explica que <strong>no todos los materiales o servicios necesitan existir como producto desde el principio.</strong> Al costear un pedido nuevo, es normal escribir el nombre de una tela o un servicio como simple texto libre, sin tener todavía su ficha completa en el sistema. Solo cuando el pedido se confirma de verdad (se convierte en una Orden de Venta) es cuando conviene «darlos de alta» como productos reales — así no se llena el catálogo con materiales de pedidos que a lo mejor nunca se concretan. Aun así, para materiales que se sabe que se van a volver a usar seguido (una tela base, un tipo de botón estándar), suele ser más práctico darlos de alta aquí desde el principio, siguiendo los pasos de abajo.</p>
 
   <h3>Cómo se busca o se crea un producto, paso a paso</h3>
 
@@ -325,11 +437,11 @@
   <ol class="steps">
     <li><div class="step-body"><b>«+ Agregar Producto» y llenar «Código del Producto».</b><span>Este es el identificador único del artículo — es el campo más importante de todos, porque ya no se puede cambiar fácilmente después de que el producto se use en documentos. Conviene que sea descriptivo, en mayúsculas y con guiones en vez de espacios (el sistema lo homologa solo), por ejemplo <code>CINTA-REFLEJANTE-GRIS-3M-8906</code> en vez de «8906».</span></div></li>
     <li><div class="step-body"><b>«Nombre del artículo» (opcional).</b><span>Un nombre más descriptivo o comercial, si se quiere que sea distinto al código — por ejemplo, código <code>CINTA-REFLEJANTE-GRIS-3M-8906</code> con nombre «REFLEJANTE GRIS 1.5" MARCA 3M MOD.8906».</span></div></li>
-    <li><div class="step-body"><b>«Grupo de Productos» — obligatorio.</b><span>Al hacer clic se despliega la lista completa de grupos existentes (ver la captura de abajo): «Materia prima», «Servicios», «Sub-Ensamblajes», «Productos Terminados», entre otros. Elegir el correcto importa porque varios pasos del sistema filtran por este campo — por ejemplo, la Solicitud de Material excluye automáticamente a los Sub-Ensamblajes, precisamente porque esos no se compran, se producen (ver la sección 6).</span></div></li>
+    <li><div class="step-body"><b>«Grupo de Productos» — obligatorio.</b><span>Al hacer clic se despliega la lista completa de grupos existentes (ver la captura de abajo): «Materia prima», «Servicios», «Sub-Ensamblajes», «Productos Terminados», entre otros. Elegir el correcto importa porque varios pasos del sistema filtran por este campo — por ejemplo, la Solicitud de Material excluye automáticamente a los Sub-Ensamblajes, precisamente porque esos no se compran, se producen (ver la sección 7).</span></div></li>
     <li><div class="step-body"><b>«Unidad de Medida (UdM) predeterminada» — obligatorio.</b><span>Pieza, metro, kilogramo, mazo, etc. Es la unidad «base» del artículo — todas las conversiones posteriores (Rendimiento/Consumo en el costeo, cambio de UDM en la Solicitud de Material) se calculan a partir de esta.</span></div></li>
     <li><div class="step-body"><b>Casilla «Mantener Stock».</b><span>Debe quedar marcada para cualquier material o producto físico que vaya a pasar por el almacén — es lo que le indica al sistema que lleve el control de inventario de este artículo. Para un servicio puro (que no deja inventario, como «Servicio de Corte»), se puede dejar sin marcar.</span></div></li>
     <li><div class="step-body"><b>Pestaña «Adquisitivo» (opcional).</b><span>Aquí se puede fijar un proveedor por defecto para este material, para que se autocomplete al usarlo en un punto del costeo o al generar una orden de compra.</span></div></li>
-    <li><div class="step-body"><b>Guardar.</b><span>El producto queda disponible de inmediato para buscarse en cualquier punto de un costeo, o para vincularse desde «Alta de Productos» (sección 4).</span></div></li>
+    <li><div class="step-body"><b>Guardar.</b><span>El producto queda disponible de inmediato para buscarse en cualquier punto de un costeo, o para vincularse desde «Alta de Productos» (sección 5).</span></div></li>
   </ol>
 
   <figure>
@@ -379,13 +491,13 @@
   <p>La ficha de cada proveedor guarda su <strong>cuenta bancaria</strong> — CLABE y tarjeta —, que aparece resumida en la ficha y se usa al programar los pagos. Es un dato del proveedor, no de la empresa: la cuenta propia de Yelke se configura aparte, en la compañía.</p>
 
   <h3>La firma de cada persona</h3>
-  <p>Cada usuario del sistema puede registrar su <strong>firma</strong> en su propio perfil. Esa firma es la que sale impresa en los documentos, en el bloque de «Elaboró / Revisó / Aprobó» (ver sección 11). Se captura una sola vez y se usa en todos los formatos.</p>
+  <p>Cada usuario del sistema puede registrar su <strong>firma</strong> en su propio perfil. Esa firma es la que sale impresa en los documentos, en el bloque de «Elaboró / Revisó / Aprobó» (ver sección 12). Se captura una sola vez y se usa en todos los formatos.</p>
 
   <div class="callout">Estos cuatro tipos de dato — clientes, proveedores, productos y almacenes — son la base de todo lo demás. Cuantos más pedidos se procesen, menos capturas nuevas hará falta, porque el catálogo ya va a tener la mayoría de lo que se necesita.</div>
 </section>
 
-<section id="s2">
-  <h2 class="sec-title">2. Costear</h2>
+<section id="s3">
+  <h2 class="sec-title">3. Costear</h2>
   <p class="sec-dek">El primer paso de cualquier pedido: calcular cuánto cuesta hacer la prenda y a qué precio se le debe vender al cliente.</p>
 
   <p>«Costear» es armar, prenda por prenda, la lista completa de materiales y servicios que se necesitan para producirla, con su cantidad y su precio — y a partir de ahí, el sistema calcula solo el costo total y sugiere un precio de venta. Este es el paso donde nace un pedido nuevo, mucho antes de que el cliente haya confirmado nada.</p>
@@ -445,7 +557,7 @@
   <h3>Agregar un paso nuevo</h3>
   <p>Al final de la lista de puntos hay un botón grande, con un «+», que dice simplemente <strong>«Agregar paso»</strong>. Con eso se crea un punto en blanco, listo para escribir su proveedor y empezar a agregarle servicios y materiales.</p>
 
-  <div class="callout change"><b>Qué cambió frente a versiones anteriores:</b> ya no existen las tablas sueltas de «Materias primas» y «Etapas de manufactura» — todo vive agrupado por punto, en el orden en que de verdad ocurre el proceso. El «recibe de» (de qué paso anterior recibe cada punto la pieza a medio hacer) ya <strong>no</strong> se ajusta aquí — eso se revisa exclusivamente en el siguiente paso, «Flujo de Producción» (sección 5), para que el Costeo no se sature de decisiones que en realidad son del flujo. Tampoco es posible agregar un material «suelto» sin punto asignado — cada materia prima necesita quedar dentro del punto del taller que de verdad la va a usar. Y, como ya se mencionó, <strong>el proveedor de cada punto ahora es obligatorio</strong> desde el momento de capturarlo, no solo al validar.</div>
+  <div class="callout change"><b>Qué cambió frente a versiones anteriores:</b> ya no existen las tablas sueltas de «Materias primas» y «Etapas de manufactura» — todo vive agrupado por punto, en el orden en que de verdad ocurre el proceso. El «recibe de» (de qué paso anterior recibe cada punto la pieza a medio hacer) ya <strong>no</strong> se ajusta aquí — eso se revisa exclusivamente en el siguiente paso, «Flujo de Producción» (sección 6), para que el Costeo no se sature de decisiones que en realidad son del flujo. Tampoco es posible agregar un material «suelto» sin punto asignado — cada materia prima necesita quedar dentro del punto del taller que de verdad la va a usar. Y, como ya se mencionó, <strong>el proveedor de cada punto ahora es obligatorio</strong> desde el momento de capturarlo, no solo al validar.</div>
 
   <h3>La unidad de medida de cada material</h3>
   <p>Cada material del costeo se consume en la <strong>unidad base del artículo</strong> — la unidad con la que ese material se cuenta y se guarda en el almacén. Si el botón está dado de alta en piezas, el consumo se captura en piezas: «3 botones por prenda». La unidad ya no se escoge a mano en el renglón; la pone el artículo.</p>
@@ -454,7 +566,7 @@
 
   <h3>El precio, como lo cotiza el proveedor</h3>
   <p>El proveedor cotiza como vende: «$725.76 el mazo», no «$0.42 la pieza». Por eso el precio se teclea tal cual y, al lado, se elige <strong>en qué unidad viene</strong>. El sistema calcula solo el precio por unidad base y lo muestra debajo: <code>= $0.42 / Pieza</code>.</p>
-  <p>Las unidades que ofrece ese selector salen de las conversiones que el propio artículo tiene dadas de alta (ver sección 1), no de una lista general — así que si el proveedor empieza a cotizar por gruesa, basta con agregar esa equivalencia al artículo.</p>
+  <p>Las unidades que ofrece ese selector salen de las conversiones que el propio artículo tiene dadas de alta (ver sección 2), no de una lista general — así que si el proveedor empieza a cotizar por gruesa, basta con agregar esa equivalencia al artículo.</p>
   <p>El costeo guarda las dos caras: lo que se tecleó y en qué unidad, y el unitario derivado. Todo lo demás — el costo de la prenda, la orden de compra y el reporte final — usa el unitario, así que el cambio no altera ningún número.</p>
 
   <h3>Sub-ensamblajes y punto de ensamble</h3>
@@ -480,11 +592,11 @@
     <tr><td>Precio de venta</td><td>Lo que se le va a cobrar al cliente por cada prenda — se puede dejar que lo calcule el margen, o fijarlo a mano.</td></tr>
   </table>
 
-  <p>Cuando el costeo ya refleja bien lo que se quiere ofrecer al cliente, se <strong>valida</strong> — un botón que cierra la edición del costeo y habilita el siguiente paso: convertirlo en una cotización formal. Quién puede presionar ese botón depende del esquema de aprobación configurado para Costeo (ver la sección 10).</p>
+  <p>Cuando el costeo ya refleja bien lo que se quiere ofrecer al cliente, se <strong>valida</strong> — un botón que cierra la edición del costeo y habilita el siguiente paso: convertirlo en una cotización formal. Quién puede presionar ese botón depende del esquema de aprobación configurado para Costeo (ver la sección 11).</p>
 </section>
 
-<section id="s3">
-  <h2 class="sec-title">3. Cotizar y vender</h2>
+<section id="s4">
+  <h2 class="sec-title">4. Cotizar y vender</h2>
   <p class="sec-dek">Una vez que el costeo está validado, el siguiente paso es convertirlo en un documento formal que se le puede enviar al cliente: la cotización. Y cuando el cliente la acepta, en una orden de venta.</p>
 
   <h3>La cotización</h3>
@@ -504,7 +616,7 @@
 
   <h4>Desglose por talla</h4>
   <p>Cada renglón de la orden de venta puede traer su <strong>desglose por talla</strong>: cuántas piezas de cada talla lleva ese producto. La suma tiene que dar exactamente la cantidad del renglón — si no cuadra, el sistema no deja guardarlo.</p>
-  <p>Ese desglose no se queda en la orden de venta: baja a los lotes (sección 6), llega a la ficha de manufactura agrupado por lote, y se imprime en el encargo de cada taller con solo las tallas que a ese lote le tocan. Es la misma información, capturada una vez.</p>
+  <p>Ese desglose no se queda en la orden de venta: baja a los lotes (sección 7), llega a la ficha de manufactura agrupado por lote, y se imprime en el encargo de cada taller con solo las tallas que a ese lote le tocan. Es la misma información, capturada una vez.</p>
   <p>Las <strong>tallas extra</strong> (sobretallas que cuestan más) se manejan aparte, como producto propio con su sobrecosto, y tienen su propia captura de cantidades confirmadas por talla.</p>
 
   <p>Cuando el cliente confirma el pedido, la cotización se convierte en una <strong>orden de venta</strong>: el documento que ya representa un compromiso firme de venta, y que es lo que de verdad dispara la compra de materiales y el arranque de producción más adelante.</p>
@@ -529,11 +641,11 @@
   <p>A partir de aquí, el pedido ya es un compromiso real. El siguiente paso, «Alta de Productos», revisa si algo de lo capturado como texto libre necesita convertirse en un producto de verdad antes de poder comprarlo o mandarlo a maquilar.</p>
 </section>
 
-<section id="s4">
-  <h2 class="sec-title">4. Alta de productos</h2>
+<section id="s5">
+  <h2 class="sec-title">5. Alta de productos</h2>
   <p class="sec-dek">Ya con la venta confirmada, es momento de convertir en productos reales cualquier material, servicio o sub-ensamblaje que se haya capturado como simple texto durante el costeo.</p>
 
-  <p>Como se explicó en la sección 2, al costear no hace falta que cada tela o cada servicio ya exista como producto en el catálogo — se puede escribir su nombre libremente para no perder tiempo dándolo de alta en un pedido que todavía podría no concretarse. Pero para poder comprar materia prima de verdad, generar órdenes de compra o de subcontratación, y llevar un control de inventario, el sistema sí necesita que esos materiales y servicios existan como productos reales, con su propio código.</p>
+  <p>Como se explicó en la sección 3, al costear no hace falta que cada tela o cada servicio ya exista como producto en el catálogo — se puede escribir su nombre libremente para no perder tiempo dándolo de alta en un pedido que todavía podría no concretarse. Pero para poder comprar materia prima de verdad, generar órdenes de compra o de subcontratación, y llevar un control de inventario, el sistema sí necesita que esos materiales y servicios existan como productos reales, con su propio código.</p>
   <p>«Alta de Productos» es el paso donde eso sucede. El sistema revisa todo el costeo y detecta automáticamente qué quedó como texto libre. Si no queda nada pendiente — como en el ejemplo de este manual, donde todos los materiales y servicios ya existían como productos reales desde el costeo — el sistema simplemente lo indica y deja continuar.</p>
 
   <figure>
@@ -541,7 +653,7 @@
     <figcaption>Cuando no queda ningún material o servicio pendiente de convertir en producto, el sistema lo confirma («Todos los productos ya están dados de alta») y ofrece el botón para continuar directo al flujo de producción.</figcaption>
   </figure>
 
-  <p>Cuando sí hay pendientes, esta pantalla los enlista uno por uno — materiales, servicios y, en flujos con varias etapas, los llamados <strong>sub-ensamblajes</strong> (la prenda a medio hacer que pasa de un taller a otro; ver la sección 5) — y permite darlos de alta con un clic, asignándoles un código y, si se trata de un servicio o material comprado, un proveedor. Para cada renglón pendiente hay dos caminos posibles: <strong>«+ Crear»</strong>, que abre un formulario completo para dar de alta un producto nuevo desde cero, o <strong>«Vincular existente»</strong>, para el caso en que el material o servicio ya existe en el catálogo con otro nombre y solo hace falta enlazarlo.</p>
+  <p>Cuando sí hay pendientes, esta pantalla los enlista uno por uno — materiales, servicios y, en flujos con varias etapas, los llamados <strong>sub-ensamblajes</strong> (la prenda a medio hacer que pasa de un taller a otro; ver la sección 6) — y permite darlos de alta con un clic, asignándoles un código y, si se trata de un servicio o material comprado, un proveedor. Para cada renglón pendiente hay dos caminos posibles: <strong>«+ Crear»</strong>, que abre un formulario completo para dar de alta un producto nuevo desde cero, o <strong>«Vincular existente»</strong>, para el caso en que el material o servicio ya existe en el catálogo con otro nombre y solo hace falta enlazarlo.</p>
 
   <div class="callout"><b>Por qué importa este paso:</b> si se saltara y se intentara mandar a comprar o a maquilar algo que todavía es solo texto libre, el sistema no tendría manera de generar la orden de compra o la orden de subcontratación correspondiente — esos documentos siempre apuntan a un producto real, con su propio código.</div>
 
@@ -558,12 +670,12 @@
   <p>Esta marca se puede corregir después en cualquier momento, desde la ficha del producto o desde el botón <strong>«UDM y múltiplos…»</strong> que tiene cada renglón de una orden de compra de material — útil cuando el problema se descubre justo al estar comprando. Desde ahí también se corrigen los factores y se agregan equivalencias que falten.</p>
 </section>
 
-<section id="s5">
-  <h2 class="sec-title">5. Flujo de producción</h2>
+<section id="s6">
+  <h2 class="sec-title">6. Flujo de producción</h2>
   <p class="sec-dek">Aquí se define, visualmente, el camino que recorre una prenda: por cuántos talleres pasa, en qué orden, y qué le hace cada uno.</p>
 
   <p>Una prenda casi nunca se termina en un solo lugar. Primero se corta la tela, después se le coloca la cinta reflejante, luego se borda un logotipo, y al final se confecciona y se arma la prenda completa — y cada uno de esos pasos, muchas veces, lo hace un taller distinto. El «Flujo de Producción» es el mapa de ese recorrido: qué proveedor hace qué, en qué orden, y qué le entrega al siguiente.</p>
-  <p>Lo mejor es que <strong>este flujo no hay que armarlo desde cero</strong>: el sistema lo arma automáticamente a partir de los puntos y servicios que ya se capturaron al costear (sección 2). Aquí solo se revisa, se ajusta el orden o el «recibe de» si hace falta, y se confirma.</p>
+  <p>Lo mejor es que <strong>este flujo no hay que armarlo desde cero</strong>: el sistema lo arma automáticamente a partir de los puntos y servicios que ya se capturaron al costear (sección 3). Aquí solo se revisa, se ajusta el orden o el «recibe de» si hace falta, y se confirma.</p>
 
   <h3>Cómo leer una tarjeta del flujo</h3>
   <p>Cada tarjeta representa un paso del proceso, y siempre dice tres cosas: quién lo hace (el proveedor), de dónde recibe la pieza («recibe de»), y qué materia prima directa le corresponde a ese paso, si tiene alguna.</p>
@@ -604,8 +716,8 @@
   <p>Cuando el flujo ya refleja el proceso real, se confirma con el botón <strong>«Confirmar y pasar a producción»</strong>, que lo deja listo para la siguiente etapa: convertirlo en un plan de producción de verdad, con materiales por comprar y órdenes por generar.</p>
 </section>
 
-<section id="s6">
-  <h2 class="sec-title">6. Producción</h2>
+<section id="s7">
+  <h2 class="sec-title">7. Producción</h2>
   <p class="sec-dek">Con el flujo ya confirmado, aquí se compra la materia prima, se manda a los talleres y se recibe lo terminado. Es la parte más larga del proceso y la que más gente toca, así que dejó de ser una pestaña con todo encimado y se volvió una aplicación con su propio menú.</p>
 
   <div class="callout change"><b>Cambió por completo.</b> Si ya conocías la pestaña «Producción» anterior — una sola pantalla con la solicitud de material, las órdenes y los lotes uno debajo de otro — esta sección describe algo distinto. La información es la misma; lo que cambió es que ahora cada persona entra directo a lo suyo y el sistema siempre dice qué sigue.</div>
@@ -649,7 +761,7 @@
     <figcaption>Preparación, paso 2. Arriba los tres pasos con su palomita; abajo la solicitud de material y, debajo, la captura de los lotes de entrega — cada uno con su nombre, su fecha y las prendas que le tocan de cada producto.</figcaption>
   </figure>
 
-  <div class="callout change"><b>Nuevo: reparto por talla.</b> Si el renglón de la orden de venta ya trae su desglose por talla (ver sección 3), el lote se captura <strong>talla por talla</strong>. La suma de todos los lotes tiene que dar exacto lo que pide la orden de venta para cada talla — el sistema no deja validar si falta o sobra una pieza, y dice exactamente de qué talla y de cuántas se trata: «26: faltan 20 · 30: sobran 5». Las prendas del lote ya no se teclean: salen de la suma de sus tallas, para que el número grande y el detalle no puedan contradecirse. El botón «Repartir en partes iguales» reparte talla por talla, dejando el residuo en el último lote.</div>
+  <div class="callout change"><b>Nuevo: reparto por talla.</b> Si el renglón de la orden de venta ya trae su desglose por talla (ver sección 4), el lote se captura <strong>talla por talla</strong>. La suma de todos los lotes tiene que dar exacto lo que pide la orden de venta para cada talla — el sistema no deja validar si falta o sobra una pieza, y dice exactamente de qué talla y de cuántas se trata: «26: faltan 20 · 30: sobran 5». Las prendas del lote ya no se teclean: salen de la suma de sus tallas, para que el número grande y el detalle no puedan contradecirse. El botón «Repartir en partes iguales» reparte talla por talla, dejando el residuo en el último lote.</div>
 
   <p>El total del producto sí tiene holgura: puede moverse hasta un 5% contra lo que pide el plan, que es el mismo margen de siempre. Un producto sin desglose por talla se sigue capturando solo por prendas, exactamente como antes.</p>
 
@@ -665,7 +777,7 @@
 
   <h3>Órdenes a talleres</h3>
   <p>Con la preparación lista, el sistema genera una <strong>orden de compra de subcontratación</strong> por cada taller: el documento formal de lo que se le encarga y lo que se le va a pagar. Una orden cubre a ese taller para <em>todo</em> el pedido; lo que se parte por lote es el encargo, que viene después.</p>
-  <p>Estas órdenes llevan <strong>doble validación</strong>: alguien las envía a revisión, alguien más las revisa y un tercero las aprueba (ver sección 10).</p>
+  <p>Estas órdenes llevan <strong>doble validación</strong>: alguien las envía a revisión, alguien más las revisa y un tercero las aprueba (ver sección 11).</p>
 
   <h3>El recorrido de un lote</h3>
   <p>Cada lote del menú tiene tres pasos, en este orden:</p>
@@ -673,7 +785,7 @@
   <ol class="steps">
     <li><div class="step-body"><b>Materia prima</b><span>Comprar lo de ese lote. Una tarjeta por proveedor, y cada una avanza igual: orden de compra → recibo → factura. Desde aquí se genera la orden, se registra lo que llegó y se captura la factura del proveedor.</span></div></li>
     <li><div class="step-body"><b>Talleres</b><span>Mandar y recibir la maquila. Es el paso más largo y tiene su propia vista, explicada abajo.</span></div></li>
-    <li><div class="step-body"><b>Entrega</b><span>Remisionar al cliente lo que ese lote produjo. Explicado en la sección 7.</span></div></li>
+    <li><div class="step-body"><b>Entrega</b><span>Remisionar al cliente lo que ese lote produjo. Explicado en la sección 8.</span></div></li>
   </ol>
 
   <div class="callout change"><b>Nuevo: recibos parciales.</b> Una orden de compra ya no se recibe de un solo golpe. Si el proveedor entrega en dos o tres viajes, se registra un recibo por cada entrega y el sistema lleva la cuenta de cuánto falta. La <strong>factura</strong> del proveedor se captura cuando ya llegó todo lo de esa orden — no antes, para que lo que se registra coincida con lo que se recibió. Lo mismo aplica a los encargos a talleres.</div>
@@ -713,8 +825,8 @@
   <div class="callout">Cada lote es independiente: se puede abrir el Lote 2 sin que el Lote 1 esté terminado, y cada uno tiene su propia fecha de entrega. Eso le da flexibilidad al plan — se entrega lo que ya está listo sin esperar al resto del pedido.</div>
 </section>
 
-<section id="s7">
-  <h2 class="sec-title">7. Entrega al cliente</h2>
+<section id="s8">
+  <h2 class="sec-title">8. Entrega al cliente</h2>
   <p class="sec-dek">Cuando la prenda terminada ya está en el almacén, el siguiente paso es entregarla físicamente al cliente — y registrar esa entrega con una remisión.</p>
 
   <p>La <strong>remisión</strong> (también llamada «nota de entrega») es el documento que acompaña la mercancía cuando sale de la bodega hacia el cliente. Es, además, el momento en que el sistema libera el inventario y calcula el costo de venta real de lo que se está entregando.</p>
@@ -730,8 +842,8 @@
   <p>Una vez validada, la remisión queda ligada al costeo, y el indicador de «Entregado» en la parte superior del costeo pasa al 100% — la señal de que ya no falta nada por mandar al cliente. Si aplica un costo de envío, la remisión también puede generar automáticamente una póliza contable por el flete cobrado.</p>
 </section>
 
-<section id="s8">
-  <h2 class="sec-title">8. Facturación</h2>
+<section id="s9">
+  <h2 class="sec-title">9. Facturación</h2>
   <p class="sec-dek">El último documento del lado de la venta — y también donde se cierran las facturas de todo lo que se compró para hacer posible el pedido.</p>
 
   <p>El paso «Facturar» tiene dos pestañas: <strong>«Venta (cliente)»</strong>, para la factura que se le emite a Ferrocarril Mexicano por lo entregado, y <strong>«Compras (proveedores)»</strong>, para las facturas que Yelke recibe de sus propios proveedores de materiales y de maquila por ese mismo pedido.</p>
@@ -768,13 +880,13 @@
     <figcaption>La pestaña «Compras (proveedores)» del ejemplo, con todas sus facturas ya validadas: tres proveedores de materiales (Grupo Filafil, Morotex, Rubén Orozco Lara) y cuatro talleres de maquila (Alejandro Torres Aguilera, Alfredo Ortega Zavala, y los demás pasos del flujo), cada uno con su monto y su estatus.</figcaption>
   </figure>
 
-  <p>Al seleccionar una de estas tarjetas se genera (o se muestra, si ya existe) la <strong>Factura de Compra</strong> correspondiente a ese proveedor — el documento con el que se registra formalmente cuánto se le debe pagar, y que es, junto con la factura de venta, la base real que usa el «Reporte final» (sección 9) para comparar lo estimado contra lo que de verdad costó el pedido.</p>
+  <p>Al seleccionar una de estas tarjetas se genera (o se muestra, si ya existe) la <strong>Factura de Compra</strong> correspondiente a ese proveedor — el documento con el que se registra formalmente cuánto se le debe pagar, y que es, junto con la factura de venta, la base real que usa el «Reporte final» (sección 10) para comparar lo estimado contra lo que de verdad costó el pedido.</p>
 
   <p>Con todas las facturas —de venta y de compra— validadas, el costeo ya recorrió todo el camino: se costeó, se cotizó, se vendió, se produjo, se entregó y se facturó, tanto lo que se le cobró al cliente como lo que se le pagó a cada proveedor. Solo queda un último paso, que no genera ningún documento nuevo pero que es el que de verdad le dice al negocio si el pedido salió bien: el reporte final.</p>
 </section>
 
-<section id="s9">
-  <h2 class="sec-title">9. Reporte final</h2>
+<section id="s10">
+  <h2 class="sec-title">10. Reporte final</h2>
   <p class="sec-dek">El cierre de todo el proceso: comparar lo que se había estimado al costear contra lo que de verdad costó y se cobró.</p>
 
   <p>Durante todo el recorrido del pedido —comprar materiales, mandar a maquilar, entregar y facturar— cada paso va dejando un registro de lo que realmente ocurrió: cuánto se pagó de verdad por cada material, cuánto cobró cada taller, y cuánto se facturó al final. El «Reporte final» junta todo eso y lo compara, línea por línea, contra lo que se había calculado en el costeo original.</p>
@@ -804,8 +916,8 @@
   <div class="callout warn"><b>Por qué revisar el «Real» con cuidado:</b> la columna de costos reales del reporte se calcula filtrando, entre todas las órdenes de compra del costeo, solo las que quedaron correctamente ligadas a la Orden de Venta activa. Si una orden de compra —por ejemplo, una de subcontratación creada por una vía distinta a la habitual del sistema— se queda sin esa liga, el reporte simplemente la excluye del cálculo, <strong>sin ningún mensaje de error</strong>, dando un costo real más bajo (y por lo tanto una rentabilidad real más alta) de lo que en realidad fue. Un resultado real que parece «demasiado bueno para ser cierto» frente al estimado vale la pena revisarlo con calma antes de darlo por bueno.</div>
 </section>
 
-<section id="s10">
-  <h2 class="sec-title">10. Roles y flujos de aprobación</h2>
+<section id="s11">
+  <h2 class="sec-title">11. Roles y flujos de aprobación</h2>
   <p class="sec-dek">Quién puede capturar cada parte del proceso, y quién tiene que dar el visto bueno antes de que un documento importante quede validado.</p>
 
   <p>El sistema tiene un catálogo de roles, uno por cada proceso del flujo, para que quede claro quién es responsable de capturar qué — y, por separado, un mecanismo de aprobación para los documentos que se consideran sensibles, de forma que no cualquiera pueda validarlos sin que alguien más lo revise primero.</p>
@@ -829,7 +941,7 @@
 
   <p>A estos se suman cuatro roles transversales, que no pertenecen a un proceso en particular:</p>
   <div class="roles-grid">
-    <div class="role-card cross"><b>Aprobador de Precios Yelke</b><span>Aprueba los precios acordados con el cliente (la vigencia que se explicó en la sección 11).</span></div>
+    <div class="role-card cross"><b>Aprobador de Precios Yelke</b><span>Aprueba los precios acordados con el cliente (la vigencia que se explicó en la sección 14).</span></div>
     <div class="role-card cross"><b>Doble Verificador Yelke</b><span>Da la segunda firma en los documentos marcados como sensibles, antes de la aprobación final.</span></div>
     <div class="role-card cross"><b>Director Yelke</b><span>Aprobación final de los documentos importantes del flujo.</span></div>
     <div class="role-card cross"><b>Supervisor Yelke</b><span>Configura los niveles de validación y actúa de respaldo del Director.</span></div>
@@ -871,8 +983,8 @@
   <p>Está contemplado que quien tenga el rol Director pueda delegar temporalmente su autoridad de aprobación a otra persona — por ejemplo, durante unos días de vacaciones — sin tener que reasignar el rol permanentemente ni dejar a nadie sin quien apruebe mientras tanto. Esta parte del sistema, junto con una bandeja centralizada de documentos pendientes de validar y las notificaciones automáticas, está todavía en diseño y no ha salido a producción — lo que existe hoy, y que se describió arriba, son los roles ya creados y los dos esquemas de validación (Simple para Costeo, Doble para Orden de Compra) que ya están funcionando.</p>
 </section>
 
-<section id="s11">
-  <h2 class="sec-title">11. Formatos de impresión y firmas</h2>
+<section id="s12">
+  <h2 class="sec-title">12. Formatos de impresión y firmas</h2>
   <p class="sec-dek">Todos los documentos que salen del sistema — al cliente, al proveedor o al taller — se imprimen con el formato propio de Yelke. Esta sección explica qué formato le toca a cada documento y qué trae cada uno.</p>
 
   <p>Antes, los documentos salían con el diseño genérico de ERPNext. Ahora cada tipo de documento tiene <strong>su propio formato, ya puesto como predeterminado</strong>: no hay que elegirlo al imprimir, sale solo. Y los quince comparten el mismo membrete, la misma hoja y el mismo bloque de firmas, para que todo lo que sale de Yelke se vea como una sola cosa.</p>
@@ -900,7 +1012,7 @@
   <ul class="plain">
     <li><strong>Membrete propio</strong>, con el logotipo y la cinta reflejante, repetido arriba de cada hoja. Los datos de la compañía — RFC, teléfono, correo y domicilio — van en el encabezado; el contacto, en el pie.</li>
     <li><strong>Hoja carta</strong>, idéntica en los tres caminos: el PDF descargado, la impresión desde el navegador y la vista previa en pantalla. El pie va en el margen de la hoja, con el folio y «página X de Y».</li>
-    <li><strong>Firmas de quien intervino</strong>: «Elaboró / Revisó / Aprobó» en las órdenes de compra, «Elaboró / Validó» en los demás. Cada firma sale del perfil de esa persona (sección 1), recortada al trazo y sin línea guía. «Validó» es quien de verdad validó el documento, tomado del historial, así que también sale en documentos validados hace tiempo.</li>
+    <li><strong>Firmas de quien intervino</strong>: «Elaboró / Revisó / Aprobó» en las órdenes de compra, «Elaboró / Validó» en los demás. Cada firma sale del perfil de esa persona (sección 2), recortada al trazo y sin línea guía. «Validó» es quien de verdad validó el documento, tomado del historial, así que también sale en documentos validados hace tiempo.</li>
     <li><strong>Importe con letra</strong> en español, en los documentos con dinero.</li>
     <li>La <strong>imagen y el código</strong> de cada artículo en la tabla de renglones, para que quien recibe reconozca de qué se trata sin buscar el código.</li>
     <li>Etiquetas de fecha específicas de cada documento — «fecha de elaboración», «entrega acordada», «entrega requerida», «vigencia» — en vez de una sola fecha genérica.</li>
@@ -924,14 +1036,14 @@
   <div class="callout">La orden de compra de maquila cubre a ese taller para todo el pedido; el encargo es de un lote. Por eso las tallas «de este lote» salen en el encargo y no en la orden — la orden tendría que listarlas todas.</div>
 
   <h4>Facturas</h4>
-  <p>Tanto la de venta como la de compra traen el costeo de origen, la fecha de pago y las condiciones. Recuerda que ninguna se valida sin su <strong>PDF adjunto</strong> (sección 8).</p>
+  <p>Tanto la de venta como la de compra traen el costeo de origen, la fecha de pago y las condiciones. Recuerda que ninguna se valida sin su <strong>PDF adjunto</strong> (sección 9).</p>
 
   <h3>Cómo se imprime o se manda</h3>
   <p>Cada documento tiene, en su panel, un botón para <strong>ver la vista previa</strong>, otro para <strong>descargar el PDF</strong> y otro para <strong>mandarlo por correo</strong>. El botón «Ampliar» abre la vista previa a pantalla completa. Al mandar la orden a un taller se adjuntan los dos documentos que le tocan — la orden de maquila y su ficha de manufactura — porque no siempre se mandan juntos: si cambia la ficha se reenvía sola, sin volver a mandar la orden.</p>
 </section>
 
-<section id="s12">
-  <h2 class="sec-title">12. Los demás listados del sistema</h2>
+<section id="s13">
+  <h2 class="sec-title">13. Los demás listados del sistema</h2>
   <p class="sec-dek">Además de la vista de un costeo individual, el sistema tiene una lista propia para cada tipo de documento que va generando — útil para buscar, dar seguimiento o revisar el estado de todo el trabajo en curso, sin tener que entrar costeo por costeo.</p>
 
   <p>En el menú «Documentos» del lado izquierdo aparecen los listados de: <strong>Cotizaciones, Órdenes de Venta, Solicitudes de Material, Órdenes de Compra, Recibos de Compra, Remisiones, Facturas de Venta</strong> y <strong>Facturas de Compra</strong>. Cada uno funciona de forma parecida: un resumen con totales arriba, un buscador, un filtro por estatus, y la lista de documentos con sus datos principales.</p>
@@ -945,8 +1057,8 @@
   <p>En el menú «Producción» aparecen, de la misma manera, los listados de <strong>Plan de Producción, Órdenes de Trabajo</strong> y <strong>Subcontratación</strong> — estos tres abren directamente en el escritorio de ERPNext, ya que son documentos más técnicos de manufactura que se consultan con menos frecuencia desde la aplicación de Costeo.</p>
 </section>
 
-<section id="s13">
-  <h2 class="sec-title">13. Recordatorios de precio</h2>
+<section id="s14">
+  <h2 class="sec-title">14. Recordatorios de precio</h2>
   <p class="sec-dek">Un aviso automático para cuando el precio acordado con un cliente está por vencerse.</p>
 
   <p>Muchos clientes acuerdan un precio fijo por un tiempo determinado — seis meses, un año — antes de que sea momento de revisarlo de nuevo. Si nadie le da seguimiento a esas fechas, es fácil que un pedido recurrente se siga vendiendo al precio viejo, aunque la materia prima ya haya subido de costo.</p>
@@ -959,11 +1071,136 @@
 
   <p>Cada recordatorio se puede buscar por cliente o por artículo, y filtrar por estado, para que revisar precios vencidos sea una tarea de un par de minutos en vez de tener que repasar cliente por cliente.</p>
 
-  <div class="callout change"><b>Relacionado — «Generar nueva OV»:</b> en la sección 3 se explicó el botón para generar otra Orden de Venta reusando el precio ya acordado de un pedido recurrente. Ese botón respeta exactamente esta misma vigencia: si el precio sigue vigente, se genera directo; si ya venció, el botón avisa en vez de desaparecer («Precio caducado — revisar»), y solo un usuario con rol CEO puede generarla de todos modos mientras se actualiza el precio aquí.</div>
+  <div class="callout change"><b>Relacionado — «Generar nueva OV»:</b> en la sección 4 se explicó el botón para generar otra Orden de Venta reusando el precio ya acordado de un pedido recurrente. Ese botón respeta exactamente esta misma vigencia: si el precio sigue vigente, se genera directo; si ya venció, el botón avisa en vez de desaparecer («Precio caducado — revisar»), y solo un usuario con rol CEO puede generarla de todos modos mientras se actualiza el precio aquí.</div>
 </section>
 
-<section id="s14">
-  <h2 class="sec-title">14. Glosario y preguntas frecuentes</h2>
+<section id="s15">
+  <h2 class="sec-title">15. La contabilidad del pedido</h2>
+  <p class="sec-dek">Qué registra el sistema por su cuenta mientras el pedido avanza, dónde queda todo eso, y cómo revisarlo cuando algo no cuadra.</p>
+
+  <p>Nadie en Yelke captura pólizas contables para un pedido: <strong>las genera el sistema</strong>, documento por documento, a medida que el pedido avanza. Esta sección explica cuáles son, para que cuando contabilidad pregunte «¿de dónde salió este asiento?» haya una respuesta clara.</p>
+
+  <div class="callout"><b>Por qué pasa esto.</b> Las dos compañías tienen encendido el <strong>inventario perpetuo</strong> (sección 1): cada movimiento de inventario genera su póliza en el momento. El saldo contable del inventario y lo que de verdad hay en los almacenes van siempre juntos, sin cierres mensuales ni ajustes a mano.</div>
+
+  <h3>Qué registra cada documento</h3>
+  <table>
+    <tr><th>Cuando se valida…</th><th>El sistema registra</th></tr>
+    <tr><td>Recibo de compra</td><td>Entra el material al inventario por su valor de compra, contra «recibido pero no facturado» — la deuda con el proveedor todavía no existe formalmente, pero la mercancía ya es nuestra. Si el recibo trae flete, ese costo se suma al valor del material.</td></tr>
+    <tr><td>Factura de compra</td><td>Cancela el «recibido pero no facturado» y crea la deuda real en cuentas por pagar, con su IVA acreditable.</td></tr>
+    <tr><td>Movimiento de material al taller</td><td>Mueve el valor del almacén de materia prima al almacén de ese taller. El material sigue siendo de Yelke: cambia de lugar, no de dueño.</td></tr>
+    <tr><td>Recibo de taller</td><td>Consume el material que el taller usó, le suma el costo de la maquila y da de alta la pieza terminada en Trabajo en Proceso con ese valor. La maquila se abona a la cuenta del grupo «Servicios».</td></tr>
+    <tr><td>Remisión</td><td>Saca la prenda del inventario y lleva su valor a costo de ventas. Es el momento en que el costo se reconoce.</td></tr>
+    <tr><td>Factura de venta</td><td>Crea la cuenta por cobrar con su IVA trasladado y reconoce el ingreso. Además genera la <strong>póliza de overhead</strong>, aparte.</td></tr>
+  </table>
+
+  <h3>La póliza de overhead</h3>
+  <p>El costeo le carga a cada prenda un porcentaje de overhead — los gastos que no se pueden rastrear a un pedido en particular pero que existen: renta, luz, administración. Ese overhead es parte del precio, pero no es un gasto que alguien haya facturado.</p>
+  <p>Al validar la factura de venta, el sistema registra ese overhead absorbido en una <strong>póliza contable aparte</strong>, para que el costo del pedido en los libros incluya lo mismo que incluyó el costeo. Si la factura se cancela, esa póliza se cancela con ella; si se corrige (se genera una factura de reemplazo), la corrección genera la suya.</p>
+
+  <h3>Las pólizas de flete</h3>
+  <p>El flete de entrada sube el valor del material recibido, pero quien lo cobra es el transportista, no el proveedor de la tela. Cuando ese flete lleva su propio IVA y su retención, el sistema genera una <strong>póliza aparte</strong> que registra la deuda con el transportista y sus impuestos. Esa póliza queda ligada al recibo, y se cancela si el recibo se cancela.</p>
+
+  <h3>Cómo revisarlo</h3>
+  <p>Todo esto se consulta en el escritorio de ERPNext. Tres pantallas resuelven casi cualquier duda:</p>
+
+  <ol class="steps">
+    <li><div class="step-body"><b>Libro mayor</b><span>Busca «Libro mayor» o «General Ledger». Filtra por compañía y por fechas. Es la lista de todos los asientos, y cada renglón dice de qué documento salió — un clic y estás en la orden, el recibo o la factura que lo generó. Es la pantalla para responder «¿de dónde salió esto?».</span></div></li>
+    <li><div class="step-body"><b>Balance de comprobación</b><span>«Trial Balance». El saldo de cada cuenta en un periodo, con su saldo inicial, sus cargos, sus abonos y su saldo final. Es la pantalla para responder «¿cómo quedó la cuenta?».</span></div></li>
+    <li><div class="step-body"><b>Cuentas por cobrar y por pagar</b><span>«Accounts Receivable» y «Accounts Payable». Qué nos deben los clientes y qué debemos a proveedores, con la antigüedad de cada saldo y su fecha de vencimiento — la que salió de las condiciones de pago del documento.</span></div></li>
+  </ol>
+
+  <p>Todos los reportes se filtran <strong>por compañía</strong>, y conviene empezar siempre por ahí: un saldo que «no cuadra» muchas veces es un documento capturado en la otra razón social.</p>
+
+  <h3>Cuando algo no cuadra</h3>
+  <ul class="plain">
+    <li><strong>El inventario contable no coincide con el físico.</strong> Revisa el «Libro de inventario» (sección 16) del artículo: ahí está cada entrada y salida, con el documento que la provocó. Casi siempre aparece un envío a taller sin su recibo de vuelta, o un recibo capturado dos veces.</li>
+    <li><strong>Una cuenta de «recibido pero no facturado» con saldo viejo.</strong> Es material que llegó y cuya factura nunca se capturó. La bandeja de Facturas (sección 7) lo muestra como pendiente.</li>
+    <li><strong>El costo de ventas parece bajo.</strong> Puede faltar remisionar prendas ya entregadas: el costo se reconoce con la remisión, no con la factura.</li>
+    <li><strong>Un pedido con rentabilidad sospechosamente buena.</strong> Está explicado al final de la sección 10: una orden de compra que se quedó sin ligar a la orden de venta se excluye del costo real sin avisar.</li>
+  </ul>
+
+  <h3>Pagar y cobrar</h3>
+  <p>El pago no es parte del flujo del costeo: se registra en el escritorio de ERPNext, con un <strong>asiento de pago</strong> («Payment Entry»). Se busca desde el buscador de arriba, o desde la propia factura con el botón de crear pago, que ya trae el tercero y el saldo.</p>
+  <ol class="steps">
+    <li><div class="step-body"><b>Abrir la factura</b><span>Desde el listado de Facturas de Compra o de Venta de la app, con el botón «ERPNext ↗».</span></div></li>
+    <li><div class="step-body"><b>Crear el pago</b><span>El sistema propone el saldo pendiente. Se elige la cuenta de banco o caja y la fecha.</span></div></li>
+    <li><div class="step-body"><b>Validar</b><span>El saldo de esa factura baja, y desaparece del reporte de cuentas por cobrar o por pagar.</span></div></li>
+  </ol>
+  <p>Un pago puede cubrir <strong>varias facturas</strong> del mismo tercero: se capturan todas en el mismo asiento y se reparte el importe. Y si el cliente paga de más o se deja un anticipo, el saldo a favor queda registrado y se aplica a la siguiente factura.</p>
+
+  <h3>Devoluciones</h3>
+  <ul class="plain">
+    <li><strong>Material que se le devuelve al proveedor</strong> — se hace con un recibo de compra de devolución, que saca el material del inventario y genera la nota de crédito correspondiente.</li>
+    <li><strong>Sobrante que devuelve un taller</strong> — se registra desde la bandeja de Envíos (sección 7). El material regresa del almacén del taller al de materia prima y vuelve a quedar disponible para otro lote.</li>
+    <li><strong>Prenda que devuelve el cliente</strong> — se hace con una remisión de devolución y su nota de crédito, en el escritorio.</li>
+  </ul>
+
+  <div class="callout warn"><b>Cancelar no es borrar.</b> Un documento cancelado deja su asiento de reversa, y su folio queda apartado para siempre. Eso es a propósito: es lo que hace auditable la contabilidad. Si cancelas y vuelves a capturar, vas a ver los dos movimientos en el libro mayor — el original y su reversa — y eso está bien.</div>
+</section>
+
+<section id="s16">
+  <h2 class="sec-title">16. Reportes y cómo leerlos</h2>
+  <p class="sec-dek">El sistema trae decenas de reportes. Estos son los que de verdad se usan, qué pregunta responde cada uno y cómo leerlos.</p>
+
+  <p>Los reportes viven en el <strong>escritorio de ERPNext</strong>, no en la app. Se llega escribiendo su nombre en el buscador de arriba. Están en español, pero cuando una traducción no es obvia conviene buscar por el nombre en inglés — por eso abajo van los dos.</p>
+
+  <h3>Cómo funcionan todos</h3>
+  <ul class="plain">
+    <li>Arriba van los <strong>filtros</strong>. El primero siempre es la <strong>compañía</strong>: si no lo pones, el número no significa nada porque mezcla las dos razones sociales.</li>
+    <li>El <strong>rango de fechas</strong> cambia completamente el resultado. «Este mes» no es lo mismo que «este año».</li>
+    <li>Casi cualquier celda es un <strong>enlace</strong>: un clic te lleva al documento que generó ese número.</li>
+    <li>El botón de <strong>menú (⋯)</strong> arriba a la derecha permite exportar a Excel y guardar el reporte con sus filtros ya puestos, para no volver a armarlo.</li>
+  </ul>
+
+  <h3>Inventario</h3>
+  <table>
+    <tr><th>Reporte</th><th>Qué pregunta responde</th></tr>
+    <tr><td>Saldo de existencias<br><em>Stock Balance</em></td><td>¿Cuánto hay de cada artículo, en qué almacén y cuánto vale? Es el reporte de inventario por excelencia. Trae el saldo inicial, lo que entró, lo que salió y el saldo final del periodo.</td></tr>
+    <tr><td>Libro de inventario<br><em>Stock Ledger</em></td><td>¿Qué le pasó a este artículo? Cada entrada y cada salida, en orden, con el documento que la provocó y el saldo que quedó después. Es la pantalla para investigar una diferencia.</td></tr>
+    <tr><td>Saldo por almacén<br><em>Warehouse Wise Stock Balance</em></td><td>Lo mismo pero agrupado por almacén — útil para ver <strong>cuánto material tiene cada taller</strong> en su poder.</td></tr>
+    <tr><td>Cantidad proyectada<br><em>Stock Projected Qty</em></td><td>¿Cuánto <em>va a haber</em>? Toma lo que hay, le suma lo que está pedido y le resta lo comprometido. Sirve para decidir si hace falta comprar.</td></tr>
+    <tr><td>Antigüedad de existencias<br><em>Stock Ageing</em></td><td>¿Cuánto tiempo lleva parado cada material? Detecta inventario que no se está moviendo.</td></tr>
+  </table>
+
+  <h3>Contabilidad</h3>
+  <table>
+    <tr><th>Reporte</th><th>Qué pregunta responde</th></tr>
+    <tr><td>Libro mayor<br><em>General Ledger</em></td><td>Todos los asientos, filtrables por cuenta, por tercero y por fechas. La herramienta de investigación.</td></tr>
+    <tr><td>Balance de comprobación<br><em>Trial Balance</em></td><td>El saldo de cada cuenta en el periodo. La foto contable.</td></tr>
+    <tr><td>Estado de resultados<br><em>Profit and Loss Statement</em></td><td>¿Ganamos o perdimos, y en qué? Ingresos menos costos y gastos, por periodo.</td></tr>
+    <tr><td>Balance general<br><em>Balance Sheet</em></td><td>Qué tenemos y qué debemos a una fecha.</td></tr>
+    <tr><td>Cuentas por cobrar<br><em>Accounts Receivable</em></td><td>Qué nos deben los clientes, con antigüedad. La versión «Summary» da solo el total por cliente.</td></tr>
+    <tr><td>Cuentas por pagar<br><em>Accounts Payable</em></td><td>Lo mismo del lado de los proveedores.</td></tr>
+  </table>
+
+  <h3>Compras y ventas</h3>
+  <table>
+    <tr><th>Reporte</th><th>Qué pregunta responde</th></tr>
+    <tr><td>Análisis de órdenes de compra<br><em>Purchase Order Analysis</em></td><td>Qué se pidió, cuánto llegó y cuánto falta, orden por orden. Para dar seguimiento a proveedores.</td></tr>
+    <tr><td>Registro de compras<br><em>Purchase Register</em></td><td>Todas las facturas de compra del periodo, con sus impuestos. Lo que contabilidad necesita para declarar.</td></tr>
+    <tr><td>Registro de ventas<br><em>Sales Register</em></td><td>Lo mismo del lado de las ventas.</td></tr>
+    <tr><td>Utilidad bruta<br><em>Gross Profit</em></td><td>Venta menos costo, por artículo o por factura. Es la lectura contable de la rentabilidad; el reporte final del costeo (sección 10) es la lectura por pedido.</td></tr>
+    <tr><td>Historial de ventas por artículo<br><em>Item-wise Sales History</em></td><td>Qué tanto se ha vendido de cada prenda y a quién.</td></tr>
+  </table>
+
+  <h3>Subcontratación</h3>
+  <table>
+    <tr><th>Reporte</th><th>Qué pregunta responde</th></tr>
+    <tr><td>Materia prima por transferir<br><em>Subcontracted Raw Materials To Be Transferred</em></td><td>Qué material está comprometido con un taller y todavía no se le ha mandado.</td></tr>
+    <tr><td>Artículos por recibir<br><em>Subcontracted Item To Be Received</em></td><td>Qué piezas están en los talleres y todavía no vuelven. Es la lista de lo que hay que ir a cobrar.</td></tr>
+  </table>
+
+  <h3>Dos lecturas de la rentabilidad</h3>
+  <p>Conviene no confundirlas, porque casi nunca dan el mismo número y las dos están bien:</p>
+  <ul class="plain">
+    <li>El <strong>reporte final del costeo</strong> (sección 10) compara, <em>para ese pedido</em>, lo que se estimó contra lo que costó. Sirve para aprender a cotizar mejor.</li>
+    <li>El <strong>estado de resultados</strong> mide <em>un periodo completo</em> de la compañía, con todo lo que pasó dentro: pedidos terminados, pedidos a medias, gastos que no pertenecen a ningún pedido.</li>
+  </ul>
+  <p>Un pedido puede salir excelente y el mes cerrar mal, o al revés. Preguntarle al reporte equivocado es la causa más común de una discusión que no lleva a ningún lado.</p>
+</section>
+
+<section id="s17">
+  <h2 class="sec-title">17. Glosario y preguntas frecuentes</h2>
   <p class="sec-dek">Un resumen rápido de los términos que aparecen en este manual, y respuesta a las dudas más comunes.</p>
 
   <h3>Glosario</h3>
@@ -998,13 +1235,13 @@
     <tr><td>Punto de ensamble</td><td>La etapa en la que la prenda deja de ser piezas sueltas y pasa a ser prenda. No siempre es la última.</td></tr>
     <tr><td>Bandeja</td><td>Lista que cruza todos los lotes para trabajar «por tarea» en vez de «por pedido». Hay dos: Envíos y Facturas.</td></tr>
     <tr><td>Recibo parcial</td><td>Una de varias entregas contra la misma orden de compra o el mismo encargo. La factura se captura cuando ya llegó todo.</td></tr>
-    <tr><td>Esquema Simple / Doble</td><td>Los dos niveles de aprobación que hoy usa el sistema para validar documentos sensibles — un solo aprobador (Simple, para Costeo) o revisor más aprobador (Doble, para Orden de Compra). Ver sección 10.</td></tr>
+    <tr><td>Esquema Simple / Doble</td><td>Los dos niveles de aprobación que hoy usa el sistema para validar documentos sensibles — un solo aprobador (Simple, para Costeo) o revisor más aprobador (Doble, para Orden de Compra). Ver sección 11.</td></tr>
   </table>
 
   <h3>Preguntas frecuentes</h3>
 
   <p><strong>¿Puedo empezar a costear sin tener todavía al proveedor o al cliente dados de alta?</strong></p>
-  <p class="muted">Al cliente sí lo necesitas desde el principio, porque el costeo siempre está ligado a uno. A los proveedores de materiales o servicios, en cambio, los puedes escribir como texto libre mientras cotizas — solo tendrás que darlos de alta como productos reales más adelante, cuando el pedido se confirme (ver la sección 4). El proveedor de cada punto sí es obligatorio dentro del costeo, aunque el producto o servicio en sí todavía sea texto libre.</p>
+  <p class="muted">Al cliente sí lo necesitas desde el principio, porque el costeo siempre está ligado a uno. A los proveedores de materiales o servicios, en cambio, los puedes escribir como texto libre mientras cotizas — solo tendrás que darlos de alta como productos reales más adelante, cuando el pedido se confirme (ver la sección 5). El proveedor de cada punto sí es obligatorio dentro del costeo, aunque el producto o servicio en sí todavía sea texto libre.</p>
 
   <p><strong>¿Qué pasa si el cliente pide cambiar la cantidad después de haber cotizado?</strong></p>
   <p class="muted">Se puede editar el costeo y volver a generar la cotización o la orden de venta con la cantidad corregida, siempre que el documento anterior todavía no esté validado. Si ya se validó, conviene generar un nuevo documento —o usar «Generar nueva OV» si el precio sigue vigente— en vez de modificar el anterior, para mantener un historial claro de lo que pasó.</p>
@@ -1022,7 +1259,7 @@
   <p class="muted">Que todos los documentos del pedido —desde el costeo hasta las facturas de venta y de compra— ya están validados. Es la confirmación de que ese pedido ya no tiene ningún paso pendiente.</p>
 
   <p><strong>¿Por qué el reporte final a veces muestra un costo real sospechosamente bajo?</strong></p>
-  <p class="muted">Revisa que todas las órdenes de compra relacionadas a ese pedido —en especial las de subcontratación— hayan quedado correctamente ligadas a la Orden de Venta activa del costeo. Si alguna se creó por una vía distinta a la habitual y no quedó ligada, el reporte la excluye del cálculo sin avisar, y el costo real (y la rentabilidad) se ven mejor de lo que en realidad fueron. Ver el aviso de la sección 9.</p>
+  <p class="muted">Revisa que todas las órdenes de compra relacionadas a ese pedido —en especial las de subcontratación— hayan quedado correctamente ligadas a la Orden de Venta activa del costeo. Si alguna se creó por una vía distinta a la habitual y no quedó ligada, el reporte la excluye del cálculo sin avisar, y el costo real (y la rentabilidad) se ven mejor de lo que en realidad fueron. Ver el aviso de la sección 10.</p>
 
   <p><strong>¿A quién le pregunto si algo no me queda claro?</strong></p>
   <p class="muted">A tu responsable de sistemas o al equipo que dio seguimiento a la implementación de Costeo Yelke. Este manual cubre el uso normal del sistema, pero cualquier caso particular de tu operación puede tener una manera específica de resolverse que vale la pena confirmar con ellos.</p>
