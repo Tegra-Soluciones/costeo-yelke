@@ -20,10 +20,12 @@ COMUNES = {
 
 
 def execute():
-    # Sin el reload, has_column todavía ve la tabla como estaba antes de la
-    # migración del doctype y el patch se sale en seco -- quedando marcado como
-    # aplicado y sin hacer nada.
     frappe.reload_doc("costeo_yelke", "doctype", "talla")
+    # has_column lee la lista de columnas de un caché en Redis que durante la
+    # migración todavía trae la tabla como estaba ANTES de agregar el campo: sin
+    # tirar esa entrada, el patch se sale en seco y queda marcado como aplicado
+    # sin haber hecho nada. Pasó exactamente eso en sandbox y en producción.
+    frappe.cache.hdel("table_columns", "tabTalla")
     if not frappe.db.has_column("Talla", "uso_comun"):
         return
 
