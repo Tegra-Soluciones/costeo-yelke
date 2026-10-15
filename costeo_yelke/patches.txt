@@ -81,3 +81,4 @@ costeo_yelke.patches.v0_2_56.oc_cliente_adjunta
 costeo_yelke.patches.v0_2_56.fletes_paqueteria
 costeo_yelke.patches.v0_2_57.overhead_no_copiar
 costeo_yelke.patches.v0_2_58.archivos_factura
+costeo_yelke.patches.v0_2_59.tallas_uso_comun

@@ -11,6 +11,7 @@
   "column_break_1",
   "genero",
   "sistema",
+  "uso_comun",
   "disabled",
   "parent_talla",
   "lft",
@@ -54,6 +55,14 @@
    "fieldtype": "Select",
    "label": "Sistema de talla",
    "options": "\nNumérico\nLetra\nImpar"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:!doc.is_group",
+   "description": "Las tallas marcadas aquí son las que se ofrecen por defecto al capturar el desglose de un producto base en la orden de venta. Las demás siguen disponibles con «Ver todas las tallas».",
+   "fieldname": "uso_comun",
+   "fieldtype": "Check",
+   "label": "Talla de uso común"
   },
   {
    "default": "0",

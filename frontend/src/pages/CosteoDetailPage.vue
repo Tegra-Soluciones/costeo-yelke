@@ -982,11 +982,17 @@
                         </select>
                       </div>
                       <div v-if="d.grupo" class="grid grid-cols-3 gap-1.5">
-                        <label v-for="t in tallasDeGrupo(d.grupo)" :key="t.name" class="flex items-center gap-1">
+                        <label v-for="t in tallasParaDesglose(d)" :key="t.name" class="flex items-center gap-1">
                           <span class="text-[11px] text-ink-muted w-9 text-right">{{ t.talla }}</span>
                           <input v-model.number="d.valores[t.name]" type="number" min="0" step="1" class="field-input w-full text-xs py-0.5" />
                         </label>
                       </div>
+                      <button
+                        v-if="d.grupo && tallasOcultas(d)"
+                        type="button"
+                        class="mt-1 text-[11px] text-brand-600 hover:underline"
+                        @click="d.verTodas = !d.verTodas"
+                      >{{ d.verTodas ? "Ver solo las tallas más usadas" : `Ver todas las tallas (${tallasOcultas(d)} más)` }}</button>
                     </div>
                     <button
                       :disabled="soDesgloseSaving"
@@ -3864,7 +3870,8 @@ async function loadSoDesgloseForm(so, forzar = false) {
       const valores = {};
       for (const x of f.filas || []) valores[x.talla] = x.qty;
       const primera = allTallas.value.find((t) => t.name === (f.filas || [])[0]?.talla);
-      return { ...f, valores, genero: primera?.genero || "", grupo: primera?.parent_talla || "" };
+      return { ...f, valores, verTodas: false,
+               genero: primera?.genero || "", grupo: primera?.parent_talla || "" };
     });
   } catch { soDesgloseForm.value = []; soDesgloseDe.value = null; }
 }
@@ -7521,7 +7528,7 @@ async function loadAllTallas() {
   if (allTallas.value.length) return;
   try {
     allTallas.value = await call("frappe.client.get_list", {
-      doctype: "Talla", fields: ["name", "talla", "is_group", "parent_talla", "genero"],
+      doctype: "Talla", fields: ["name", "talla", "is_group", "parent_talla", "genero", "uso_comun"],
       filters: [["disabled", "=", 0]], limit_page_length: 0, order_by: "lft asc",
     }) || [];
   } catch { /* ignore */ }
@@ -7537,6 +7544,22 @@ function gruposDeGenero(genero) {
 function tallasDeGrupo(grupoName) {
   if (!grupoName) return [];
   return allTallas.value.filter(t => !t.is_group && t.parent_talla === grupoName);
+}
+// Las tallas que se ofrecen al capturar el desglose de un producto BASE: las
+// marcadas como de uso común en el catálogo (XS a XL en letras, y su
+// equivalente en cada sistema) más cualquiera que ya traiga piezas -- para no
+// esconder lo que alguien ya capturó. El resto se alcanza con "Ver todas".
+// En las tallas EXTRA no aplica: ahí se elige a propósito qué tallas cubre la
+// variante, y se ofrecen todas.
+function tallasParaDesglose(d) {
+  const todas = tallasDeGrupo(d.grupo);
+  if (d.verTodas) return todas;
+  const usadas = todas.filter(t => t.uso_comun || Number(d.valores?.[t.name]) > 0);
+  // Un grupo sin ninguna marca todavía se comporta como antes.
+  return usadas.length ? usadas : todas;
+}
+function tallasOcultas(d) {
+  return tallasDeGrupo(d.grupo).length - tallasParaDesglose(d).length;
 }
 async function hydrateSupplierOptions() {
   for (const d of detalles.value) {
