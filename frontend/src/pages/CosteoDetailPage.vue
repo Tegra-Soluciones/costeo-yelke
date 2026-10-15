@@ -994,6 +994,19 @@
                       @click="guardarDesgloseOV(so)"
                     >{{ soDesgloseSaving ? "Guardando…" : "Guardar desglose" }}</button>
                   </div>
+                  <!-- OV validada: el desglose ya no se edita, pero se sigue viendo. -->
+                  <div v-else-if="so.docstatus === 1 && soDesgloseForm.some((d) => (d.filas || []).length)" class="pt-3 mt-2 border-t border-surface-border">
+                    <p class="text-[12.5px] font-semibold text-ink mb-2">Desglose por talla</p>
+                    <div v-for="d in soDesgloseForm.filter((x) => (x.filas || []).length)" :key="d.row" class="mb-2">
+                      <div class="flex items-center justify-between gap-2 mb-1">
+                        <span class="text-[12.5px] text-ink truncate" :title="d.item_name">{{ d.item_name }}</span>
+                        <span class="text-[11px] tabular-nums text-green-700">{{ sumaDesglose(d) }} / {{ d.qty }}</span>
+                      </div>
+                      <div class="flex flex-wrap gap-1.5">
+                        <span v-for="f in d.filas" :key="f.talla" class="text-[11.5px] px-2 py-0.5 rounded-full bg-surface-raised border border-surface-border">{{ f.etiqueta }} <b class="font-semibold">{{ f.qty }}</b></span>
+                      </div>
+                    </div>
+                  </div>
 
                   <!-- Cantidades confirmadas por talla -- solo aquí (OV), nunca en la
                        Cotización: es en esta etapa donde el cliente confirma las
@@ -3818,11 +3831,18 @@ function parseDesgloseDeDescripcion(description, tallas) {
 // ── Desglose por talla del producto principal (api/tallas_ov.py) ──
 const soDesgloseForm = ref([]);
 const soDesgloseSaving = ref(false);
+// De qué OV (y en qué estado) es lo que hay cargado ahora en soDesgloseForm.
+// Sirve para poder llamar al cargador desde varios lados sin repetir la llamada
+// ni pisar lo que el usuario esté capturando.
+const soDesgloseDe = ref(null);
 function sumaDesglose(d) {
   return Object.values(d.valores).reduce((a, b) => a + (Number(b) || 0), 0);
 }
-async function loadSoDesgloseForm(so) {
-  if (!so || so.docstatus !== 0) { soDesgloseForm.value = []; return; }
+async function loadSoDesgloseForm(so, forzar = false) {
+  if (!so || so.docstatus === 2) { soDesgloseForm.value = []; soDesgloseDe.value = null; return; }
+  const firma = `${so.name}:${so.docstatus}`;
+  if (!forzar && soDesgloseDe.value === firma) return;
+  soDesgloseDe.value = firma;
   try {
     await loadAllTallas();
     const filas = await call("costeo_yelke.api.tallas_ov.get_desglose_tallas_ov", { sales_order: so.name });
@@ -3832,7 +3852,7 @@ async function loadSoDesgloseForm(so) {
       const primera = allTallas.value.find((t) => t.name === (f.filas || [])[0]?.talla);
       return { ...f, valores, genero: primera?.genero || "", grupo: primera?.parent_talla || "" };
     });
-  } catch { soDesgloseForm.value = []; }
+  } catch { soDesgloseForm.value = []; soDesgloseDe.value = null; }
 }
 async function guardarDesgloseOV(so) {
   for (const d of soDesgloseForm.value) {
@@ -3850,7 +3870,7 @@ async function guardarDesgloseOV(so) {
     }
     await loadRelated();
     previewKey.value++;
-    await loadSoDesgloseForm(so);
+    await loadSoDesgloseForm(so, true);
     showToast("Desglose guardado -- ya aparece en la descripción y en la orden de manufactura");
   } catch (e) {
     showToast(e.message || "No se pudo guardar el desglose", "error");
@@ -7605,6 +7625,12 @@ async function loadRelated() {
       } else if (expandedSOName.value && !related.sales_orders.some(s => s.name === expandedSOName.value)) {
         expandedSOName.value = null;
       }
+      // El desglose por talla se carga aquí y no solo en toggleSalesOrder: la
+      // tarjeta de la OV se abre sola al entrar al costeo, y por ese camino el
+      // desglose se quedaba vacío -- con lo cual la tabla no se pintaba nunca.
+      const soAbierta = related.sales_orders.find(s => s.name === expandedSOName.value);
+      if (soAbierta) loadSoDesgloseForm(soAbierta);
+      else if (!expandedSOName.value) { soDesgloseForm.value = []; soDesgloseDe.value = null; }
       if (!activeSOName.value || !related.sales_orders.some(s => s.name === activeSOName.value)) {
         activeSOName.value = expandedSOName.value || related.sales_orders[0].name;
       }
