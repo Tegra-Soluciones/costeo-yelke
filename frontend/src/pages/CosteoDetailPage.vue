@@ -1042,6 +1042,20 @@
                       @click="guardarVariantesOV(so)"
                     >{{ soVariantesSaving ? "Guardando…" : "Guardar cantidades" }}</button>
                   </div>
+                  <!-- OV validada: las tallas extra ya no se editan, pero se siguen viendo. -->
+                  <div v-else-if="so.docstatus === 1 && soVariantesForm.length" class="pt-3 mt-2 border-t border-surface-border">
+                    <p class="text-[12.5px] font-semibold text-ink mb-2">Cantidades confirmadas por talla</p>
+                    <div v-for="v in soVariantesForm" :key="v.item_code" class="mb-2">
+                      <div class="flex items-center justify-between gap-2 mb-1">
+                        <span class="text-[12.5px] text-ink truncate" :title="v.talla_grupo_label">{{ v.talla_grupo_label }}</span>
+                        <span class="text-[11px] tabular-nums text-green-700">{{ v.qty }}</span>
+                      </div>
+                      <div v-if="tallasConPiezas(v).length" class="flex flex-wrap gap-1.5">
+                        <span v-for="t in tallasConPiezas(v)" :key="t.code" class="text-[11.5px] px-2 py-0.5 rounded-full bg-surface-raised border border-surface-border">{{ t.label }} <b class="font-semibold">{{ t.qty }}</b></span>
+                      </div>
+                      <p v-else-if="v.tallas.length > 1" class="text-[11px] text-ink-light">Sin desglose capturado por talla.</p>
+                    </div>
+                  </div>
 
                   <div class="pt-3 mt-2 border-t border-surface-border">
                     <AttachmentsPanel doctype="Sales Order" :docname="so.name" />
@@ -3881,9 +3895,28 @@ async function guardarDesgloseOV(so) {
 const soVariantesForm = ref([]);
 const soVariantesLoading = ref(false);
 const soVariantesSaving = ref(false);
+// Igual que soDesgloseDe: de qué OV y en qué estado es lo que está cargado.
+const soVariantesDe = ref(null);
 
-async function loadSoVariantesForm(so) {
-  if (!variantesDelCosteo.value.length || so.docstatus !== 0) { soVariantesForm.value = []; return; }
+// Las tallas de una variante que de verdad llevan piezas -- para enseñarlas
+// cuando la OV ya está validada y el desglose ya no se puede editar.
+function tallasConPiezas(v) {
+  return (v.tallas || [])
+    .map((t) => ({ ...t, qty: Number(v.desglose?.[t.code]) || 0 }))
+    .filter((t) => t.qty > 0);
+}
+
+async function loadSoVariantesForm(so, forzar = false) {
+  // Una OV validada ya no se edita, pero el desglose se tiene que seguir
+  // viendo: antes esta función se salía en seco y la sección entera
+  // desaparecía en cuanto se validaba la orden.
+  if (!so || !variantesDelCosteo.value.length || so.docstatus === 2) {
+    soVariantesForm.value = []; soVariantesDe.value = null; return;
+  }
+  const firma = `${so.name}:${so.docstatus}`;
+  if (!forzar && soVariantesDe.value === firma) return;
+  soVariantesDe.value = firma;
+  const soloLectura = so.docstatus !== 0;
   soVariantesLoading.value = true;
   try {
     const [data, variantes] = await Promise.all([
@@ -3906,7 +3939,7 @@ async function loadSoVariantesForm(so) {
         const recuperado = parseDesgloseDeDescripcion(linea?.description, tallas);
         if (recuperado) {
           Object.assign(desglose, recuperado);
-        } else {
+        } else if (!soloLectura) {
           const base = Math.floor(qty / tallas.length);
           let resto = Math.round(qty) - base * tallas.length;
           for (const t of tallas) {
@@ -3924,9 +3957,11 @@ async function loadSoVariantesForm(so) {
         desglose,
       };
     });
+    // En una OV validada solo se enseña lo que de verdad se vendió.
+    if (soloLectura) soVariantesForm.value = soVariantesForm.value.filter((v) => Number(v.qty) > 0);
   } catch (e) {
     showToast(e.message || "No se pudieron cargar las variantes de esta orden", "error");
-    soVariantesForm.value = [];
+    soVariantesForm.value = []; soVariantesDe.value = null;
   } finally {
     soVariantesLoading.value = false;
   }
@@ -3993,7 +4028,7 @@ async function guardarVariantesOV(so) {
     });
     await loadRelated();
     previewKey.value++;
-    await loadSoVariantesForm(so);
+    await loadSoVariantesForm(so, true);
     showToast("Cantidades guardadas -- se reflejarán en el Costeo al Validar esta orden");
   } catch (e) {
     showToast(e.message || "No se pudieron guardar las cantidades", "error");
@@ -7621,7 +7656,6 @@ async function loadRelated() {
         soAutoExpandDone = true;
         expandedSOName.value = related.sales_orders[0].name;
         applySOToForm(related.sales_orders[0]);
-        loadSoVariantesForm(related.sales_orders[0]);
       } else if (expandedSOName.value && !related.sales_orders.some(s => s.name === expandedSOName.value)) {
         expandedSOName.value = null;
       }
@@ -7629,8 +7663,11 @@ async function loadRelated() {
       // tarjeta de la OV se abre sola al entrar al costeo, y por ese camino el
       // desglose se quedaba vacío -- con lo cual la tabla no se pintaba nunca.
       const soAbierta = related.sales_orders.find(s => s.name === expandedSOName.value);
-      if (soAbierta) loadSoDesgloseForm(soAbierta);
-      else if (!expandedSOName.value) { soDesgloseForm.value = []; soDesgloseDe.value = null; }
+      if (soAbierta) { loadSoDesgloseForm(soAbierta); loadSoVariantesForm(soAbierta); }
+      else if (!expandedSOName.value) {
+        soDesgloseForm.value = []; soDesgloseDe.value = null;
+        soVariantesForm.value = []; soVariantesDe.value = null;
+      }
       if (!activeSOName.value || !related.sales_orders.some(s => s.name === activeSOName.value)) {
         activeSOName.value = expandedSOName.value || related.sales_orders[0].name;
       }
