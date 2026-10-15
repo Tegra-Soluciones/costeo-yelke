@@ -722,11 +722,10 @@ async function sendEmail() {
   if (!emailForm.to) return;
   sendingEmail.value = true;
   try {
-    await call("costeo_yelke.api.quotation_api.send_quotation_email", {
-      name: inv.name, recipients: JSON.stringify([emailForm.to]),
+    await call("costeo_yelke.api.costeo_api.enviar_por_correo", {
+      doctype: "Sales Invoice", name: inv.name, recipients: emailForm.to,
       subject: emailForm.subject,
       message: emailForm.message.replace(/\n/g, "<br>"),
-      print_format: "Standard", attach_pdf: emailForm.attach_pdf ? 1 : 0,
     });
     showToast("Correo enviado");
     showEmailModal.value = false;

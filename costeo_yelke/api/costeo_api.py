@@ -11086,6 +11086,26 @@ def contacto_principal_proveedor(supplier: str) -> dict:
     }
 
 
+def exigir_documento_enviable(doctype, name):
+    """Solo se manda por correo o WhatsApp un documento VALIDADO, y solo si el usuario
+    puede verlo. Un borrador todavía puede cambiar: enviarlo comprometía a Yelke con
+    precios o cantidades que nadie había aprobado."""
+    if not frappe.db.exists(doctype, name):
+        frappe.throw(_("{0} {1} no existe.").format(_(doctype), name))
+    if not frappe.has_permission(doctype, "read", name):
+        frappe.throw(_("No tienes permiso para ver {0} {1}.").format(_(doctype), name), frappe.PermissionError)
+    if frappe.db.get_value(doctype, name, "docstatus") != 1:
+        frappe.throw(_("{0} {1} todavía no está validado: solo se pueden enviar documentos validados.")
+                     .format(_(doctype), name))
+
+
+@frappe.whitelist()
+def validar_envio_documento(doctype: str, name: str) -> dict:
+    """La app lo consulta antes de abrir el envío (correo o WhatsApp)."""
+    exigir_documento_enviable(doctype, name)
+    return {"ok": True}
+
+
 @frappe.whitelist()
 def enviar_por_correo(doctype: str, name: str, recipients: str, subject: str = None, message: str = None,
                       print_format: str = None, print_formats=None) -> dict:
@@ -11098,13 +11118,16 @@ def enviar_por_correo(doctype: str, name: str, recipients: str, subject: str = N
     correo -- la orden a un taller va con dos: la orden de compra y su ficha de
     manufactura, que son formatos distintos del mismo Purchase Order.
     """
+    exigir_documento_enviable(doctype, name)
     recipient_list = [r.strip() for r in (recipients or "").replace(";", ",").split(",") if r.strip()]
     if not recipient_list:
         frappe.throw(_("Indica al menos un destinatario."))
 
     if isinstance(print_formats, str):
         print_formats = json.loads(print_formats)
-    formatos = [f for f in (print_formats or []) if f] or [print_format or "Standard"]
+    # Sin formato indicado, el que le toca al documento (el de Yelke), no el estándar.
+    formatos = [f for f in (print_formats or []) if f] or [
+        print_format or get_default_print_format(doctype, name).get("format") or "Standard"]
     attachments = None
     body = message or f"Adjunto {doctype} {name}."
     used = "pdf"

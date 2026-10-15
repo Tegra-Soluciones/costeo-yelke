@@ -68,7 +68,12 @@ export function useDocumentActions(showToast) {
 
   /** `opciones.printFormats`: los PDF que se adjuntan (varios del mismo documento).
    *  `opciones.asunto` / `opciones.mensaje`: textos propios de ese envío. */
-  function openSend(doctype, name, email, phone, opciones = {}) {
+  async function openSend(doctype, name, email, phone, opciones = {}) {
+    // Solo se envía un documento validado (el servidor lo vuelve a revisar al enviar).
+    try {
+      await call("costeo_yelke.api.costeo_api.validar_envio_documento", { doctype, name });
+    } catch (e) { showToast(e.message || "Solo se pueden enviar documentos validados", "error"); return; }
+    await ensurePrintFmt(doctype, name);   // WhatsApp descarga el PDF con el formato de Yelke
     sendChooser.doctype = doctype; sendChooser.name = name;
     sendChooser.email = email || ""; sendChooser.phone = phone || "";
     sendChooser.printFormats = opciones.printFormats || [];

@@ -26,7 +26,8 @@
 .yk-head td { vertical-align: middle; padding: 0 14mm !important; border: 0 !important; }
 /* Medidas fijas en la proporción del logo (640×220): con solo el alto, el max-width:100%
    de Frappe lo encogía a lo ancho y salía aplastado. */
-.yk-head .logo img { width: 35mm !important; height: 12mm !important; max-width: none !important; }
+.yk-head .logo img,
+html body:last-child .print-format .yk-head td.logo img { width: 35mm !important; height: 12mm !important; max-width: none !important; }
 .yk-head .doc { text-align: right; }
 .yk-head td.logo { padding-right: 6mm !important; }
 .yk-head td.emp { padding-left: 0 !important; padding-right: 0 !important; vertical-align: middle; }

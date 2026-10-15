@@ -887,11 +887,10 @@ async function sendEmail() {
     const recipients = emailForm.cc
       ? [emailForm.to, ...emailForm.cc.split(",").map(e => e.trim()).filter(Boolean)]
       : [emailForm.to];
-    await call("costeo_yelke.api.quotation_api.send_quotation_email", {
-      name: so.name, recipients: JSON.stringify(recipients),
+    await call("costeo_yelke.api.costeo_api.enviar_por_correo", {
+      doctype: "Sales Order", name: so.name, recipients: recipients.join(", "),
       subject: emailForm.subject,
       message: emailForm.message.replace(/\n/g, "<br>"),
-      print_format: "Standard", attach_pdf: emailForm.attach_pdf ? 1 : 0,
     });
     showToast("Correo enviado");
     showEmailModal.value = false;
@@ -909,10 +908,11 @@ function openWhatsApp() {
   showWAModal.value = true;
 }
 
-function sendWhatsApp() {
+async function sendWhatsApp() {
   const phone = waPhone.value.replace(/[^0-9]/g, "");
   if (!phone) return;
-  const pdfUrl = `/api/method/frappe.utils.print_format.download_pdf?doctype=Sales+Order&name=${encodeURIComponent(so.name)}&format=Standard&no_letterhead=0`;
+  const fmt = await defaultPrintFormat("Sales Order");
+  const pdfUrl = `/api/method/frappe.utils.print_format.download_pdf?doctype=Sales+Order&name=${encodeURIComponent(so.name)}&format=${encodeURIComponent(fmt)}&no_letterhead=0`;
   const a = document.createElement("a"); a.href = pdfUrl; a.download = `${so.name}.pdf`; a.click();
   setTimeout(() => window.open(`https://wa.me/${phone}?text=${encodeURIComponent(waMessage.value)}`, "_blank"), 500);
   showWAModal.value = false;

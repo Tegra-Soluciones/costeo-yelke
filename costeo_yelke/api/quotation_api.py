@@ -417,6 +417,8 @@ def get_quotation_print_formats():
 def send_quotation_email(name, recipients, subject, message, print_format=None, attach_pdf=1):
     """Send a quotation via email, optionally attaching the PDF."""
     import json
+    from costeo_yelke.api.costeo_api import exigir_documento_enviable
+    exigir_documento_enviable("Quotation", name)
     if isinstance(recipients, str):
         try:
             recipients = json.loads(recipients)

@@ -732,7 +732,7 @@
                     </button>
                   </template>
                   <div class="grid grid-cols-2 gap-2 pt-1">
-                    <button class="doc-action justify-center" @click="openSend('Quotation', q.name, q.contact_email, q.contact_mobile)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
+                    <button v-if="q.docstatus === 1" class="doc-action justify-center" @click="openSend('Quotation', q.name, q.contact_email, q.contact_mobile)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
                     <button class="doc-action justify-center" @click="downloadPdf('Quotation', q.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>Descargar</button>
                     <button class="doc-action justify-center" @click="printDocView('Quotation', q.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>Imprimir</button>
                     <button class="doc-action justify-center" @click="openAssign('Quotation', q.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Asignar</button>
@@ -952,7 +952,7 @@
                     </button>
                   </template>
                   <div class="grid grid-cols-2 gap-2 pt-1">
-                    <button class="doc-action justify-center" @click="openSend('Sales Order', so.name, so.contact_email, so.contact_mobile)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
+                    <button v-if="so.docstatus === 1" class="doc-action justify-center" @click="openSend('Sales Order', so.name, so.contact_email, so.contact_mobile)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
                     <button class="doc-action justify-center" @click="downloadPdf('Sales Order', so.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>Descargar</button>
                     <button class="doc-action justify-center" @click="printDocView('Sales Order', so.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>Imprimir</button>
                     <button class="doc-action justify-center" @click="openAssign('Sales Order', so.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Asignar</button>
@@ -2767,7 +2767,7 @@
         </template>
         <template #enlaces>
           <button v-if="dnDoc" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="openPdf('Delivery Note', dnDoc.name)">Vista previa</button>
-          <button v-if="dnDoc" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="openSend('Delivery Note', dnDoc.name, dnDoc.contact_email || activeSO?.contact_email, dnDoc.contact_mobile || activeSO?.contact_mobile)">Enviar</button>
+          <button v-if="dnDoc && dnDoc.docstatus === 1" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="openSend('Delivery Note', dnDoc.name, dnDoc.contact_email || activeSO?.contact_email, dnDoc.contact_mobile || activeSO?.contact_mobile)">Enviar</button>
           <button v-if="dnDoc" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="downloadPdf('Delivery Note', dnDoc.name)">Descargar</button>
           <a v-if="dnDoc" class="p-btn-ghost h-8 text-[12.5px] px-2" :href="`/app/delivery-note/${dnDoc.name}`" target="_blank">ERPNext ↗</a>
         </template>
@@ -3143,7 +3143,7 @@
               </button>
             </template>
             <div class="grid grid-cols-2 gap-2 pt-1">
-              <button class="doc-action justify-center" @click="openSend('Sales Invoice', related.sales_invoice.name, related.sales_invoice.contact_email, related.sales_invoice.contact_mobile)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
+              <button v-if="siValidated" class="doc-action justify-center" @click="openSend('Sales Invoice', related.sales_invoice.name, related.sales_invoice.contact_email, related.sales_invoice.contact_mobile)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
               <button class="doc-action justify-center" @click="downloadPdf('Sales Invoice', related.sales_invoice.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>Descargar</button>
               <button class="doc-action justify-center" @click="printDocView('Sales Invoice', related.sales_invoice.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>Imprimir</button>
               <button class="doc-action justify-center" @click="openAssign('Sales Invoice', related.sales_invoice.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Asignar</button>
@@ -4919,13 +4919,14 @@ function enviarOrdenAlTaller() {
   });
 }
 
-/** Doble validación: Enviar → Revisar → Validar, con los permisos de cada quien.
- *  "Enviar" está siempre: una orden ya validada es justo la que se le manda. */
+/** Doble validación: Revisar → Validar, con los permisos de cada quien. Enviarla al
+ *  taller solo aparece ya validada: un borrador todavía puede cambiar. */
 const accionesOcTaller = computed(() => {
   if (!subPo.value) return [];
-  const enviar = sec(subPo.value.enviado_el ? "Reenviar al taller" : "Enviar al taller", enviarOrdenAlTaller);
-  if (subValidated.value) return [enviar];
-  const out = [enviar, sec("Guardar", guardarSub)];
+  if (subValidated.value) {
+    return [sec(subPo.value.enviado_el ? "Reenviar al taller" : "Enviar al taller", enviarOrdenAlTaller)];
+  }
+  const out = [sec("Guardar", guardarSub)];
   if (subPo.value.requiere_doble_validacion && !subPo.value.revisado_yelke) {
     out.push(pri("Revisar", revisarSub, {
       deshabilitado: !permisosValidacion.puede_revisar,

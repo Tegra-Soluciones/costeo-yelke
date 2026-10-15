@@ -91,6 +91,11 @@ body > .print-format { margin: 0 !important; padding: 0 !important; }
 .yk-lista li b { color: #ff6b15; font-weight: 600; }
 .item-foto { width: 15mm; text-align: center; }
 .item-foto img { max-width: 15mm; max-height: 15mm; }
+/* Frappe (templates/styles/standard.css, en pantalla) fuerza `td img { width: 100%
+   !important }` con un selector más específico que los nuestros: en la vista web y en
+   las vistas previas estiraba a lo ancho las firmas, las fotos y el logo (con el alto
+   fijo, el logo salía aplastado). Aquí cada imagen vuelve a su ancho natural. */
+html body:last-child .print-format td img { width: auto !important; }
 .yk-tag { display: inline-block; font-size: 6pt; font-weight: 600; color: #e65a0b; background: #fff3ec;
     border-radius: 1mm; padding: 0.2mm 1.5mm; margin: 0.8mm 1mm 0 0; }
 .bg-volumen { background: #ff6b15 !important; color: #fff !important; }
