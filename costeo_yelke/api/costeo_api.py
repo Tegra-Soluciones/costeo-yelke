@@ -1764,6 +1764,26 @@ def _vistas_de_documento(doctype, name=None):
     }.get(doctype, ())
 
 
+# Únicos tipos de documento que validar_documento/cancelar_documento aceptan: los
+# del flujo del costeo que la app valida o cancela por esas dos puertas. Sin esta
+# lista, como ambas omiten los permisos del documento, cualquier usuario podía
+# validar o cancelar cualquier cosa por la API (una póliza, un pago, un usuario...).
+DOCTYPES_FLUJO_COSTEO = frozenset({
+    "Costeo", "Quotation", "Sales Order", "Delivery Note", "Sales Invoice",
+    "Production Plan", "Material Request", "Request for Quotation", "Supplier Quotation",
+    "Purchase Order", "Purchase Receipt", "Purchase Invoice",
+    "Subcontracting Order", "Subcontracting Receipt", "Stock Entry",
+})
+
+
+def _exigir_doctype_del_flujo(doctype):
+    if doctype not in DOCTYPES_FLUJO_COSTEO:
+        frappe.throw(
+            _("{0} no es un documento del flujo del costeo; valídalo o cancélalo desde ERPNext.").format(_(doctype)),
+            frappe.PermissionError,
+        )
+
+
 @frappe.whitelist()
 def validar_documento(doctype: str, name: str) -> dict:
     """Valida (submit) un documento en borrador.
@@ -1777,6 +1797,7 @@ def validar_documento(doctype: str, name: str) -> dict:
     - Los demás doctypes que también pasan por aquí (Production Plan, Sales
       Invoice, Purchase Receipt, etc.) siguen con la validación normal, sin
       gating por rol."""
+    _exigir_doctype_del_flujo(doctype)
     requiere_vista(*_vistas_de_documento(doctype, name))
     if doctype == "Costeo" and not puede_aprobar_documentos():
         frappe.throw(
@@ -1930,7 +1951,11 @@ def _marcar_costeo_cancelado_si_aplica(quotation_doc):
 
 @frappe.whitelist()
 def cancelar_documento(doctype: str, name: str) -> dict:
-    """Cancela un documento validado (docstatus 1 -> 2). Paso previo para poder eliminarlo."""
+    """Cancela un documento validado (docstatus 1 -> 2). Paso previo para poder eliminarlo.
+    Mismas reglas de entrada que validar_documento: solo documentos del flujo y, si son
+    de Producción, la vista correspondiente."""
+    _exigir_doctype_del_flujo(doctype)
+    requiere_vista(*_vistas_de_documento(doctype, name))
     doc = frappe.get_doc(doctype, name)
     if doc.docstatus == 1:
         doc.flags.ignore_permissions = True
