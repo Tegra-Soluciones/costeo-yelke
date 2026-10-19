@@ -6,3 +6,6 @@ frappe.ui.form.on("Supplier", {
 		}));
 	},
 });
+
+// RFC obligatorio y escrito dos veces (public/js/doble_captura.js, api/confirmaciones.py).
+costeoYelkeDobleCaptura("Supplier", [{ campo: "tax_id", confirmar: "confirmar_rfc", tipo: "rfc" }], { obligatorio: true });

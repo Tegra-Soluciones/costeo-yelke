@@ -29,6 +29,12 @@
       @confirm="doDeleteSO" @cancel="confirmDeleteSO.open = false"
     />
 
+    <!-- Precio de venta escrito dos veces (la primera oculta) -->
+    <DialogoPrecio
+      :abierto="!!precioEnEdicion" :producto="precioEnEdicion?.finished_item || 'Producto'"
+      :actual="precioEnEdicion?.unit_sales_price || 0" @cerrar="precioEnEdicion = null" @confirmar="aplicarPrecio"
+    />
+
     <!-- Modal: materializar producto terminado (al pasar a cotización) -->
     <MaterializeProductModal
       :open="materializeModal.open"
@@ -285,7 +291,14 @@
                       <div><label class="field-label mb-0.5">Margen %</label><div class="relative"><input v-model.number="prod.margin_pct" type="number" min="0" max="99" class="field-input py-1.5 pr-7" @input="onMarginChange(prod)" /><span class="suffix">%</span></div></div>
                       <div>
                         <label class="field-label mb-0.5 flex items-center gap-1">Precio unit.<span v-if="prod.precio_manual" class="text-[9.5px] font-normal text-brand-600 bg-brand-50 border border-brand-200 rounded px-1" title="Precio fijado a mano -- no se recalcula aunque cambien costos, el margen se ajusta a él">fijo</span></label>
-                        <div class="relative"><span class="prefix text-brand-600">$</span><input v-model.number="prod.unit_sales_price" type="number" min="0" step="0.01" class="field-input py-1.5 pl-6 text-brand-600 font-semibold" @input="onPriceChange(prod)" /></div>
+                        <!-- El precio se escribe dos veces, la primera oculta (pedido de Yelke): DialogoPrecio. -->
+                        <button
+                          type="button" class="field-input py-1.5 px-2 text-left flex items-center justify-between gap-1 disabled:opacity-60"
+                          :disabled="!canEditCosteo" title="Cambiar el precio de venta (se escribe dos veces)" @click="abrirPrecio(prod)"
+                        >
+                          <span class="text-brand-600 font-semibold tabular-nums truncate">{{ fmtC(prod.unit_sales_price) }}</span>
+                          <span v-if="canEditCosteo" class="text-[10.5px] font-medium text-ink-light flex-shrink-0">Cambiar</span>
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -3340,6 +3353,7 @@ import OrdenManufacturaForm from "@/components/OrdenManufacturaForm.vue";
 import OmGeneralEditor from "@/components/OmGeneralEditor.vue";
 import OmTallerView from "@/components/OmTallerView.vue";
 import ActiveSOSelector from "@/components/ActiveSOSelector.vue";
+import DialogoPrecio from "@/components/DialogoPrecio.vue";
 import FranjaAprobacion from "@/components/aprobacion/FranjaAprobacion.vue";
 import BotonActividad from "@/components/aprobacion/BotonActividad.vue";
 import ActividadPlegable from "@/components/aprobacion/ActividadPlegable.vue";
@@ -7464,6 +7478,17 @@ function recalcProducto(prod) {
 // Así el precio exacto que se tecleó aquí es el que llega a cotización/documentos
 // posteriores, sin que un redondeo del margen (o un cambio en materiales/etapas más
 // adelante) lo mueva ni un centavo.
+// El precio a mano se captura dos veces (DialogoPrecio); al coincidir se aplica igual
+// que antes se aplicaba al teclearlo en la celda.
+const precioEnEdicion = ref(null);
+function abrirPrecio(prod) { precioEnEdicion.value = prod; }
+function aplicarPrecio(valor) {
+  const prod = precioEnEdicion.value;
+  precioEnEdicion.value = null;
+  if (!prod) return;
+  prod.unit_sales_price = valor;
+  onPriceChange(prod);
+}
 function onPriceChange(prod) {
   const price = prod.unit_sales_price || 0;
   const cost = prod.total_unit_cost || 0;

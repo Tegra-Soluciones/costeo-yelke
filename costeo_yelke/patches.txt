@@ -84,3 +84,4 @@ costeo_yelke.patches.v0_2_58.archivos_factura
 costeo_yelke.patches.v0_2_59.tallas_uso_comun
 costeo_yelke.patches.v0_2_60.campos_aprobacion
 costeo_yelke.patches.v0_2_61.permisos_aprobaciones
+costeo_yelke.patches.v0_2_62.doble_captura

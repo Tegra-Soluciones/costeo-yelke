@@ -58,7 +58,10 @@ add_to_apps_screen = [
 doctype_js = {
 	"Purchase Order": "public/js/purchase_order_manufacturing_order.js",
 	"Precio Acordado Recordatorio": "public/js/precio_acordado_recordatorio.js",
-	"Supplier": "public/js/supplier.js",
+	# doble_captura.js va primero: define la ayuda que usan los otros tres.
+	"Supplier": ["public/js/doble_captura.js", "public/js/supplier.js"],
+	"Customer": ["public/js/doble_captura.js", "public/js/customer.js"],
+	"Bank Account": ["public/js/doble_captura.js", "public/js/bank_account.js"],
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -177,7 +180,8 @@ after_install = "costeo_yelke.install.after_install"
 doc_events = {
 	# Cuenta bancaria del proveedor: CLABE / tarjeta y su resumen en la ficha (v0_2_48).
 	"Bank Account": {
-		"validate": "costeo_yelke.api.bank_account_api.validar",
+		# Primero la doble captura (compara lo tecleado), después la limpieza y el formato.
+		"validate": ["costeo_yelke.api.confirmaciones.validar_cuenta", "costeo_yelke.api.bank_account_api.validar"],
 		"on_update": "costeo_yelke.api.bank_account_api.sincronizar_proveedor",
 	},
 	# La orden de compra del CLIENTE va adjunta a la OV y es obligatoria para
@@ -279,6 +283,13 @@ doc_events["Item"]["before_validate"] = [
 	"costeo_yelke.overrides.uppercase_master.upper",
 	"costeo_yelke.api.item_api.limpiar_almacen_de_otra_compania",
 ]
+
+# Va DESPUÉS del bloque de mayúsculas, que reemplaza el diccionario de estos doctypes.
+# Doble captura del RFC (api/confirmaciones.py): obligatorio y escrito dos veces.
+for _dt in ("Customer", "Supplier"):
+	_actual = doc_events.setdefault(_dt, {}).get("validate")
+	_lista = [] if not _actual else ([_actual] if isinstance(_actual, str) else list(_actual))
+	doc_events[_dt]["validate"] = [*_lista, "costeo_yelke.api.confirmaciones.validar_rfc"]
 
 # Scheduled Tasks
 # ---------------
