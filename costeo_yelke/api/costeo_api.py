@@ -1850,6 +1850,13 @@ def marcar_revisado_documento(doctype: str, name: str) -> dict:
     Order -- materia prima y subcontratada) -- paso previo obligatorio a
     validar_documento para los doctypes que lo requieren."""
     requiere_vista(*_vistas_de_documento(doctype, name))
+    return _marcar_revisado(doctype, name)
+
+
+def _marcar_revisado(doctype, name):
+    """La revisión en sí, sin pedir la vista de Producción: el motor de aprobaciones
+    (api/aprobaciones.marcar_revisado) la llama así porque revisar es facultad del rol
+    de revisor, no de quien opera la vista."""
     if not frappe.get_meta(doctype).has_field("revisado_yelke"):
         frappe.throw(_("Este tipo de documento no usa doble validación."))
     if not puede_revisar_documentos():
@@ -1865,6 +1872,9 @@ def marcar_revisado_documento(doctype: str, name: str) -> dict:
         "revisado_por_yelke": frappe.session.user,
         "revisado_en_yelke": frappe.utils.now(),
     }, update_modified=False)
+    from costeo_yelke.api.aprobaciones import al_revisar
+
+    al_revisar(doctype, name)
     return {"ok": True, "revisado_por_yelke": frappe.session.user}
 
 

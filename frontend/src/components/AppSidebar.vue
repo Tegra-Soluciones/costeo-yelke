@@ -19,6 +19,15 @@
       <!-- Inicio -->
       <section>
         <NavItem to="/inicio" :icon="IconHome" label="Inicio" :activeRoutes="['Dashboard']" />
+        <!-- Panel de Dirección / bandeja de aprobación (api/aprobaciones.py) -->
+        <RouterLink
+          v-if="etiquetaAprobaciones" to="/direccion"
+          :class="['nav-item', route.name === 'Direccion' ? 'nav-item--active' : 'nav-item--idle']"
+        >
+          <IconAprobar class="w-[15px] h-[15px] flex-shrink-0" />
+          <span class="truncate flex-1">{{ etiquetaAprobaciones }}</span>
+          <span v-if="cuentaBandeja" class="ml-auto text-[10.5px] font-semibold text-white bg-brand-500 rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center">{{ cuentaBandeja }}</span>
+        </RouterLink>
       </section>
 
       <!-- Costeo -->
@@ -76,11 +85,29 @@
 </template>
 
 <script setup>
-import { h, defineComponent } from "vue";
+import { computed, h, defineComponent, onBeforeUnmount, onMounted } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import logoUrl from "@/assets/icon_costeo.svg";
+import { cuentaBandeja, refrescarCuentaBandeja, usePermisosAprobacion } from "@/composables/useAprobacion.js";
 
 const route = useRoute();
+
+// ── Aprobaciones: el nombre de la entrada depende de lo que la persona hace ──
+const permisosAprobacion = usePermisosAprobacion();
+const etiquetaAprobaciones = computed(() => {
+  const p = permisosAprobacion;
+  if (!p.cargado) return "";
+  if (p.ve_panel) return "Dirección";
+  if (p.puede_aprobar || p.puede_aprobar_precios) return "Aprobaciones";
+  if (p.puede_revisar) return "Por revisar";
+  return "";
+});
+let relojBandeja;
+onMounted(() => {
+  refrescarCuentaBandeja();
+  relojBandeja = setInterval(() => { if (document.visibilityState === "visible") refrescarCuentaBandeja(); }, 60000);
+});
+onBeforeUnmount(() => clearInterval(relojBandeja));
 
 // ── NavItem interno (RouterLink) ─────────────────────────────────────────────
 const NavItem = defineComponent({
@@ -156,6 +183,7 @@ const IconShip     = svgIcon("M12 19l9 2-9-18-9 18 9-2zm0 0v-8");
 const IconInvoice  = svgIcon("M9 14l2 2 4-4m4 9V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z");
 const IconInvoiceIn = svgIcon("M3 10h18M7 15h1m4 0h1m-9 4h16a1 1 0 001-1V6a1 1 0 00-1-1H4a1 1 0 00-1 1v12a1 1 0 001 1z");
 const IconExternal = svgIcon("M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14");
+const IconAprobar  = svgIcon("M9 12l2 2 4-4M7 4h10a3 3 0 013 3v10a3 3 0 01-3 3H7a3 3 0 01-3-3V7a3 3 0 013-3z");
 const IconBell     = svgIcon("M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9");
 </script>
 

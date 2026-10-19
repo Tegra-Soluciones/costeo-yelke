@@ -51,6 +51,7 @@
         </template>
 
         <div class="w-px h-5 bg-gray-200" />
+        <BotonActividad ref="actividadRef" doctype="Sales Order" :name="so.name" />
         <a
           :href="`/app/sales-order/${encodeURIComponent(so.name)}`"
           target="_blank"
@@ -86,6 +87,12 @@
             Entrega: {{ fmtDate(form.delivery_date) }}
           </span>
         </div>
+
+        <!-- Aprobación de Dirección (api/aprobaciones.py) -->
+        <FranjaAprobacion
+          v-if="!isNew" ref="franjaRef" doctype="Sales Order" :name="so.name" :guardar="guardarSiHaceFalta"
+          @estado="(s) => (aprob = s)" @cambio="recargarTrasAprobacion"
+        />
 
         <!-- Dirty bar -->
         <div v-if="isDirty && canEdit" class="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
@@ -314,7 +321,7 @@
           </div>
           <div class="flex items-center gap-3">
             <button
-              v-if="!isNew"
+              v-if="!isNew || !puedeValidar"
               :disabled="!!(saving || acting)"
               class="px-5 py-2 border border-gray-200 text-gray-600 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center gap-2"
               @click="save"
@@ -323,6 +330,7 @@
               {{ saving ? 'Guardando…' : 'Guardar borrador' }}
             </button>
             <button
+              v-if="puedeValidar"
               :disabled="!!(saving || acting)"
               class="px-5 py-2 bg-brand-500 text-white text-sm font-semibold rounded-xl hover:bg-brand-600 transition-colors disabled:opacity-50 flex items-center gap-2"
               @click="doConfirm"
@@ -588,6 +596,9 @@ import { ref, reactive, computed, onMounted, watch, defineComponent, h } from "v
 import { useRouter, useRoute } from "vue-router";
 import PageHeader from "@/components/PageHeader.vue";
 import AttachmentsPanel from "@/components/AttachmentsPanel.vue";
+import FranjaAprobacion from "@/components/aprobacion/FranjaAprobacion.vue";
+import BotonActividad from "@/components/aprobacion/BotonActividad.vue";
+import { puedeValidarDirecto, usePermisosAprobacion } from "@/composables/useAprobacion.js";
 import { call, defaultPrintFormat } from "@/utils/frappe.js";
 
 const props  = defineProps({ name: { type: String, default: "" } });
@@ -672,6 +683,11 @@ const itemIndex = ref([]);
 
 // ── Computed ─────────────────────────────────────────────────────────────────
 const canEdit = computed(() => isNew.value || so.docstatus === 0);
+const aprob = ref(null);
+const franjaRef = ref(null);
+const actividadRef = ref(null);
+usePermisosAprobacion();
+const puedeValidar = computed(() => puedeValidarDirecto(aprob.value));
 
 const isDirty = computed(() => {
   const orig = formOriginal.value;
@@ -828,6 +844,18 @@ async function save() {
   return ok;
 }
 
+async function guardarSiHaceFalta() {
+  if (isDirty.value && !(await save())) throw new Error("Guarda los cambios antes de enviarla.");
+}
+async function recargarTrasAprobacion(accion) {
+  try {
+    syncFromSO(await call("costeo_yelke.api.sales_order_api.get_sales_order", { name: so.name }));
+  } catch { /* la franja ya muestra el estado nuevo */ }
+  actividadRef.value?.recargar();
+  showToast({ enviar_a_aprobacion: "Enviada a aprobación", aprobar: "Orden de venta aprobada",
+              regresar: "Regresada para corregir" }[accion] || "Listo");
+}
+
 async function doConfirm() {
   if (isDirty.value || isNew.value) {
     const saved = await save();
@@ -844,6 +872,7 @@ async function doConfirm() {
     } else {
       showToast("Orden de venta confirmada");
     }
+    franjaRef.value?.recargar(); actividadRef.value?.recargar();
   } catch (e) {
     showToast(e.message || "Error al confirmar", "error");
   } finally {

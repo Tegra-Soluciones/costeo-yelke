@@ -63,6 +63,7 @@
         </template>
 
         <div class="w-px h-5 bg-gray-200" />
+        <BotonActividad ref="actividadRef" doctype="Quotation" :name="quot.name" />
         <a
           :href="`/app/quotation/${encodeURIComponent(quot.name)}`"
           target="_blank"
@@ -106,6 +107,12 @@
             Válida hasta: {{ fmtDate(quot.valid_till) }}
           </span>
         </div>
+
+        <!-- Aprobación de Dirección (api/aprobaciones.py) -->
+        <FranjaAprobacion
+          v-if="!isNew" ref="franjaRef" doctype="Quotation" :name="quot.name" :guardar="guardarSiHaceFalta"
+          @estado="(s) => (aprob = s)" @cambio="recargarTrasAprobacion"
+        />
 
         <!-- Rechazada: motivo + dos caminos para seguir -->
         <div v-if="quot.status === 'Lost'" class="bg-red-50 border border-red-100 rounded-xl px-4 py-3">
@@ -423,7 +430,7 @@
           <div class="flex items-center gap-3">
             <!-- Guardar borrador (only when already saved, to avoid confusion on new docs) -->
             <button
-              v-if="!isNew"
+              v-if="!isNew || !puedeValidar"
               :disabled="!!(saving || acting)"
               class="px-5 py-2 border border-gray-200 text-gray-600 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center gap-2"
               @click="save"
@@ -432,8 +439,10 @@
               {{ saving ? 'Guardando…' : 'Guardar borrador' }}
             </button>
 
-            <!-- Validar: guarda si hay cambios y luego hace submit (docstatus 0→1) -->
+            <!-- Validar: guarda si hay cambios y luego hace submit (docstatus 0→1).
+                 Quien no puede aprobar la envía a aprobación desde la franja. -->
             <button
+              v-if="puedeValidar"
               :disabled="!!(saving || acting)"
               class="px-5 py-2 bg-brand-500 text-white text-sm font-semibold rounded-xl hover:bg-brand-600 transition-colors disabled:opacity-50 flex items-center gap-2"
               @click="doSubmit"
@@ -861,6 +870,9 @@ import { RouterLink, useRouter, useRoute } from "vue-router";
 import PageHeader from "@/components/PageHeader.vue";
 import HistorialModal from "@/components/HistorialModal.vue";
 import AttachmentsPanel from "@/components/AttachmentsPanel.vue";
+import FranjaAprobacion from "@/components/aprobacion/FranjaAprobacion.vue";
+import BotonActividad from "@/components/aprobacion/BotonActividad.vue";
+import { puedeValidarDirecto, usePermisosAprobacion } from "@/composables/useAprobacion.js";
 import { call, defaultPrintFormat }   from "@/utils/frappe.js";
 
 const props  = defineProps({ name: { type: String, default: "" } });
@@ -957,6 +969,11 @@ const itemIndex = ref([]);
 
 // ── Computed ──────────────────────────────────────────────────────────────────
 const canEdit = computed(() => isNew.value || quot.docstatus === 0);
+const aprob = ref(null);
+const franjaRef = ref(null);
+const actividadRef = ref(null);
+usePermisosAprobacion();
+const puedeValidar = computed(() => puedeValidarDirecto(aprob.value));
 
 const isDirty = computed(() => {
   const orig = formOriginal.value;
@@ -1143,6 +1160,18 @@ async function save() {
   return ok;
 }
 
+async function guardarSiHaceFalta() {
+  if (isDirty.value && !(await save())) throw new Error("Guarda los cambios antes de enviarla.");
+}
+async function recargarTrasAprobacion(accion) {
+  try {
+    syncFromQuotation(await call("costeo_yelke.api.quotation_api.get_quotation", { name: quot.name }));
+  } catch { /* la franja ya muestra el estado nuevo */ }
+  actividadRef.value?.recargar();
+  showToast({ enviar_a_aprobacion: "Enviada a aprobación", aprobar: "Cotización aprobada",
+              regresar: "Regresada para corregir" }[accion] || "Listo");
+}
+
 async function doSubmit() {
   if (isDirty.value || isNew.value) {
     const saved = await save();
@@ -1160,6 +1189,7 @@ async function doSubmit() {
     } else {
       showToast("Cotización enviada correctamente");
     }
+    franjaRef.value?.recargar(); actividadRef.value?.recargar();
   } catch (e) {
     showToast(e.message || "Error al enviar", "error");
   } finally {

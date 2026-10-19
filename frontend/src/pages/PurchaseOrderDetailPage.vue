@@ -25,6 +25,8 @@
           <div class="w-px h-5 bg-gray-200" />
         </template>
 
+        <BotonActividad ref="actividadRef" doctype="Purchase Order" :name="po.name" />
+
         <a :href="`/app/purchase-order/${encodeURIComponent(po.name)}`" target="_blank"
           class="px-3 py-1.5 border border-gray-200 text-gray-600 text-sm font-medium rounded-md hover:bg-gray-50 flex items-center gap-1.5">
           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
@@ -54,6 +56,12 @@
             Entrega: {{ fmtDate(form.schedule_date) }}
           </span>
         </div>
+
+        <!-- Aprobación (Enviar -> Revisor -> Dirección, api/aprobaciones.py) -->
+        <FranjaAprobacion
+          v-if="!isNew" ref="franjaRef" doctype="Purchase Order" :name="po.name" :guardar="guardarSiHaceFalta"
+          @estado="(s) => (aprob = s)" @cambio="recargarTrasAprobacion"
+        />
 
         <!-- Dirty bar -->
         <div v-if="isDirty && canEdit" class="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
@@ -249,14 +257,14 @@
               <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
               Revisado{{ po.revisado_por_yelke ? ` · ${po.revisado_por_yelke}` : "" }}
             </span>
-            <button v-if="!isNew"
+            <button v-if="!isNew || !puedeConfirmar"
               :disabled="!!(saving || acting)"
               class="px-5 py-2 border border-gray-200 text-gray-600 text-sm font-medium rounded-xl hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2"
               @click="save">
               <svg v-if="saving" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
               {{ saving ? 'Guardando…' : 'Guardar borrador' }}
             </button>
-            <button v-if="!isNew && !po.revisado_yelke"
+            <button v-if="!isNew && !po.revisado_yelke && !enAprobacion && permisos.puede_revisar"
               :disabled="!!(saving || acting) || !permisos.puede_revisar"
               class="px-5 py-2 border border-brand-200 text-brand-700 bg-brand-50 text-sm font-medium rounded-xl hover:bg-brand-100 disabled:opacity-50 flex items-center gap-2"
               :title="permisos.puede_revisar ? 'Marca la revisión intermedia -- requisito antes de Confirmar' : `Necesitas el rol 'Revisor de Documentos Yelke' para revisar`"
@@ -264,7 +272,7 @@
               <svg v-if="acting === 'review'" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
               {{ acting === 'review' ? 'Revisando…' : 'Revisar' }}
             </button>
-            <button
+            <button v-if="puedeConfirmar"
               :disabled="!!(saving || acting) || !po.revisado_yelke || !permisos.puede_aprobar"
               class="px-5 py-2 bg-brand-500 text-white text-sm font-semibold rounded-xl hover:bg-brand-600 disabled:opacity-50 flex items-center gap-2"
               :title="!po.revisado_yelke ? 'Guarda y revisa esta orden antes de poder confirmarla' : (permisos.puede_aprobar ? '' : `Necesitas el rol 'Aprobador de Documentos Yelke' para confirmar`)"
@@ -364,6 +372,9 @@
 import { ref, reactive, computed, onMounted, watch, defineComponent, h } from "vue";
 import { useRouter } from "vue-router";
 import PageHeader from "@/components/PageHeader.vue";
+import FranjaAprobacion from "@/components/aprobacion/FranjaAprobacion.vue";
+import BotonActividad from "@/components/aprobacion/BotonActividad.vue";
+import { puedeValidarDirecto, usePermisosAprobacion } from "@/composables/useAprobacion.js";
 import { call, defaultPrintFormat } from "@/utils/frappe.js";
 
 const props  = defineProps({ name: { type: String, default: "" } });
@@ -413,6 +424,14 @@ const po = reactive({
   revisado_yelke: false, revisado_por_yelke: "", revisado_en_yelke: "",
 });
 const permisos = reactive({ puede_revisar: true, puede_aprobar: true });
+// Estado de aprobación (FranjaAprobacion): quien no puede aprobar la envía a
+// aprobación desde la franja en vez de ver un "Confirmar OC" que nunca podrá usar.
+const aprob = ref(null);
+const franjaRef = ref(null);
+const actividadRef = ref(null);
+const enAprobacion = computed(() => ["Pendiente", "Revisado"].includes(aprob.value?.estado));
+usePermisosAprobacion();
+const puedeConfirmar = computed(() => puedeValidarDirecto(aprob.value));
 
 const form = reactive({
   name: "", supplier: "", company: "",
@@ -619,6 +638,7 @@ async function doConfirm() {
     const res = await call("costeo_yelke.api.purchase_order_api.submit_purchase_order", { name: po.name });
     Object.assign(po, { docstatus: res.docstatus, status: res.status });
     showToast("Orden de compra confirmada");
+    franjaRef.value?.recargar(); actividadRef.value?.recargar();
   } catch (e) {
     showToast(e.message || "Error al confirmar", "error");
   } finally {
@@ -635,11 +655,24 @@ async function revisarPO() {
     po.revisado_yelke = true;
     po.revisado_por_yelke = res.revisado_por_yelke;
     showToast("Orden de compra revisada");
+    franjaRef.value?.recargar(); actividadRef.value?.recargar();
   } catch (e) {
     showToast(e.message || "No se pudo revisar", "error");
   } finally {
     acting.value = "";
   }
+}
+// Antes de enviarla a aprobación se guarda lo que esté a medio editar.
+async function guardarSiHaceFalta() {
+  if (isDirty.value && !(await save())) throw new Error("Guarda los cambios antes de enviarla.");
+}
+async function recargarTrasAprobacion(accion) {
+  try {
+    syncFromPO(await call("costeo_yelke.api.purchase_order_api.get_purchase_order", { name: po.name }));
+  } catch { /* la franja ya muestra el estado nuevo */ }
+  actividadRef.value?.recargar();
+  showToast({ enviar_a_aprobacion: "Enviada a aprobación", marcar_revisado: "Marcada como revisada",
+              aprobar: "Orden de compra aprobada", regresar: "Regresada para corregir" }[accion] || "Listo");
 }
 async function loadPermisos() {
   try { Object.assign(permisos, await call("costeo_yelke.api.purchase_order_api.get_permisos_validacion_yelke")); }

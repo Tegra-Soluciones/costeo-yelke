@@ -70,7 +70,7 @@ def get_notifications(limit=20):
         "Notification Log",
         filters={"for_user": user_name},
         fields=["name", "subject", "email_content", "type", "read",
-                "document_type", "document_name", "from_user", "creation"],
+                "document_type", "document_name", "from_user", "creation", "link"],
         order_by="creation desc",
         limit=int(limit),
     )
@@ -347,11 +347,13 @@ def save_item_prices(item_code, prices):
 
 
 _ROLES_PRECIO_ACORDADO = {"CEO", "Sales Manager"}
-_ROLE_VALIDAR_PRECIO_ACORDADO = "CEO"
 
 
 def _es_ceo():
-    return _ROLE_VALIDAR_PRECIO_ACORDADO in frappe.get_roles()
+    # Además del rol legado "CEO", el Director y el Aprobador de Precios (roles.py).
+    from costeo_yelke.roles import puede_aprobar_precios
+
+    return puede_aprobar_precios()
 
 
 @frappe.whitelist()
@@ -402,6 +404,10 @@ def crear_precio_acordado(item_code, customer, price_list_rate, valid_from, vali
     # ERPNext's before_save hook clears `customer` for price lists not marked buying=1 --
     # force it back, same workaround used in save_item_prices above.
     frappe.db.set_value("Item Price", doc.name, "customer", customer, update_modified=False)
+    if frappe.db.has_column("Item Price", "precio_devuelto_yelke"):
+        # Recapturado tras una devolución de Dirección: vuelve a la bandeja.
+        frappe.db.set_value("Item Price", doc.name, {"precio_devuelto_yelke": 0, "precio_motivo_devolucion": None},
+                            update_modified=False)
     frappe.db.commit()
     return {"name": doc.name, "price_list": price_list}
 
@@ -431,7 +437,7 @@ def validar_precios_acordados_costeo(costeo: str) -> dict:
     _precio_acordado_vigente (costeo_api.py) no los cuenta como vigentes, así que
     generar_replica_ov los sigue tratando como si no existiera precio acordado."""
     if not _es_ceo():
-        frappe.throw(_("Solo un usuario con rol CEO puede validar el precio acordado."))
+        frappe.throw(_("Solo Dirección (rol CEO, Director o Aprobador de Precios) puede validar el precio acordado."))
     names = frappe.get_all("Item Price", filters={"costeo": costeo}, pluck="name")
     if not names:
         frappe.throw(_("No hay ningún precio acordado capturado para este costeo."))

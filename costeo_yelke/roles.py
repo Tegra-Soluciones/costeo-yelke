@@ -104,16 +104,115 @@ ROLES_YELKE = {**ROLES_PROCESO, **ROLES_APROBACION, **ROLES_FLUJO_DOCUMENTOS,
 # compatibilidad; el motor nuevo acepta tanto este como "Director Yelke".
 ROL_CEO_LEGACY = "CEO"
 
+# ── Aprobaciones (docs/plan-panel-direccion.md §3) ───────────────────────────
+# Documentos que pasan por aprobación y con qué esquema:
+#   simple: Enviar a aprobación -> Aprobador
+#   doble:  Enviar a aprobación -> Revisor -> Aprobador
+# Agregar un documento aquí es todo lo que hace falta del lado de las reglas; el
+# patch de campos (v0_2_60) y los hooks de hooks.py leen esta misma lista.
+DOCUMENTOS_CON_APROBACION = {
+    "Costeo": "simple",
+    "Quotation": "simple",
+    "Sales Order": "simple",
+    "Purchase Invoice": "simple",
+    "Purchase Order": "doble",  # materia prima y maquila: mismo doctype
+}
+
+ROL_DIRECTOR = "Director Yelke"
+ROL_APROBADOR = "Aprobador de Documentos Yelke"
+ROL_REVISOR = "Revisor de Documentos Yelke"
+
+# Quién valida los precios acordados (item_api._es_ceo). "CEO" es el rol legado.
+ROLES_APROBAR_PRECIOS = (ROL_CEO_LEGACY, ROL_DIRECTOR, "Aprobador de Precios Yelke")
+
+
+def nivel_aprobacion(doctype):
+    """'simple', 'doble' o None si el documento no pasa por aprobación."""
+    return DOCUMENTOS_CON_APROBACION.get(doctype)
+
+
+def puede_ver_panel_direccion(user=None):
+    """El panel completo de Dirección (proyectos y resumen, además de la bandeja).
+    Ver el panel y aprobar son cosas distintas: aprobar lo decide
+    puede_aprobar_documentos."""
+    import frappe
+
+    return bool({ROL_DIRECTOR, "System Manager"} & set(frappe.get_roles(user)))
+
+
+def puede_aprobar_precios(user=None):
+    import frappe
+
+    return bool(set(ROLES_APROBAR_PRECIOS) & set(frappe.get_roles(user))) or bool(delegacion_vigente(user))
+
+
+def usuarios_con_rol(*roles):
+    """Usuarios internos habilitados que tienen alguno de `roles`, directo o por su
+    Perfil de Rol. System Manager no cuenta como destinatario: es el pase de
+    desarrollador y no debe llenarle la campana a nadie."""
+    import frappe
+
+    if not roles:
+        return []
+    directos = frappe.get_all(
+        "Has Role", filters={"role": ["in", roles], "parenttype": "User"}, pluck="parent")
+    perfiles = frappe.get_all(
+        "Has Role", filters={"role": ["in", roles], "parenttype": "Role Profile"}, pluck="parent")
+    por_perfil = frappe.get_all(
+        "User", filters={"role_profile_name": ["in", perfiles]}, pluck="name") if perfiles else []
+    candidatos = set(directos) | set(por_perfil)
+    candidatos -= {"Administrator", "Guest"}
+    if not candidatos:
+        return []
+    return frappe.get_all(
+        "User",
+        filters={"name": ["in", list(candidatos)], "enabled": 1, "user_type": "System User"},
+        pluck="name",
+    )
+
+
+def delegacion_vigente(user=None):
+    """La delegación de Dirección que `user` tiene HOY (o None). Una delegación no
+    reparte roles: da el permiso de aprobar mientras sus fechas estén vigentes y
+    deja de darlo sola (ver api/delegacion.py). Se guarda por petición porque los
+    permisos se consultan muchas veces."""
+    import frappe
+
+    user = user or frappe.session.user
+    cache = getattr(frappe.local, "delegacion_yelke", None)
+    if cache is None:
+        cache = frappe.local.delegacion_yelke = {}
+    if user not in cache:
+        fila = None
+        if frappe.db.table_exists("Delegacion Aprobacion"):
+            hoy = frappe.utils.nowdate()
+            fila = frappe.db.get_value(
+                "Delegacion Aprobacion",
+                {"a_usuario": user, "cancelada": 0, "desde": ["<=", hoy], "hasta": [">=", hoy]},
+                ["name", "de_usuario", "desde", "hasta"], as_dict=True, order_by="hasta desc")
+        cache[user] = fila
+    return cache[user]
+
+
+def olvidar_delegaciones():
+    """Al crear o terminar una delegación, que la misma petición ya lo vea."""
+    import frappe
+
+    frappe.local.delegacion_yelke = {}
+
 
 def puede_aprobar_documentos(user=None):
     """True si `user` (o el usuario actual) puede dar la aprobación/validación
-    final de un documento del flujo -- rol 'Aprobador de Documentos Yelke', o
-    System Manager como respaldo de administrador (para no bloquear a nadie
-    mientras el rol todavía no está asignado a las personas correctas)."""
+    final de un documento del flujo -- rol 'Aprobador de Documentos Yelke', una
+    delegación vigente de Dirección, o System Manager como respaldo de
+    administrador (para no bloquear a nadie mientras el rol todavía no está
+    asignado a las personas correctas)."""
     import frappe
 
     roles = frappe.get_roles(user)
-    return "Aprobador de Documentos Yelke" in roles or "System Manager" in roles
+    if "Aprobador de Documentos Yelke" in roles or "System Manager" in roles:
+        return True
+    return bool(delegacion_vigente(user))
 
 
 def puede_revisar_documentos(user=None):
@@ -124,7 +223,9 @@ def puede_revisar_documentos(user=None):
     import frappe
 
     roles = frappe.get_roles(user)
-    return bool({"Revisor de Documentos Yelke", "Aprobador de Documentos Yelke", "System Manager"} & set(roles))
+    if {"Revisor de Documentos Yelke", "Aprobador de Documentos Yelke", "System Manager"} & set(roles):
+        return True
+    return bool(delegacion_vigente(user))
 
 
 # ── Permisos por vista de Producción ─────────────────────────────────────────

@@ -85,6 +85,13 @@
         </Transition>
       </div>
 
+      <!-- La del documento del paso (cotización, OV, remisión, factura) o, si el paso
+           no tiene uno propio (Producción, Flujo…), la del costeo. -->
+      <BotonActividad
+        v-if="!isNew && docName"
+        :doctype="headerDoc?.name ? headerDoc.doctype : 'Costeo'" :name="headerDoc?.name || docName"
+      />
+
       <span v-if="headerDoc && headerDoc.docstatus === 1" class="h-8 px-3 flex items-center gap-1.5 text-[13px] font-medium text-green-700 bg-green-50 rounded-lg">
         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
         Validado
@@ -100,7 +107,7 @@
       </button>
 
       <button
-        v-if="!isNew && docState === 0"
+        v-if="!isNew && docState === 0 && validaDirecto(docName)"
         :disabled="advancing || !puedeValidarCosteo"
         class="h-8 px-3.5 text-[13px] font-semibold text-brand-700 bg-brand-50 rounded-lg hover:bg-brand-100 transition-colors disabled:opacity-50 flex items-center gap-1.5"
         @click="validarCosteo"
@@ -124,6 +131,14 @@
       :flujo-produccion-listo="manufacturaGuardada || hasPlan"
       @select="goStep"
     />
+
+    <!-- Aprobación del Costeo (api/aprobaciones.py): quien no puede validarlo lo envía. -->
+    <div v-if="!isNew && docName && docState === 0" class="mx-5 mt-4">
+      <FranjaAprobacion
+        doctype="Costeo" :name="docName" :guardar="guardarCosteoParaAprobacion"
+        @estado="(s) => (aprobPanel[docName] = s)" @cambio="trasAprobacionCosteo"
+      />
+    </div>
 
     <div v-if="docState === 2" class="mx-5 mt-4 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
       <div class="flex items-center gap-2.5">
@@ -726,8 +741,12 @@
 
                 <div class="space-y-2">
                   <template v-if="q.docstatus !== 1">
+                    <FranjaAprobacion
+                      doctype="Quotation" :name="q.name" :guardar="guardarCambiosCotizacion"
+                      @estado="(s) => (aprobPanel[q.name] = s)" @cambio="trasAprobacionVenta"
+                    />
                     <button :disabled="advancing" class="w-full h-9 text-sm font-medium text-ink border border-surface-border rounded-lg hover:bg-surface-raised disabled:opacity-50" @click="guardarCambiosCotizacion">Guardar cambios</button>
-                    <button :disabled="advancing" class="w-full h-9 text-sm font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex items-center justify-center gap-1.5" @click="validarDoc('Quotation', q.name)">
+                    <button v-if="validaDirecto(q.name) && !enAprobacion(q.name)" :disabled="advancing" class="w-full h-9 text-sm font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex items-center justify-center gap-1.5" @click="validarDoc('Quotation', q.name)">
                       <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Validar cotización
                     </button>
                   </template>
@@ -946,8 +965,12 @@
 
                 <div class="space-y-2">
                   <template v-if="so.docstatus !== 1">
+                    <FranjaAprobacion
+                      doctype="Sales Order" :name="so.name" :guardar="guardarCambiosOrdenVenta"
+                      @estado="(s) => (aprobPanel[so.name] = s)" @cambio="trasAprobacionVenta"
+                    />
                     <button :disabled="advancing" class="w-full h-9 text-sm font-medium text-ink border border-surface-border rounded-lg hover:bg-surface-raised disabled:opacity-50" @click="guardarCambiosOrdenVenta">Guardar cambios</button>
-                    <button :disabled="advancing" class="w-full h-9 text-sm font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex items-center justify-center gap-1.5" @click="validarDoc('Sales Order', so.name)">
+                    <button v-if="validaDirecto(so.name) && !enAprobacion(so.name)" :disabled="advancing" class="w-full h-9 text-sm font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex items-center justify-center gap-1.5" @click="validarDoc('Sales Order', so.name)">
                       <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Validar orden
                     </button>
                   </template>
@@ -2879,6 +2902,11 @@
 
         <!-- Orden de compra (y, desde "⋯", solicitud de cotización / presupuesto) -->
         <div v-else-if="!['recibo', 'factura'].includes(panelProv.tab)">
+          <FranjaAprobacion
+            v-if="docCompra && docCompra.doctype === 'Purchase Order' && Number(docCompra.docstatus) === 0"
+            class="mb-4" doctype="Purchase Order" :name="docCompra.name" :guardar="guardarDocCompra"
+            @estado="(s) => (aprobPanel[docCompra.name] = s)" @cambio="trasAprobacionDocCompra"
+          />
           <PurchaseDocPanel
             v-if="docCompra" sin-acciones
             :doc="docCompra" :items="docCompraItems" :form="docCompraForm"
@@ -2929,12 +2957,17 @@
         <p v-if="panelFactura.bloqueo && pinvDoc" class="rounded-lg bg-amber-50 ring-1 ring-amber-200 px-3 py-2 text-[12.5px] text-amber-900 mb-3">
           ⏳ {{ panelFactura.bloqueo }}
         </p>
+        <FranjaAprobacion
+          v-if="pinvDoc && !pinvValidated" class="mb-4" doctype="Purchase Invoice" :name="pinvDoc.name"
+          :guardar="guardarPinv" @estado="(s) => (aprobPanel[pinvDoc.name] = s)" @cambio="trasAprobacionPinv"
+        />
         <FacturaCompraPanel
           v-if="!panelFactura.error && !panelFactura.cargando && !(panelFactura.bloqueo && !pinvDoc)" sin-acciones
           :doc="pinvDoc" :form="pinvForm" :validated="pinvValidated" :proveedor="panelProv.supplier"
           :advancing="advancing" :payment-terms-options="cotDefaults.payment_terms_templates"
           :preview-url="pinvDoc ? printUrl('Purchase Invoice', pinvDoc.name) : ''" :preview-key="previewKey"
         />
+        <ActividadPlegable v-if="docPanelProv && !panelProv.cargando" :doctype="docPanelProv.doctype" :name="docPanelProv.name" />
       </PanelLateral>
 
       <!-- ═══ Panel lateral · Orden a un taller (Preparación · paso 3) ═══
@@ -2965,6 +2998,10 @@
         <VacioEstado v-if="panelOcTaller.error" icono="⚠︎" titulo="No se pudo abrir la orden" :detalle="panelOcTaller.error" />
         <p v-else-if="panelOcTaller.cargando || !subPo" class="p-meta">Cargando la orden…</p>
         <template v-else>
+          <FranjaAprobacion
+            v-if="!subValidated" class="mb-4" doctype="Purchase Order" :name="subPo.name" :guardar="guardarSub"
+            @estado="(s) => (aprobPanel[subPo.name] = s)" @cambio="trasAprobacionSub"
+          />
           <PurchaseDocPanel
             sin-acciones
             :doc="subPo" :items="subItems" :form="subForm" desk-route="purchase-order"
@@ -2994,6 +3031,7 @@
             @file="onOmFile" @remove-archivo="removeArchivo"
           />
           </template>
+          <ActividadPlegable doctype="Purchase Order" :name="subPo.name" />
         </template>
       </PanelLateral>
 
@@ -3037,6 +3075,10 @@
         <p v-if="panelFactura.bloqueo && pinvDoc" class="rounded-lg bg-amber-50 ring-1 ring-amber-200 px-3 py-2 text-[12.5px] text-amber-900 mb-3">
           ⏳ {{ panelFactura.bloqueo }}
         </p>
+        <FranjaAprobacion
+          v-if="pinvDoc && !pinvValidated && !panelFactura.cargando" class="mb-4" doctype="Purchase Invoice" :name="pinvDoc.name"
+          :guardar="guardarPinv" @estado="(s) => (aprobPanel[pinvDoc.name] = s)" @cambio="trasAprobacionPinv"
+        />
         <FacturaCompraPanel
           v-if="!panelFactura.error && !panelFactura.cargando && !(panelFactura.bloqueo && !pinvDoc)" sin-acciones
           :doc="pinvDoc" :form="pinvForm" :validated="pinvValidated" :proveedor="panelFactura.titulo"
@@ -3047,6 +3089,7 @@
           @descargar="downloadPdf('Purchase Invoice', pinvDoc.name)" @imprimir="printDocView('Purchase Invoice', pinvDoc.name)"
           @ampliar="openPdf('Purchase Invoice', pinvDoc.name)"
         />
+        <ActividadPlegable v-if="pinvDoc && !panelFactura.cargando" doctype="Purchase Invoice" :name="pinvDoc.name" />
       </PanelLateral>
 
       <!-- ═══ Panel lateral · Nuevo lote (antes G9-d, dentro de la pantalla) ═══ -->
@@ -3297,6 +3340,10 @@ import OrdenManufacturaForm from "@/components/OrdenManufacturaForm.vue";
 import OmGeneralEditor from "@/components/OmGeneralEditor.vue";
 import OmTallerView from "@/components/OmTallerView.vue";
 import ActiveSOSelector from "@/components/ActiveSOSelector.vue";
+import FranjaAprobacion from "@/components/aprobacion/FranjaAprobacion.vue";
+import BotonActividad from "@/components/aprobacion/BotonActividad.vue";
+import ActividadPlegable from "@/components/aprobacion/ActividadPlegable.vue";
+import { puedeValidarDirecto, usePermisosAprobacion } from "@/composables/useAprobacion.js";
 import { db, call, openDesk as deskOpen, uploadFile, searchLink, fuzzyQuery, getLinkDisplayLabel } from "@/utils/frappe.js";
 import { useToast } from "@/composables/useToast.js";
 import { useDocumentActions } from "@/composables/useDocumentActions.js";
@@ -4119,6 +4166,23 @@ const errors = reactive({});
 // puede_validar_costeo/validar_documento. Empieza en true (optimista) para no
 // parpadear el botón deshabilitado mientras carga; el backend igual lo exige.
 const puedeValidarCosteo = ref(true);
+// Estado de aprobación de cada documento abierto en esta pantalla, por nombre
+// (lo emite FranjaAprobacion). Decide si se ofrece "Validar" o si los botones
+// viven en la franja (Enviar / Revisar / Aprobar / Regresar).
+const aprobPanel = reactive({});
+usePermisosAprobacion();
+function validaDirecto(name) { return puedeValidarDirecto(aprobPanel[name]); }
+function enAprobacion(name) { return ["Pendiente", "Revisado"].includes(aprobPanel[name]?.estado); }
+async function guardarCosteoParaAprobacion() {
+  if (!validate()) throw new Error("Completa lo obligatorio del costeo antes de enviarlo.");
+  if (!(await saveDoc())) throw new Error("No se pudo guardar el costeo.");
+}
+async function trasAprobacionCosteo() { await loadCosteoData(); }
+async function trasAprobacionVenta() { await loadRelated(); previewKey.value++; }
+async function trasAprobacionDocCompra() { await loadLotesProduccion(); await irPasoProveedor(panelProv.tab); }
+async function trasAprobacionSub() { if (subPo.value) await selectSub(subPo.value.name); await loadLotesProduccion(); }
+async function trasAprobacionPinv() { if (pinvDoc.value) await loadPinv(pinvDoc.value.name); await loadCompras(); }
+
 async function loadPuedeValidarCosteo() {
   try { puedeValidarCosteo.value = !!(await call("costeo_yelke.api.costeo_api.puede_validar_costeo")).puede; }
   catch { /* si falla, se deja en true -- el backend igual bloquea si no toca */ }
@@ -4927,6 +4991,8 @@ const accionesOcTaller = computed(() => {
     return [sec(subPo.value.enviado_el ? "Reenviar al taller" : "Enviar al taller", enviarOrdenAlTaller)];
   }
   const out = [sec("Guardar", guardarSub)];
+  // En aprobación, o para quien no puede validarla: los botones van en la franja.
+  if (!validaDirecto(subPo.value.name) || enAprobacion(subPo.value.name)) return out;
   if (subPo.value.requiere_doble_validacion && !subPo.value.revisado_yelke) {
     out.push(pri("Revisar", revisarSub, {
       deshabilitado: !permisosValidacion.puede_revisar,
@@ -4985,6 +5051,7 @@ const accionesPanelFactura = computed(() => {
   if (pinvValidated.value) {
     return panelFactura.pendiente > 0 ? [pri("Registrar factura de lo pendiente", crearFacturaInline)] : [];
   }
+  if (!validaDirecto(pinvDoc.value.name) || enAprobacion(pinvDoc.value.name)) return [sec("Guardar", guardarPinv)];
   return [sec("Guardar", guardarPinv), pri("Validar factura", validarFacturaInline)];
 });
 
@@ -5408,6 +5475,7 @@ const accionesPanelProv = computed(() => {
   if (panelProv.tab === "factura") {
     if (!pinvDoc.value) return [pri("Crear factura de compra", crearFacturaInline)];
     if (pinvValidated.value) return [];
+    if (!validaDirecto(pinvDoc.value.name) || enAprobacion(pinvDoc.value.name)) return [sec("Guardar", guardarPinv)];
     return [sec("Guardar", guardarPinv), pri("Validar factura", validarFacturaInline)];
   }
   if (panelProv.tab === "recibo") {
@@ -5453,6 +5521,7 @@ const accionesPanelProv = computed(() => {
   const out = [];
   if (panelProv.tab === "oc") out.push(sec("Jalar precios", jalarPreciosOC));
   out.push(sec("Guardar", guardarDocCompra));
+  if (d.doctype === "Purchase Order" && (!validaDirecto(d.name) || enAprobacion(d.name))) return out;
   if (d.requiere_doble_validacion && !d.revisado_yelke) {
     out.push(pri("Revisar", revisarDocCompra, {
       deshabilitado: !permisosValidacion.puede_revisar,

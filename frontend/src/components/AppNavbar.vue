@@ -150,10 +150,10 @@
                 <a
                   v-for="n in notifications"
                   :key="n.name"
-                  :href="n.document_type && n.document_name ? `/app/${slugify(n.document_type)}/${encodeURIComponent(n.document_name)}` : '/app/notification-log'"
+                  :href="hrefNotif(n)"
                   class="flex gap-3 px-4 py-3 hover:bg-gray-50 transition-colors"
                   :class="n.read ? 'opacity-60' : ''"
-                  @click="onNotifClick(n)"
+                  @click="onNotifClick(n, $event)"
                 >
                   <!-- Type indicator dot -->
                   <div class="mt-1 flex-shrink-0">
@@ -256,7 +256,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, defineComponent, h } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { call } from "@/utils/frappe.js";
 import { useCompany } from "@/composables/useCompany.js";
 
@@ -383,11 +383,35 @@ async function markAllRead() {
 }
 
 // ── Notification click ────────────────────────────────────────────────────────
-function onNotifClick(n) {
+// Los avisos de aprobación traen `link` a una pantalla del SPA (api/aprobaciones.py):
+// esos se abren aquí mismo; los demás siguen yendo al escritorio de ERPNext.
+const router = useRouter();
+function hrefNotif(n) {
+  if (n.link && n.link.startsWith("/costeo-yelke")) return n.link;
+  return n.document_type && n.document_name
+    ? `/app/${slugify(n.document_type)}/${encodeURIComponent(n.document_name)}`
+    : "/app/notification-log";
+}
+function onNotifClick(n, ev) {
   n.read = 1;
   if (data.unread_notifications > 0) data.unread_notifications--;
   notifOpen.value = false;
+  if (n.link && n.link.startsWith("/costeo-yelke")) {
+    ev?.preventDefault();
+    router.push(n.link.replace(/^\/costeo-yelke/, "") || "/");
+  }
 }
+
+// Contador "casi en vivo": cada 30 s mientras la pestaña está a la vista y al volver a ella.
+async function refrescarNoLeidas() {
+  if (document.visibilityState !== "visible") return;
+  try {
+    const res = await call("costeo_yelke.api.item_api.get_navbar_data");
+    if (res.unread_notifications !== data.unread_notifications) notifications.value = [];
+    data.unread_notifications = res.unread_notifications;
+  } catch (_) {}
+}
+let relojNotif;
 
 // ── Dropdown item component ───────────────────────────────────────────────────
 const DropItem = defineComponent({
@@ -440,9 +464,13 @@ onMounted(async () => {
     const res = await call("costeo_yelke.api.item_api.get_navbar_data");
     Object.assign(data, res);
   } catch (_) {}
+  relojNotif = setInterval(refrescarNoLeidas, 30000);
+  document.addEventListener("visibilitychange", refrescarNoLeidas);
 });
 
 onUnmounted(() => {
+  clearInterval(relojNotif);
+  document.removeEventListener("visibilitychange", refrescarNoLeidas);
   document.removeEventListener("click", onDocClick, true);
 });
 </script>

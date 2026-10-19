@@ -1,7 +1,12 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { cargarPermisosAprobacion } from "@/composables/useAprobacion.js";
 
 const routes = [
-  { path: "/", redirect: "/inicio" },
+  // El Director aterriza en su panel; los demás, en Inicio.
+  { path: "/", component: { render: () => null },
+    beforeEnter: async () => ((await cargarPermisosAprobacion()).es_director ? "/direccion" : "/inicio") },
+  // `movil`: en celular se pinta sin el menú ni la barra de la app (App.vue).
+  { path: "/direccion", name: "Direccion", component: () => import("@/pages/DireccionPage.vue"), meta: { movil: true } },
   { path: "/inicio", name: "Dashboard", component: () => import("@/pages/DashboardPage.vue") },
   { path: "/costeo", name: "CosteoList", component: () => import("@/pages/CosteoListPage.vue") },
   { path: "/costeo/nuevo", name: "CosteoNuevo", component: () => import("@/pages/CosteoDetailPage.vue") },

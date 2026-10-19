@@ -1,5 +1,6 @@
 import { reactive, ref, computed, watch } from "vue";
 import { call, uploadFile } from "@/utils/frappe.js";
+import { cargarPermisosAprobacion } from "@/composables/useAprobacion.js";
 
 export const OM_CAB = ["t28", "t30", "t32", "t34", "t36", "t40", "t42", "t44"];
 export const OM_DAMA = ["t5", "t7", "t9", "t11", "t13", "t15", "t17"];
@@ -830,8 +831,19 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
    *  aunque ya estuvieran validadas -- el panel sí las mostraba bien porque lee el
    *  documento por su cuenta, y de ahí que la lista y el panel se contradijeran. */
   async function validarOcsTallerPendientes() {
+    // Quien no puede aprobar no las valida: las ENVÍA a aprobación (api/aprobaciones.py)
+    // y el lote se abre en cuanto Dirección las apruebe.
+    const permisos = await cargarPermisosAprobacion();
+    let enviadas = 0;
     for (const po of subOcs.value) {
       if (po.docstatus !== 0) continue;
+      if (!permisos.puede_aprobar) {
+        try {
+          await call("costeo_yelke.api.aprobaciones.enviar_a_aprobacion", { doctype: "Purchase Order", name: po.name });
+          enviadas += 1;
+        } catch { /* ya estaba en aprobación */ }
+        continue;
+      }
       try {
         await call("costeo_yelke.api.costeo_api.marcar_revisado_documento", { doctype: "Purchase Order", name: po.name });
       } catch { /* ya revisada, o sin permiso -- se intenta validar de todos modos */ }
@@ -840,6 +852,9 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
       } catch (e) {
         showToast(`No se pudo validar ${po.name} automáticamente (${e.message || "revisa permisos"}) -- valídala a mano.`, "error");
       }
+    }
+    if (enviadas) {
+      showToast(`${enviadas === 1 ? "La orden a taller se envió" : `${enviadas} órdenes a taller se enviaron`} a aprobación. El lote se abre en cuanto Dirección las apruebe.`);
     }
     try {
       const r = await call("costeo_yelke.api.costeo_api.get_subcontratos", { plan: planDetail.value.name });

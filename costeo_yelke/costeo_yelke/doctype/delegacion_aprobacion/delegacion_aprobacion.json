@@ -1,0 +1,137 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-10-19 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "description": "Dirección deja a otra persona aprobando en su lugar por unos días (vacaciones). Ver api/delegacion.py.",
+ "field_order": [
+  "de_usuario",
+  "a_usuario",
+  "column_break_1",
+  "desde",
+  "hasta",
+  "section_break_1",
+  "motivo",
+  "cancelada",
+  "cancelada_en"
+ ],
+ "fields": [
+  {
+   "fieldname": "de_usuario",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Delega",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fieldname": "a_usuario",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Aprueba en su lugar",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "desde",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Desde",
+   "reqd": 1
+  },
+  {
+   "fieldname": "hasta",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Hasta (inclusive)",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_1",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "motivo",
+   "fieldtype": "Small Text",
+   "label": "Motivo"
+  },
+  {
+   "default": "0",
+   "fieldname": "cancelada",
+   "fieldtype": "Check",
+   "label": "Terminada antes de tiempo",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cancelada_en",
+   "fieldtype": "Datetime",
+   "label": "Terminada el",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-19 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Costeo Yelke",
+ "name": "Delegacion Aprobacion",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 0,
+   "export": 1,
+   "print": 0,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 0,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "print": 0,
+   "read": 1,
+   "report": 1,
+   "role": "Director Yelke",
+   "share": 0,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "print": 0,
+   "read": 1,
+   "report": 1,
+   "role": "Supervisor Yelke",
+   "share": 0,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Aprobador de Documentos Yelke"
+  }
+ ],
+ "quick_entry": 0,
+ "search_fields": "de_usuario,a_usuario,desde,hasta",
+ "show_name_in_global_search": 0,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "a_usuario",
+ "track_changes": 1
+}

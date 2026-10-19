@@ -233,6 +233,22 @@ doc_events.setdefault("Sales Invoice", {})["before_submit"] = "costeo_yelke.api.
 doc_events.setdefault("Sales Invoice", {})["on_cancel"] = "costeo_yelke.api.contabilidad.al_cancelar_factura_venta"
 doc_events["Sales Invoice"]["before_insert"] = "costeo_yelke.api.contabilidad.factura_venta_sin_poliza_heredada"
 
+# Aprobaciones de Dirección (api/aprobaciones.py, docs/plan-panel-direccion.md): el
+# candado único de validación, el estado Aprobado al validar y la marca de "cambió
+# después de enviarse". Se SUMAN a los eventos que el documento ya tenga.
+from costeo_yelke.roles import DOCUMENTOS_CON_APROBACION as _DOCS_APROBACION
+
+for _dt in _DOCS_APROBACION:
+	for _evento, _metodo in (
+		("before_insert", "costeo_yelke.api.aprobaciones.nace_en_borrador"),
+		("before_submit", "costeo_yelke.api.aprobaciones.candado_aprobacion"),
+		("on_submit", "costeo_yelke.api.aprobaciones.al_validar"),
+		("on_update", "costeo_yelke.api.aprobaciones.al_guardar"),
+	):
+		_actual = doc_events.setdefault(_dt, {}).get(_evento)
+		_lista = [] if not _actual else ([_actual] if isinstance(_actual, str) else list(_actual))
+		doc_events[_dt][_evento] = [_metodo, *_lista] if _evento.startswith("before_") else [*_lista, _metodo]
+
 # Remisión cancelada: su factura de flete (borrador) se va con ella (api/fletes.py).
 doc_events.setdefault("Delivery Note", {})["on_cancel"] = "costeo_yelke.api.fletes.soltar_factura_remision"
 
@@ -270,6 +286,8 @@ doc_events["Item"]["before_validate"] = [
 scheduler_events = {
 	"daily": [
 		"costeo_yelke.api.item_api.revisar_vigencias_precio_acordado",
+		"costeo_yelke.api.aprobaciones.recordatorio_pendientes",
+		"costeo_yelke.api.delegacion.avisos_delegacion",
 	],
 }
 

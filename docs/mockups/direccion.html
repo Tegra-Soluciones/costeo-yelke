@@ -1,0 +1,709 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dirección · mockup v1</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = { theme: { extend: {
+  colors: {
+    brand: { 50:"#fff4ef",100:"#ffe4d4",200:"#ffcaaa",300:"#ffa575",400:"#ff7a3d",500:"#ff6b15",600:"#f05208",700:"#c73e05" },
+    ink: { DEFAULT:"#111111", muted:"#6b7280", light:"#9ca3af", xlight:"#d1d5db" },
+    surface: { DEFAULT:"#fafafa", raised:"#f4f4f5", border:"#e4e4e7" },
+  },
+  fontFamily: { sans: ['"Inter"', "-apple-system", "BlinkMacSystemFont", '"Segoe UI"', "sans-serif"] },
+} } };
+</script>
+<style type="text/tailwindcss">
+  html { font-size: 14px; }
+  body { @apply bg-zinc-100 text-ink antialiased; font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: -0.006em; }
+
+  /* ── Sistema de diseño de Producción v2 (mismo vocabulario que style.css p-*) ── */
+  .dot { @apply inline-block w-2 h-2 rounded-full flex-shrink-0; }
+  .dot-ok { @apply bg-emerald-500; } .dot-fac { @apply bg-indigo-500; } .dot-wait { @apply bg-amber-400; }
+  .dot-now { @apply bg-brand-500 ring-4 ring-brand-100; } .dot-off { @apply bg-zinc-300; } .dot-bad { @apply bg-red-500; }
+  .panel { @apply bg-white rounded-xl border border-surface-border; }
+  .eyebrow { @apply text-[10.5px] font-semibold uppercase tracking-[0.08em] text-ink-light; }
+  .h1 { @apply text-[20px] font-semibold tracking-tight text-ink; }
+  .lede { @apply text-[13px] text-ink-muted; }
+  .meta { @apply text-[12px] text-ink-muted; }
+  .num { @apply tabular-nums; }
+  .btn { @apply h-9 px-4 inline-flex items-center justify-center gap-2 rounded-lg text-[13px] font-semibold whitespace-nowrap transition-colors; }
+  .btn-primary { @apply btn bg-brand-500 text-white hover:bg-brand-600; }
+  .btn-secondary { @apply btn bg-white text-ink border border-surface-border hover:bg-surface-raised font-medium; }
+  .btn-ghost { @apply btn text-ink-muted hover:text-ink hover:bg-surface-raised font-medium px-3; }
+  .btn-danger { @apply btn bg-white text-red-700 border border-red-200 hover:bg-red-50 font-semibold; }
+  .btn:disabled { @apply opacity-40 cursor-not-allowed; }
+  .seg { @apply inline-flex p-0.5 bg-surface-raised rounded-lg; }
+  .seg button { @apply h-7 px-3 rounded-md text-[12.5px] text-ink-muted font-medium flex items-center gap-1.5 whitespace-nowrap; }
+  .seg button.on { @apply bg-white text-ink shadow-sm; }
+  .pill { @apply inline-flex items-center gap-1.5 h-6 px-2 rounded-full text-[11.5px] font-medium whitespace-nowrap; }
+  .pill-ok { @apply pill bg-emerald-50 text-emerald-700; } .pill-fac { @apply pill bg-indigo-50 text-indigo-700; }
+  .pill-wait { @apply pill bg-amber-50 text-amber-800; } .pill-off { @apply pill bg-zinc-100 text-ink-muted; }
+  .pill-bad { @apply pill bg-red-50 text-red-700; } .pill-now { @apply pill bg-brand-50 text-brand-700; }
+  .field-label { @apply text-[12px] font-medium text-ink-muted block mb-1; }
+  .field { @apply w-full h-10 text-[14px] border border-surface-border rounded-lg px-3 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/25 focus:border-brand-400; }
+  .note { @apply text-[11.5px] leading-relaxed text-yellow-900 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-1.5; }
+  .chip { @apply h-8 px-3 rounded-full border border-surface-border bg-white text-[12.5px] text-ink-muted font-medium whitespace-nowrap; }
+  .chip.on { @apply bg-ink text-white border-ink; }
+
+  /* ── Celular ── */
+  .phone { @apply relative bg-surface overflow-hidden flex flex-col; width: 390px; height: 844px; border-radius: 46px; border: 11px solid #18181b; box-shadow: 0 30px 60px -20px rgba(0,0,0,.35); }
+  .phone-notch { @apply absolute top-0 left-1/2 -translate-x-1/2 w-[120px] h-[30px] bg-zinc-900 rounded-b-[18px] z-50; }
+  .phone-status { @apply h-11 flex-shrink-0 flex items-end justify-between px-7 pb-1 text-[12px] font-semibold bg-white; }
+  .scr { @apply flex-1 overflow-y-auto; scrollbar-width: none; }
+  .scr::-webkit-scrollbar { display: none; }
+  .tabbar { @apply flex-shrink-0 grid bg-white/95 backdrop-blur border-t border-surface-border; padding-bottom: 18px; }
+  .tabbar button { @apply h-[54px] flex flex-col items-center justify-center gap-0.5 text-[10.5px] font-medium text-ink-light; }
+  .tabbar button.on { @apply text-brand-600; }
+  .card { @apply panel px-4 py-3.5 active:bg-zinc-50 cursor-pointer; }
+  .tap { @apply min-h-[44px]; }
+  .overlay { @apply absolute left-0 right-0 bottom-0 top-11 z-30 bg-surface flex flex-col; animation: entra .18s ease-out; }
+  .sheet-scrim { @apply absolute inset-0 z-40 bg-black/30; animation: fade .15s; }
+  .sheet { @apply absolute left-0 right-0 bottom-0 z-40 bg-white rounded-t-[22px] flex flex-col max-h-[88%]; animation: sube .2s ease-out; padding-bottom: 22px; }
+  .grab { @apply w-9 h-1 rounded-full bg-zinc-300 mx-auto mt-2 mb-1 flex-shrink-0; }
+  .toast { @apply absolute left-4 right-4 bottom-[92px] z-50 bg-ink text-white text-[13px] rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg; animation: sube .2s ease-out; }
+  .avatar { @apply w-7 h-7 rounded-full flex items-center justify-center text-[10.5px] font-semibold flex-shrink-0; }
+  @keyframes entra { from { transform: translateX(24px); opacity: .4 } to { transform: none; opacity: 1 } }
+  @keyframes sube { from { transform: translateY(30px); opacity: .3 } to { transform: none; opacity: 1 } }
+  @keyframes fade { from { opacity: 0 } to { opacity: 1 } }
+
+  /* En un celular de verdad, el marco desaparece y el mockup ocupa la pantalla */
+  @media (max-width: 520px) {
+    .stage-chrome { display: none !important; }
+    .phone { width: 100vw; height: 100dvh; border: 0; border-radius: 0; box-shadow: none; }
+    .phone-notch, .phone-status { display: none; }
+    #stage { padding: 0 !important; }
+    .overlay { top: 0; }
+    body { background: #fafafa; }
+  }
+
+  /* ── Escritorio ── */
+  .desk { @apply relative bg-surface rounded-xl overflow-hidden border border-zinc-300 flex; width: 1240px; height: 780px; box-shadow: 0 30px 60px -25px rgba(0,0,0,.3); }
+  .desk .sheet { position: relative; border-radius: 16px; max-height: none; animation: none; padding-bottom: 18px; }
+  .desk .toast { bottom: 84px; left: auto; right: 24px; width: 420px; }
+  .nav-item { @apply flex items-center gap-2.5 h-8 px-2.5 rounded-md text-[13px] text-ink-muted; }
+  .nav-item.on { @apply bg-brand-50 text-brand-700 font-medium; }
+  .row { @apply flex items-center gap-3 px-4 py-3 border-b border-surface-border last:border-0 hover:bg-zinc-50 cursor-pointer; }
+  .row.sel { @apply bg-brand-50/60 hover:bg-brand-50/60; box-shadow: inset 3px 0 0 #ff6b15; }
+</style>
+</head>
+<body>
+
+<!-- ══════════ Barra del mockup (no es parte de la app) ══════════ -->
+<div class="stage-chrome sticky top-0 z-[60] bg-white border-b border-surface-border">
+  <div class="max-w-[1300px] mx-auto px-5 h-14 flex items-center gap-4">
+    <span class="w-6 h-6 rounded-md bg-ink text-white text-[11px] font-bold flex items-center justify-center">Y</span>
+    <span class="text-[13px] font-semibold">Panel de Dirección · mockup v1</span>
+    <div class="seg ml-4" id="escenarios">
+      <button data-esc="ceo">Celular · CEO</button>
+      <button data-esc="revisor">Celular · Revisor</button>
+      <button data-esc="empleado">Celular · Empleado</button>
+      <button data-esc="desk">Escritorio · CEO</button>
+    </div>
+    <button class="btn-ghost ml-auto text-[12.5px]" onclick="reiniciar()">↺ Reiniciar</button>
+  </div>
+</div>
+
+<div class="max-w-[1300px] mx-auto px-5 py-8 flex gap-10 items-start justify-center" id="stage">
+  <div id="device"></div>
+  <aside class="stage-chrome w-[330px] flex-shrink-0 space-y-4" id="notas"></aside>
+</div>
+
+<script>
+/* ═════════════ Datos (reales del sandbox; las personas son ilustrativas) ═════════════ */
+const P = {
+  ana:     { n: "Ana López",       ini: "AL", rol: "Compras",      c: "bg-sky-100 text-sky-700" },
+  luis:    { n: "Luis Ortega",     ini: "LO", rol: "Revisor",      c: "bg-violet-100 text-violet-700" },
+  mariana: { n: "Mariana Ruiz",    ini: "MR", rol: "Ventas",       c: "bg-emerald-100 text-emerald-700" },
+  jorge:   { n: "Jorge Méndez",    ini: "JM", rol: "Costeos",      c: "bg-amber-100 text-amber-800" },
+  sofia:   { n: "Sofía Herrera",   ini: "SH", rol: "Facturas",     c: "bg-pink-100 text-pink-700" },
+  dir:     { n: "Dirección",       ini: "D",  rol: "CEO",          c: "bg-ink text-white" },
+};
+const TIPOS = {
+  "oc-mp":  { l: "OC materia prima", pill: "pill-now" },
+  "oc-maq": { l: "OC maquila",       pill: "pill-fac" },
+  cot:      { l: "Cotización",       pill: "pill-ok" },
+  ov:       { l: "Orden de venta",   pill: "pill-ok" },
+  fc:       { l: "Factura de compra",pill: "pill-wait" },
+  costeo:   { l: "Costeo",           pill: "pill-off" },
+  precio:   { l: "Precio acordado",  pill: "pill-off" },
+};
+const FILTROS = [["todos","Todos"],["compras","Compras"],["ventas","Ventas"],["costeo","Costeos y precios"]];
+const GRUPO = { "oc-mp":"compras","oc-maq":"compras", fc:"compras", cot:"ventas", ov:"ventas", costeo:"costeo", precio:"costeo" };
+
+const DOCS0 = [
+  { id: "oc1", tipo: "oc-mp", nivel: "doble", estado: "revisado", folio: "PUR-ORD-2026-00344", titulo: "GRUPO FILAFIL",
+    monto: 70122, sub: "Gabardina naranja 930 m · Lote 2", ctx: "CST-FERROCARRIL-MEXI-2026-00036 · Camisola gabardina naranja",
+    por: "ana", hace: "hace 5 h", horas: 5, revisor: "luis", revHace: "hace 2 h",
+    resumen: [["Proveedor","GRUPO FILAFIL"],["Subtotal","$60,450.00"],["IVA 16%","$9,672.00"],["Entrega","04-nov-2026"],["Costeo","…2026-00036 · Lote 2"],["Precio vs costeo","$65.00 / m · igual"]],
+    renglones: [["GABARDINA NARANJA", "930 m", "$65.00", "$60,450.00"]],
+    adjuntos: ["cotizacion-filafil.pdf"],
+    actividad: [
+      ["ana","crea","creó la orden de compra","19-oct 07:10"],
+      ["ana","cambio","cambió la cantidad de GABARDINA NARANJA: 900 → 930 m","19-oct 07:22"],
+      ["ana","adjunto","adjuntó cotizacion-filafil.pdf","19-oct 07:25"],
+      ["ana","envio","la envió a aprobación","19-oct 07:30","Mismo precio que el lote 1; subí 30 m por la merma del corte."],
+      ["luis","revision","la revisó","19-oct 10:05"],
+      ["luis","comentario","comentó","19-oct 10:06","Cuadra contra la cotización del proveedor."],
+    ] },
+  { id: "cot1", tipo: "cot", nivel: "simple", estado: "pendiente", folio: "SAL-QTN-2026-00017", titulo: "FERROCARRIL MEXICANO",
+    monto: 446600, sub: "Camisola 1,000 pzas + 60 tallas extra", ctx: "CST-FERROCARRIL-MEXI-2026-00035",
+    por: "mariana", hace: "hace 3 días", horas: 74,
+    alerta: ["wait","Lleva 3 días esperando tu aprobación."],
+    resumen: [["Cliente","FERROCARRIL MEXICANO SA DE CV"],["Total","$446,600.00"],["Margen","45.0 %"],["Precio unitario","$385.00"],["Vigencia","sin fecha"],["Tallas extra","3XL-4XL-5XL · 60 pzas"]],
+    renglones: [["CAMISOLA PRUEBA YP","1,000","$385.00","$385,000.00"],["CAMISOLA … 3XL-4XL-5XL","60","$453.15","$27,189.00"]],
+    adjuntos: [],
+    actividad: [
+      ["mariana","crea","creó la cotización desde el costeo","16-oct 09:40"],
+      ["mariana","envio","la envió a aprobación","16-oct 09:52","El cliente pidió respuesta esta semana."],
+    ] },
+  { id: "ov1", tipo: "ov", nivel: "simple", estado: "pendiente", folio: "SAL-ORD-2026-00018", titulo: "FERROCARRIL MEXICANO",
+    monto: 446600, sub: "Camisola 1,000 pzas + 60 extra · entrega 15-oct", ctx: "CST-FERROCARRIL-MEXI-2026-00035",
+    por: "mariana", hace: "hace 1 día", horas: 26,
+    alerta: ["bad","Falta adjuntar la OC del cliente. Sin ella no se puede aprobar."],
+    bloqueo: "Falta la OC del cliente",
+    resumen: [["Cliente","FERROCARRIL MEXICANO SA DE CV"],["Total","$446,600.00"],["Entrega","15-oct-2026 · ya pasó"],["OC del cliente","— sin adjuntar"],["Cotización","SAL-QTN-2026-00017"]],
+    renglones: [["CAMISOLA PRUEBA YP","1,000","$385.00","$385,000.00"],["CAMISOLA … 3XL-4XL-5XL","60","$0.00","$0.00"]],
+    adjuntos: [],
+    actividad: [
+      ["mariana","crea","creó la orden de venta","18-oct 12:01"],
+      ["mariana","envio","la envió a aprobación","18-oct 12:15"],
+    ] },
+  { id: "maq1", tipo: "oc-maq", nivel: "doble", estado: "pendiente", folio: "PUR-ORD-2026-00345", titulo: "JESUS MOLINA TAPIA",
+    monto: 54810, sub: "Confección 1,050 prendas · $45 / prenda", ctx: "CST-FERROCARRIL-MEXI-2026-00036 · todos los lotes",
+    por: "ana", hace: "hace 40 min", horas: 0.7,
+    resumen: [["Taller","JESUS MOLINA TAPIA"],["Servicio","Confección · $45.00 / prenda"],["Prendas","1,050"],["Subtotal","$47,250.00"],["IVA 16%","$7,560.00"]],
+    renglones: [["SERVICIO DE CONFECCIÓN","1,000","$45.00","$45,000.00"],["SERVICIO DE CONFECCIÓN (tallas extra)","50","$45.00","$2,250.00"]],
+    adjuntos: [],
+    actividad: [["ana","crea","creó la orden a taller","19-oct 11:30"],["ana","envio","la envió a aprobación","19-oct 11:42"]] },
+  { id: "fc1", tipo: "fc", nivel: "simple", estado: "pendiente", folio: "ACC-PINV-2026-00085", titulo: "PAQUETERIA PRUEBA UNO",
+    monto: 1120, sub: "Flete de envío al cliente · remisión MAT-DN-2026-00018", ctx: "Remisión MAT-DN-2026-00018",
+    por: "sofia", hace: "hace 6 h", horas: 6,
+    resumen: [["Proveedor","PAQUETERIA PRUEBA UNO"],["Subtotal","$1,000.00"],["IVA 16%","$160.00"],["Retención 4%","−$40.00"],["Respaldo","Remisión MAT-DN-2026-00018"]],
+    renglones: [["SERVICIO DE FLETE","1","$1,000.00","$1,000.00"]],
+    adjuntos: ["factura-paqueteria.pdf","factura-paqueteria.xml"],
+    actividad: [["sofia","crea","capturó la factura","19-oct 06:50"],["sofia","adjunto","adjuntó factura-paqueteria.pdf y .xml","19-oct 06:52"],["sofia","envio","la envió a aprobación","19-oct 06:55"]] },
+  { id: "cst1", tipo: "costeo", nivel: "simple", estado: "pendiente", folio: "CST-FERROCARRIL-MEXI-2026-00037", titulo: "Camisola gabardina naranja",
+    monto: null, sub: "FERROMEX · revisión del 00024 · margen 31 %", ctx: "Revisión de CST-FERROCARRIL-MEXI-2026-00024",
+    por: "jorge", hace: "hace 20 h", horas: 20, cambio: true,
+    alerta: ["wait","El margen bajó de 45 % a 31 % contra la versión anterior."],
+    resumen: [["Cliente","FERROCARRIL MEXICANO SA DE CV"],["Costo unitario","$265.70  (antes $211.75)"],["Precio sugerido","$385.00"],["Margen","31.0 %  (antes 45.0 %)"],["Motivo de la revisión","Subió la gabardina"]],
+    renglones: [["Materia prima","","","$182.40 / pza"],["Maquila","","","$68.30 / pza"],["Overhead","","","$15.00 / pza"]],
+    adjuntos: [],
+    actividad: [["jorge","crea","creó la revisión 2 del costeo","18-oct 15:10","Motivo: subió la gabardina"],["jorge","envio","lo envió a aprobación","18-oct 15:40"],["jorge","cambio","cambió Merma de gabardina: 3 % → 5 % (después de enviarlo)","18-oct 17:02"]] },
+  { id: "pr1", tipo: "precio", nivel: "simple", estado: "pendiente", folio: "2 precios", titulo: "FERROCARRIL MEXICANO",
+    monto: null, sub: "Camisola $385.00 · XXL-3XL $453.15 · 1 año", ctx: "Costeo CST-FERROCARRIL-MEXI-2026-00037",
+    por: "mariana", hace: "hace 2 h", horas: 2,
+    resumen: [["Cliente","FERROCARRIL MEXICANO SA DE CV"],["CAMISOLA-PRUEBA-YP","$385.00 · margen 31 %"],["… XXL-3XL","$453.15 · margen 33 %"],["Vigencia","20-oct-2026 → 20-oct-2027"]],
+    renglones: [], adjuntos: [],
+    actividad: [["mariana","crea","capturó 2 precios acordados","19-oct 10:20"],["mariana","envio","los envió a aprobación","19-oct 10:22"]] },
+];
+
+const PROYECTOS = [
+  { folio: "CST-FERROCARRIL-MEXI-2026-00027", t: "Camisola 3 etapas, 2 lotes", c: "FERROCARRIL MEXICANO", etapa: 4, ov: "SAL-ORD-2026-00012", monto: 116580, prod: [0, 300], entrega: "08-oct", alerta: ["bad","Entrega vencida hace 11 días · 0 % entregado"], grupo: "atrasados" },
+  { folio: "CST-FERROCARRIL-MEXI-2026-00028", t: "Demo alta de productos", c: "FERROCARRIL MEXICANO", etapa: 3, ov: "SAL-ORD-2026-00013", monto: 51040, prod: [0, 100], entrega: "08-oct", alerta: ["bad","Entrega vencida · producción sin empezar"], grupo: "atrasados" },
+  { folio: "CST-FERROCARRIL-MEXI-2026-00024", t: "Camisola gabardina naranja", c: "FERROCARRIL MEXICANO", etapa: 4, ov: "SAL-QTN-2026-00013", monto: 220965.5, prod: [17, 23], entrega: "30-oct", alerta: ["wait","1 OC esperando tu aprobación"], grupo: "activos" },
+  { folio: "CST-FERROCARRIL-MEXI-2026-00035", t: "Camisola + tallas extra", c: "FERROCARRIL MEXICANO", etapa: 2, ov: "SAL-QTN-2026-00017", monto: 446600, prod: [0, 1060], entrega: "—", alerta: ["wait","Cotización y OV esperando tu aprobación"], grupo: "activos" },
+  { folio: "CST-FERROCARRIL-MEXI-2026-00036", t: "Camisola gabardina naranja", c: "FERROCARRIL MEXICANO", etapa: 6, ov: "SAL-ORD-2026-00019", monto: 472882.7, prod: [1050, 1050], entrega: "24-nov", alerta: null, grupo: "completados" },
+];
+const ETAPAS = ["Costeo","Cotización","OV","Producción","Entrega","Factura"];
+
+/* ═════════════ Estado ═════════════ */
+let S;
+function reiniciar(esc) {
+  S = { esc: esc || (S && S.esc) || "ceo", tab: "aprobar", doc: null, sheet: null, filtro: "todos", verTodo: false,
+        docs: JSON.parse(JSON.stringify(DOCS0)), resueltos: [], toast: null, deleg: null, motivo: "",
+        empEstado: "devuelto", provFiltro: "activos", deskSel: "oc1" };
+  render();
+}
+const $ = (s) => document.querySelector(s);
+const fmt = (n) => n == null ? "" : "$" + n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtC = (n) => n >= 1e6 ? "$" + (n / 1e6).toFixed(2) + " M" : n >= 1e4 ? "$" + Math.round(n / 1e3) + " k" : fmt(n);
+const doc = (id) => S.docs.find(d => d.id === id);
+
+/* Qué ve cada quién */
+function bandeja() {
+  if (S.esc === "revisor") return S.docs.filter(d => d.nivel === "doble" && d.estado === "pendiente");
+  return S.docs.filter(d => (d.nivel === "simple" && d.estado === "pendiente") || (d.nivel === "doble" && d.estado === "revisado"));
+}
+const esperandoRevision = () => S.docs.filter(d => d.nivel === "doble" && d.estado === "pendiente");
+const delegado = () => S.deleg ? P[S.deleg.a] : null;
+
+/* ═════════════ Piezas comunes ═════════════ */
+const av = (k, size = "w-7 h-7") => `<span class="avatar ${size} ${P[k].c}">${P[k].ini}</span>`;
+const ICON = {
+  aprobar: '<svg class="w-[22px] h-[22px]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4"/><rect x="4" y="4" width="16" height="16" rx="4"/></svg>',
+  proyectos: '<svg class="w-[22px] h-[22px]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 5h7v7H4zM13 5h7v4h-7zM13 11h7v8h-7zM4 14h7v5H4z"/></svg>',
+  resumen: '<svg class="w-[22px] h-[22px]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>',
+  bell: '<svg class="w-[21px] h-[21px]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M6 8a6 6 0 1112 0c0 7 3 8 3 8H3s3-1 3-8M10 20a2 2 0 004 0"/></svg>',
+  back: '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>',
+  clip: '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 11l-8.5 8.5a5 5 0 01-7-7L14 4a3.5 3.5 0 015 5l-8.5 8.5a2 2 0 01-3-3L15 7"/></svg>',
+};
+const ACT = { // icono y color por tipo de evento de la línea de tiempo
+  crea: ["＋","bg-zinc-100 text-ink-muted"], cambio: ["✎","bg-zinc-100 text-ink-muted"], adjunto: ["⧉","bg-zinc-100 text-ink-muted"],
+  envio: ["➜","bg-brand-50 text-brand-700"], revision: ["✓","bg-violet-50 text-violet-700"], comentario: ["💬","bg-sky-50 text-sky-700"],
+  devuelto: ["↩","bg-red-50 text-red-700"], aprobado: ["✓","bg-emerald-50 text-emerald-700"], reenvio: ["➜","bg-brand-50 text-brand-700"],
+};
+
+function alertaHtml(a) {
+  if (!a) return "";
+  const c = a[0] === "bad" ? "bg-red-50 border-red-200 text-red-800" : "bg-amber-50 border-amber-200 text-amber-900";
+  return `<div class="rounded-xl border ${c} px-3.5 py-2.5 text-[12.5px] leading-snug flex gap-2"><span>${a[0] === "bad" ? "⛔" : "⚠️"}</span><span>${a[1]}</span></div>`;
+}
+
+function tarjeta(d, compacto) {
+  const t = TIPOS[d.tipo];
+  const revisado = d.nivel === "doble" && d.estado === "revisado";
+  return `<div class="card space-y-1.5" onclick="abrir('${d.id}')">
+    <div class="flex items-center gap-2">
+      <span class="${t.pill} h-[22px] text-[11px]">${t.l}</span>
+      ${d.horas > 48 ? '<span class="pill-wait h-[22px] text-[11px]">+48 h</span>' : ""}
+      ${d.bloqueo ? '<span class="pill-bad h-[22px] text-[11px]">Bloqueada</span>' : ""}
+      <span class="ml-auto text-[15px] font-semibold num">${d.monto != null ? fmt(d.monto) : ""}</span>
+    </div>
+    <p class="text-[14.5px] font-semibold leading-tight">${d.titulo}</p>
+    <p class="meta leading-snug">${d.sub}</p>
+    <div class="flex items-center gap-1.5 pt-1 text-[11.5px] text-ink-light">
+      ${av(d.por, "w-5 h-5 text-[8.5px]")}<span>${P[d.por].n.split(" ")[0]} · ${d.hace}</span>
+      ${revisado ? `<span class="ml-auto text-violet-700 font-medium">✓ Revisó ${P[d.revisor].n.split(" ")[0]}</span>` : ""}
+      ${d.cambio ? '<span class="ml-auto text-amber-700 font-medium">Cambió tras enviarse</span>' : ""}
+    </div>
+  </div>`;
+}
+
+function lineaTiempo(d, todo) {
+  const items = todo ? d.actividad : d.actividad.slice(-3);
+  const resto = d.actividad.length - items.length;
+  return `
+    ${resto > 0 ? `<button class="text-[12.5px] text-brand-600 font-medium mb-2" onclick="S.verTodo=true;render()">Ver ${resto} eventos anteriores</button>` : ""}
+    <div class="relative">
+      <div class="absolute left-[13px] top-2 bottom-2 w-px bg-surface-border"></div>
+      ${items.map(([who, k, txt, cuando, cita]) => `
+        <div class="relative flex gap-3 pb-3.5 last:pb-0">
+          <span class="avatar ${ACT[k][1]} text-[12px] z-10 ring-4 ring-white">${ACT[k][0]}</span>
+          <div class="min-w-0 flex-1 pt-0.5">
+            <p class="text-[12.5px] leading-snug"><b class="font-semibold">${P[who].n}</b> ${txt}</p>
+            ${cita ? `<p class="mt-1 text-[12.5px] leading-snug rounded-lg px-3 py-2 ${k === "devuelto" ? "bg-red-50 text-red-900" : k === "aprobado" ? "bg-emerald-50 text-emerald-900" : "bg-surface-raised text-ink"}">${cita}</p>` : ""}
+            <p class="text-[11px] text-ink-light mt-0.5">${cuando}</p>
+          </div>
+        </div>`).join("")}
+    </div>`;
+}
+
+function cajaComentario() {
+  return `<div class="flex items-center gap-2 mt-3">
+    ${av("dir")}<input class="field h-10 rounded-full text-[13px]" placeholder="Escribe un comentario… (@ para mencionar)">
+  </div>`;
+}
+
+function detalleCuerpo(d) {
+  const t = TIPOS[d.tipo];
+  return `
+    <div class="px-5 pt-4 pb-5 bg-white border-b border-surface-border">
+      <div class="flex items-center gap-2"><span class="${t.pill}">${t.l}</span><span class="text-[11.5px] text-ink-light font-mono truncate">${d.folio}</span></div>
+      <p class="text-[22px] font-semibold tracking-tight mt-2 leading-tight">${d.titulo}</p>
+      ${d.monto != null ? `<p class="text-[28px] font-semibold num tracking-tight mt-0.5">${fmt(d.monto)}</p>` : ""}
+      <p class="meta mt-1">${d.ctx}</p>
+      <div class="flex items-center gap-1.5 mt-3 text-[12px] text-ink-muted">
+        ${av(d.por, "w-5 h-5 text-[8.5px]")} Envió ${P[d.por].n} · ${d.hace}
+        ${d.revisor ? `<span class="text-ink-xlight">·</span><span class="text-violet-700">✓ revisó ${P[d.revisor].n.split(" ")[0]}</span>` : ""}
+      </div>
+    </div>
+    <div class="px-4 py-4 space-y-4">
+      ${alertaHtml(d.alerta)}
+      ${d.cambio ? alertaHtml(["wait","Cambió después de enviarse: Merma de gabardina 3 % → 5 %. Ver la actividad."]) : ""}
+      <div class="panel divide-y divide-surface-border">
+        ${d.resumen.map(([k, v]) => `<div class="flex items-start justify-between gap-4 px-4 py-2.5"><span class="meta">${k}</span><span class="text-[13px] font-medium text-right num">${v}</span></div>`).join("")}
+      </div>
+      ${d.renglones.length ? `
+        <details class="panel group">
+          <summary class="px-4 h-11 flex items-center justify-between cursor-pointer list-none text-[13px] font-medium">Renglones (${d.renglones.length})<span class="text-ink-light group-open:rotate-90 transition">›</span></summary>
+          <div class="border-t border-surface-border">${d.renglones.map(r => `
+            <div class="px-4 py-2.5 border-b border-surface-border last:border-0">
+              <p class="text-[13px] font-medium">${r[0]}</p>
+              <p class="meta num flex justify-between"><span>${r[1]}${r[2] ? " × " + r[2] : ""}</span><span class="text-ink font-medium">${r[3]}</span></p>
+            </div>`).join("")}</div>
+        </details>` : ""}
+      ${d.adjuntos.length ? `<div class="flex flex-wrap gap-2">${d.adjuntos.map(a => `<span class="chip inline-flex items-center gap-1.5">${ICON.clip}${a}</span>`).join("")}</div>` : ""}
+      <div>
+        <p class="eyebrow mb-3">Actividad</p>
+        <div class="panel p-4">${lineaTiempo(d, S.verTodo)}${cajaComentario()}</div>
+      </div>
+    </div>`;
+}
+
+function accionesDetalle(d) {
+  if (S.esc === "revisor") return `
+    <button class="btn-danger h-12 flex-1 text-[14px]" onclick="hoja('regresar')">Regresar</button>
+    <button class="btn-primary h-12 flex-[1.4] text-[14px] bg-violet-600 hover:bg-violet-700" onclick="revisar()">Marcar revisado</button>`;
+  return `
+    <button class="btn-danger h-12 flex-1 text-[14px]" onclick="hoja('regresar')">Regresar</button>
+    <button class="btn-primary h-12 flex-[1.4] text-[14px]" ${d.bloqueo ? "disabled" : ""} onclick="${d.monto >= 100000 ? "hoja('confirmar')" : "aprobar()"}">${d.bloqueo ? "No se puede aprobar" : "Aprobar"}</button>`;
+}
+
+/* ═════════════ Pantallas del celular ═════════════ */
+function encabezado(titulo, sub) {
+  const notif = S.esc === "empleado" ? (S.empEstado === "devuelto" ? 1 : 0) : bandeja().length ? 3 : 0;
+  return `<div class="bg-white px-5 pt-2 pb-4 border-b border-surface-border">
+    <div class="flex items-center justify-between">
+      <p class="eyebrow">${S.esc === "revisor" ? "Revisión de documentos" : S.esc === "empleado" ? "Costeo Yelke" : "Dirección"}</p>
+      <button class="relative w-10 h-10 -mr-2 flex items-center justify-center text-ink-muted" onclick="hoja('notif')">${ICON.bell}
+        ${notif ? `<span class="absolute top-1.5 right-1.5 min-w-[17px] h-[17px] px-1 rounded-full bg-brand-500 text-white text-[10px] font-bold flex items-center justify-center">${notif}</span>` : ""}</button>
+    </div>
+    <h1 class="text-[24px] font-semibold tracking-tight leading-tight">${titulo}</h1>
+    ${sub ? `<p class="lede mt-0.5">${sub}</p>` : ""}
+  </div>`;
+}
+
+function bannerDeleg() {
+  if (!S.deleg || S.esc !== "ceo") return "";
+  return `<div class="mx-4 mt-3 rounded-xl bg-violet-50 border border-violet-200 px-3.5 py-2.5 flex items-center gap-3">
+    ${av(S.deleg.a)}<p class="text-[12.5px] text-violet-900 flex-1 leading-snug"><b>${P[S.deleg.a].n}</b> aprueba por ti del ${S.deleg.desde} al ${S.deleg.hasta}.</p>
+    <button class="text-[12.5px] font-semibold text-violet-700" onclick="S.deleg=null;toast('Delegación terminada. Vuelves a recibir todo.');">Terminar</button>
+  </div>`;
+}
+
+function pantallaAprobar() {
+  const lista = bandeja().filter(d => S.filtro === "todos" || GRUPO[d.tipo] === S.filtro);
+  const n = bandeja().length, viejos = bandeja().filter(d => d.horas > 48).length;
+  const esRev = S.esc === "revisor";
+  const sub = n ? `${n} por ${esRev ? "revisar" : "aprobar"}${viejos ? ` · ${viejos} lleva más de 48 h` : ""}` : "";
+  return `${encabezado(esRev ? "Por revisar" : "Buenos días", esRev ? "Revisas antes de que llegue a Dirección." : sub)}
+    ${bannerDeleg()}
+    ${!esRev ? `<div class="px-4 pt-3 flex gap-2 overflow-x-auto" style="scrollbar-width:none">${FILTROS.map(([k, l]) => {
+      const c = k === "todos" ? n : bandeja().filter(d => GRUPO[d.tipo] === k).length;
+      return `<button class="chip ${S.filtro === k ? "on" : ""}" onclick="S.filtro='${k}';render()">${l}${c ? " · " + c : ""}</button>`; }).join("")}</div>` : ""}
+    <div class="px-4 py-3 space-y-2.5">
+      ${lista.length ? lista.sort((a, b) => b.horas - a.horas).map(d => tarjeta(d)).join("") : `
+        <div class="text-center py-14"><p class="text-[34px]">✓</p><p class="text-[15px] font-semibold mt-1">Todo al día</p><p class="meta">No tienes nada pendiente${S.filtro !== "todos" ? " en este filtro" : ""}.</p></div>`}
+    </div>
+    ${!esRev && esperandoRevision().length ? `
+      <details class="mx-4 mb-3">
+        <summary class="list-none cursor-pointer meta flex items-center gap-2 h-9"><span class="dot dot-off"></span>Esperando revisión antes de llegarte (${esperandoRevision().length}) ›</summary>
+        <div class="space-y-2 mt-1 opacity-70">${esperandoRevision().map(d => `<div class="panel px-4 py-2.5 flex items-center gap-3"><div class="flex-1 min-w-0"><p class="text-[13px] font-medium truncate">${TIPOS[d.tipo].l} · ${d.titulo}</p><p class="meta">${d.hace} · la revisa ${P.luis.n.split(" ")[0]}</p></div><span class="num text-[13px]">${fmt(d.monto)}</span></div>`).join("")}</div>
+      </details>` : ""}
+    ${S.resueltos.length ? `
+      <details class="mx-4 mb-6">
+        <summary class="list-none cursor-pointer meta flex items-center gap-2 h-9"><span class="dot dot-ok"></span>Resueltos hoy (${S.resueltos.length}) ›</summary>
+        <div class="space-y-2 mt-1">${S.resueltos.map(r => `<div class="panel px-4 py-2.5 flex items-center gap-3"><div class="flex-1 min-w-0"><p class="text-[13px] font-medium truncate">${TIPOS[r.d.tipo].l} · ${r.d.titulo}</p><p class="meta">${r.txt}</p></div><span class="${r.ok ? "pill-ok" : "pill-bad"}">${r.ok ? (r.rev ? "Revisado" : "Aprobado") : "Regresado"}</span></div>`).join("")}</div>
+      </details>` : ""}`;
+}
+
+function pasosProyecto(p) {
+  return `<div class="flex items-center gap-1 mt-3">${ETAPAS.map((e, i) => {
+    const st = i + 1 < p.etapa || p.etapa === 6 ? "bg-emerald-500" : i + 1 === p.etapa ? (p.alerta && p.alerta[0] === "bad" ? "bg-red-500" : "bg-brand-500") : "bg-zinc-200";
+    return `<span class="h-1.5 flex-1 rounded-full ${st}"></span>`; }).join("")}</div>
+    <p class="text-[11.5px] text-ink-muted mt-1.5">${p.etapa === 6 ? "Completado · entregado y facturado" : "Va en <b class='text-ink font-medium'>" + ETAPAS[p.etapa - 1] + "</b> · paso " + p.etapa + " de 6"}</p>`;
+}
+
+function pantallaProyectos() {
+  const lista = PROYECTOS.filter(p => p.grupo === S.provFiltro);
+  const c = (g) => PROYECTOS.filter(p => p.grupo === g).length;
+  return `${encabezado("Proyectos", `${c("activos") + c("atrasados")} en curso · ${c("atrasados")} atrasados`)}
+    ${bannerDeleg()}
+    <div class="px-4 pt-3"><div class="seg w-full grid grid-cols-3">
+      ${[["activos","Activos"],["atrasados","Atrasados"],["completados","Completados"]].map(([k, l]) => `<button class="justify-center ${S.provFiltro === k ? "on" : ""}" onclick="S.provFiltro='${k}';render()">${l} · ${c(k)}</button>`).join("")}
+    </div></div>
+    <div class="px-4 py-3 space-y-2.5">${lista.map(p => `
+      <div class="card">
+        <div class="flex items-start gap-3">
+          <div class="flex-1 min-w-0"><p class="text-[14.5px] font-semibold leading-tight">${p.t}</p><p class="meta truncate">${p.c} · ${p.ov}</p></div>
+          <div class="text-right"><p class="text-[14px] font-semibold num">${fmtC(p.monto)}</p><p class="text-[11px] text-ink-light">entrega ${p.entrega}</p></div>
+        </div>
+        ${pasosProyecto(p)}
+        <div class="flex items-center gap-2 mt-2.5">
+          <div class="flex-1 h-1 bg-zinc-100 rounded"><div class="h-1 rounded ${p.prod[0] === p.prod[1] ? "bg-emerald-500" : "bg-sky-500"}" style="width:${Math.round(p.prod[0] / p.prod[1] * 100)}%"></div></div>
+          <span class="text-[11.5px] text-ink-muted num">${p.prod[0].toLocaleString("es-MX")} / ${p.prod[1].toLocaleString("es-MX")} ${p.prod[1] < 50 ? "encargos" : "prendas"}</span>
+        </div>
+        ${p.alerta ? `<div class="mt-2.5">${alertaHtml(p.alerta)}</div>` : ""}
+      </div>`).join("") || '<p class="meta text-center py-10">Nada aquí.</p>'}</div>`;
+}
+
+function pantallaResumen() {
+  const kpi = (l, v, s, w) => `<div class="bg-white p-4"><p class="meta">${l}</p><p class="text-[21px] font-semibold num mt-0.5 tracking-tight">${v}</p>${s ? `<p class="text-[11.5px] text-ink-muted mt-0.5">${s}</p>` : ""}${w != null ? `<div class="h-1 bg-zinc-100 rounded mt-2"><div class="h-1 bg-brand-500 rounded" style="width:${w}%"></div></div>` : ""}</div>`;
+  return `${encabezado("Resumen", "Octubre 2026 · YELKE PRUEBAS")}
+    ${bannerDeleg()}
+    <div class="px-4 py-4 space-y-4">
+      <div class="grid grid-cols-2 gap-px bg-surface-border rounded-xl overflow-hidden border border-surface-border">
+        ${kpi("Vendido", fmtC(2611787.5), "9 órdenes · 7,010 prendas")}
+        ${kpi("Facturado", fmtC(1674630), "64 % de lo vendido", 64)}
+        ${kpi("Cotizado", fmtC(3187150), "82 % se convirtió en venta", 82)}
+        ${kpi("Margen promedio", "45.0 %", "de los costeos validados")}
+        ${kpi("Compras de material", fmtC(543347.42), "")}
+        ${kpi("Maquila", fmtC(447600), "17 de 23 encargos recibidos", 74)}
+      </div>
+      <div>
+        <p class="eyebrow mb-2">Requiere tu atención</p>
+        <div class="panel divide-y divide-surface-border">
+          ${[["dot-wait", bandeja().length + " documentos por aprobar", "aprobar"], ["dot-bad", "2 proyectos con entrega vencida", "proyectos"], ["dot-wait", "1 orden de venta bloqueada: falta la OC del cliente", "aprobar"]]
+            .map(([d, t, tab]) => `<button class="w-full text-left px-4 h-12 flex items-center gap-3 text-[13px]" onclick="S.tab='${tab}';${tab === "proyectos" ? "S.provFiltro='atrasados';" : ""}render()"><span class="dot ${d}"></span><span class="flex-1">${t}</span><span class="text-ink-light">›</span></button>`).join("")}
+        </div>
+      </div>
+      <div class="panel p-4">
+        ${S.deleg ? `
+          <p class="text-[14px] font-semibold">Delegación activa</p>
+          <p class="meta mt-0.5">${P[S.deleg.a].n} aprueba por ti del ${S.deleg.desde} al ${S.deleg.hasta}. Termina sola.</p>
+          <button class="btn-secondary w-full h-11 mt-3" onclick="S.deleg=null;toast('Delegación terminada. Vuelves a recibir todo.')">Terminar ahora</button>` : `
+          <p class="text-[14px] font-semibold">¿Vas a salir unos días?</p>
+          <p class="meta mt-0.5">Deja a alguien aprobando por ti. Se termina sola en la fecha que elijas.</p>
+          <button class="btn-primary w-full h-11 mt-3" onclick="hoja('delegar')">Delegar mis aprobaciones</button>`}
+      </div>
+      <p class="text-[11px] text-ink-light text-center pb-2">Las cifras salen de <code>dashboard_metrics</code>, el mismo cálculo de Inicio.</p>
+    </div>`;
+}
+
+/* Vista del empleado: su OC regresada, con la franja, la actividad y el botón de reenviar */
+function pantallaEmpleado() {
+  const d = doc("oc1");
+  const devuelto = S.empEstado === "devuelto";
+  return `${encabezado("PUR-ORD-2026-00344", "Orden de compra · GRUPO FILAFIL")}
+    <div class="px-4 py-4 space-y-4">
+      ${devuelto ? `
+        <div class="rounded-xl bg-amber-50 border border-amber-300 p-4">
+          <div class="flex items-center gap-2">${av("dir")}<p class="text-[13px] font-semibold text-amber-950">Dirección te la regresó para corregir</p></div>
+          <p class="mt-2 text-[13.5px] leading-snug text-amber-950 bg-white/70 rounded-lg px-3 py-2">“${S.motivo || "Pide a FILAFIL precio por volumen: son 930 m."}”</p>
+          <p class="text-[11px] text-amber-800 mt-1.5">hoy 12:40 · también te llegó por correo</p>
+        </div>` : `
+        <div class="rounded-xl bg-brand-50 border border-brand-200 p-4"><p class="text-[13px] font-semibold text-brand-800">Reenviada · esperando revisión de Luis Ortega</p><p class="meta mt-0.5">Te avisaremos cuando la revisen o la aprueben.</p></div>`}
+      <div class="panel divide-y divide-surface-border">
+        ${[["Proveedor","GRUPO FILAFIL"],["Gabardina naranja","930 m × $65.00"],["Total","$70,122.00"],["Estado", devuelto ? '<span class="pill-bad">Regresada</span>' : '<span class="pill-now">En aprobación</span>']]
+          .map(([k, v]) => `<div class="flex justify-between px-4 py-2.5"><span class="meta">${k}</span><span class="text-[13px] font-medium">${v}</span></div>`).join("")}
+      </div>
+      <p class="meta -mt-2 px-1">La editas como siempre en Producción → Lote 2 → Materia prima.</p>
+      <div><p class="eyebrow mb-3">Actividad</p><div class="panel p-4">${lineaTiempo({ actividad: d.actividad.concat(devuelto ? [] : [["ana","reenvio","la corrigió y la reenvió","hoy 13:05", S.reenvioTxt || "Bajaron a $61.50 / m por volumen."]]) }, true)}${cajaComentario().replace(av("dir"), av("ana"))}</div></div>
+    </div>`;
+}
+
+/* ═════════════ Hojas (bottom sheets) ═════════════ */
+function hojaHtml() {
+  const d = S.doc && doc(S.doc);
+  if (S.sheet === "regresar") {
+    const quien = S.esc === "revisor" ? P[d.por].n : P[d.por].n;
+    const motivos = ["Falta un adjunto","Precio incorrecto","Cantidad incorrecta","Pide otra cotización"];
+    return `<div class="sheet"><div class="grab"></div>
+      <div class="px-5 pt-2 pb-3"><p class="text-[17px] font-semibold">Regresar a corregir</p><p class="meta mt-0.5">Le llega a <b>${quien}</b> en la campana y por correo. El documento no se borra: sigue en borrador para que lo corrija.</p></div>
+      <div class="px-5 flex gap-2 flex-wrap">${motivos.map(m => `<button class="chip" onclick="S.motivo=(S.motivo? S.motivo+' ' : '')+'${m}.';hojaRefrescar()">${m}</button>`).join("")}</div>
+      <div class="px-5 pt-3">
+        <label class="field-label">¿Qué tiene que corregir? <span class="text-red-600">*</span></label>
+        <textarea id="motivo" rows="4" class="field h-auto py-2.5 leading-snug" placeholder="Ej. Pide a FILAFIL precio por volumen: son 930 m." oninput="S.motivo=this.value;$('#btn-reg').disabled=this.value.trim().length<5">${S.motivo}</textarea>
+        <p class="text-[11px] text-ink-light mt-1">Obligatorio · queda en la actividad del documento.</p>
+      </div>
+      <div class="px-5 pt-4 flex gap-2">
+        <button class="btn-secondary h-12 flex-1" onclick="hoja(null)">Cancelar</button>
+        <button id="btn-reg" class="btn h-12 flex-[1.4] bg-red-600 text-white hover:bg-red-700" ${S.motivo.trim().length < 5 ? "disabled" : ""} onclick="regresar()">Regresar a ${quien.split(" ")[0]}</button>
+      </div></div>`;
+  }
+  if (S.sheet === "confirmar") return `<div class="sheet"><div class="grab"></div>
+      <div class="px-5 pt-3 text-center"><p class="text-[13px] text-ink-muted">${TIPOS[d.tipo].l} · ${d.titulo}</p><p class="text-[30px] font-semibold num tracking-tight mt-1">${fmt(d.monto)}</p>
+        <p class="meta mt-1">Al aprobarla se valida en ERPNext y se le avisa a ${P[d.por].n}.</p></div>
+      <div class="px-5 pt-3"><input class="field" placeholder="Comentario opcional"></div>
+      <div class="px-5 pt-4 flex gap-2"><button class="btn-secondary h-12 flex-1" onclick="hoja(null)">Cancelar</button><button class="btn-primary h-12 flex-[1.4]" onclick="aprobar()">Sí, aprobar</button></div></div>`;
+  if (S.sheet === "delegar") return `<div class="sheet"><div class="grab"></div>
+      <div class="px-5 pt-2 pb-2"><p class="text-[17px] font-semibold">Delegar mis aprobaciones</p><p class="meta mt-0.5">Esa persona podrá aprobar y regresar documentos en tu lugar. No verá Proyectos ni Resumen.</p></div>
+      <div class="px-5 space-y-3 overflow-y-auto">
+        <div><label class="field-label">¿Quién aprueba por ti?</label>
+          <div class="space-y-1.5">${["luis","jorge","mariana"].map(k => `<label class="flex items-center gap-3 panel px-3 h-12 cursor-pointer has-[:checked]:border-brand-400 has-[:checked]:bg-brand-50/50"><input type="radio" name="dlg" value="${k}" class="accent-brand-500" ${k === "luis" ? "checked" : ""}>${av(k)}<span class="text-[13.5px] font-medium flex-1">${P[k].n}</span><span class="meta">${P[k].rol}</span></label>`).join("")}</div></div>
+        <div class="grid grid-cols-2 gap-2">
+          <div><label class="field-label">Desde</label><input type="date" class="field" id="dl-desde" value="2026-10-20"></div>
+          <div><label class="field-label">Hasta</label><input type="date" class="field" id="dl-hasta" value="2026-10-30"></div>
+        </div>
+        <div><label class="field-label">Motivo (opcional)</label><input class="field" placeholder="Vacaciones"></div>
+        <p class="text-[12px] text-ink-muted bg-surface-raised rounded-lg px-3 py-2">Se termina sola el día “Hasta”. Mientras dure, los avisos te siguen llegando a ti también.</p>
+      </div>
+      <div class="px-5 pt-4 flex gap-2"><button class="btn-secondary h-12 flex-1" onclick="hoja(null)">Cancelar</button><button class="btn-primary h-12 flex-[1.4]" onclick="delegar()">Delegar</button></div></div>`;
+  if (S.sheet === "notif") {
+    const items = S.esc === "empleado" ? [["dir","te regresó la OC PUR-ORD-2026-00344: “" + (S.motivo || "Pide a FILAFIL precio por volumen: son 930 m.") + "”","hace 3 min",true]]
+      : S.esc === "revisor" ? [["ana","envió a revisión la OC a taller de JESUS MOLINA TAPIA · $54,810.00","hace 40 min",true]]
+      : [["luis","revisó la OC de GRUPO FILAFIL · $70,122.00. Ya puedes aprobarla.","hace 2 h",true],["mariana","envió 2 precios acordados de FERROCARRIL MEXICANO","hace 2 h",true],["sofia","envió la factura de PAQUETERIA PRUEBA UNO · $1,120.00","hace 6 h",true],["mariana","Recordatorio: la cotización SAL-QTN-2026-00017 espera tu aprobación desde hace 3 días","hoy 8:00",false]];
+    return `<div class="sheet"><div class="grab"></div>
+      <div class="px-5 pt-2 pb-2 flex items-center justify-between"><p class="text-[17px] font-semibold">Notificaciones</p><button class="text-[12.5px] text-brand-600 font-medium">Marcar leídas</button></div>
+      <div class="overflow-y-auto">${items.map(([w, t, h, nuevo]) => `<button class="w-full text-left px-5 py-3 flex gap-3 border-b border-surface-border ${nuevo ? "bg-brand-50/40" : ""}" onclick="hoja(null);${S.esc === "empleado" ? "" : `abrir('${S.esc === "revisor" ? "maq1" : "oc1"}')`}">${av(w)}<div class="flex-1"><p class="text-[13px] leading-snug"><b>${P[w].n}</b> ${t}</p><p class="text-[11px] text-ink-light mt-0.5">${h}</p></div>${nuevo ? '<span class="dot dot-now mt-2"></span>' : ""}</button>`).join("")}</div>
+      ${S.esc === "empleado" ? `<div class="px-5 pt-3"><button class="btn-secondary w-full h-11" onclick="hoja('correo')">Ver el correo que le llega</button></div>` : `<div class="px-5 pt-3"><button class="btn-secondary w-full h-11" onclick="hoja('correo')">Ver el correo de aviso</button></div>`}
+    </div>`;
+  }
+  if (S.sheet === "correo") {
+    const emp = S.esc === "empleado";
+    return `<div class="sheet"><div class="grab"></div>
+      <div class="px-5 pt-1 pb-2"><p class="meta">Correo · de erp.yelke.com.mx</p><p class="text-[15px] font-semibold mt-0.5">${emp ? "Te regresaron la OC PUR-ORD-2026-00344 para corregir" : "Por aprobar: OC de GRUPO FILAFIL · $70,122.00"}</p></div>
+      <div class="mx-5 panel overflow-hidden">
+        <div class="h-12 bg-ink flex items-center px-4"><span class="w-6 h-6 rounded bg-brand-500 text-white text-[11px] font-bold flex items-center justify-center">Y</span><span class="text-white text-[13px] font-semibold ml-2">Yelke</span></div>
+        <div class="p-4 space-y-2 text-[13px] leading-relaxed">
+          ${emp ? `<p>Hola Ana,</p><p><b>Dirección</b> te regresó la orden de compra <b>PUR-ORD-2026-00344</b> (GRUPO FILAFIL · $70,122.00) con este comentario:</p><p class="bg-red-50 text-red-900 rounded-lg px-3 py-2">“${S.motivo || "Pide a FILAFIL precio por volumen: son 930 m."}”</p><p>Corrígela y vuelve a enviarla a aprobación.</p>`
+                : `<p>Luis Ortega revisó la orden de compra <b>PUR-ORD-2026-00344</b> y ya espera tu aprobación.</p><p class="meta">GRUPO FILAFIL · Gabardina naranja 930 m · Lote 2 · $70,122.00</p>`}
+          <button class="btn-primary w-full h-11 mt-2">${emp ? "Abrir y corregir" : "Abrir en el panel"}</button>
+          <p class="text-[11px] text-ink-light">El botón abre el documento en la app. No se aprueba desde el correo.</p>
+        </div>
+      </div></div>`;
+  }
+  if (S.sheet === "reenviar") return `<div class="sheet"><div class="grab"></div>
+      <div class="px-5 pt-2"><p class="text-[17px] font-semibold">Reenviar a aprobación</p><p class="meta mt-0.5">Le llega a Luis Ortega (revisión) y después a Dirección.</p></div>
+      <div class="px-5 pt-3"><label class="field-label">¿Qué corregiste? (opcional, ayuda a quien revisa)</label><textarea rows="3" class="field h-auto py-2.5" oninput="S.reenvioTxt=this.value" placeholder="Bajaron a $61.50 / m por volumen."></textarea></div>
+      <div class="px-5 pt-4 flex gap-2"><button class="btn-secondary h-12 flex-1" onclick="hoja(null)">Cancelar</button><button class="btn-primary h-12 flex-[1.4]" onclick="S.empEstado='enviado';hoja(null);toast('Reenviada. Le avisamos a Luis Ortega.')">Reenviar</button></div></div>`;
+  return "";
+}
+
+/* ═════════════ Armado del celular ═════════════ */
+function celular() {
+  const d = S.doc && doc(S.doc);
+  const esRev = S.esc === "revisor", esEmp = S.esc === "empleado";
+  let cuerpo, barra = "";
+  if (esEmp) {
+    cuerpo = pantallaEmpleado();
+    barra = S.empEstado === "devuelto"
+      ? `<div class="flex-shrink-0 bg-white border-t border-surface-border px-4 pt-3 flex gap-2" style="padding-bottom:26px"><button class="btn-secondary h-12 flex-1">Editar la OC</button><button class="btn-primary h-12 flex-[1.4]" onclick="hoja('reenviar')">Ya lo corregí · Reenviar</button></div>` : "";
+  } else if (d) {
+    cuerpo = `<div class="overlay">
+      <div class="bg-white h-12 flex items-center px-2 border-b border-surface-border flex-shrink-0">
+        <button class="h-10 px-2 flex items-center gap-0.5 text-brand-600 text-[14px] font-medium" onclick="cerrar()">${ICON.back}${esRev ? "Por revisar" : "Por aprobar"}</button>
+      </div>
+      <div class="scr">${detalleCuerpo(d)}</div>
+      <div class="flex-shrink-0 bg-white border-t border-surface-border px-4 pt-2.5" style="padding-bottom:26px">
+        ${d.bloqueo ? `<p class="text-center text-[11.5px] text-red-700 mb-2">${d.bloqueo}: ${P[d.por].n.split(" ")[0]} tiene que adjuntarla.</p>` : ""}
+        <div class="flex gap-2">${accionesDetalle(d)}</div>
+      </div>
+    </div>`;
+  } else {
+    cuerpo = S.tab === "aprobar" ? pantallaAprobar() : S.tab === "proyectos" ? pantallaProyectos() : pantallaResumen();
+  }
+  const tabs = esRev || esEmp ? [] : [["aprobar","Por aprobar", ICON.aprobar, bandeja().length],["proyectos","Proyectos", ICON.proyectos, 2],["resumen","Resumen", ICON.resumen, 0]];
+  return `<div class="phone"><div class="phone-notch"></div>
+    <div class="phone-status"><span>9:41</span><span class="tracking-widest">●●● ▮</span></div>
+    <div class="scr relative">${d && !esEmp ? "" : cuerpo}</div>
+    ${d && !esEmp ? cuerpo : ""}
+    ${barra}
+    ${tabs.length && !d ? `<div class="tabbar grid-cols-3">${tabs.map(([k, l, ic, c]) => `<button class="${S.tab === k ? "on" : ""} relative" onclick="S.tab='${k}';render()">${ic}${l}${c ? `<span class="absolute top-1.5 left-[calc(50%+6px)] min-w-[16px] h-4 px-1 rounded-full ${k === "proyectos" ? "bg-red-500" : "bg-brand-500"} text-white text-[9.5px] font-bold flex items-center justify-center">${c}</span>` : ""}</button>`).join("")}</div>`
+      : esRev && !d ? `<div class="flex-shrink-0 bg-white border-t border-surface-border text-center meta" style="padding:10px 0 26px">Solo ves lo que te toca revisar.</div>` : ""}
+    ${S.sheet ? `<div class="sheet-scrim" onclick="hoja(null)"></div>${hojaHtml()}` : ""}
+    ${S.toast ? `<div class="toast"><span>✓</span><span class="flex-1">${S.toast}</span></div>` : ""}
+  </div>`;
+}
+
+/* ═════════════ Escritorio ═════════════ */
+function escritorio() {
+  const lista = bandeja().sort((a, b) => b.horas - a.horas);
+  if (!doc(S.deskSel) || !lista.find(x => x.id === S.deskSel)) S.deskSel = lista[0] && lista[0].id;
+  const d = S.deskSel && doc(S.deskSel);
+  const nav = [["Inicio"],["Dirección", bandeja().length, true],["Proyectos"],["Plantillas"],["—Documentos"],["Cotizaciones"],["Órdenes de Venta"],["Órdenes de Compra"],["Facturas de Compra"]];
+  return `<div class="desk">
+    <aside class="w-52 bg-white border-r border-surface-border px-2 py-3 flex-shrink-0">
+      <div class="flex items-center gap-2.5 px-2 h-10 mb-3"><span class="w-7 h-7 rounded-md bg-brand-500 text-white text-[12px] font-bold flex items-center justify-center">Y</span><div><p class="text-[13px] font-semibold leading-none">Costeo</p><p class="text-[10px] text-ink-muted">Yelke</p></div></div>
+      ${nav.map(([l, c, on]) => l.startsWith("—") ? `<p class="eyebrow px-2.5 pt-4 pb-1">${l.slice(1)}</p>` : `<div class="nav-item ${on ? "on" : ""}">${l}${c ? `<span class="ml-auto text-[10.5px] font-semibold text-white bg-brand-500 rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center">${c}</span>` : ""}</div>`).join("")}
+    </aside>
+    <div class="flex-1 min-w-0 flex flex-col">
+      <div class="h-14 bg-white border-b border-surface-border flex items-center px-6 gap-4 flex-shrink-0">
+        <div><p class="eyebrow">Dirección</p><p class="text-[16px] font-semibold leading-tight">Por aprobar</p></div>
+        <div class="seg ml-6"><button class="on">Por aprobar · ${lista.length}</button><button>Proyectos</button><button>Resumen</button></div>
+        <button class="btn-secondary ml-auto h-8 text-[12.5px]">Delegar…</button>
+        <span class="relative text-ink-muted">${ICON.bell}<span class="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-brand-500 text-white text-[9.5px] font-bold flex items-center justify-center">3</span></span>
+      </div>
+      <div class="flex-1 flex min-h-0">
+        <div class="w-[400px] border-r border-surface-border flex flex-col bg-white flex-shrink-0">
+          <div class="px-4 py-2.5 flex gap-2 border-b border-surface-border">${FILTROS.map(([k, l]) => `<button class="chip h-7 text-[12px] ${k === "todos" ? "on" : ""}">${l}</button>`).join("")}</div>
+          <div class="overflow-y-auto flex-1">${lista.map(x => `
+            <div class="row ${x.id === S.deskSel ? "sel" : ""}" onclick="S.deskSel='${x.id}';S.verTodo=false;render()">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2"><span class="${TIPOS[x.tipo].pill} h-5 text-[10.5px]">${TIPOS[x.tipo].l}</span>${x.horas > 48 ? '<span class="pill-wait h-5 text-[10.5px]">+48 h</span>' : ""}${x.bloqueo ? '<span class="pill-bad h-5 text-[10.5px]">Bloqueada</span>' : ""}</div>
+                <p class="text-[13.5px] font-semibold mt-1 truncate">${x.titulo}</p>
+                <p class="meta truncate">${x.sub}</p>
+                <p class="text-[11px] text-ink-light mt-0.5">${P[x.por].n} · ${x.hace}${x.revisor ? ` · <span class="text-violet-700">✓ revisó ${P[x.revisor].n.split(" ")[0]}</span>` : ""}</p>
+              </div>
+              <span class="text-[13.5px] font-semibold num self-start">${x.monto != null ? fmt(x.monto) : ""}</span>
+            </div>`).join("")}</div>
+        </div>
+        <div class="flex-1 min-w-0 flex flex-col">
+          ${d ? `<div class="flex-1 overflow-y-auto"><div class="max-w-[640px]">${detalleCuerpo(d)}</div></div>
+            <div class="h-16 bg-white border-t border-surface-border flex items-center px-6 gap-3 flex-shrink-0">
+              <span class="dot ${d.bloqueo ? "dot-bad" : "dot-now"}"></span><span class="meta flex-1">${d.bloqueo ? d.bloqueo : "Al aprobar se valida en ERPNext y se avisa a " + P[d.por].n}</span>
+              <button class="btn-danger" onclick="S.doc='${d.id}';S.motivo='';hoja('regresar')">Regresar…</button>
+              <button class="btn-primary" ${d.bloqueo ? "disabled" : ""} onclick="S.doc='${d.id}';${d.monto >= 100000 ? "hoja('confirmar')" : "aprobar()"}">Aprobar</button>
+            </div>` : `<div class="m-auto text-center"><p class="text-[34px]">✓</p><p class="font-semibold">Todo al día</p></div>`}
+        </div>
+      </div>
+    </div>
+    ${S.sheet ? `<div class="absolute inset-0 z-40 bg-black/30 flex items-center justify-center" onclick="if(event.target===this)hoja(null)"><div class="w-[460px]">${hojaHtml()}</div></div>` : ""}
+    ${S.toast ? `<div class="toast"><span>✓</span><span class="flex-1">${S.toast}</span></div>` : ""}
+  </div>`;
+}
+
+/* ═════════════ Notas para revisar el mockup ═════════════ */
+const NOTAS = {
+  ceo: ["Lo que ve el CEO en el celular", [
+    "<b>Por aprobar</b> es lo primero que ve. Las tarjetas van de la que más espera a la más nueva, y hay filtros por área.",
+    "Prueba <b>GRUPO FILAFIL</b>: la revisó Luis (esquema Doble). Ábrela y toca <b>Regresar</b>: el comentario es obligatorio. Luego cambia a <i>Celular · Empleado</i> para ver lo que le llega a Ana.",
+    "La <b>Orden de venta</b> sale <b>bloqueada</b>, como en el sandbox real: la SAL-ORD-2026-00018 no tiene adjunta la OC del cliente.",
+    "Montos de $100 k o más piden confirmación antes de aprobar.",
+    "<b>Proyectos → Atrasados</b>: los costeos 00027 y 00028 tenían entrega el 8-oct y no han entregado nada (dato real).",
+    "<b>Resumen → Delegar mis aprobaciones</b>: el flujo de vacaciones. Al activarlo aparece la franja morada en todas las pestañas.",
+    "Abajo de la bandeja hay dos listas: lo que todavía <b>espera revisión</b> (la OC a taller) y lo que ya resolviste hoy."]],
+  revisor: ["Lo que ve el revisor", [
+    "Solo una lista: lo que le toca revisar (esquema Doble: las OC). No ve Proyectos ni Resumen.",
+    "Sus botones son <b>Regresar</b> y <b>Marcar revisado</b>. Al marcarla, pasa a la bandeja del CEO y le llega el aviso.",
+    "Si un revisor recibe una delegación, ve esta misma pantalla, pero con <b>Aprobar</b>."]],
+  empleado: ["Lo que ve quien capturó el documento", [
+    "Cuando le regresan algo, le llega a la <b>campana</b> (en tiempo real) y por <b>correo</b>. Toca la campana para verlos.",
+    "Dentro del documento sale arriba la <b>franja ámbar</b> con el comentario de quien lo regresó, y el botón <b>Ya lo corregí · Reenviar</b>.",
+    "La <b>Actividad</b> es la misma línea de tiempo de ERPNext (creación, cambios, adjuntos, comentarios, envíos, revisiones). Va en todos los documentos de la app.",
+    "Si escribiste un motivo al regresar la OC en el escenario del CEO, aquí aparece ese mismo texto."]],
+  desk: ["Escritorio (≥ 1024 px)", [
+    "Es la misma información en dos columnas: la lista a la izquierda y el detalle fijo a la derecha. La barra de acciones va abajo, como en Producción.",
+    "Entra desde el menú lateral normal de la app (<b>Dirección</b>, con contador). Para quien tiene el rol Director, es su pantalla de inicio.",
+    "Proyectos y Resumen son las mismas vistas del celular, pero a lo ancho."]],
+};
+function notas() {
+  const [t, items] = NOTAS[S.esc];
+  return `<div class="panel p-5"><p class="eyebrow">Cómo revisar este escenario</p><p class="text-[15px] font-semibold mt-1">${t}</p>
+    <ul class="mt-3 space-y-2.5 text-[12.5px] leading-relaxed text-ink-muted list-disc pl-4">${items.map(i => `<li>${i}</li>`).join("")}</ul></div>
+    <div class="note">Mockup v1 con datos reales de sandbox.local (folios, montos, clientes y proveedores). Los nombres de personas son ilustrativos. Plan: <code>docs/plan-panel-direccion.md</code>.</div>
+    <div class="panel p-4 text-[12px] text-ink-muted leading-relaxed"><p class="font-semibold text-ink mb-1">Se oculta en celular</p>Las columnas secundarias de los renglones (quedan detrás de “Renglones”), la actividad completa (se ven los últimos 3 eventos) y las gráficas (quedan los indicadores). Abre este archivo en tu teléfono: el marco desaparece y se ve a pantalla completa.</div>`;
+}
+
+/* ═════════════ Acciones ═════════════ */
+function abrir(id) { S.doc = id; S.verTodo = false; S.sheet = null; S.motivo = ""; render(); }
+function cerrar() { S.doc = null; S.sheet = null; render(); }
+function hoja(k) { S.sheet = k; if (k) S.toast = null; render(); if (k === "regresar") setTimeout(() => { const t = $("#motivo"); t && t.focus(); }, 50); }
+function hojaRefrescar() { render(); }
+let tt;
+function toast(t) { S.toast = t; S.sheet = null; render(); clearTimeout(tt); tt = setTimeout(() => { S.toast = null; render(); }, 2600); }
+function aprobar() {
+  const d = doc(S.doc); d.estado = "aprobado";
+  S.resueltos.unshift({ d, ok: true, txt: "se avisó a " + P[d.por].n.split(" ")[0] });
+  S.doc = null; toast(`${TIPOS[d.tipo].l} aprobada. Le avisamos a ${P[d.por].n}.`);
+}
+function revisar() {
+  const d = doc(S.doc); d.estado = "revisado"; d.revisor = "luis"; d.revHace = "ahora";
+  d.actividad.push(["luis","revision","la revisó","ahora"]);
+  S.resueltos.unshift({ d, ok: true, rev: true, txt: "pasó a Dirección" });
+  S.doc = null; toast("Revisada. Ya está en la bandeja de Dirección.");
+}
+function regresar() {
+  const d = doc(S.doc); d.estado = "devuelto";
+  S.resueltos.unshift({ d, ok: false, txt: "“" + S.motivo.trim() + "”" });
+  const quien = P[d.por].n;
+  S.doc = null; toast(`Regresada a ${quien}. Le llegó el aviso con tu comentario.`);
+}
+function delegar() {
+  const a = (document.querySelector('input[name="dlg"]:checked') || {}).value || "luis";
+  const f = (v) => { const [y, m, dd] = v.split("-"); return `${+dd}-${["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"][m - 1]}`; };
+  S.deleg = { a, desde: f($("#dl-desde").value), hasta: f($("#dl-hasta").value) };
+  toast(`${P[a].n} aprobará por ti del ${S.deleg.desde} al ${S.deleg.hasta}. Ya le avisamos.`);
+}
+
+function render() {
+  document.querySelectorAll("#escenarios button").forEach(b => b.classList.toggle("on", b.dataset.esc === S.esc));
+  $("#device").innerHTML = S.esc === "desk" ? escritorio() : celular();
+  $("#notas").innerHTML = notas();
+  $("#stage").classList.toggle("flex-col", S.esc === "desk");
+  $("#stage").classList.toggle("items-center", S.esc === "desk");
+  history.replaceState(null, "", "#" + S.esc);
+}
+document.querySelectorAll("#escenarios button").forEach(b => b.onclick = () => {
+  const motivo = S.motivo; S.esc = b.dataset.esc; S.doc = null; S.sheet = null; S.toast = null;
+  if (S.esc === "empleado") S.motivo = motivo || (S.resueltos.find(r => !r.ok && r.d.id === "oc1") || {}).txt?.replace(/[“”]/g, "") || "";
+  render();
+});
+reiniciar((location.hash || "#ceo").slice(1) in NOTAS ? (location.hash || "#ceo").slice(1) : "ceo");
+</script>
+</body>
+</html>

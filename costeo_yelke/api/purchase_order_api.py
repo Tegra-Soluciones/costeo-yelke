@@ -314,6 +314,9 @@ def marcar_revisada_purchase_order(name):
     doc.db_set("revisado_yelke", 1, update_modified=False)
     doc.db_set("revisado_por_yelke", frappe.session.user, update_modified=False)
     doc.db_set("revisado_en_yelke", frappe.utils.now(), update_modified=False)
+    from costeo_yelke.api.aprobaciones import al_revisar
+
+    al_revisar("Purchase Order", name)
     return {"ok": True, "revisado_por_yelke": frappe.session.user}
 
 

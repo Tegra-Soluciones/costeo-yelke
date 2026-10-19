@@ -31,6 +31,7 @@
           <div class="w-px h-5 bg-gray-200" />
         </template>
 
+        <BotonActividad doctype="Sales Invoice" :name="inv.name" />
         <a :href="`/app/sales-invoice/${encodeURIComponent(inv.name)}`" target="_blank"
           class="px-3 py-1.5 border border-gray-200 text-gray-600 text-sm font-medium rounded-md hover:bg-gray-50 flex items-center gap-1.5">
           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
@@ -448,6 +449,7 @@
 import { ref, reactive, computed, onMounted, watch, defineComponent, h } from "vue";
 import { useRouter } from "vue-router";
 import PageHeader from "@/components/PageHeader.vue";
+import BotonActividad from "@/components/aprobacion/BotonActividad.vue";
 import FacturaArchivos from "@/components/FacturaArchivos.vue";
 import { call, defaultPrintFormat } from "@/utils/frappe.js";
 
