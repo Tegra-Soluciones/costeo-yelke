@@ -16,7 +16,7 @@
     <!-- Regresado -->
     <template v-if="e.estado === 'Devuelto'">
       <div class="flex items-start gap-3">
-        <span class="w-7 h-7 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center text-[13px] flex-shrink-0">↩</span>
+        <span class="w-7 h-7 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center flex-shrink-0"><Icono nombre="regresar" class="w-4 h-4" /></span>
         <div class="flex-1 min-w-0">
           <p class="text-[13px] font-semibold text-amber-950">
             {{ e.devuelto_por_nombre || "Dirección" }} lo regresó para corregir
@@ -40,9 +40,9 @@
           </p>
           <p class="p-meta">
             Envió {{ e.enviado_por_nombre || "—" }}<template v-if="e.enviado_en"> · {{ haceCuanto(e.enviado_en) }}</template>
-            <template v-if="e.revisado_por"> · ✓ revisó {{ e.revisado_por }}</template>
+            <template v-if="e.revisado_por"> · <Icono nombre="check" class="w-3.5 h-3.5 inline -mt-0.5" :grosor="2.2" /> revisó {{ e.revisado_por }}</template>
           </p>
-          <p v-if="e.cambio_tras_envio" class="text-[12px] text-amber-800 mt-0.5">⚠ Cambió después de enviarse: quien decide lo verá en la Actividad.</p>
+          <p v-if="e.cambio_tras_envio" class="text-[12px] text-amber-800 mt-0.5"><Icono nombre="alerta" class="w-3.5 h-3.5 inline -mt-0.5" /> Cambió después de enviarse: quien decide lo verá en la Actividad.</p>
         </div>
         <div v-if="e.puede_regresar || e.puede_revisar || e.puede_aprobar" class="flex gap-2 flex-shrink-0">
           <button v-if="e.puede_regresar" type="button" class="p-btn-secondary text-red-700 border-red-200 hover:bg-red-50" :disabled="ocupado" @click="dialogo = 'regresar'">Regresar</button>
@@ -95,6 +95,7 @@
 <script setup>
 import { computed, ref, watch } from "vue";
 import DialogoMotivo from "@/components/aprobacion/DialogoMotivo.vue";
+import Icono from "@/components/Icono.vue";
 import { call } from "@/utils/frappe.js";
 import { haceCuanto } from "@/utils/formato.js";
 

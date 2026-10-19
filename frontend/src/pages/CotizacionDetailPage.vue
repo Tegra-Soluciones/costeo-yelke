@@ -669,10 +669,10 @@
                 <textarea v-model="waMessage" rows="4" class="field-input resize-y text-sm" />
               </div>
               <div class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-xs text-amber-700">
-                <p class="font-semibold mb-1">📎 Cómo adjuntar el PDF:</p>
+                <p class="font-semibold mb-1 flex items-center gap-1"><Icono nombre="clip" class="w-3.5 h-3.5" /> Cómo adjuntar el PDF:</p>
                 <ol class="list-decimal ml-4 space-y-0.5">
                   <li>Haz clic en <strong>Enviar</strong> — se descargará el PDF y se abrirá WhatsApp Web</li>
-                  <li>En WhatsApp Web, usa el botón de adjuntar (📎) y selecciona el PDF descargado</li>
+                  <li>En WhatsApp Web, usa el botón de adjuntar (el clip) y selecciona el PDF descargado</li>
                 </ol>
               </div>
             </div>
@@ -867,6 +867,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, watch, defineComponent, h } from "vue";
 import { RouterLink, useRouter, useRoute } from "vue-router";
+import Icono from "@/components/Icono.vue";
 import PageHeader from "@/components/PageHeader.vue";
 import HistorialModal from "@/components/HistorialModal.vue";
 import AttachmentsPanel from "@/components/AttachmentsPanel.vue";

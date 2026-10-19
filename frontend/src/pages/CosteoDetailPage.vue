@@ -1592,7 +1592,7 @@
         <!-- ═══════════ TABLERO ═══════════ -->
         <div v-if="pVista === 'tablero'" class="space-y-4">
           <VacioEstado
-            v-if="!hasPlan" icono="📋" titulo="Aún no has creado el plan de producción"
+            v-if="!hasPlan" icono="lista" titulo="Aún no has creado el plan de producción"
             detalle="Se crean los BOMs y el plan (ligado a la orden de venta, con el almacén de materias primas y lo que falta comprar según inventario)."
           />
           <template v-else>
@@ -1645,7 +1645,7 @@
                 </FilaLista>
               </div>
             </div>
-            <VacioEstado v-else icono="✓" titulo="No hay nada pendiente" detalle="Todo lo de esta orden de venta está al día." />
+            <VacioEstado v-else icono="check-circulo" titulo="No hay nada pendiente" detalle="Todo lo de esta orden de venta está al día." />
           </template>
         </div>
 
@@ -1953,7 +1953,7 @@
              una ya lleva heredada la ficha de manufactura del paso anterior. -->
         <div v-else-if="pVista === 'ordenes'" class="space-y-3">
           <VacioEstado
-            v-if="!subOcs.length" icono="🏭"
+            v-if="!subOcs.length" icono="taller"
             titulo="Aún no has creado las órdenes a talleres"
             detalle="Se crea una orden por proveedor (corte, costura, bordado…) — las etapas que comparten taller quedan juntas en la misma orden, cada una con su servicio y BOM de subcontratación."
           />
@@ -1982,7 +1982,7 @@
         <!-- ═══════════ LOTE ═══════════ -->
         <template v-else-if="pVista === 'lote'">
           <VacioEstado
-            v-if="!loteActivo" icono="📦" titulo="Elige un lote en el menú"
+            v-if="!loteActivo" icono="paquete" titulo="Elige un lote en el menú"
             detalle="O abre uno nuevo con “+ Nuevo lote”."
           />
           <template v-else>
@@ -2024,7 +2024,7 @@
                 </FilaLista>
               </div>
               <VacioEstado
-                v-else icono="📦" titulo="Este lote todavía no tiene materiales"
+                v-else icono="paquete" titulo="Este lote todavía no tiene materiales"
                 detalle="Se reparten al dividir la solicitud de material en lotes de entrega, en Preparación."
               />
             </div>
@@ -2612,7 +2612,7 @@
                  el botón para generarlas queda inalcanzable -- la sección se veía
                  en blanco debajo de "Flujo de este lote". -->
             <VacioEstado
-              v-if="!(loteActivo.paradas || []).length" icono="🏭"
+              v-if="!(loteActivo.paradas || []).length" icono="taller"
               titulo="Este lote todavía no tiene talleres"
               detalle="Se crea una orden por proveedor (corte, costura, bordado…) — las etapas que comparten taller quedan juntas en la misma orden, cada una con su servicio y BOM de subcontratación."
             />
@@ -2623,7 +2623,7 @@
             <div v-else-if="pPasoLote === 'entrega'" class="space-y-3">
               <VacioEstado
                 v-if="!loteActivo.entrega || !loteActivo.entrega.producido"
-                icono="⏳︎" titulo="Todavía no hay prendas terminadas"
+                icono="reloj" titulo="Todavía no hay prendas terminadas"
                 :detalle="`${talleresPendientesLote} taller(es) por entregar. La remisión se arma sola con lo que produzca este lote.`"
               />
               <template v-else>
@@ -2728,7 +2728,7 @@
               <template #derecha><Pill :estado="f.pill.estado" :texto="f.pill.texto" /></template>
             </FilaLista>
           </div>
-          <VacioEstado v-else icono="📭" :titulo="envVacio.titulo" :detalle="envVacio.detalle" />
+          <VacioEstado v-else icono="bandeja" :titulo="envVacio.titulo" :detalle="envVacio.detalle" />
 
           <!-- La remisión de TODA la orden de venta (sin lote). Las de cada lote se
                crean desde su paso Entrega; esta queda aquí para los pedidos que no se
@@ -2763,11 +2763,11 @@
               </template>
             </FilaLista>
           </div>
-          <VacioEstado v-else icono="🧾" titulo="No hay facturas en este filtro" detalle="Cambia el filtro de arriba para ver las demás." />
+          <VacioEstado v-else icono="factura" titulo="No hay facturas en este filtro" detalle="Cambia el filtro de arriba para ver las demás." />
         </div>
 
         <!-- Vista pedida por URL que este usuario no puede abrir (§6.3). -->
-        <VacioEstado v-else icono="🔒" :titulo="`No tienes acceso a ${sinAcceso.vista}`">
+        <VacioEstado v-else icono="candado" :titulo="`No tienes acceso a ${sinAcceso.vista}`">
           <template #detalle>
             <template v-if="sinAcceso.rol">Necesitas el rol <b class="text-ink">{{ sinAcceso.rol }}</b>. Pídeselo a quien administra los usuarios.</template>
             <template v-else>Pídele a quien administra los usuarios el rol que te falta.</template>
@@ -2795,7 +2795,7 @@
           <a v-if="dnDoc" class="p-btn-ghost h-8 text-[12.5px] px-2" :href="`/app/delivery-note/${dnDoc.name}`" target="_blank">ERPNext ↗</a>
         </template>
 
-        <VacioEstado v-if="panelRemision.error" icono="⚠︎" titulo="No se pudo abrir la remisión" :detalle="panelRemision.error" />
+        <VacioEstado v-if="panelRemision.error" icono="alerta" titulo="No se pudo abrir la remisión" :detalle="panelRemision.error" />
         <p v-else-if="panelRemision.cargando" class="p-meta">Preparando la remisión…</p>
         <template v-else-if="dnDoc">
           <p v-if="dnDoc.lote_ref" class="p-meta mb-3">Cantidades y almacén tomados de lo que produjo el {{ dnDoc.lote_ref }}.</p>
@@ -2897,7 +2897,7 @@
 
         <!-- Mientras carga, y si algo falló: estados propios, para no dejar nunca un
              "Preparando el documento…" eterno ni el documento del paso anterior. -->
-        <VacioEstado v-if="panelProv.error" icono="⚠︎" titulo="No se pudo abrir el documento" :detalle="panelProv.error" />
+        <VacioEstado v-if="panelProv.error" icono="alerta" titulo="No se pudo abrir el documento" :detalle="panelProv.error" />
         <p v-else-if="panelProv.cargando" class="p-meta">Preparando el documento…</p>
 
         <!-- Orden de compra (y, desde "⋯", solicitud de cotización / presupuesto) -->
@@ -2922,7 +2922,7 @@
             :puede-revisar="permisosValidacion.puede_revisar" :puede-aprobar="permisosValidacion.puede_aprobar"
           />
           <VacioEstado
-            v-else icono="📄" :titulo="VACIO_PASO[panelProv.tab]?.titulo || 'Todavía no hay documento'"
+            v-else icono="documento" :titulo="VACIO_PASO[panelProv.tab]?.titulo || 'Todavía no hay documento'"
             :detalle="VACIO_PASO[panelProv.tab]?.detalle || 'Créalo con el botón de abajo.'"
           />
         </div>
@@ -2947,7 +2947,7 @@
             :advancing="advancing" shipping-required
           />
           <VacioEstado
-            v-else icono="📥" titulo="Todavía no hay recibo de compra"
+            v-else icono="bandeja" titulo="Todavía no hay recibo de compra"
             detalle="Se crea con lo que pide la orden; después confirmas cuánto llegó de verdad."
           />
         </div>
@@ -2995,7 +2995,7 @@
           <button v-if="subPo" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="openPdf('Purchase Order', subPo.name)">Vista previa</button>
           <a v-if="subPo" class="p-btn-ghost h-8 text-[12.5px] px-2" :href="`/app/purchase-order/${subPo.name}`" target="_blank">ERPNext ↗</a>
         </template>
-        <VacioEstado v-if="panelOcTaller.error" icono="⚠︎" titulo="No se pudo abrir la orden" :detalle="panelOcTaller.error" />
+        <VacioEstado v-if="panelOcTaller.error" icono="alerta" titulo="No se pudo abrir la orden" :detalle="panelOcTaller.error" />
         <p v-else-if="panelOcTaller.cargando || !subPo" class="p-meta">Cargando la orden…</p>
         <template v-else>
           <FranjaAprobacion
@@ -3065,10 +3065,10 @@
           <button v-if="pinvDoc" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="printDocView('Purchase Invoice', pinvDoc.name)">Imprimir</button>
           <a v-if="pinvDoc" class="p-btn-ghost h-8 text-[12.5px] px-2" :href="`/app/purchase-invoice/${pinvDoc.name}`" target="_blank">ERPNext ↗</a>
         </template>
-        <VacioEstado v-if="panelFactura.error" icono="⚠︎" titulo="No se pudo abrir la factura" :detalle="panelFactura.error" />
+        <VacioEstado v-if="panelFactura.error" icono="alerta" titulo="No se pudo abrir la factura" :detalle="panelFactura.error" />
         <p v-else-if="panelFactura.cargando" class="p-meta">Preparando la factura…</p>
         <VacioEstado
-          v-else-if="panelFactura.bloqueo && !pinvDoc" icono="⏳"
+          v-else-if="panelFactura.bloqueo && !pinvDoc" icono="reloj"
           titulo="Todavía no se factura este taller" :detalle="panelFactura.bloqueo"
         />
         <!-- Con documento Y bloqueo: se ve, pero el pie no trae acciones. -->

@@ -22,7 +22,7 @@
           <button v-for="a in atencion" :key="a.t" type="button" class="w-full text-left px-4 h-12 flex items-center gap-3 text-[13px]" @click="emit('ir', a.ir)">
             <span class="p-dot" :class="a.d"></span><span class="flex-1">{{ a.t }}</span><span class="text-ink-light">›</span>
           </button>
-          <p v-if="!atencion.length" class="px-4 h-12 flex items-center text-[13px] text-ink-muted">Nada pendiente ✓</p>
+          <p v-if="!atencion.length" class="px-4 h-12 flex items-center gap-2 text-[13px] text-ink-muted"><Icono nombre="check-circulo" class="w-4 h-4 text-emerald-600" />Nada pendiente</p>
         </div>
       </div>
     </template>
@@ -52,6 +52,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from "vue";
+import Icono from "@/components/Icono.vue";
 import { call } from "@/utils/frappe.js";
 import { dineroCorto, fecha, numero } from "@/utils/formato.js";
 

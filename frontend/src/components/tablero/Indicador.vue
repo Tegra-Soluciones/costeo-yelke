@@ -6,14 +6,14 @@
 <template>
   <div class="bg-white p-4 flex flex-col min-w-0" :class="grande ? 'lg:p-5' : ''">
     <div class="flex items-center gap-2">
-      <span v-if="icono" class="w-6 h-6 rounded-md flex items-center justify-center text-[13px]" :class="tonoIcono">{{ icono }}</span>
+      <span v-if="icono" class="w-6 h-6 rounded-md flex items-center justify-center" :class="tonoIcono"><Icono :nombre="icono" class="w-3.5 h-3.5" :grosor="2" /></span>
       <p class="p-meta truncate">{{ etiqueta }}</p>
     </div>
     <p class="font-semibold tracking-tight leading-none mt-1.5" :class="grande ? 'text-[44px] lg:text-[52px]' : 'text-[26px]'">{{ valor }}</p>
     <p v-if="delta !== undefined" class="text-[11.5px] mt-1.5">
       <template v-if="delta == null"><span class="text-ink-light">{{ periodo ? "sin datos del periodo anterior" : "" }}</span></template>
       <template v-else>
-        <span class="font-semibold" :class="tono">{{ delta >= 0 ? "▲" : "▼" }} {{ Math.abs(delta).toFixed(puntos ? 1 : 0) }}{{ puntos ? " pts" : " %" }}</span>
+        <span class="font-semibold inline-flex items-center gap-0.5" :class="tono"><Icono :nombre="delta >= 0 ? 'sube' : 'baja'" class="w-3 h-3" :grosor="2.5" />{{ Math.abs(delta).toFixed(puntos ? 1 : 0) }}{{ puntos ? " pts" : " %" }}</span>
         <span class="text-ink-light"> {{ periodo }}</span>
       </template>
     </p>
@@ -28,6 +28,7 @@
 <script setup>
 import { computed } from "vue";
 import Sparkline from "@/components/tablero/Sparkline.vue";
+import Icono from "@/components/Icono.vue";
 
 const props = defineProps({
   etiqueta: String,

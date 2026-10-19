@@ -28,7 +28,7 @@
       <input v-model="waModal.phone" type="tel" class="field-input mb-3" placeholder="+52 55 1234 5678" />
       <label class="field-label">Mensaje</label>
       <textarea v-model="waModal.message" rows="3" class="field-input mb-3"></textarea>
-      <p class="text-[11.5px] text-ink-light mb-4">Se descargará el PDF y se abrirá WhatsApp Web — adjúntalo ahí con el botón 📎.</p>
+      <p class="text-[11.5px] text-ink-light mb-4">Se descargará el PDF y se abrirá WhatsApp Web — adjúntalo ahí con el botón del clip.</p>
       <div class="flex justify-end gap-2">
         <button class="px-3 py-1.5 text-[13px] text-ink-muted hover:bg-surface-raised rounded-lg" @click="waModal.open = false">Cancelar</button>
         <button :disabled="!waModal.phone" class="px-4 py-1.5 text-[13px] font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded-lg" @click="onSendWhatsapp">Enviar</button>

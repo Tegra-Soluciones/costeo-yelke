@@ -18,10 +18,10 @@
             @click="selectTipo(tipo)"
           >
             <div
-              class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
+              class="w-12 h-12 rounded-xl flex items-center justify-center text-ink-muted"
               :style="`background-color: ${tipo.bg}`"
             >
-              {{ tipo.icon }}
+              <Icono :nombre="tipo.icon" class="w-6 h-6" />
             </div>
             <div>
               <p class="font-semibold text-gray-900 text-sm mb-1">{{ tipo.label }}</p>
@@ -196,7 +196,7 @@
               </div>
 
               <p v-if="!form.stock_uom" class="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
-                ⚠ Primero selecciona la UOM base en la pestaña General
+                <Icono nombre="alerta" class="w-3.5 h-3.5 inline -mt-0.5" /> Primero selecciona la UOM base en la pestaña General
               </p>
 
               <!-- UDM base. Su factor es 1 por definición, pero su check de "paquete
@@ -587,7 +587,7 @@
             :style="`background-color: ${selectedTipo?.bg}; border-color: ${selectedTipo?.hex}30`"
           >
             <div class="flex items-center gap-2 mb-1">
-              <span class="text-xl leading-none">{{ selectedTipo?.icon }}</span>
+              <Icono v-if="selectedTipo?.icon" :nombre="selectedTipo.icon" class="w-5 h-5 text-ink-muted" />
               <p class="text-xs font-bold" :style="`color: ${selectedTipo?.textColor}`">{{ selectedTipo?.label }}</p>
             </div>
             <button
@@ -689,6 +689,7 @@
 import { ref, reactive, computed, onMounted, defineComponent, h } from "vue";
 import { RouterLink } from "vue-router";
 import PageHeader     from "@/components/PageHeader.vue";
+import Icono from "@/components/Icono.vue";
 import LinkInput      from "@/components/LinkInput.vue";
 import ItemPricesForm from "@/components/ItemPricesForm.vue";
 import { call }       from "@/utils/frappe.js";
@@ -707,7 +708,7 @@ const TIPOS = [
   {
     label: "Producto Terminado",
     group: "Productos Terminados",
-    icon: "📦",
+    icon: "paquete",
     hint: "Artículos terminados listos para venta. Tienen BOM e inventario.",
     tags: ["Ventas", "Manufactura", "Inventario"],
     isStock: true, isSales: true, isPurchase: false, includeManuf: true,
@@ -717,7 +718,7 @@ const TIPOS = [
   {
     label: "Materia Prima",
     group: "Materia prima",
-    icon: "🧵",
+    icon: "material",
     hint: "Insumos y materiales usados en producción o servicios.",
     tags: ["Compras", "Inventario"],
     isStock: true, isSales: false, isPurchase: true, includeManuf: true,
@@ -726,7 +727,7 @@ const TIPOS = [
   {
     label: "Sub-ensamblaje",
     group: "Sub-Ensamblajes",
-    icon: "🔧",
+    icon: "pieza",
     hint: "Componentes manufacturados internamente que se usan en productos finales.",
     tags: ["Manufactura", "Inventario"],
     isStock: true, isSales: false, isPurchase: false, includeManuf: true,
@@ -736,7 +737,7 @@ const TIPOS = [
   {
     label: "Servicio",
     group: "Servicios",
-    icon: "⚙️",
+    icon: "servicio",
     hint: "Servicios que se compran o venden. Sin inventario físico.",
     tags: ["Compras", "Sin inventario"],
     isStock: false, isSales: false, isPurchase: true, includeManuf: true,

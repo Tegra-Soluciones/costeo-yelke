@@ -6,7 +6,7 @@
   `pasos`: [{ clave, texto, estado, bloqueado, motivo }]
      estado: "hecho" | "facturado" | "actual" | "bloqueado" | "espera"
      bloqueado: no se puede abrir todavía (prerrequisito o falta de rol)
-     candado:   la razón es el ROL -> se dibuja 🔒 en vez del número
+     candado:   la razón es el ROL -> se dibuja el candado en vez del número
      motivo:    tooltip con la razón
 
   `seleccionado`: la clave del paso que se está viendo (anillo gris).
@@ -26,7 +26,11 @@
         :title="paso.motivo || paso.texto || undefined"
         @click="esNavegable(paso) && emit('ir', paso.clave)"
       >
-        <span class="n">{{ numero(paso, i) }}</span>
+        <span class="n">
+          <Icono v-if="paso.candado" nombre="candado" class="w-3 h-3" :grosor="2.2" />
+          <Icono v-else-if="paso.estado === 'hecho' || paso.estado === 'facturado'" nombre="check" class="w-3 h-3" :grosor="2.6" />
+          <template v-else>{{ i + 1 }}</template>
+        </span>
         <template v-if="!compacto">{{ paso.texto }}</template>
       </component>
     </template>
@@ -34,6 +38,7 @@
 </template>
 
 <script setup>
+import Icono from "@/components/Icono.vue";
 const props = defineProps({
   pasos: { type: Array, default: () => [] },
   seleccionado: { type: String, default: "" },
@@ -55,11 +60,7 @@ function claseDe(paso) {
     bloq: !!paso.bloqueado,
   };
 }
-// Hecho y facturado muestran ✓; sin rol, candado; el resto, su número -- un paso
-// que solo espera a que termine el anterior sigue siendo "el paso 3", no un muro.
-function numero(paso, i) {
-  if (paso.candado) return "🔒";
-  if (paso.estado === "hecho" || paso.estado === "facturado") return "✓";
-  return i + 1;
-}
+// Hecho y facturado muestran la palomita; sin rol, el candado; el resto, su número
+// (en la plantilla) -- un paso que solo espera a que termine el anterior sigue siendo
+// "el paso 3", no un muro.
 </script>

@@ -14,7 +14,7 @@
         class="flex items-start gap-3 py-2 hover:bg-amber-100/50 -mx-2 px-2 rounded-lg"
         @click="asegurarCompania(d.compania)"
       >
-        <span class="text-amber-800 mt-0.5">↩</span>
+        <Icono nombre="regresar" class="w-4 h-4 text-amber-800 mt-0.5 flex-shrink-0" />
         <div class="flex-1 min-w-0">
           <p class="text-[13px] font-medium text-amber-950">{{ d.etiqueta }} · <span class="font-mono">{{ d.name }}</span></p>
           <p v-if="d.motivo" class="text-[12.5px] text-amber-900 truncate">“{{ d.motivo }}”</p>
@@ -28,6 +28,7 @@
 <script setup>
 import { onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
+import Icono from "@/components/Icono.vue";
 import { asegurarCompania } from "@/composables/useCompany.js";
 import { call } from "@/utils/frappe.js";
 

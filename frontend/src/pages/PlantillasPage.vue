@@ -116,7 +116,7 @@
           </div>
 
           <p v-if="t._foreign" class="inline-flex self-start items-center gap-1 text-[10.5px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 mb-1">
-            ⚠️ {{ t.compañia }}
+            <Icono nombre="alerta" class="w-3 h-3" /> {{ t.compañia }}
           </p>
           <p class="text-[13px] font-semibold text-ink truncate" :title="t.nombre_plantilla">{{ t.nombre_plantilla || t.finished_item || "Plantilla" }}</p>
           <p v-if="t.description" class="text-[12px] text-ink-muted truncate mt-0.5">{{ t.description }}</p>
@@ -147,7 +147,7 @@
           <span class="font-semibold">{{ selected.length }}</span> plantilla{{ selected.length === 1 ? "" : "s" }} seleccionada{{ selected.length === 1 ? "" : "s" }}
         </p>
         <p v-if="hayPlantillasDeOtraCompania" class="text-[12px] text-amber-600 mt-0.5">
-          ⚠️ Incluye plantillas de otra compañía — revisa compañía y almacenes al terminar.
+          <Icono nombre="alerta" class="w-3.5 h-3.5 inline -mt-0.5" /> Incluye plantillas de otra compañía — revisa compañía y almacenes al terminar.
         </p>
       </div>
       <div class="flex items-center gap-2">
@@ -178,7 +178,7 @@
         </select>
 
         <p v-if="hayPlantillasDeOtraCompania" class="text-[12px] text-amber-600 mb-3">
-          ⚠️ Alguna plantilla seleccionada es de otra compañía. Revisa que la compañía
+          <Icono nombre="alerta" class="w-3.5 h-3.5 inline -mt-0.5" /> Alguna plantilla seleccionada es de otra compañía. Revisa que la compañía
           quede correcta y ajusta los almacenes del costeo antes de continuar, para
           evitar errores de stock/compra.
         </p>
@@ -269,6 +269,7 @@ import { useRouter } from "vue-router";
 import { call, db } from "@/utils/frappe";
 import PageHeader from "@/components/PageHeader.vue";
 import { useCompany } from "@/composables/useCompany.js";
+import Icono from "@/components/Icono.vue";
 
 const { state: companyState } = useCompany();
 

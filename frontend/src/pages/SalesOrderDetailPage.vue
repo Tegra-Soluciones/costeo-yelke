@@ -495,8 +495,8 @@
               <div><label class="field-label">Número <span class="text-red-400">*</span></label><input v-model="waPhone" type="tel" class="field-input" placeholder="+52 55 1234 5678" /></div>
               <div><label class="field-label">Mensaje</label><textarea v-model="waMessage" rows="4" class="field-input resize-y text-sm" /></div>
               <div class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-xs text-amber-700">
-                <p class="font-semibold mb-1">📎 Adjuntar PDF:</p>
-                <ol class="list-decimal ml-4 space-y-0.5"><li>Clic en <strong>Enviar</strong> — se descarga el PDF y abre WhatsApp Web</li><li>Usa el botón adjuntar (📎) y selecciona el PDF</li></ol>
+                <p class="font-semibold mb-1 flex items-center gap-1"><Icono nombre="clip" class="w-3.5 h-3.5" /> Adjuntar PDF:</p>
+                <ol class="list-decimal ml-4 space-y-0.5"><li>Clic en <strong>Enviar</strong> — se descarga el PDF y abre WhatsApp Web</li><li>Usa el botón adjuntar (el clip) y selecciona el PDF</li></ol>
               </div>
             </div>
             <div class="flex justify-end gap-3 px-6 py-4 border-t border-gray-100">
@@ -595,6 +595,7 @@
 import { ref, reactive, computed, onMounted, watch, defineComponent, h } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import PageHeader from "@/components/PageHeader.vue";
+import Icono from "@/components/Icono.vue";
 import AttachmentsPanel from "@/components/AttachmentsPanel.vue";
 import FranjaAprobacion from "@/components/aprobacion/FranjaAprobacion.vue";
 import BotonActividad from "@/components/aprobacion/BotonActividad.vue";

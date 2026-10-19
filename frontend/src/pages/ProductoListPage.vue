@@ -81,8 +81,8 @@
         <section v-if="groupedFiltered[tipo.group]?.length">
           <!-- Section header -->
           <div class="flex items-center gap-3 mb-4">
-            <div class="w-8 h-8 rounded-lg flex items-center justify-center text-lg flex-shrink-0" :style="`background-color: ${tipo.bg}`">
-              {{ tipo.icon }}
+            <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-ink-muted" :style="`background-color: ${tipo.bg}`">
+              <Icono :nombre="tipo.icon" class="w-[18px] h-[18px]" />
             </div>
             <div class="flex-1 min-w-0">
               <h2 class="text-sm font-bold text-gray-800">{{ tipo.label }}</h2>
@@ -111,7 +111,7 @@
                   class="w-full h-full object-cover"
                   @error="item.image = null"
                 />
-                <span v-else class="text-4xl opacity-40 select-none">{{ tipo.icon }}</span>
+                <Icono v-else :nombre="tipo.icon" class="w-10 h-10 text-ink-xlight" :grosor="1.4" />
 
                 <!-- Hover overlay -->
                 <div class="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors flex items-center justify-center">
@@ -160,7 +160,7 @@
                   class="w-full h-full object-cover rounded-lg"
                   @error="item.image = null"
                 />
-                <span v-else class="text-lg leading-none">{{ tipo.icon }}</span>
+                <Icono v-else :nombre="tipo.icon" class="w-5 h-5 text-ink-light" />
               </div>
 
               <!-- Text -->
@@ -194,15 +194,16 @@
 import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import PageHeader from "@/components/PageHeader.vue";
+import Icono from "@/components/Icono.vue";
 import { db } from "@/utils/frappe.js";
 
 const router = useRouter();
 
 const TIPOS = [
-  { group: "Productos Terminados", label: "Productos Terminados", icon: "📦", bg: "#fff4ef" },
-  { group: "Sub-Ensamblajes",      label: "Sub-Ensamblajes",      icon: "🔧", bg: "#f0fdf4" },
-  { group: "Materia prima",        label: "Materia Prima",        icon: "🧵", bg: "#fffbeb" },
-  { group: "Servicios",            label: "Servicios",            icon: "⚙️", bg: "#eff6ff" },
+  { group: "Productos Terminados", label: "Productos Terminados", icon: "paquete", bg: "#fff4ef" },
+  { group: "Sub-Ensamblajes",      label: "Sub-Ensamblajes",      icon: "pieza", bg: "#f0fdf4" },
+  { group: "Materia prima",        label: "Materia Prima",        icon: "material", bg: "#fffbeb" },
+  { group: "Servicios",            label: "Servicios",            icon: "servicio", bg: "#eff6ff" },
 ];
 
 const loading   = ref(true);

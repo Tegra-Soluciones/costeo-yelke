@@ -626,7 +626,7 @@
         >
           <img v-if="item.image" :src="item.image" :alt="item.item_name" class="w-full h-44 object-cover" />
           <div v-else class="h-44 flex items-center justify-center">
-            <span class="text-6xl opacity-30 select-none">{{ tipoFor(item.item_group)?.icon }}</span>
+            <Icono v-if="tipoFor(item.item_group)?.icon" :nombre="tipoFor(item.item_group).icon" class="w-16 h-16 text-ink-xlight" :grosor="1.2" />
           </div>
         </div>
 
@@ -636,7 +636,7 @@
             class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
             :style="`background-color: ${tipoFor(item.item_group)?.bg}; color: ${tipoFor(item.item_group)?.textColor}`"
           >
-            <span>{{ tipoFor(item.item_group)?.icon }}</span>
+            <Icono v-if="tipoFor(item.item_group)?.icon" :nombre="tipoFor(item.item_group).icon" class="w-3.5 h-3.5" />
             <span>{{ item.item_group }}</span>
           </div>
 
@@ -716,6 +716,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, defineComponent, h } from "vue";
 import PageHeader     from "@/components/PageHeader.vue";
+import Icono from "@/components/Icono.vue";
 import ItemPricesForm from "@/components/ItemPricesForm.vue";
 import { call }       from "@/utils/frappe.js";
 
@@ -738,10 +739,10 @@ const Td = defineComponent({ props: { class: String }, setup(p, { slots }) { ret
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TIPOS = [
-  { group: "Productos Terminados", icon: "📦", bg: "#fff4ef", textColor: "#c2410c" },
-  { group: "Sub-Ensamblajes",      icon: "🔧", bg: "#f0fdf4", textColor: "#166534" },
-  { group: "Materia prima",        icon: "🧵", bg: "#fffbeb", textColor: "#92400e" },
-  { group: "Servicios",            icon: "⚙️", bg: "#eff6ff", textColor: "#1e40af" },
+  { group: "Productos Terminados", icon: "paquete", bg: "#fff4ef", textColor: "#c2410c" },
+  { group: "Sub-Ensamblajes",      icon: "pieza", bg: "#f0fdf4", textColor: "#166534" },
+  { group: "Materia prima",        icon: "material", bg: "#fffbeb", textColor: "#92400e" },
+  { group: "Servicios",            icon: "servicio", bg: "#eff6ff", textColor: "#1e40af" },
 ];
 
 const loading        = ref(true);

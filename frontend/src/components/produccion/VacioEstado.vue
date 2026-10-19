@@ -5,7 +5,7 @@
 <template>
   <div class="p-panel p-12 text-center">
     <div class="w-10 h-10 rounded-full bg-surface-raised mx-auto flex items-center justify-center text-ink-light text-lg">
-      <slot name="icono">{{ icono }}</slot>
+      <slot name="icono"><Icono v-if="TRAZOS[icono]" :nombre="icono" class="w-5 h-5" /><template v-else>{{ icono }}</template></slot>
     </div>
     <p class="text-[14px] font-semibold mt-3">{{ titulo }}</p>
     <p v-if="detalle || $slots.detalle" class="p-meta mt-1"><slot name="detalle">{{ detalle }}</slot></p>
@@ -13,9 +13,12 @@
 </template>
 
 <script setup>
+import Icono, { TRAZOS } from "@/components/Icono.vue";
+
 defineProps({
   titulo: { type: String, required: true },
   detalle: { type: String, default: "" },
-  icono: { type: String, default: "⏳︎" },
+  // Nombre de un ícono de Icono.vue (alerta, documento, bandeja, reloj...).
+  icono: { type: String, default: "reloj" },
 });
 </script>

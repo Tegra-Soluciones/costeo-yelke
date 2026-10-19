@@ -46,7 +46,7 @@
         <p v-if="p.encargos[1]" class="text-[11.5px] text-ink-light mt-1">{{ p.encargos[0] }} de {{ p.encargos[1] }} órdenes a taller recibidas</p>
         <div v-for="(a, i) in p.alertas" :key="i" class="mt-2.5 rounded-xl border px-3.5 py-2 text-[12.5px] leading-snug flex gap-2"
              :class="a.tono === 'bad' ? 'bg-red-50 border-red-200 text-red-800' : 'bg-amber-50 border-amber-200 text-amber-900'">
-          <span>{{ a.tono === "bad" ? "⛔" : "⚠️" }}</span><span>{{ a.texto }}</span>
+          <Icono :nombre="a.tono === 'bad' ? 'bloqueo' : 'alerta'" class="w-4 h-4 flex-shrink-0 mt-px" /><span>{{ a.texto }}</span>
         </div>
       </RouterLink>
       <p v-if="!visibles.length" class="p-meta text-center py-10 lg:col-span-2">Nada aquí.</p>
@@ -57,6 +57,7 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
+import Icono from "@/components/Icono.vue";
 import { asegurarCompania } from "@/composables/useCompany.js";
 import { call } from "@/utils/frappe.js";
 import { dineroCorto, fecha } from "@/utils/formato.js";

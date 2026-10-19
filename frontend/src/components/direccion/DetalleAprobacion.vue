@@ -25,7 +25,7 @@
           <div class="flex items-center gap-1.5 mt-3 text-[12px] text-ink-muted flex-wrap">
             <span class="w-5 h-5 rounded-full flex items-center justify-center text-[8.5px] font-semibold" :class="colorAvatar(fila.por)">{{ iniciales(d.por_nombre || fila.por_nombre) }}</span>
             Envió {{ d.por_nombre || fila.por_nombre }} · {{ haceCuanto(d.enviado_en || fila.enviado_en) }}
-            <span v-if="d.revisado_por_nombre" class="text-violet-700">· ✓ revisó {{ primerNombre(d.revisado_por_nombre) }}</span>
+            <span v-if="d.revisado_por_nombre" class="text-violet-700 inline-flex items-center gap-1">· <Icono nombre="check" class="w-3.5 h-3.5" :grosor="2.2" /> revisó {{ primerNombre(d.revisado_por_nombre) }}</span>
           </div>
         </div>
 
@@ -34,7 +34,7 @@
             v-for="(a, i) in d.alertas" :key="i"
             class="rounded-xl border px-3.5 py-2.5 text-[12.5px] leading-snug flex gap-2"
             :class="a.tono === 'bad' ? 'bg-red-50 border-red-200 text-red-800' : 'bg-amber-50 border-amber-200 text-amber-900'"
-          ><span>{{ a.tono === "bad" ? "⛔" : "⚠️" }}</span><span>{{ a.texto }}</span></div>
+          ><Icono :nombre="a.tono === 'bad' ? 'bloqueo' : 'alerta'" class="w-4 h-4 flex-shrink-0 mt-px" /><span>{{ a.texto }}</span></div>
 
           <div class="p-panel divide-y divide-surface-border">
             <div v-for="(r, i) in d.resumen" :key="i" class="flex items-start justify-between gap-4 px-4 py-2.5">
@@ -123,7 +123,7 @@
             <a
               v-for="a in d.adjuntos" :key="a.url" :href="a.url" target="_blank"
               class="h-8 px-3 rounded-full border border-surface-border bg-white text-[12.5px] text-ink-muted font-medium inline-flex items-center gap-1.5 hover:bg-surface-raised max-w-full"
-            >📎 <span class="truncate">{{ a.nombre }}</span></a>
+            ><Icono nombre="clip" class="w-3.5 h-3.5 flex-shrink-0" /><span class="truncate">{{ a.nombre }}</span></a>
           </div>
 
           <div>
@@ -182,6 +182,7 @@ import { computed, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import ActividadDocumento from "@/components/aprobacion/ActividadDocumento.vue";
 import DialogoMotivo from "@/components/aprobacion/DialogoMotivo.vue";
+import Icono from "@/components/Icono.vue";
 import { asegurarCompania } from "@/composables/useCompany.js";
 import { call } from "@/utils/frappe.js";
 import { TIPOS_DOC, colorAvatar, dinero, fecha, haceCuanto, iniciales, numero } from "@/utils/formato.js";

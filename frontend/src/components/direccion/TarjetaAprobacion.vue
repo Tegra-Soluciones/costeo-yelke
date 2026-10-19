@@ -24,7 +24,7 @@
     <div class="flex items-center gap-1.5 text-[11.5px] text-ink-light" :class="renglon ? 'mt-0.5' : 'pt-1'">
       <span class="w-5 h-5 rounded-full flex items-center justify-center text-[8.5px] font-semibold flex-shrink-0" :class="colorAvatar(fila.por)">{{ iniciales(fila.por_nombre) }}</span>
       <span class="truncate">{{ primerNombre(fila.por_nombre) }} · {{ haceCuanto(fila.enviado_en) }}</span>
-      <span v-if="fila.revisado_por" class="ml-auto text-violet-700 font-medium whitespace-nowrap">✓ Revisó {{ primerNombre(fila.revisado_por_nombre) }}</span>
+      <span v-if="fila.revisado_por" class="ml-auto text-violet-700 font-medium whitespace-nowrap inline-flex items-center gap-1"><Icono nombre="check" class="w-3.5 h-3.5" :grosor="2.2" />Revisó {{ primerNombre(fila.revisado_por_nombre) }}</span>
       <span v-else-if="fila.cambio_tras_envio" class="ml-auto text-amber-700 font-medium whitespace-nowrap">Cambió tras enviarse</span>
     </div>
   </button>
@@ -32,6 +32,7 @@
 
 <script setup>
 import { TIPOS_DOC, colorAvatar, dinero, haceCuanto, iniciales } from "@/utils/formato.js";
+import Icono from "@/components/Icono.vue";
 
 defineProps({
   fila: { type: Object, required: true },

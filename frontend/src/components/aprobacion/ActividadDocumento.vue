@@ -20,9 +20,9 @@
         <div class="absolute left-[13px] top-2 bottom-2 w-px bg-surface-border"></div>
         <div v-for="(e, i) in visibles" :key="i" class="relative flex gap-3 pb-3.5 last:pb-0">
           <span
-            class="w-7 h-7 rounded-full flex items-center justify-center text-[12px] flex-shrink-0 z-10 ring-4 ring-white"
+            class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 z-10 ring-4 ring-white"
             :class="ICONO[e.tipo]?.[1] || 'bg-zinc-100 text-ink-muted'"
-          >{{ ICONO[e.tipo]?.[0] || "•" }}</span>
+          ><Icono :nombre="ICONO[e.tipo]?.[0] || 'punto'" class="w-3.5 h-3.5" :grosor="2" /></span>
           <div class="min-w-0 flex-1 pt-0.5">
             <p class="text-[12.5px] leading-snug"><b class="font-semibold">{{ e.nombre }}</b> {{ e.texto }}</p>
             <ul v-if="e.detalle?.length" class="mt-1 space-y-0.5">
@@ -54,6 +54,7 @@
 
 <script setup>
 import { computed, ref, watch } from "vue";
+import Icono from "@/components/Icono.vue";
 import { call } from "@/utils/frappe.js";
 import { fechaHora, haceCuanto } from "@/utils/formato.js";
 
@@ -67,19 +68,19 @@ const emit = defineEmits(["cuenta"]);
 
 // Ícono y color por tipo de evento (mismos del mockup docs/mockups/direccion.html).
 const ICONO = {
-  crea: ["＋", "bg-zinc-100 text-ink-muted"],
-  cambio: ["✎", "bg-zinc-100 text-ink-muted"],
-  adjunto: ["⧉", "bg-zinc-100 text-ink-muted"],
-  correo: ["✉", "bg-zinc-100 text-ink-muted"],
-  info: ["•", "bg-zinc-100 text-ink-muted"],
-  aviso: ["!", "bg-amber-50 text-amber-800"],
-  envio: ["➜", "bg-brand-50 text-brand-700"],
-  revision: ["✓", "bg-violet-50 text-violet-700"],
-  comentario: ["💬", "bg-sky-50 text-sky-700"],
-  devuelto: ["↩", "bg-red-50 text-red-700"],
-  aprobado: ["✓", "bg-emerald-50 text-emerald-700"],
-  validado: ["✓", "bg-emerald-50 text-emerald-700"],
-  cancelado: ["✕", "bg-zinc-100 text-ink-muted"],
+  crea: ["mas", "bg-zinc-100 text-ink-muted"],
+  cambio: ["editar", "bg-zinc-100 text-ink-muted"],
+  adjunto: ["clip", "bg-zinc-100 text-ink-muted"],
+  correo: ["correo", "bg-zinc-100 text-ink-muted"],
+  info: ["punto", "bg-zinc-100 text-ink-muted"],
+  aviso: ["alerta", "bg-amber-50 text-amber-800"],
+  envio: ["enviar", "bg-brand-50 text-brand-700"],
+  revision: ["check", "bg-violet-50 text-violet-700"],
+  comentario: ["comentario", "bg-sky-50 text-sky-700"],
+  devuelto: ["regresar", "bg-red-50 text-red-700"],
+  aprobado: ["check-circulo", "bg-emerald-50 text-emerald-700"],
+  validado: ["check-circulo", "bg-emerald-50 text-emerald-700"],
+  cancelado: ["x", "bg-zinc-100 text-ink-muted"],
 };
 
 const eventos = ref([]);

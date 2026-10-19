@@ -2,7 +2,7 @@
   <div v-if="open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" @click.self="$emit('cancel')">
     <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-5">
       <div class="flex items-center gap-2 mb-1">
-        <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full" :style="{ background: tipoInfo.bg, color: tipoInfo.textColor }">{{ tipoInfo.icon }} {{ tipoInfo.label }}</span>
+        <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full" :style="{ background: tipoInfo.bg, color: tipoInfo.textColor }"><Icono :nombre="tipoInfo.icon" class="w-3.5 h-3.5 inline -mt-0.5" /> {{ tipoInfo.label }}</span>
       </div>
       <p class="text-sm font-semibold text-ink">Dar de alta "{{ texto }}"</p>
       <p class="text-[12px] text-ink-muted mt-0.5 mb-4">Todavía no existe como artículo en el ERP. Grupo, inventario y demás banderas se asignan solas según el tipo — solo confirma lo de abajo.</p>
@@ -108,6 +108,7 @@
 <script setup>
 import { reactive, computed, watch } from "vue";
 import LinkInput from "@/components/LinkInput.vue";
+import Icono from "@/components/Icono.vue";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -126,17 +127,17 @@ const emit = defineEmits(["cancel", "confirm"]);
 
 const TIPOS = {
   material: {
-    label: "Materia Prima", icon: "🧵", bg: "#fffbeb", textColor: "#92400e",
+    label: "Materia Prima", icon: "material", bg: "#fffbeb", textColor: "#92400e",
     item_group: "Materia prima", hasSupplier: true,
     flags: { is_stock_item: 1, is_sales_item: 0, is_purchase_item: 1, include_item_in_manufacturing: 1 },
   },
   servicio_etapa: {
-    label: "Servicio", icon: "⚙️", bg: "#eff6ff", textColor: "#1e40af",
+    label: "Servicio", icon: "servicio", bg: "#eff6ff", textColor: "#1e40af",
     item_group: "Servicios", hasSupplier: true,
     flags: { is_stock_item: 0, is_sales_item: 0, is_purchase_item: 1, include_item_in_manufacturing: 1 },
   },
   subensamblaje_etapa: {
-    label: "Sub-ensamblaje", icon: "🔧", bg: "#f0fdf4", textColor: "#166534",
+    label: "Sub-ensamblaje", icon: "pieza", bg: "#f0fdf4", textColor: "#166534",
     item_group: "Sub-Ensamblajes", hasSupplier: false,
     flags: { is_stock_item: 1, is_sales_item: 0, is_purchase_item: 0, include_item_in_manufacturing: 1, is_sub_contracted_item: 1 },
   },

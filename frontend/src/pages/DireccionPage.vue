@@ -13,7 +13,7 @@
 <template>
   <div class="bg-surface" :class="esMovil ? 'min-h-full' : 'flex flex-col min-h-0'">
     <div v-if="permisos.cargado && !accede" class="p-10">
-      <VacioEstado icono="🔒" titulo="No tienes acceso a este panel" detalle="Es para Dirección y para quien revisa o aprueba documentos." />
+      <VacioEstado icono="candado" titulo="No tienes acceso a este panel" detalle="Es para Dirección y para quien revisa o aprueba documentos." />
     </div>
 
     <!-- ═════════════ CELULAR ═════════════ -->
@@ -100,7 +100,7 @@
         <div class="flex-1 min-w-0">
           <DetalleAprobacion v-if="abierta" :key="clave(abierta)" :fila="abierta" @resuelto="alResolver" />
           <div v-else class="h-full flex items-center justify-center text-center">
-            <div><p class="text-[34px]">✓</p><p class="font-semibold">{{ bandeja.items.length ? "Elige un documento" : "Todo al día" }}</p></div>
+            <div><Icono nombre="check-circulo" class="w-10 h-10 mx-auto text-emerald-600" /><p class="font-semibold mt-2">{{ bandeja.items.length ? "Elige un documento" : "Todo al día" }}</p></div>
           </div>
         </div>
       </div>
@@ -143,7 +143,7 @@
     <Transition name="fade">
       <div v-if="toast" class="fixed left-4 right-4 lg:left-auto lg:right-6 lg:w-[420px] z-[60] bg-ink text-white text-[13px] rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg"
            :style="esMovil ? 'bottom: calc(90px + env(safe-area-inset-bottom))' : 'bottom: 24px'">
-        <span>✓</span><span class="flex-1">{{ toast }}</span>
+        <Icono nombre="check-circulo" class="w-4 h-4 flex-shrink-0" /><span class="flex-1">{{ toast }}</span>
       </div>
     </Transition>
   </div>
@@ -153,6 +153,7 @@
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import VacioEstado from "@/components/produccion/VacioEstado.vue";
+import Icono from "@/components/Icono.vue";
 import TarjetaAprobacion from "@/components/direccion/TarjetaAprobacion.vue";
 import DetalleAprobacion from "@/components/direccion/DetalleAprobacion.vue";
 import ProyectosDireccion from "@/components/direccion/ProyectosDireccion.vue";
@@ -234,7 +235,7 @@ const ListaBandeja = defineComponent({
           cargando.value && !bandeja.items.length ? h("p", { class: "p-meta text-center py-10" }, "Cargando…")
             : error.value ? h("p", { class: "text-[13px] text-red-700 p-4" }, error.value)
             : vacio ? h("div", { class: "text-center py-14" }, [
-                h("p", { class: "text-[34px]" }, "✓"), h("p", { class: "text-[15px] font-semibold mt-1" }, "Todo al día"),
+                h(Icono, { nombre: "check-circulo", class: "w-10 h-10 mx-auto text-emerald-600" }), h("p", { class: "text-[15px] font-semibold mt-2" }, "Todo al día"),
                 h("p", { class: "p-meta" }, `No tienes nada pendiente${filtro.value !== "todos" ? " en este filtro" : ""}.`)])
             : tarjetas,
         ]),

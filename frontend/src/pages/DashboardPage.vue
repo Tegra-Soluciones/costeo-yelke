@@ -26,7 +26,7 @@
             <div v-if="vista === 'finanzas'" class="p-seg">
               <button v-for="(etq, k) in PERIODOS" :key="k" type="button" :class="periodo === k ? 'on' : ''" @click="periodo = k">{{ etq }}</button>
             </div>
-            <button type="button" class="p-btn-ghost h-8" :disabled="cargando" title="Actualizar" @click="cargar">↻</button>
+            <button type="button" class="p-btn-ghost h-8 px-2" :disabled="cargando" title="Actualizar" @click="cargar"><Icono nombre="actualizar" class="w-4 h-4" :class="cargando ? 'animate-spin' : ''" /></button>
           </div>
         </div>
 
@@ -54,6 +54,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
+import Icono from "@/components/Icono.vue";
 import RegresadosAMi from "@/components/aprobacion/RegresadosAMi.vue";
 import TableroFinanzas from "@/components/tablero/TableroFinanzas.vue";
 import TableroOperativo from "@/components/tablero/TableroOperativo.vue";
