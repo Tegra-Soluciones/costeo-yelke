@@ -140,6 +140,17 @@ def puede_ver_panel_direccion(user=None):
     return bool({ROL_DIRECTOR, "System Manager"} & set(frappe.get_roles(user)))
 
 
+# Quién ve las cifras financieras de la empresa (ventas, márgenes, utilidad, clientes,
+# lo que se paga a cada taller). El resto del equipo ve el tablero operativo de Inicio.
+ROLES_FINANZAS = (ROL_DIRECTOR, "Supervisor Yelke", "Analista de Costos Yelke", "System Manager")
+
+
+def puede_ver_finanzas(user=None):
+    import frappe
+
+    return bool(set(ROLES_FINANZAS) & set(frappe.get_roles(user)))
+
+
 def puede_aprobar_precios(user=None):
     import frappe
 

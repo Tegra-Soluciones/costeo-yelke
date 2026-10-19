@@ -32,6 +32,7 @@ from costeo_yelke.roles import (
     puede_aprobar_documentos,
     puede_aprobar_precios,
     puede_revisar_documentos,
+    puede_ver_finanzas,
     puede_ver_panel_direccion,
     usuarios_con_rol,
 )
@@ -598,6 +599,7 @@ def get_permisos_aprobacion() -> dict:
         # Solo el Director aterriza en el panel al abrir la app (System Manager, que es
         # el pase de desarrollador, también lo ve pero sigue entrando por Inicio).
         "es_director": ROL_DIRECTOR in frappe.get_roles(),
+        "ve_finanzas": puede_ver_finanzas(),
         "puede_aprobar": puede_aprobar_documentos(),
         "puede_revisar": puede_revisar_documentos(),
         "puede_aprobar_precios": puede_aprobar_precios(),

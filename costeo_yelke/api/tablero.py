@@ -138,8 +138,38 @@ def _delta(actual, anterior):
     return (actual - anterior) / abs(anterior) * 100
 
 
+def _exigir_finanzas():
+    from costeo_yelke.roles import puede_ver_finanzas
+
+    if not puede_ver_finanzas():
+        frappe.throw(_("Las cifras financieras son para Dirección."), frappe.PermissionError)
+
+
+def _composicion(desde, hasta, company):
+    """De cada peso vendido, cuánto es materia prima, maquila, otros costos, overhead y
+    utilidad: los costeos que se vendieron en el periodo, ponderados por la cantidad de
+    cada producto (la misma base que el margen)."""
+    cond, vals = _filtro("transaction_date", desde, hasta, company)
+    r = frappe.db.sql(f"""
+        select coalesce(sum(cp.total_sales_price), 0) venta,
+               coalesce(sum(cp.qty * cp.material_cost), 0) material,
+               coalesce(sum(cp.qty * cp.services_cost), 0) maquila,
+               coalesce(sum(cp.qty * (cp.shipping_cost + cp.labeling_cost + cp.packaging_cost)), 0) otros,
+               coalesce(sum(cp.qty * cp.overhead_amt), 0) overhead,
+               coalesce(sum(cp.total_sales_price - cp.qty * cp.total_unit_cost), 0) utilidad
+        from `tabCosteo Producto` cp
+        where cp.parent in (select distinct costeo from `tabSales Order` where {cond} and ifnull(costeo, '') != '')""",
+                      vals, as_dict=True)[0]
+    partes = [("material", _("Materia prima")), ("maquila", _("Maquila")), ("otros", _("Envío, etiquetas y empaque")),
+              ("overhead", _("Overhead")), ("utilidad", _("Utilidad"))]
+    return {"venta": flt(r.venta), "partes": [{"clave": k, "etiqueta": e, "monto": flt(r[k])} for k, e in partes]}
+
+
 @frappe.whitelist()
 def get_tablero(company: str = None, periodo: str = "anio") -> dict:
+    """Tablero FINANCIERO (Dirección, Supervisor, Analista de costos). El resto del
+    equipo ve get_tablero_operativo."""
+    _exigir_finanzas()
     periodo = periodo if periodo in PERIODOS else "anio"
     company = company or None
     desde, hasta, desde_ant, hasta_ant = _rango(periodo)
@@ -178,6 +208,7 @@ def get_tablero(company: str = None, periodo: str = "anio") -> dict:
         "cobros_registrados": bool(frappe.db.exists("Payment Entry Reference",
                                                     {"reference_doctype": "Sales Invoice", "docstatus": 1})),
         "serie": _serie_mensual(desde, hasta, company, periodo),
+        "composicion": _composicion(desde, hasta, company),
         "costeos": _costeos_por_etapa(company),
         "produccion": _produccion(company),
         "clientes": _top("Sales Order", "customer", "customer_name", "transaction_date", desde, hasta, company),
@@ -199,7 +230,8 @@ def _serie_mensual(desde, hasta, company, periodo):
         meses = hoy.month
     fin = get_last_day(hoy)
     datos = {}
-    for dt, campo, clave in (("Sales Order", "transaction_date", "vendido"), ("Sales Invoice", "posting_date", "facturado")):
+    for dt, campo, clave in (("Sales Order", "transaction_date", "vendido"), ("Sales Invoice", "posting_date", "facturado"),
+                             ("Purchase Order", "transaction_date", "compras")):
         cond, vals = _filtro(campo, inicio, fin, company)
         for r in frappe.db.sql(f"""select date_format(`{campo}`, '%%Y-%%m') mes, sum(base_net_total) t
                                    from `tab{dt}` where {cond} group by mes""", vals, as_dict=True):
@@ -209,7 +241,8 @@ def _serie_mensual(desde, hasta, company, periodo):
         d = add_months(inicio, i)
         k = f"{d.year}-{d.month:02d}"
         salida.append({"mes": k, "etiqueta": f"{_MESES[d.month - 1]} {str(d.year)[2:]}",
-                       "vendido": datos.get(k, {}).get("vendido", 0.0), "facturado": datos.get(k, {}).get("facturado", 0.0)})
+                       "vendido": datos.get(k, {}).get("vendido", 0.0), "facturado": datos.get(k, {}).get("facturado", 0.0),
+                       "compras": datos.get(k, {}).get("compras", 0.0)})
     return salida
 
 
@@ -267,3 +300,110 @@ def _top(doctype, campo, campo_nombre, campo_fecha, desde, hasta, company, extra
         salida.append({"clave": None, "nombre": _("Otros ({0})").format(len(resto)),
                        "monto": sum(flt(f.monto) for f in resto), "n": sum(f.n for f in resto)})
     return {"filas": salida, "total": total}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tablero OPERATIVO: para todo el equipo, sin cifras financieras de la empresa
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _costeos_vivos_sql(alias="po"):
+    return (f"({alias}.costeo is null or {alias}.costeo = '' or {alias}.costeo not in "
+            "(select name from tabCosteo where costeo_status in ('Completado', 'Cancelado')))")
+
+
+def _mi_trabajo(user):
+    from costeo_yelke.api.aprobaciones import DOCUMENTOS_CON_APROBACION, get_mis_devueltos
+
+    hace7 = frappe.utils.add_to_date(frappe.utils.now_datetime(), days=-7)
+    borradores = en_aprobacion = aprobados = 0
+    for dt in DOCUMENTOS_CON_APROBACION:
+        extra = {"nombre_plantilla": ["in", ["", None]]} if dt == "Costeo" else {}
+        borradores += frappe.db.count(dt, {"owner": user, "docstatus": 0, "estado_aprobacion_yelke": ["in", ["Borrador", "", None]], **extra})
+        en_aprobacion += frappe.db.count(dt, {"enviado_aprobacion_por": user, "docstatus": 0,
+                                              "estado_aprobacion_yelke": ["in", ["Pendiente", "Revisado"]]})
+        aprobados += frappe.db.count(dt, {"enviado_aprobacion_por": user, "aprobado_en_yelke": [">=", hace7]})
+    return {"borradores": borradores, "en_aprobacion": en_aprobacion,
+            "regresados": len(get_mis_devueltos()["items"]), "aprobados_7d": aprobados}
+
+
+def _entregas(company):
+    """Prendas pendientes de entregar de las OV validadas, por semana de su fecha de
+    entrega (lo vencido aparte), y las más próximas."""
+    hoy = getdate(nowdate())
+    lunes = add_days(hoy, -hoy.weekday())
+    cond, vals = ["so.docstatus = 1", "so.per_delivered < 99.99", "so.status not in ('Closed', 'Completed')"], []
+    if company:
+        cond.append("so.company = %s")
+        vals.append(company)
+    filas = frappe.db.sql(f"""
+        select so.name, so.customer_name, so.delivery_date, so.total_qty, so.per_delivered, so.costeo,
+               c.titulo
+        from `tabSales Order` so left join tabCosteo c on c.name = so.costeo
+        where {' and '.join(cond)} order by so.delivery_date asc""", vals, as_dict=True)
+    semanas = [{"etiqueta": _("Vencido"), "prendas": 0.0, "vencido": True}]
+    for i in range(8):
+        ini = add_days(lunes, 7 * i)
+        semanas.append({"etiqueta": _("Esta sem.") if i == 0 else f"{getdate(ini).day} {_MESES[getdate(ini).month - 1]}",
+                        "desde": str(ini), "prendas": 0.0})
+    for f in filas:
+        pendiente = flt(f.total_qty) * (1 - flt(f.per_delivered) / 100)
+        f.pendiente = pendiente
+        if f.delivery_date and getdate(f.delivery_date) < hoy:
+            semanas[0]["prendas"] += pendiente
+            continue
+        i = ((getdate(f.delivery_date) - lunes).days // 7) if f.delivery_date else 99
+        if 0 <= i < 8:
+            semanas[i + 1]["prendas"] += pendiente
+    proximas = [{"name": f.name, "proyecto": f.titulo or f.costeo or f.name, "cliente": f.customer_name,
+                 "costeo": f.costeo, "fecha": str(f.delivery_date) if f.delivery_date else None,
+                 "prendas": flt(f.total_qty), "pendiente": round(f.pendiente), "entregado_pct": round(flt(f.per_delivered)),
+                 "vencida": bool(f.delivery_date and getdate(f.delivery_date) < hoy)} for f in filas[:6]]
+    return {"semanas": semanas, "proximas": proximas, "abiertas": len(filas),
+            "vencidas": sum(1 for f in filas if f.delivery_date and getdate(f.delivery_date) < hoy)}
+
+
+def _compras_estado(company, subcontratadas):
+    cond, vals = ["po.docstatus = 1", f"po.is_subcontracted = {1 if subcontratadas else 0}", _costeos_vivos_sql()], []
+    if company:
+        cond.append("po.company = %s")
+        vals.append(company)
+    r = frappe.db.sql(f"""
+        select sum(po.per_received <= 0) por_recibir, sum(po.per_received > 0 and po.per_received < 99.99) parcial,
+               sum(po.per_received >= 99.99) recibidas, count(*) total,
+               sum(po.per_received < 99.99 and po.schedule_date < curdate()) vencidas,
+               sum(po.per_received >= 99.99 and po.per_billed < 99.99) por_facturar
+        from `tabPurchase Order` po where {' and '.join(cond)}""", vals, as_dict=True)[0]
+    return {k: int(flt(r[k])) for k in ("por_recibir", "parcial", "recibidas", "total", "vencidas", "por_facturar")}
+
+
+def _talleres_avance(company):
+    """Avance por taller de las órdenes a taller abiertas (sin importes)."""
+    cond, vals = ["po.docstatus = 1", "po.is_subcontracted = 1", _costeos_vivos_sql()], []
+    if company:
+        cond.append("po.company = %s")
+        vals.append(company)
+    filas = frappe.db.sql(f"""
+        select po.supplier clave, max(po.supplier_name) nombre, count(*) n, avg(least(po.per_received, 100)) avance,
+               sum(po.per_received < 99.99 and po.schedule_date < curdate()) vencidas
+        from `tabPurchase Order` po where {' and '.join(cond)} group by po.supplier
+        order by avance asc, n desc""", vals, as_dict=True)
+    return [{"nombre": f.nombre or f.clave, "ordenes": f.n, "avance": round(flt(f.avance)), "vencidas": int(flt(f.vencidas))}
+            for f in filas]
+
+
+@frappe.whitelist()
+def get_tablero_operativo(company: str = None) -> dict:
+    """Inicio para el equipo: su trabajo y el estado de la operación (entregas, compras,
+    talleres, facturas por capturar). Cantidades y fechas, sin cifras financieras."""
+    company = company or None
+    filtros_pi = {"docstatus": 0, **({"company": company} if company else {})}
+    return {
+        "usuario": frappe.utils.get_fullname(frappe.session.user),
+        "mi_trabajo": _mi_trabajo(frappe.session.user),
+        "entregas": _entregas(company),
+        "compras": _compras_estado(company, subcontratadas=False),
+        "maquila": _compras_estado(company, subcontratadas=True),
+        "talleres": _talleres_avance(company),
+        "facturas_borrador": frappe.db.count("Purchase Invoice", filtros_pi),
+        "costeos": _costeos_por_etapa(company),
+    }

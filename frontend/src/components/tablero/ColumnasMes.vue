@@ -8,12 +8,14 @@
 <template>
   <div>
     <div class="flex items-center gap-4 flex-wrap mb-3">
+      <template v-if="leyenda">
       <span v-for="s in series" :key="s.clave" class="flex items-center gap-1.5 text-[12px] text-ink-muted">
         <span class="w-2.5 h-2.5 rounded-[3px]" :style="{ background: s.color }"></span>{{ s.etiqueta }}
         <!-- El valor del último mes va aquí y no sobre la columna: ahí las dos etiquetas se enciman -->
         <b v-if="ultimo >= 0" class="font-semibold text-ink tabular-nums">{{ compacto(datos[ultimo][s.clave]) }}</b>
       </span>
       <span v-if="ultimo >= 0" class="text-[11.5px] text-ink-light">en {{ datos[ultimo].etiqueta }}</span>
+      </template>
       <button type="button" class="ml-auto text-[12px] text-ink-muted hover:text-ink font-medium" @click="tabla = !tabla">
         {{ tabla ? "Ver gráfica" : "Ver tabla" }}
       </button>
@@ -24,7 +26,7 @@
       <tbody>
         <tr v-for="m in datos" :key="m.mes">
           <td>{{ m.etiqueta }}</td>
-          <td v-for="s in series" :key="s.clave" class="text-right tabular-nums">{{ dinero(m[s.clave], moneda) }}</td>
+          <td v-for="s in series" :key="s.clave" class="text-right tabular-nums">{{ fmt(m[s.clave]) }}</td>
         </tr>
       </tbody>
     </table>
@@ -44,7 +46,7 @@
           />
           <rect v-if="activo === i" :x="xBanda(i)" :y="0" :width="banda" :height="ALTO - MARGEN_ABAJO" fill="#f4f4f5" rx="6" pointer-events="none" />
           <path
-            v-for="(s, j) in series" :key="s.clave" :d="columna(i, j, m[s.clave])" :fill="s.color"
+            v-for="(s, j) in series" :key="s.clave" :d="columna(i, j, m[s.clave])" :fill="m._color || s.color"
             pointer-events="none"
           />
           <text :x="xBanda(i) + banda / 2" :y="ALTO - 8" text-anchor="middle" class="fill-ink-muted" style="font-size: 11px">{{ m.etiqueta }}</text>
@@ -58,7 +60,7 @@
         <p class="text-[11px] text-ink-muted mb-1">{{ datos[activo].etiqueta }}</p>
         <div v-for="s in series" :key="s.clave" class="flex items-center gap-2 text-[12px]">
           <span class="w-3 h-0.5 rounded" :style="{ background: s.color }"></span>
-          <span class="font-semibold tabular-nums">{{ dinero(datos[activo][s.clave], moneda) }}</span>
+          <span class="font-semibold tabular-nums">{{ fmt(datos[activo][s.clave]) }}</span>
           <span class="text-ink-muted">{{ s.etiqueta }}</span>
         </div>
       </div>
@@ -75,7 +77,13 @@ const props = defineProps({
   series: { type: Array, default: () => [] }, // [{ clave, etiqueta, color }]
   moneda: { type: String, default: "MXN" },
   titulo: { type: String, default: "" },
+  // Una sola serie (p. ej. prendas por semana): sin leyenda, la nombra el título.
+  leyenda: { type: Boolean, default: true },
+  // Otra unidad que no sea dinero (prendas, órdenes...).
+  formato: { type: Function, default: null },
+  formatoCorto: { type: Function, default: null },
 });
+const fmt = (v) => (props.formato ? props.formato(v) : dinero(v, props.moneda));
 
 const ALTO = 220;
 const MARGEN_IZQ = 48;
@@ -126,7 +134,7 @@ function columna(i, j, v) {
   const r = Math.min(4, w / 2, (base - top) / 2);
   return `M${x},${base} V${top + r} Q${x},${top} ${x + r},${top} H${x + w - r} Q${x + w},${top} ${x + w},${top + r} V${base} Z`;
 }
-const compacto = (v) => dineroCorto(v, props.moneda).replace(".00", "");
+const compacto = (v) => (props.formatoCorto ? props.formatoCorto(v) : dineroCorto(v, props.moneda).replace(".00", ""));
 const tooltipPos = computed(() => {
   const x = xBanda(activo.value) + banda.value / 2;
   const izquierda = x > ancho.value - 170 ? x - 170 : x + 12;

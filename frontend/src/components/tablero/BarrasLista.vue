@@ -30,7 +30,9 @@ const props = defineProps({
   color: { type: String, default: "#f05208" },
   riel: { type: String, default: "#fff4ef" },
   vacio: { type: String, default: "Sin datos en el periodo." },
+  // Tope fijo (p. ej. 100 para porcentajes de avance); sin él, la mayor fila es el 100 %.
+  maximo: { type: Number, default: null },
 });
-const max = computed(() => Math.max(1, ...props.filas.map((f) => f.valor || 0)));
+const max = computed(() => props.maximo || Math.max(1, ...props.filas.map((f) => f.valor || 0)));
 const ancho = (v) => Math.max(v > 0 ? 1.5 : 0, ((v || 0) / max.value) * 100);
 </script>
