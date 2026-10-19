@@ -15,6 +15,7 @@ export function dineroCorto(n, moneda = "MXN") {
   const p = moneda && moneda !== "MXN" ? "" : "$";
   if (Math.abs(v) >= 1e6) return `${p}${(v / 1e6).toFixed(2)} M${s}`;
   if (Math.abs(v) >= 1e4) return `${p}${Math.round(v / 1e3)} k${s}`;
+  if (Math.abs(v) >= 1e3) return `${p}${(v / 1e3).toFixed(1)} k${s}`;
   return dinero(v, moneda);
 }
 

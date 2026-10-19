@@ -46,7 +46,7 @@
       </template>
       <p v-if="errorDlg" class="text-[12px] text-red-700 mt-2">{{ errorDlg }}</p>
     </div>
-    <p class="text-[11px] text-ink-light text-center pb-2">Las cifras son las mismas del tablero de Inicio.</p>
+    <p class="text-[11px] text-ink-light text-center pb-2">Año en curso, solo lo validado. Mismo cálculo que Inicio.</p>
   </div>
 </template>
 
@@ -68,18 +68,19 @@ const error = ref("");
 const ocupado = ref(false);
 const errorDlg = ref("");
 
+// Los mismos indicadores (y el mismo cálculo) que Inicio, del año en curso.
 const kpis = computed(() => {
-  const m = r.value?.metricas || {};
-  const mon = m.moneda || "MXN";
+  const t = r.value?.tablero;
+  if (!t) return [];
+  const v = t.ventas, c = t.compras, prod = t.produccion, mon = t.moneda;
   const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
-  const prod = m.produccion || {};
   return [
-    { l: "Vendido", v: dineroCorto(m.valor_vendido, mon), s: `${r.value?.ordenes || 0} órdenes · ${numero(m.prendas_vendidas)} prendas` },
-    { l: "Facturado", v: dineroCorto(m.valor_facturado, mon), s: `${pct(m.valor_facturado, m.valor_vendido)} % de lo vendido`, w: pct(m.valor_facturado, m.valor_vendido) },
-    { l: "Cotizado", v: dineroCorto(m.valor_cotizado, mon), s: `${pct(m.valor_vendido, m.valor_cotizado)} % se convirtió en venta`, w: pct(m.valor_vendido, m.valor_cotizado) },
-    { l: "Margen promedio", v: `${Number(m.margen_prom || 0).toFixed(1)} %`, s: "de los costeos validados" },
-    { l: "Compras de material", v: dineroCorto(m.compras_mp, mon), s: "" },
-    { l: "Maquila", v: dineroCorto(m.gasto_maquila, mon), s: `${prod.recibidas || 0} de ${prod.total || 0} órdenes a taller recibidas`, w: pct(prod.recibidas, prod.total) },
+    { l: "Vendido", v: dineroCorto(v.vendido, mon), s: `${v.ordenes} órdenes · ${numero(v.prendas)} prendas` },
+    { l: "Facturado", v: dineroCorto(v.facturado, mon), s: `${pct(v.facturado, v.vendido)} % de lo vendido`, w: pct(v.facturado, v.vendido) },
+    { l: "Cotizaciones ganadas", v: v.conversion == null ? "—" : `${Math.round(v.conversion)} %`, s: `${dineroCorto(v.ganado, mon)} de ${dineroCorto(v.cotizado, mon)}`, w: v.conversion },
+    { l: "Margen estimado", v: v.margen == null ? "—" : `${v.margen.toFixed(1)} %`, s: "ponderado por lo vendido" },
+    { l: "Compras", v: dineroCorto(c.material + c.maquila, mon), s: `material ${dineroCorto(c.material, mon)} · maquila ${dineroCorto(c.maquila, mon)}` },
+    { l: "Maquila en curso", v: prod.avance == null ? "—" : `${Math.round(prod.avance)} %`, s: `${prod.completas} de ${prod.total} órdenes completas`, w: prod.avance },
   ];
 });
 

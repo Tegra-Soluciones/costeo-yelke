@@ -1,266 +1,259 @@
+<!--
+  Inicio: el tablero del flujo costeo → venta → producción → facturación, con el
+  sistema de diseño de Producción (p-*). Los números salen de api/tablero.get_tablero:
+  solo lo VALIDADO, por periodo y contra el periodo anterior; las reglas de cada
+  indicador están en el docstring de ese módulo y en "Cómo se calcula" al pie.
+
+  Guía de visualización: un número principal (Vendido), fila de indicadores, una
+  serie en el tiempo (columnas, 2 series con leyenda y tabla), y barras de una serie
+  para las listas. Paleta validada con scripts/validate_palette.js.
+-->
 <template>
-  <div class="flex flex-col min-h-0">
-    <!-- Header -->
-    <div class="px-6 pt-6 pb-4 flex items-center justify-between">
-      <div>
-        <h1 class="text-xl font-bold text-ink">{{ nombre ? `Bienvenido, ${nombre}` : 'Bienvenido' }}</h1>
-        <p class="text-[13px] text-ink-muted mt-0.5">Panel de control · costeo, venta, manufactura subcontratada y facturación · prendas personalizadas por empresa</p>
-        <p class="text-[11px] text-ink-light mt-0.5 flex items-center gap-1"><svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Montos netos, sin IVA (el impuesto es trasladado, no es ingreso ni costo).</p>
-      </div>
-      <button class="doc-action" :disabled="loading" @click="load"><svg class="w-3.5 h-3.5" :class="loading ? 'animate-spin' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>Actualizar</button>
-    </div>
+  <div class="flex flex-col min-h-0 bg-surface">
+    <div class="flex-1 overflow-y-auto">
+      <div class="max-w-[1180px] mx-auto px-5 lg:px-8 py-6 space-y-5">
 
-    <!-- Lo que le regresaron a este usuario para corregir (aprobaciones de Dirección) -->
-    <div class="px-6 pb-4 empty:hidden"><RegresadosAMi /></div>
-
-    <div v-if="loading" class="flex-1 flex items-center justify-center text-ink-light">
-      <svg class="w-7 h-7 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-    </div>
-
-    <div v-else-if="d" class="flex-1 overflow-y-auto px-6 pb-10 space-y-5">
-      <!-- KPI cards -->
-      <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-        <div class="kpi">
-          <div class="kpi-ico bg-brand-50 text-brand-600"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m6 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/></svg></div>
-          <p class="kpi-val">{{ fmtN(av(d.total_costeos)) }}</p>
-          <p class="kpi-lbl">Costeos</p>
-        </div>
-        <div class="kpi">
-          <div class="kpi-ico bg-brand-50 text-brand-600"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg></div>
-          <p class="kpi-val">{{ fmtC(av(d.valor_vendido)) }}</p>
-          <p class="kpi-lbl">Valor vendido</p>
-        </div>
-        <div class="kpi">
-          <div class="kpi-ico bg-brand-50 text-brand-600"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 14l2 2 4-4m4 9V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z"/></svg></div>
-          <p class="kpi-val">{{ fmtC(av(d.valor_facturado)) }}</p>
-          <p class="kpi-lbl">Facturado</p>
-        </div>
-        <div class="kpi">
-          <div class="kpi-ico bg-brand-50 text-brand-600"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg></div>
-          <p class="kpi-val">{{ av(d.margen_prom).toFixed(1) }}<span class="text-base">%</span></p>
-          <p class="kpi-lbl">Margen prom.</p>
-        </div>
-        <div class="kpi">
-          <div class="kpi-ico bg-brand-50 text-brand-600"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"/></svg></div>
-          <p class="kpi-val">{{ fmtN(av(d.prendas_vendidas)) }}</p>
-          <p class="kpi-lbl">Prendas vendidas</p>
-        </div>
-        <div class="kpi">
-          <div class="kpi-ico bg-brand-50 text-brand-600"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg></div>
-          <p class="kpi-val">{{ fmtC(av(d.gasto_maquila)) }}</p>
-          <p class="kpi-lbl">Gasto en maquila</p>
-        </div>
-      </div>
-
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <!-- Pipeline de costeos -->
-        <div class="card">
-          <p class="card-title">Pipeline de costeos</p>
-          <div class="space-y-2.5 mt-3">
-            <div v-for="e in estadosArr" :key="e.key" class="flex items-center gap-3">
-              <span class="w-28 text-[12px] text-ink-muted shrink-0">{{ e.label }}</span>
-              <div class="flex-1 h-6 bg-surface-raised rounded-md overflow-hidden">
-                <div class="h-full rounded-md flex items-center" :class="e.bar" :style="{ width: barPct(e.count, maxEstado) }"></div>
-              </div>
-              <span class="w-8 text-right text-[13px] font-semibold text-ink">{{ fmtN(av(e.count)) }}</span>
+        <!-- Encabezado + filtro de periodo (una sola fila, arriba de todo) -->
+        <div class="flex items-end justify-between gap-4 flex-wrap">
+          <div>
+            <p class="p-eyebrow">Inicio · {{ companyState.selected || "Todas las compañías" }}</p>
+            <h1 class="p-h1 mt-1">{{ saludo }}{{ t?.usuario ? `, ${t.usuario.split(" ")[0]}` : "" }}</h1>
+            <p class="p-lede mt-0.5">Lo validado {{ textoPeriodo }}. Montos netos, sin IVA.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="p-seg">
+              <button v-for="(etq, k) in PERIODOS" :key="k" type="button" :class="periodo === k ? 'on' : ''" @click="periodo = k">{{ etq }}</button>
             </div>
+            <button type="button" class="p-btn-ghost h-8" :disabled="cargando" title="Actualizar" @click="cargar">↻</button>
           </div>
         </div>
 
-        <!-- Embudo comercial -->
-        <div class="card">
-          <p class="card-title">Embudo comercial</p>
-          <div class="space-y-3 mt-3">
-            <div v-for="f in embudo" :key="f.label">
-              <div class="flex items-center justify-between mb-1">
-                <span class="text-[12px] text-ink-muted">{{ f.label }}</span>
-                <span class="text-[13px] font-semibold text-ink">{{ fmtC(av(f.val)) }}</span>
-              </div>
-              <div class="h-3 bg-surface-raised rounded-full overflow-hidden">
-                <div class="h-full rounded-full" :class="f.bar" :style="{ width: barPct(f.val, embudo[0].val) }"></div>
-              </div>
-            </div>
-          </div>
-          <div class="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-surface-border">
-            <div class="text-center"><p class="text-lg font-bold text-ink">{{ fmtN(pct(d.valor_vendido, d.valor_cotizado) * prog) }}%</p><p class="text-[11px] text-ink-muted">Cotización → Venta</p></div>
-            <div class="text-center"><p class="text-lg font-bold text-ink">{{ fmtN(pct(d.valor_facturado, d.valor_vendido) * prog) }}%</p><p class="text-[11px] text-ink-muted">Venta → Factura</p></div>
-            <div class="text-center"><p class="text-lg font-bold text-ink">{{ fmtN(pct(d.valor_cobrado, d.valor_facturado) * prog) }}%</p><p class="text-[11px] text-ink-muted">Factura → Cobro</p></div>
-          </div>
-        </div>
-      </div>
+        <!-- Lo que le toca al usuario -->
+        <RegresadosAMi />
+        <RouterLink
+          v-if="cuentaBandeja && (permisos.puede_aprobar || permisos.puede_revisar)" to="/direccion"
+          class="p-panel px-4 py-3 flex items-center gap-3 hover:bg-zinc-50"
+        >
+          <span class="p-dot p-dot-now"></span>
+          <span class="text-[13px] flex-1"><b class="font-semibold">{{ cuentaBandeja }}</b> {{ cuentaBandeja === 1 ? "documento espera" : "documentos esperan" }} tu {{ permisos.puede_aprobar ? "aprobación" : "revisión" }}</span>
+          <span class="text-[12.5px] text-brand-600 font-medium">Abrir ›</span>
+        </RouterLink>
 
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <!-- Avance de producción -->
-        <div class="card flex flex-col items-center justify-center">
-          <p class="card-title self-start">Avance de maquila</p>
-          <svg viewBox="0 0 120 120" class="w-40 h-40 my-2">
-            <circle cx="60" cy="60" r="50" fill="none" stroke="var(--surface-raised, #f1f5f9)" stroke-width="12"/>
-            <circle cx="60" cy="60" r="50" fill="none" stroke="#ff6b15" stroke-width="12" stroke-linecap="round"
-              :stroke-dasharray="circ" :stroke-dashoffset="dashOffset" transform="rotate(-90 60 60)"/>
-            <text x="60" y="56" text-anchor="middle" class="fill-ink" style="font-size:22px;font-weight:700">{{ fmtN(prodPct * prog) }}%</text>
-            <text x="60" y="76" text-anchor="middle" class="fill-ink-muted" style="font-size:11px">{{ d.produccion.recibidas }}/{{ d.produccion.total }} recibidas</text>
-          </svg>
-          <div class="flex gap-4 text-[12px]">
-            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-brand-500"></span>Recibidas {{ d.produccion.recibidas }}</span>
-            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-slate-300"></span>Pendientes {{ d.produccion.pendientes }}</span>
-          </div>
-        </div>
+        <p v-if="error" class="text-[13px] text-red-700">{{ error }}</p>
 
-        <!-- Top clientes -->
-        <div class="card lg:col-span-2">
-          <p class="card-title">Top clientes (por valor de venta)</p>
-          <p v-if="!d.top_clientes.length" class="text-[13px] text-ink-muted mt-3">Sin ventas registradas.</p>
-          <div class="space-y-3 mt-3">
-            <div v-for="c in d.top_clientes" :key="c.customer">
-              <div class="flex items-center justify-between mb-1">
-                <span class="text-[13px] font-medium text-ink truncate">{{ c.customer }}</span>
-                <span class="text-[12px] text-ink-muted shrink-0 ml-2">{{ fmtC(av(c.monto)) }} · {{ fmtN(av(c.prendas)) }} prendas</span>
-              </div>
-              <div class="h-2.5 bg-surface-raised rounded-full overflow-hidden">
-                <div class="h-full rounded-full bg-brand-500" :style="{ width: barPct(c.monto, maxCliente) }"></div>
-              </div>
+        <div v-if="t" class="space-y-5 transition-opacity" :class="cargando ? 'opacity-50' : ''">
+          <!-- Número principal + indicadores -->
+          <div class="grid gap-px bg-surface-border rounded-xl overflow-hidden border border-surface-border lg:grid-cols-[1.35fr_1fr_1fr]">
+            <div class="bg-white p-5 lg:row-span-2 flex flex-col">
+              <p class="p-meta">Vendido</p>
+              <p class="text-[44px] lg:text-[52px] font-semibold tracking-tight leading-none mt-1">{{ dineroCorto(v.vendido, mon) }}</p>
+              <Delta class="mt-2" :valor="t.previo?.vendido" :periodo="previoTexto" />
+              <p class="p-meta mt-auto pt-4">{{ numero(v.ordenes) }} {{ v.ordenes === 1 ? "orden de venta" : "órdenes de venta" }} · {{ numero(v.prendas) }} prendas</p>
             </div>
+            <Tile etiqueta="Facturado" :valor="dineroCorto(v.facturado, mon)" :delta="t.previo?.facturado" :periodo="previoTexto"
+                  :nota="v.vendido ? `${pct(v.facturado, v.vendido)} % de lo vendido` : ''" :barra="pct(v.facturado, v.vendido)" />
+            <Tile etiqueta="Margen estimado" :valor="v.margen == null ? '—' : `${v.margen.toFixed(1)} %`" :delta="t.previo?.margen_pts" puntos
+                  :periodo="previoTexto" :nota="v.venta_costeada ? `utilidad ${dineroCorto(v.utilidad, mon)} de lo vendido` : 'sin ventas costeadas'" />
+            <Tile etiqueta="Cotizaciones ganadas" :valor="v.conversion == null ? '—' : `${Math.round(v.conversion)} %`"
+                  :nota="v.cotizado ? `${dineroCorto(v.ganado, mon)} de ${dineroCorto(v.cotizado, mon)} cotizado` : 'sin cotizaciones'" :barra="v.conversion" />
+            <Tile etiqueta="Compras" :valor="dineroCorto(c.material + c.maquila, mon)" :delta="t.previo?.compras" neutro :periodo="previoTexto"
+                  :nota="`material ${dineroCorto(c.material, mon)} · maquila ${dineroCorto(c.maquila, mon)}`" />
           </div>
-        </div>
-      </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <!-- Talleres -->
-        <div class="card">
-          <p class="card-title">Gasto de maquila por taller</p>
-          <p v-if="!d.talleres.length" class="text-[13px] text-ink-muted mt-3">Sin subcontratación registrada.</p>
-          <div class="space-y-3 mt-3">
-            <div v-for="t in d.talleres" :key="t.supplier">
-              <div class="flex items-center justify-between mb-1">
-                <span class="text-[13px] font-medium text-ink truncate">{{ t.supplier_name || t.supplier }}</span>
-                <span class="text-[12px] text-ink-muted shrink-0 ml-2">{{ fmtC(av(t.monto)) }} · {{ t.ordenes }} OC</span>
-              </div>
-              <div class="h-2.5 bg-surface-raised rounded-full overflow-hidden">
-                <div class="h-full rounded-full bg-gray-900" :style="{ width: barPct(t.monto, maxTaller) }"></div>
-              </div>
+          <!-- Serie en el tiempo -->
+          <section class="p-panel p-5">
+            <div class="mb-1">
+              <p class="text-[14px] font-semibold">Vendido y facturado por mes</p>
+              <p class="p-meta">{{ periodo === "anio" ? "Este año" : periodo === "mes" || periodo === "trimestre" ? "Últimos 6 meses" : "Últimos 12 meses" }} · órdenes de venta y facturas validadas</p>
             </div>
-          </div>
-        </div>
+            <ColumnasMes :datos="t.serie" :series="SERIES" :moneda="mon" titulo="Vendido y facturado por mes" class="mt-3" />
+          </section>
 
-        <!-- Estructura de costo vs venta -->
-        <div class="card">
-          <p class="card-title">Estructura de costo (subcontratación)</p>
-          <div class="mt-3 space-y-3">
-            <div class="h-6 flex rounded-md overflow-hidden text-[10px] font-semibold text-white">
-              <div class="bg-gray-800 flex items-center justify-center" :style="{ width: barPct(d.compras_mp, costoBase) }" title="Materia prima">MP</div>
-              <div class="bg-gray-900 flex items-center justify-center" :style="{ width: barPct(d.gasto_maquila, costoBase) }" title="Maquila">Maquila</div>
-            </div>
-            <div class="grid grid-cols-2 gap-3">
-              <div class="metric-box"><span class="w-2.5 h-2.5 rounded-full bg-gray-800 inline-block mr-1.5"></span><span class="text-[12px] text-ink-muted">Materia prima</span><p class="text-[15px] font-semibold text-ink mt-0.5">{{ fmtC(av(d.compras_mp)) }}</p></div>
-              <div class="metric-box"><span class="w-2.5 h-2.5 rounded-full bg-gray-900 inline-block mr-1.5"></span><span class="text-[12px] text-ink-muted">Maquila</span><p class="text-[15px] font-semibold text-ink mt-0.5">{{ fmtC(av(d.gasto_maquila)) }}</p></div>
-            </div>
-            <div class="flex items-center justify-between pt-3 border-t border-surface-border">
-              <span class="text-[13px] text-ink-muted">Utilidad bruta estimada</span>
-              <span class="text-base font-bold" :class="utilidad >= 0 ? 'text-brand-600' : 'text-red-500'">{{ fmtC(av(utilidad)) }}</span>
-            </div>
-            <p class="text-[11px] text-ink-light">Facturado ({{ fmtC(av(d.valor_facturado)) }}) − costo de MP y maquila.</p>
-          </div>
-        </div>
-      </div>
+          <div class="grid gap-5 lg:grid-cols-2">
+            <!-- Embudo comercial -->
+            <section class="p-panel p-5">
+              <p class="text-[14px] font-semibold">Del cotizado al cobrado</p>
+              <p class="p-meta mb-4">{{ textoPeriodo }}</p>
+              <BarrasLista :filas="embudo" :formato="(x) => dinero(x, mon)" />
+              <p v-if="!t.cobros_registrados" class="text-[11.5px] text-ink-light mt-3 leading-snug">
+                No hay cobros registrados en el sistema: las facturas oficiales y sus cobros se llevan en el sistema de facturación, así que “Cobrado” no aplica aquí.
+              </p>
+            </section>
 
-      <!-- Facturado por mes -->
-      <div class="card">
-        <p class="card-title">Facturación por mes</p>
-        <p v-if="!d.facturado_mes.length" class="text-[13px] text-ink-muted mt-3">Sin facturas registradas.</p>
-        <div v-else class="flex items-end gap-4 mt-4 h-40 px-2">
-          <div v-for="mm in d.facturado_mes" :key="mm.mes" class="flex-1 flex flex-col items-center justify-end gap-2 h-full">
-            <span class="text-[11px] font-semibold text-ink">{{ fmtCk(av(mm.monto)) }}</span>
-            <div class="w-full max-w-[54px] bg-gradient-to-t from-brand-500 to-brand-400 rounded-t-md transition-all" :style="{ height: barPct(mm.monto, maxMes) }"></div>
-            <span class="text-[11px] text-ink-muted">{{ mesLabel(mm.mes) }}</span>
+            <!-- Producción y costeos -->
+            <section class="p-panel p-5 space-y-5">
+              <div>
+                <p class="text-[14px] font-semibold">Maquila en curso</p>
+                <p class="p-meta">Órdenes a taller validadas de los proyectos que siguen abiertos</p>
+                <div v-if="t.produccion.total" class="mt-3">
+                  <div class="flex items-baseline justify-between">
+                    <p class="text-[26px] font-semibold tracking-tight">{{ t.produccion.avance == null ? "—" : `${Math.round(t.produccion.avance)} %` }}<span class="text-[13px] font-normal text-ink-muted"> recibido</span></p>
+                    <p class="p-meta">{{ t.produccion.completas }} de {{ t.produccion.total }} órdenes completas</p>
+                  </div>
+                  <div class="h-2 rounded-full bg-brand-50 mt-2"><div class="h-2 rounded-full bg-brand-600" :style="{ width: `${Math.min(100, t.produccion.avance || 0)}%` }"></div></div>
+                  <p class="text-[11.5px] text-ink-light mt-1.5">Avance ponderado por importe: una orden cuenta como completa solo al 100 % recibido.</p>
+                </div>
+                <p v-else class="p-meta mt-3">No hay órdenes a taller abiertas.</p>
+              </div>
+              <div>
+                <p class="text-[14px] font-semibold">Proyectos por etapa</p>
+                <p class="p-meta mb-3">Hoy · {{ t.costeos.total }} costeos (sin plantillas){{ t.costeos.cancelados ? ` · ${t.costeos.cancelados} cancelados aparte` : "" }}</p>
+                <BarrasLista :filas="etapas" :formato="(x) => numero(x)" vacio="Sin costeos." />
+              </div>
+            </section>
           </div>
+
+          <div class="grid gap-5 lg:grid-cols-3">
+            <section class="p-panel p-5">
+              <p class="text-[14px] font-semibold">Clientes</p>
+              <p class="p-meta mb-4">Vendido {{ textoPeriodo }}</p>
+              <BarrasLista :filas="lista(t.clientes, 'OV')" :formato="(x) => dineroCorto(x, mon)" vacio="Sin ventas en el periodo." />
+            </section>
+            <section class="p-panel p-5">
+              <p class="text-[14px] font-semibold">Talleres</p>
+              <p class="p-meta mb-4">Maquila encargada {{ textoPeriodo }}</p>
+              <BarrasLista :filas="lista(t.talleres, 'OC')" :formato="(x) => dineroCorto(x, mon)" vacio="Sin órdenes a taller en el periodo." />
+            </section>
+            <section class="p-panel p-5">
+              <p class="text-[14px] font-semibold">Proveedores de material</p>
+              <p class="p-meta mb-4">Compras {{ textoPeriodo }}</p>
+              <BarrasLista :filas="lista(t.proveedores, 'OC')" :formato="(x) => dineroCorto(x, mon)" vacio="Sin compras de material en el periodo." />
+            </section>
+          </div>
+
+          <!-- Transparencia: lo que NO se sumó y cómo se calcula -->
+          <section class="p-panel px-5 py-4">
+            <p class="text-[13px] font-semibold">En borrador (no se suma arriba)</p>
+            <div class="flex flex-wrap gap-x-6 gap-y-1 mt-1.5 text-[12.5px] text-ink-muted">
+              <span v-for="b in borradores" :key="b.l"><b class="text-ink font-semibold tabular-nums">{{ b.n }}</b> {{ b.l }} · {{ dineroCorto(b.monto, mon) }}</span>
+              <span v-if="!borradores.length">Nada en borrador.</span>
+            </div>
+            <details class="mt-3 group">
+              <summary class="list-none cursor-pointer text-[12.5px] text-brand-600 font-medium">Cómo se calcula cada número ›</summary>
+              <ul class="mt-2 space-y-1.5 text-[12px] text-ink-muted leading-relaxed list-disc pl-4">
+                <li><b>Solo documentos validados.</b> Un borrador todavía no es venta ni compra.</li>
+                <li><b>Por periodo</b>, según la fecha del documento, y contra el periodo anterior con los mismos días transcurridos.</li>
+                <li><b>Margen estimado</b>: (venta − costo) ÷ venta de los costeos que se vendieron, ponderado por lo que se vendió de cada uno.</li>
+                <li><b>Cotizaciones ganadas</b>: valor de las cotizaciones que se convirtieron en orden de venta ÷ valor cotizado.</li>
+                <li><b>Maquila en curso</b>: una orden a taller cuenta como completa solo al 100 % recibido; el avance pondera por importe.</li>
+                <li><b>Proyectos por etapa</b>: estado actual de cada costeo, sin plantillas ni versiones reemplazadas.</li>
+              </ul>
+            </details>
+          </section>
         </div>
+        <div v-else-if="cargando" class="py-20 text-center p-meta">Cargando…</div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from "vue";
-import { call } from "@/utils/frappe.js";
-import { useCompany } from "@/composables/useCompany.js";
+import { computed, defineComponent, h, onMounted, ref, watch } from "vue";
+import { RouterLink } from "vue-router";
 import RegresadosAMi from "@/components/aprobacion/RegresadosAMi.vue";
+import BarrasLista from "@/components/tablero/BarrasLista.vue";
+import ColumnasMes from "@/components/tablero/ColumnasMes.vue";
+import { cuentaBandeja, usePermisosAprobacion } from "@/composables/useAprobacion.js";
+import { useCompany } from "@/composables/useCompany.js";
+import { call } from "@/utils/frappe.js";
+import { dinero, dineroCorto, fecha, numero } from "@/utils/formato.js";
+
+const PERIODOS = { mes: "Mes", trimestre: "Trimestre", anio: "Año", "12m": "12 meses", todo: "Todo" };
+const CLAVE_PERIODO = "costeo_yelke.periodo_inicio";
+// Paleta validada (validate_palette.js): marca un paso más oscuro (≥ 3:1) y azul.
+const SERIES = [
+  { clave: "vendido", etiqueta: "Vendido", color: "#f05208" },
+  { clave: "facturado", etiqueta: "Facturado", color: "#2a78d6" },
+];
 
 const { state: companyState } = useCompany();
+const permisos = usePermisosAprobacion();
 
-const loading = ref(true);
-const d = ref(null);
-const prog = ref(0); // 0→1: progreso de la animación de entrada (count-up + barras)
-function av(n) { return (Number(n) || 0) * prog.value; }
+const t = ref(null);
+const cargando = ref(false);
+const error = ref("");
+const periodo = ref(leerPeriodo());
 
-function animateIn() {
-  prog.value = 0;
-  const start = performance.now();
-  const dur = 1000;
-  function tick(now) {
-    const t = Math.min(1, (now - start) / dur);
-    prog.value = 1 - Math.pow(1 - t, 3); // easeOutCubic
-    if (t < 1) requestAnimationFrame(tick);
-    else prog.value = 1;
-  }
-  requestAnimationFrame(tick);
+function leerPeriodo() {
+  try { return PERIODOS[localStorage.getItem(CLAVE_PERIODO)] ? localStorage.getItem(CLAVE_PERIODO) : "anio"; } catch { return "anio"; }
 }
 
-const MXN = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 });
-const NUM = new Intl.NumberFormat("es-MX", { maximumFractionDigits: 0 });
-function fmtC(n) { return MXN.format(Number(n) || 0); }
-function fmtN(n) { return NUM.format(Number(n) || 0); }
-function fmtCk(n) { const v = Number(n) || 0; return v >= 1000 ? "$" + (v / 1000).toFixed(0) + "k" : fmtC(v); }
-function pct(a, b) { return b ? Math.round((a / b) * 100) : 0; }
-function barPct(v, max) { const p = max > 0 ? Math.min(100, (Number(v) / max) * 100) : 0; return (p * prog.value) + "%"; }
-function mesLabel(m) { const [y, mo] = m.split("-"); return ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"][+mo - 1] + " " + y.slice(2); }
+const v = computed(() => t.value?.ventas || {});
+const c = computed(() => t.value?.compras || { material: 0, maquila: 0 });
+const mon = computed(() => t.value?.moneda || "MXN");
+const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+const saludo = computed(() => { const hr = new Date().getHours(); return hr < 12 ? "Buenos días" : hr < 19 ? "Buenas tardes" : "Buenas noches"; });
+const textoPeriodo = computed(() => {
+  if (!t.value) return "";
+  if (!t.value.desde) return "de todo el historial";
+  return `del ${fecha(t.value.desde)} al ${fecha(t.value.hasta)}`;
+});
+const previoTexto = computed(() => (t.value?.previo ? `vs ${fecha(t.value.previo.desde)} – ${fecha(t.value.previo.hasta)}` : ""));
 
-const ESTADOS = [
-  { key: "Borrador", label: "Borrador", bar: "bg-gray-300" },
-  { key: "Cotizado", label: "Cotizado", bar: "bg-brand-200" },
-  { key: "Orden de Venta", label: "Orden de venta", bar: "bg-brand-400" },
-  { key: "En Producción", label: "En producción", bar: "bg-brand-600" },
-  { key: "Completado", label: "Completado", bar: "bg-gray-900" },
-];
-const estadosArr = computed(() => ESTADOS.map(e => ({ ...e, count: d.value?.costeos_por_estado?.[e.key] || 0 })));
-const maxEstado = computed(() => Math.max(1, ...estadosArr.value.map(e => e.count)));
+const embudo = computed(() => {
+  const filas = [
+    { nombre: "Cotizado", valor: v.value.cotizado || 0 },
+    { nombre: "Cotizaciones ganadas", valor: v.value.ganado || 0, nota: v.value.cotizado ? `${pct(v.value.ganado, v.value.cotizado)} %` : "" },
+    { nombre: "Vendido (órdenes de venta)", valor: v.value.vendido || 0,
+      nota: v.value.vendido_directo ? `${dineroCorto(v.value.vendido_directo, mon.value)} sin cotización` : "" },
+    { nombre: "Facturado", valor: v.value.facturado || 0, nota: v.value.vendido ? `${pct(v.value.facturado, v.value.vendido)} % de lo vendido` : "" },
+  ];
+  if (t.value?.cobros_registrados) filas.push({ nombre: "Cobrado", valor: v.value.cobrado || 0, nota: v.value.facturado ? `${pct(v.value.cobrado, v.value.facturado)} %` : "" });
+  return filas;
+});
+const NOMBRE_ETAPA = { Borrador: "Costeo", Cotizado: "Cotizado", "Orden de Venta": "Orden de venta", "En Producción": "En producción", Entregado: "Entregado", Completado: "Completado" };
+const etapas = computed(() => (t.value?.costeos.etapas || []).map((e) => ({ nombre: NOMBRE_ETAPA[e.etapa] || e.etapa, valor: e.n })));
+const lista = (bloque, sufijo) => (bloque?.filas || []).map((f) => ({
+  nombre: f.nombre, valor: f.monto, otros: !f.clave,
+  nota: `${f.n} ${sufijo}${bloque.total ? ` · ${pct(f.monto, bloque.total)} %` : ""}`,
+}));
+const borradores = computed(() => {
+  const b = t.value?.borradores || {};
+  return [["Quotation", "cotizaciones"], ["Sales Order", "órdenes de venta"], ["Purchase Order", "órdenes de compra"], ["Sales Invoice", "facturas de venta"]]
+    .filter(([dt]) => b[dt]?.n).map(([dt, l]) => ({ l, n: b[dt].n, monto: b[dt].monto }));
+});
 
-const embudo = computed(() => [
-  { label: "Cotizado", val: d.value?.valor_cotizado || 0, bar: "bg-brand-300" },
-  { label: "Vendido", val: d.value?.valor_vendido || 0, bar: "bg-gray-900" },
-  { label: "Facturado", val: d.value?.valor_facturado || 0, bar: "bg-gray-900" },
-  { label: "Cobrado", val: d.value?.valor_cobrado || 0, bar: "bg-brand-600" },
-]);
+// ── Piezas del tablero ────────────────────────────────────────────────────────
+/** Cambio contra el periodo anterior. El color dice si es bueno (verde) o malo
+ *  (rojo); `neutro` (compras) no lo juzga. Siempre con flecha y texto. */
+const Delta = defineComponent({
+  props: { valor: Number, periodo: String, puntos: Boolean, neutro: Boolean },
+  setup(p) {
+    return () => {
+      if (p.valor == null) return h("p", { class: "text-[11.5px] text-ink-light" }, p.periodo ? "sin datos del periodo anterior" : "");
+      const sube = p.valor >= 0;
+      const tono = p.neutro || Math.abs(p.valor) < 0.05 ? "text-ink-muted" : sube ? "text-emerald-700" : "text-red-700";
+      const txt = `${sube ? "▲" : "▼"} ${Math.abs(p.valor).toFixed(p.puntos ? 1 : 0)}${p.puntos ? " pts" : " %"}`;
+      return h("p", { class: "text-[11.5px]" }, [h("span", { class: `font-semibold ${tono}` }, txt), h("span", { class: "text-ink-light" }, ` ${p.periodo}`)]);
+    };
+  },
+});
+const Tile = defineComponent({
+  props: { etiqueta: String, valor: String, delta: Number, periodo: String, nota: String, barra: Number, puntos: Boolean, neutro: Boolean },
+  setup(p) {
+    return () => h("div", { class: "bg-white p-4 flex flex-col" }, [
+      h("p", { class: "p-meta" }, p.etiqueta),
+      h("p", { class: "text-[24px] font-semibold tracking-tight leading-tight mt-0.5" }, p.valor),
+      p.delta !== undefined ? h(Delta, { valor: p.delta, periodo: p.periodo, puntos: p.puntos, neutro: p.neutro, class: "mt-0.5" }) : null,
+      p.barra != null ? h("div", { class: "h-1 rounded bg-brand-50 mt-2" }, [h("div", { class: "h-1 rounded bg-brand-600", style: { width: `${Math.min(100, p.barra || 0)}%` } })]) : null,
+      p.nota ? h("p", { class: "text-[11.5px] text-ink-muted mt-auto pt-1.5" }, p.nota) : null,
+    ]);
+  },
+});
 
-const maxCliente = computed(() => Math.max(1, ...(d.value?.top_clientes || []).map(c => c.monto || 0)));
-const maxTaller = computed(() => Math.max(1, ...(d.value?.talleres || []).map(t => t.monto || 0)));
-const maxMes = computed(() => Math.max(1, ...(d.value?.facturado_mes || []).map(m => m.monto || 0)));
-const costoBase = computed(() => Math.max(1, (d.value?.compras_mp || 0) + (d.value?.gasto_maquila || 0)));
-const utilidad = computed(() => (d.value?.valor_facturado || 0) - ((d.value?.compras_mp || 0) + (d.value?.gasto_maquila || 0)));
-
-const nombre = computed(() => (d.value?.usuario || "").split(" ")[0] || "");
-const circ = 2 * Math.PI * 50;
-const prodPct = computed(() => { const p = d.value?.produccion; return p && p.total ? Math.round((p.recibidas / p.total) * 100) : 0; });
-const dashOffset = computed(() => circ * (1 - (prodPct.value * prog.value) / 100));
-
-async function load() {
-  loading.value = true;
+async function cargar() {
+  cargando.value = true;
+  error.value = "";
   try {
-    d.value = await call("costeo_yelke.api.costeo_api.dashboard_metrics", { company: companyState.selected || undefined });
-    animateIn();
-  } catch { d.value = null; }
-  finally { loading.value = false; }
+    t.value = await call("costeo_yelke.api.tablero.get_tablero", { company: companyState.selected || undefined, periodo: periodo.value });
+  } catch (e) {
+    error.value = e.message || "No se pudo cargar el tablero.";
+  } finally {
+    cargando.value = false;
+  }
 }
-onMounted(load);
-watch(() => companyState.selected, load);
-</script>
 
-<style scoped>
-.kpi { @apply bg-white rounded-xl border border-surface-border p-4 flex flex-col; }
-.kpi-ico { @apply w-8 h-8 rounded-lg flex items-center justify-center mb-2.5; }
-.kpi-val { @apply text-2xl font-bold text-ink leading-none; }
-.kpi-lbl { @apply text-[12px] text-ink-muted mt-1.5; }
-.card { @apply bg-white rounded-xl border border-surface-border p-5; }
-.card-title { @apply text-sm font-semibold text-ink; }
-.metric-box { @apply bg-surface-raised/50 rounded-lg p-2.5; }
-.doc-action { @apply h-8 px-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-ink-muted border border-surface-border rounded-lg hover:bg-surface-raised transition-colors disabled:opacity-50; }
-</style>
+watch(periodo, (p) => { try { localStorage.setItem(CLAVE_PERIODO, p); } catch { /* opcional */ } cargar(); });
+watch(() => companyState.selected, cargar);
+onMounted(cargar);
+</script>

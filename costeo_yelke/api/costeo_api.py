@@ -3479,136 +3479,31 @@ def actualizar_factura_compra(name: str, posting_date=None, due_date=None, bill_
 
 @frappe.whitelist()
 def dashboard_metrics(company=None) -> dict:
-    """Métricas del flujo de costeo → venta → producción subcontratada → facturación.
-    `company`: filtro del selector global del navbar -- None = todas las compañías."""
-    from frappe.utils import add_months
+    """Compatibilidad: las mismas llaves de antes, calculadas ahora por
+    api/tablero.get_tablero (solo lo validado, margen ponderado, cobrado contra el
+    total redondeado, sin plantillas...; ver el docstring de ese módulo). Sin periodo:
+    todo el historial, como antes."""
+    from costeo_yelke.api.tablero import get_tablero
 
-    # Todas las métricas monetarias usan el NETO (sin IVA): el impuesto es trasladado,
-    # no es ingreso ni costo real. base_net_total = neto en moneda de la compañía.
-    def suma(dt, field="base_net_total", filters=None):
-        f = dict(filters or {})
-        f["docstatus"] = ["<", 2]
-        if company:
-            f["company"] = company
-        rows = frappe.get_all(dt, filters=f, fields=[f"sum({field}) as t"])
-        return flt(rows[0].t) if rows and rows[0].t else 0.0
-
-    # ── Costeos por estado (pipeline) ────────────────────────────────────────
-    # Costeo usa "compañia" (con ñ) como campo real -- "company" en este doctype
-    # no se mantiene sincronizado, no filtrar por él.
-    estados = ["Borrador", "Cotizado", "Orden de Venta", "En Producción", "Entregado", "Completado"]
-    por_estado = {e: 0 for e in estados}
-    costeo_filters = {"compañia": company} if company else {}
-    for r in frappe.get_all(
-        "Costeo", filters=costeo_filters, fields=["costeo_status", "count(name) as n"], group_by="costeo_status"
-    ):
-        st = r.get("costeo_status") or "Borrador"
-        por_estado[st] = por_estado.get(st, 0) + (r.n or 0)
-    total_costeos = sum(por_estado.values())
-
-    # ── Embudo de valor ──────────────────────────────────────────────────────
-    valor_cotizado = suma("Quotation")
-    valor_vendido = suma("Sales Order")
-    valor_facturado = suma("Sales Invoice")
-    compras_mp = suma("Purchase Order", filters={"is_subcontracted": 0})
-    gasto_maquila = suma("Purchase Order", filters={"is_subcontracted": 1})
-
-    # Cobrado: no existe un campo neto de "pagado" en Sales Invoice (paid_amount
-    # ya trae IVA mezclado), así que se prorratea -- de lo neto facturado
-    # (base_net_total), solo la proporción que ya está saldada según
-    # (base_grand_total - outstanding_amount) / base_grand_total.
-    valor_cobrado = frappe.db.sql(
-        f"""SELECT SUM(
-                CASE WHEN base_grand_total > 0
-                    THEN base_net_total * (base_grand_total - outstanding_amount) / base_grand_total
-                    ELSE 0
-                END
-            ) FROM `tabSales Invoice`
-            WHERE docstatus = 1 {"AND company = %s" if company else ""}""",
-        (company,) if company else (),
-    )
-    valor_cobrado = flt(valor_cobrado[0][0]) if valor_cobrado and valor_cobrado[0][0] else 0.0
-
-    # ── Prendas ──────────────────────────────────────────────────────────────
-    prendas_vendidas = suma("Sales Order", field="total_qty")
-
-    # ── Margen promedio (del costeo) ─────────────────────────────────────────
-    margen_prom = 0.0
-    cp = frappe.get_meta("Costeo").get_field("costeo_producto")
-    cp_dt = cp.options if cp else None
-    if cp_dt and frappe.db.has_column(cp_dt, "margin_pct"):
-        if company:
-            r = frappe.db.sql(
-                f"""SELECT AVG(margin_pct) FROM `tab{cp_dt}` cp
-                    WHERE margin_pct > 0 AND cp.parent IN (
-                        SELECT name FROM `tabCosteo` WHERE compañia = %s
-                    )""",
-                (company,),
-            )
-        else:
-            r = frappe.db.sql(f"SELECT AVG(margin_pct) FROM `tab{cp_dt}` WHERE margin_pct > 0")
-        margen_prom = flt(r[0][0]) if r and r[0][0] else 0.0
-
-    # ── Producción subcontratada (avance) ────────────────────────────────────
-    sub_po_filters = {"is_subcontracted": 1, "docstatus": 1}
-    if company:
-        sub_po_filters["company"] = company
-    sub_pos = frappe.get_all("Purchase Order", filters=sub_po_filters, pluck="name")
-    recibidas = 0
-    for po in sub_pos:
-        sco = frappe.db.get_value("Subcontracting Order", {"purchase_order": po, "docstatus": 1}, "name")
-        if sco and frappe.db.get_value("Subcontracting Receipt Item", {"subcontracting_order": sco, "docstatus": 1}, "parent"):
-            recibidas += 1
-    total_sub = len(sub_pos)
-
-    # ── Top clientes (por valor de OV) ───────────────────────────────────────
-    top_clientes_filters = {"docstatus": ["<", 2]}
-    if company:
-        top_clientes_filters["company"] = company
-    top_clientes = frappe.get_all(
-        "Sales Order",
-        filters=top_clientes_filters,
-        fields=["customer", "sum(base_net_total) as monto", "sum(total_qty) as prendas", "count(name) as ordenes"],
-        group_by="customer", order_by="monto desc", limit=6,
-    )
-
-    # ── Talleres (gasto de maquila por proveedor) ────────────────────────────
-    talleres_filters = {"is_subcontracted": 1, "docstatus": ["<", 2]}
-    if company:
-        talleres_filters["company"] = company
-    talleres = frappe.get_all(
-        "Purchase Order",
-        filters=talleres_filters,
-        fields=["supplier", "supplier_name", "sum(base_net_total) as monto", "count(name) as ordenes"],
-        group_by="supplier", order_by="monto desc", limit=6,
-    )
-
-    # ── Facturado por mes (últimos 6) ────────────────────────────────────────
-    facturado_mes = frappe.db.sql(
-        f"""SELECT DATE_FORMAT(posting_date, '%%Y-%%m') AS mes, SUM(base_net_total) AS monto
-           FROM `tabSales Invoice`
-           WHERE docstatus < 2 AND posting_date >= %s
-           {"AND company = %s" if company else ""}
-           GROUP BY mes ORDER BY mes""",
-        (add_months(nowdate(), -5), *([company] if company else [])), as_dict=True,
-    )
-
+    t = get_tablero(company=company, periodo="todo")
+    v, c, p = t["ventas"], t["compras"], t["produccion"]
     return {
-        "total_costeos": total_costeos,
-        "costeos_por_estado": por_estado,
-        "valor_cotizado": valor_cotizado,
-        "valor_vendido": valor_vendido,
-        "valor_facturado": valor_facturado,
-        "valor_cobrado": valor_cobrado,
-        "compras_mp": compras_mp,
-        "gasto_maquila": gasto_maquila,
-        "prendas_vendidas": prendas_vendidas,
-        "margen_prom": margen_prom,
-        "produccion": {"total": total_sub, "recibidas": recibidas, "pendientes": total_sub - recibidas},
-        "top_clientes": top_clientes,
-        "talleres": talleres,
-        "facturado_mes": facturado_mes,
-        "moneda": frappe.db.get_default("currency") or "MXN",
+        "total_costeos": t["costeos"]["total"],
+        "costeos_por_estado": {e["etapa"]: e["n"] for e in t["costeos"]["etapas"]},
+        "valor_cotizado": v["cotizado"],
+        "valor_vendido": v["vendido"],
+        "valor_facturado": v["facturado"],
+        "valor_cobrado": v["cobrado"],
+        "compras_mp": c["material"],
+        "gasto_maquila": c["maquila"],
+        "prendas_vendidas": v["prendas"],
+        "margen_prom": v["margen"] or 0.0,
+        "produccion": {"total": p["total"], "recibidas": p["completas"], "pendientes": p["total"] - p["completas"]},
+        "top_clientes": [{"customer": f["nombre"], "monto": f["monto"], "ordenes": f["n"]} for f in t["clientes"]["filas"]],
+        "talleres": [{"supplier": f["clave"], "supplier_name": f["nombre"], "monto": f["monto"], "ordenes": f["n"]}
+                     for f in t["talleres"]["filas"]],
+        "facturado_mes": [{"mes": m["mes"], "monto": m["facturado"]} for m in t["serie"]],
+        "moneda": t["moneda"],
         "usuario": frappe.utils.get_fullname(frappe.session.user),
     }
 

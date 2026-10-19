@@ -352,16 +352,13 @@ def get_proyectos() -> dict:
 
 @frappe.whitelist()
 def get_resumen(company: str = None) -> dict:
-    """Indicadores del tablero de Inicio (mismo cálculo) + lo que requiere atención."""
+    """Indicadores del tablero de Inicio (MISMO cálculo, api/tablero.py; aquí del año
+    en curso) + lo que requiere atención."""
     _exigir_director()
-    from costeo_yelke.api.costeo_api import dashboard_metrics
+    from costeo_yelke.api.tablero import get_tablero
 
-    m = dashboard_metrics(company=company)
     proyectos = get_proyectos()["proyectos"]
     return {
-        "metricas": {k: m.get(k) for k in ("valor_vendido", "valor_facturado", "valor_cotizado", "margen_prom",
-                                            "compras_mp", "gasto_maquila", "prendas_vendidas", "produccion",
-                                            "costeos_por_estado", "moneda")},
-        "ordenes": sum(t.get("ordenes") or 0 for t in m.get("top_clientes") or []),
+        "tablero": get_tablero(company=company, periodo="anio"),
         "atrasados": sum(1 for p in proyectos if p["grupo"] == "atrasados"),
     }
