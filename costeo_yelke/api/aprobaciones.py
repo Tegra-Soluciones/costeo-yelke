@@ -42,7 +42,8 @@ EN_APROBACION = (PENDIENTE, REVISADO)
 PREFIJO_DEVOLUCION = "Regresado para corregir: "
 HORAS_RECORDATORIO = 48
 
-# Pantalla del SPA de cada documento, para el enlace del aviso al autor.
+# Pantalla del SPA de cada documento, para el enlace del aviso al autor. La factura
+# de compra no tiene pantalla propia: se abre en el paso de su costeo (ver _ruta_doc).
 _RUTA_DOC = {
     "Costeo": "/costeo-yelke/costeo/{name}",
     "Quotation": "/costeo-yelke/cotizaciones/{name}",
@@ -107,8 +108,44 @@ def _ruta_panel(doctype, name):
     return f"/costeo-yelke/direccion?doc={doctype}/{name}"
 
 
+def _costeo_de_factura(name):
+    """Costeo de una factura de compra: por la OC o el recibo de sus renglones (mismo
+    camino que documentos_api.get_purchase_invoices), o por el documento del flete."""
+    filas = frappe.get_all("Purchase Invoice Item", filters={"parent": name},
+                           fields=["purchase_order", "purchase_receipt"])
+    po = next((f.purchase_order for f in filas if f.purchase_order), None)
+    if not po:
+        pr = next((f.purchase_receipt for f in filas if f.purchase_receipt), None)
+        if not pr and frappe.db.has_column("Purchase Invoice", "flete_origen"):
+            origen = frappe.db.get_value("Purchase Invoice", name, ["flete_origen_doctype", "flete_origen"], as_dict=True) or {}
+            if origen.get("flete_origen_doctype") == "Purchase Receipt":
+                pr = origen.flete_origen
+            elif origen.get("flete_origen_doctype") == "Delivery Note":
+                so = frappe.db.get_value("Delivery Note Item", {"parent": origen.flete_origen,
+                                                                "against_sales_order": ["is", "set"]}, "against_sales_order")
+                return frappe.db.get_value("Sales Order", so, "costeo") if so else None
+        if pr:
+            po = frappe.db.get_value("Purchase Receipt Item", {"parent": pr, "purchase_order": ["is", "set"]}, "purchase_order")
+    return frappe.db.get_value("Purchase Order", po, "costeo") if po and frappe.db.has_column("Purchase Order", "costeo") else None
+
+
 def _ruta_doc(doctype, name):
-    return (_RUTA_DOC.get(doctype) or "/costeo-yelke").format(name=name)
+    """Enlace al documento en el SPA. Lleva `compania` para que el SPA ponga el filtro
+    de compañía en la del documento antes de abrir la pantalla (router/index.js): sin
+    eso, un aviso de otra compañía abría la pantalla con el filtro equivocado."""
+    from urllib.parse import quote
+
+    ruta = (_RUTA_DOC.get(doctype) or "/costeo-yelke").format(name=quote(name))
+    params = {}
+    if doctype == "Purchase Invoice":
+        costeo = _costeo_de_factura(name)
+        if costeo:
+            ruta = f"/costeo-yelke/costeo/{quote(costeo)}"
+            params.update(step="7", highlight=name, doctype="Purchase Invoice")
+    compania = compania_de(doctype, name)
+    if compania:
+        params["compania"] = compania
+    return ruta + ("?" + "&".join(f"{k}={quote(str(v))}" for k, v in params.items()) if params else "")
 
 
 def _monto(doc):

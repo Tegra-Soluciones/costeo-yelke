@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { cargarPermisosAprobacion } from "@/composables/useAprobacion.js";
+import { asegurarCompania } from "@/composables/useCompany.js";
 
 const routes = [
   // El Director aterriza en su panel; los demás, en Inicio.
@@ -34,7 +35,16 @@ const routes = [
   { path: "/recordatorios", name: "RecordatoriosList", component: () => import("@/pages/RecordatoriosListPage.vue") },
 ];
 
-export default createRouter({
+const router = createRouter({
   history: createWebHistory("/costeo-yelke"),
   routes,
 });
+
+// Los enlaces de los avisos y del panel de Dirección traen ?compania= (ver
+// api/aprobaciones._ruta_doc): el filtro de compañía pasa a la del documento ANTES de
+// abrir la pantalla, para que una lista o un documento de otra compañía no salga vacío.
+router.beforeEach(async (to) => {
+  if (to.query.compania) await asegurarCompania(String(to.query.compania));
+});
+
+export default router;
