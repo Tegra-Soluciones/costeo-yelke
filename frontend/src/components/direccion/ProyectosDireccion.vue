@@ -19,7 +19,9 @@
       <RouterLink
         v-for="p in visibles" :key="p.name" :to="`/costeo/${encodeURIComponent(p.name)}`"
         class="p-panel px-4 py-3.5 block hover:bg-zinc-50 active:bg-zinc-50"
+        @click="asegurarCompania(p.compania)"
       >
+        <p v-if="p.compania" class="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-ink-light truncate mb-0.5">{{ p.compania }}</p>
         <div class="flex items-start gap-3">
           <div class="flex-1 min-w-0">
             <p class="text-[14.5px] font-semibold leading-tight truncate">{{ p.titulo }}</p>
@@ -55,6 +57,7 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
+import { asegurarCompania } from "@/composables/useCompany.js";
 import { call } from "@/utils/frappe.js";
 import { dineroCorto, fecha } from "@/utils/formato.js";
 

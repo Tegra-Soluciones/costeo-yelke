@@ -12,6 +12,7 @@
       <RouterLink
         v-for="d in items" :key="`${d.doctype}/${d.name}`" :to="ruta(d)"
         class="flex items-start gap-3 py-2 hover:bg-amber-100/50 -mx-2 px-2 rounded-lg"
+        @click="asegurarCompania(d.compania)"
       >
         <span class="text-amber-800 mt-0.5">↩</span>
         <div class="flex-1 min-w-0">
@@ -27,6 +28,7 @@
 <script setup>
 import { onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
+import { asegurarCompania } from "@/composables/useCompany.js";
 import { call } from "@/utils/frappe.js";
 
 const items = ref([]);

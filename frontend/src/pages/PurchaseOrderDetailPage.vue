@@ -375,6 +375,7 @@ import PageHeader from "@/components/PageHeader.vue";
 import FranjaAprobacion from "@/components/aprobacion/FranjaAprobacion.vue";
 import BotonActividad from "@/components/aprobacion/BotonActividad.vue";
 import { puedeValidarDirecto, usePermisosAprobacion } from "@/composables/useAprobacion.js";
+import { asegurarCompania } from "@/composables/useCompany.js";
 import { call, defaultPrintFormat } from "@/utils/frappe.js";
 
 const props  = defineProps({ name: { type: String, default: "" } });
@@ -732,6 +733,9 @@ onMounted(async () => {
     if (!isNew.value) {
       const data = await call("costeo_yelke.api.purchase_order_api.get_purchase_order", { name: props.name });
       syncFromPO(data);
+      // Abierto desde el panel de Dirección, un aviso o un enlace: el filtro de compañía
+      // pasa a la del documento para verlo con sus listas y valores de esa compañía.
+      asegurarCompania(data.company);
     }
   } catch (e) {
     showToast(e.message || "Error al cargar", "error");

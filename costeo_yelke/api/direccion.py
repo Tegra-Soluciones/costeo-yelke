@@ -11,7 +11,7 @@ from frappe.utils import cint, date_diff, flt, getdate, nowdate
 
 from costeo_yelke.api.aprobaciones import (
     DOCUMENTOS_CON_APROBACION, EN_APROBACION, _etiqueta, _nombre, _ruta_doc, _tarjetas, _campos,
-    estado_aprobacion,
+    compania_de, estado_aprobacion,
 )
 from costeo_yelke.roles import (
     nivel_aprobacion, puede_aprobar_documentos, puede_aprobar_precios, puede_revisar_documentos,
@@ -78,6 +78,59 @@ def _margen_costeo(costeo):
     return sum(vals) / len(vals) if vals else None
 
 
+def _uom(u):
+    return (u or "").split(" - ")[-1]
+
+
+def _desglose_costeo(costeo, moneda):
+    """De qué está hecho cada producto del costeo, por prenda: el costo unitario por
+    concepto, la lista de materiales (con su cantidad por prenda y proveedor) y los
+    servicios de cada etapa (con su taller). Es lo que Dirección necesita para decidir
+    si el precio y el margen tienen sentido."""
+    productos = frappe.get_all(
+        "Costeo Producto", filters={"parent": costeo},
+        fields=["finished_item", "talla_grupo_label", "variante_talla_de", "qty", "material_cost", "services_cost",
+                "shipping_cost", "labeling_cost", "packaging_cost", "overhead_pct", "overhead_amt", "total_unit_cost",
+                "unit_sales_price", "margin_pct", "total_sales_price"], order_by="idx asc")
+    detalle = frappe.get_all(
+        "Costeo Producto Detalle", filters={"parent": costeo},
+        fields=["finished_item", "concept_type", "item", "tipo_material", "internal_qty", "internal_uom", "unit_price",
+                "total", "supplier", "subensamblaje"], order_by="idx asc")
+    etapas = frappe.get_all(
+        "Etapas Costeo", filters={"parent": costeo},
+        fields=["producto_terminado", "etapa", "servicio", "proveedor", "precio_servicio", "lote_qty", "subensamblaje"],
+        order_by="idx asc")
+    codigos = {d.item for d in detalle if d.item} | {e.servicio for e in etapas if e.servicio} | {p.finished_item for p in productos}
+    nombres = dict(frappe.get_all("Item", filters={"name": ["in", list(codigos)]}, fields=["name", "item_name"],
+                                  as_list=True)) if codigos else {}
+    nombre = lambda c: nombres.get(c) or c
+
+    salida = []
+    for p in productos:
+        costos = [(_("Materia prima"), p.material_cost), (_("Servicios (maquila)"), p.services_cost),
+                  (_("Envío"), p.shipping_cost), (_("Etiquetado"), p.labeling_cost), (_("Empaque"), p.packaging_cost),
+                  (_("Overhead {0} %").format(round(flt(p.overhead_pct), 2)), p.overhead_amt)]
+        materiales = [{
+            "descripcion": nombre(d.item), "tipo": d.tipo_material or (_("Envío") if d.concept_type == "Envío" else ""),
+            "cantidad": flt(d.internal_qty), "unidad": _uom(d.internal_uom), "precio_unitario": flt(d.unit_price),
+            "total": flt(d.total), "proveedor": d.supplier, "pieza": d.subensamblaje,
+        } for d in detalle if d.finished_item == p.finished_item and d.concept_type in ("Materia Prima", "Envío")]
+        servicios = [{
+            # Los artículos de servicio suelen llamarse igual que su código ("SERVICIO-DE-CORTE").
+            "descripcion": nombre(e.servicio).replace("-", " ") if nombre(e.servicio) == e.servicio else nombre(e.servicio),
+            "etapa": e.etapa, "pieza": e.subensamblaje, "proveedor": e.proveedor,
+            "total": flt(e.precio_servicio) / (flt(e.lote_qty) if flt(e.lote_qty) > 1 else 1),
+        } for e in etapas if e.producto_terminado == p.finished_item]
+        salida.append({
+            "producto": nombre(p.finished_item), "talla": p.talla_grupo_label, "cantidad": cint(p.qty), "moneda": moneda,
+            "costo_unitario": flt(p.total_unit_cost), "precio": flt(p.unit_sales_price), "margen": flt(p.margin_pct),
+            "venta_total": flt(p.total_sales_price),
+            "costos": [{"concepto": c, "monto": flt(m)} for c, m in costos if flt(m)],
+            "materiales": materiales, "servicios": servicios,
+        })
+    return salida
+
+
 def _resumen_costeo(doc):
     moneda = frappe.db.get_value("Company", doc.get("compañia") or doc.get("company"), "default_currency") or "MXN"
     productos = doc.get("costeo_producto") or []
@@ -97,14 +150,7 @@ def _resumen_costeo(doc):
                             .format(round(previo, 1), round(margen, 1))})
     if doc.get("motivo_revision"):
         resumen.append(_t(_("Motivo de la revisión"), doc.motivo_revision))
-    renglones = [{
-        "descripcion": p.finished_item + (f" · {p.talla_grupo_label}" if p.get("talla_grupo_label") else ""),
-        "cantidad": cint(p.qty), "unidad": _("pzas"),
-        "precio": flt(p.unit_sales_price), "importe": flt(p.total_sales_price), "moneda": moneda,
-        "nota": _("costo {0} · margen {1} %").format(frappe.utils.fmt_money(p.total_unit_cost, currency=moneda),
-                                                     round(flt(p.margin_pct), 1)),
-    } for p in productos]
-    return resumen, renglones, alertas, moneda
+    return resumen, [], alertas, moneda
 
 
 def _resumen_venta(doc):
@@ -193,11 +239,13 @@ def get_resumen_documento(doctype: str, name: str, tipo: str = None) -> dict:
     _exigir_bandeja()
     if tipo == "precio":
         resumen, renglones, alertas, moneda, primero = _resumen_precios(name)
+        compania = compania_de("Costeo", name)
         return {
             "doctype": "Costeo", "name": name, "tipo": "precio", "etiqueta": _("Precio acordado"),
+            "compania": compania, "desglose": _desglose_costeo(name, moneda),
             "titulo": primero.get("customer") or name, "monto": None, "moneda": moneda,
             "por_nombre": _nombre(primero.owner) if primero.get("owner") else None, "enviado_en": primero.get("modified"),
-            "resumen": resumen, "renglones": renglones, "adjuntos": [], "alertas": alertas,
+            "resumen": [_t(_("Compañía"), compania), *resumen], "renglones": renglones, "adjuntos": [], "alertas": alertas,
             "ruta": _ruta_doc("Costeo", name), "estado": {"aplica": True, "nivel": "simple", "estado": "Pendiente",
                                                           "puede_aprobar": puede_aprobar_precios(),
                                                           "puede_regresar": puede_aprobar_precios()},
@@ -217,7 +265,10 @@ def get_resumen_documento(doctype: str, name: str, tipo: str = None) -> dict:
     tarjeta = (_tarjetas(doctype, frappe.get_all(doctype, filters={"name": name}, fields=_campos(doctype))) or [{}])[0]
     if doc.get("cambio_tras_envio"):
         alertas.insert(0, {"tono": "wait", "texto": _("Cambió después de enviarse a aprobación. Revisa la actividad.")})
-    return {**tarjeta, "resumen": resumen, "renglones": renglones, "adjuntos": adjuntos, "alertas": alertas,
+    compania = tarjeta.get("compania") or compania_de(doctype, name)
+    return {**tarjeta, "compania": compania, "resumen": [_t(_("Compañía"), compania), *resumen],
+            "renglones": renglones, "adjuntos": adjuntos, "alertas": alertas,
+            "desglose": _desglose_costeo(name, moneda) if doctype == "Costeo" else [],
             "moneda": moneda, "ruta": _ruta_doc(doctype, name), "estado": estado_aprobacion(doctype, name)}
 
 
@@ -238,7 +289,7 @@ def get_proyectos() -> dict:
         "Costeo",
         filters={"docstatus": 1, "costeo_status": ["!=", "Cancelado"]},
         or_filters=[["costeo_status", "!=", "Completado"], ["modified", ">=", hace_un_mes]],
-        fields=["name", "titulo", "cliente", "costeo_status", "modified"],
+        fields=["name", "titulo", "cliente", "costeo_status", "modified", "compañia"],
         order_by="modified desc", limit=60,
     )
     nombres = [c.name for c in costeos]
@@ -284,6 +335,7 @@ def get_proyectos() -> dict:
         recibidos, total = encargos.get(c.name, [0, 0])
         salida.append({
             "name": c.name, "titulo": c.titulo or c.name, "cliente": c.cliente, "estado": c.costeo_status,
+            "compania": c.get("compañia"),
             "etapa": etapa, "documento": doc_venta.name if doc_venta else None,
             "monto": flt(doc_venta.grand_total) if doc_venta else None,
             "moneda": doc_venta.currency if doc_venta else "MXN",

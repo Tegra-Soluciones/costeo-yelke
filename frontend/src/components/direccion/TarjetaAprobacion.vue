@@ -18,7 +18,8 @@
       <span v-if="fila.bloqueo" class="p-pill-bad h-[22px] text-[11px]">Bloqueada</span>
       <span class="ml-auto text-[15px] font-semibold tabular-nums">{{ fila.monto != null ? dinero(fila.monto, fila.moneda) : "" }}</span>
     </div>
-    <p class="text-[14.5px] font-semibold leading-tight truncate" :class="renglon ? 'mt-1' : ''">{{ fila.titulo }}</p>
+    <p v-if="fila.compania" class="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-ink-light truncate" :class="renglon ? 'mt-1.5' : ''">{{ fila.compania }}</p>
+    <p class="text-[14.5px] font-semibold leading-tight truncate" :class="renglon && !fila.compania ? 'mt-1' : ''">{{ fila.titulo }}</p>
     <p v-if="fila.sub" class="p-meta leading-snug" :class="renglon ? 'truncate' : 'line-clamp-2'">{{ fila.sub }}</p>
     <div class="flex items-center gap-1.5 text-[11.5px] text-ink-light" :class="renglon ? 'mt-0.5' : 'pt-1'">
       <span class="w-5 h-5 rounded-full flex items-center justify-center text-[8.5px] font-semibold flex-shrink-0" :class="colorAvatar(fila.por)">{{ iniciales(fila.por_nombre) }}</span>

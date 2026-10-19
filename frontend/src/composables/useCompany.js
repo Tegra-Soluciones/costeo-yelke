@@ -48,6 +48,17 @@ function setCompany(name) {
   localStorage.setItem(STORAGE_KEY, state.selected);
 }
 
+/**
+ * Pone el filtro de compañía en la del documento que se va a abrir (panel de
+ * Dirección, avisos, "Te regresaron…"). El panel junta documentos de todas las
+ * compañías; sin esto se abría el documento con el filtro de otra compañía.
+ */
+export async function asegurarCompania(nombre) {
+  if (!nombre) return;
+  await ensureLoaded();
+  if (state.selected !== nombre && state.companies.some((c) => c.name === nombre)) setCompany(nombre);
+}
+
 export function useCompany() {
   ensureLoaded();
   return { state, setCompany };

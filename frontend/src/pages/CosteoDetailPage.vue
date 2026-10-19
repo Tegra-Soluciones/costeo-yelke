@@ -3347,7 +3347,7 @@ import { puedeValidarDirecto, usePermisosAprobacion } from "@/composables/useApr
 import { db, call, openDesk as deskOpen, uploadFile, searchLink, fuzzyQuery, getLinkDisplayLabel } from "@/utils/frappe.js";
 import { useToast } from "@/composables/useToast.js";
 import { useDocumentActions } from "@/composables/useDocumentActions.js";
-import { useCompany } from "@/composables/useCompany.js";
+import { asegurarCompania, useCompany } from "@/composables/useCompany.js";
 
 const { state: companyState } = useCompany();
 import { useProduccion } from "@/composables/useProduccion.js";
@@ -9069,6 +9069,9 @@ async function loadCosteoData() {
   try {
     const data = await db.get("Costeo", route.params.name);
     await fillFromDoc(data);
+    // Abierto desde el panel de Dirección, un aviso o un enlace: el filtro de compañía
+    // pasa a la del costeo.
+    asegurarCompania(data["compañia"] || data.company);
     pruneDraftSiSeVencio();
     manufacturaGuardada.value = false;
     await loadRelated();

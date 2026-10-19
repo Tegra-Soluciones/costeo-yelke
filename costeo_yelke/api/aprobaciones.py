@@ -585,15 +585,21 @@ def _delegacion_recibida():
 _CAMPOS_TARJETA = ["name", "owner", "creation", "estado_aprobacion_yelke", "enviado_aprobacion_por",
                    "enviado_aprobacion_en", "cambio_tras_envio"]
 _CAMPOS_POR_DOCTYPE = {
-    "Costeo": ["titulo", "cliente"],
-    "Quotation": ["party_name", "customer_name", "grand_total", "currency", "costeo", "total_qty", "valid_till"],
-    "Sales Order": ["customer", "customer_name", "grand_total", "currency", "costeo", "total_qty",
+    "Costeo": ["titulo", "cliente", "compañia"],
+    "Quotation": ["company", "party_name", "customer_name", "grand_total", "currency", "costeo", "total_qty", "valid_till"],
+    "Sales Order": ["company", "customer", "customer_name", "grand_total", "currency", "costeo", "total_qty",
                     "delivery_date", "oc_cliente_archivo"],
-    "Purchase Order": ["supplier", "supplier_name", "grand_total", "currency", "is_subcontracted", "costeo",
+    "Purchase Order": ["company", "supplier", "supplier_name", "grand_total", "currency", "is_subcontracted", "costeo",
                        "schedule_date", "revisado_por_yelke", "revisado_en_yelke"],
-    "Purchase Invoice": ["supplier", "supplier_name", "grand_total", "currency", "bill_no", "posting_date",
+    "Purchase Invoice": ["company", "supplier", "supplier_name", "grand_total", "currency", "bill_no", "posting_date",
                          "factura_pdf"],
 }
+
+
+def compania_de(doctype, name):
+    """Compañía de un documento del flujo (el Costeo la guarda en `compañia`)."""
+    campo = "compañia" if doctype == "Costeo" else "company"
+    return frappe.db.get_value(doctype, name, campo) if frappe.get_meta(doctype).has_field(campo) else None
 
 
 def _campos(doctype):
@@ -651,6 +657,9 @@ def _tarjetas(doctype, filas):
             "enviado_en": desde, "horas": round(time_diff_in_hours(ahora, desde), 1),
             "cambio_tras_envio": bool(f.cambio_tras_envio),
             "moneda": f.get("currency") or "MXN", "bloqueo": None,
+            # El panel junta documentos de todas las compañías: cada tarjeta dice de cuál
+            # es, y al abrir el documento original el SPA cambia el filtro a esa.
+            "compania": f.get("company") or f.get("compañia"),
         }
         if doctype == "Costeo":
             e = extra.get(f.name) or {"monto": 0.0, "prendas": 0, "margenes": []}
@@ -711,7 +720,7 @@ def _tarjetas_precios():
         salida.append({
             "doctype": "Costeo", "name": costeo, "tipo": "precio", "etiqueta": _("Precio acordado"),
             "estado": PENDIENTE, "titulo": rs[0].customer, "monto": None, "moneda": rs[0].currency,
-            "sub": precios, "contexto": costeo, "precios": len(rs),
+            "sub": precios, "contexto": costeo, "precios": len(rs), "compania": compania_de("Costeo", costeo),
             "por": rs[0].owner, "por_nombre": _nombre(rs[0].owner),
             "enviado_en": mas_reciente, "horas": round(time_diff_in_hours(ahora, mas_reciente), 1),
             "cambio_tras_envio": False, "bloqueo": None,
@@ -818,7 +827,8 @@ def get_mis_devueltos() -> dict:
             if (f.enviado_aprobacion_por or f.owner) != user:
                 continue
             salida.append({"doctype": doctype, "name": f.name, "etiqueta": _etiqueta(doctype),
-                           "motivo": f.ultimo_motivo_devolucion, "ruta": _ruta_doc(doctype, f.name)})
+                           "motivo": f.ultimo_motivo_devolucion, "ruta": _ruta_doc(doctype, f.name),
+                           "compania": compania_de(doctype, f.name)})
     return {"items": salida}
 
 
