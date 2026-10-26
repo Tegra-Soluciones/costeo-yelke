@@ -116,7 +116,10 @@ jinja = {
 		"costeo_yelke.api.impresion.rfc_tercero",
 		"costeo_yelke.api.impresion.direccion_lineas",
 		"costeo_yelke.api.impresion.descripcion_html",
-		"costeo_yelke.api.impresion.imagen_articulo"],
+		"costeo_yelke.api.impresion.imagen_articulo",
+		"costeo_yelke.api.impresion.tallas_atipicas",
+		# "Al terminar, entregar a" en la Orden de Maquila.
+		"costeo_yelke.api.entregas_taller.entregas_impresion"],
 }
 
 # Installation
@@ -222,10 +225,28 @@ doc_events = {
 	},
 	"Purchase Order": {
 		"on_submit": "costeo_yelke.overrides.purchase_order.registrar_precios_oficiales",
+		# Orden a un taller: no se valida sin la orden de manufactura (por ninguna vía).
+		"before_submit": "costeo_yelke.api.om_general.exigir_om_para_validar",
 	},
 }
 
 # Factura de flete: se valida con folio del CFDI y sus adjuntos (api/fletes.py).
+# Proveedor sin alta en el SAT: sus compras van sin IVA (overrides/sin_alta_sat.py).
+for _dt in ("Purchase Order", "Purchase Receipt", "Purchase Invoice"):
+	_ev = doc_events.setdefault(_dt, {})
+	_prev = _ev.get("validate")
+	_ev["validate"] = ([_prev] if isinstance(_prev, str) else list(_prev or [])) + [
+		"costeo_yelke.overrides.sin_alta_sat.quitar_iva_sin_alta_sat",
+		# Flete que cobra el mismo proveedor: su IVA, si lo cobra (api/fletes.py).
+		"costeo_yelke.api.fletes.ajustar_iva_flete"]
+
+# Préstamo de permisos: el Perfil de Rol reescribe los roles al guardar el usuario;
+# esto vuelve a poner los prestados mientras sigan vigentes (api/permisos_temporales.py).
+doc_events.setdefault("User", {})["validate"] = "costeo_yelke.api.permisos_temporales.conservar_roles_prestados"
+
+# Tabla de precios por volumen: nunca por debajo del precio de venta del costeo.
+doc_events.setdefault("Pricing Rule", {})["validate"] = "costeo_yelke.overrides.pricing_rule.precio_minimo_del_costeo"
+
 doc_events.setdefault("Purchase Invoice", {})["before_submit"] = [
 	"costeo_yelke.api.contabilidad.validar_archivos_factura",
 	"costeo_yelke.api.fletes.validar_factura_flete",
@@ -252,6 +273,14 @@ for _dt in _DOCS_APROBACION:
 		_actual = doc_events.setdefault(_dt, {}).get(_evento)
 		_lista = [] if not _actual else ([_actual] if isinstance(_actual, str) else list(_actual))
 		doc_events[_dt][_evento] = [_metodo, *_lista] if _evento.startswith("before_") else [*_lista, _metodo]
+
+# Costeo en MAYÚSCULAS (ver uppercase_master.UPPER_COSTEO): al crear, al guardar y al
+# editar ya validado (crear_variante_talla, guardar_subensamblajes...). Se SUMA a los
+# eventos de aprobaciones de arriba.
+for _evento in ("before_insert", "before_validate", "before_update_after_submit"):
+	_actual = doc_events.setdefault("Costeo", {}).get(_evento)
+	_lista = [] if not _actual else ([_actual] if isinstance(_actual, str) else list(_actual))
+	doc_events["Costeo"][_evento] = ["costeo_yelke.overrides.uppercase_master.upper_costeo", *_lista]
 
 # Remisión cancelada: su factura de flete (borrador) se va con ella (api/fletes.py).
 doc_events.setdefault("Delivery Note", {})["on_cancel"] = "costeo_yelke.api.fletes.soltar_factura_remision"
@@ -299,6 +328,10 @@ scheduler_events = {
 		"costeo_yelke.api.item_api.revisar_vigencias_precio_acordado",
 		"costeo_yelke.api.aprobaciones.recordatorio_pendientes",
 		"costeo_yelke.api.delegacion.avisos_delegacion",
+	],
+	# Préstamo de permisos: aplica los que empiezan y retira los vencidos.
+	"hourly": [
+		"costeo_yelke.api.permisos_temporales.procesar_permisos_temporales",
 	],
 }
 

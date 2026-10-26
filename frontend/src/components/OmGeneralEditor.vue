@@ -43,7 +43,7 @@
 
         <!-- Tallas heredadas del costeo -->
         <div>
-          <p class="text-[11px] font-semibold text-ink-muted uppercase tracking-wider mb-1">Tallas <span class="normal-case font-normal text-ink-light">· del costeo, para todos los talleres</span></p>
+          <p class="text-[11px] font-semibold text-ink-muted uppercase tracking-wider mb-1">Tallas <span class="normal-case font-normal text-ink-light">· de la orden de venta, para todos los talleres</span></p>
           <table class="text-[12.5px]">
             <thead><tr class="text-[10.5px] text-ink-light text-left"><th class="pr-6 font-medium">Género</th><th class="pr-6 font-medium">Talla</th><th class="pr-6 font-medium">Producto</th><th class="font-medium text-right">Cantidad</th></tr></thead>
             <tbody>
@@ -55,7 +55,7 @@
               <tr class="border-t border-surface-border"><td colspan="3" class="pr-6 text-ink-muted">Total</td><td class="text-right tabular-nums font-medium">{{ total(p.tallas).toLocaleString('es-MX') }}</td></tr>
             </tbody>
           </table>
-          <p class="text-[11px] text-ink-light mt-1">Para cambiar el desglose por talla, edítalo en Costear (tallas del producto).</p>
+          <p class="text-[11px] text-ink-light mt-1">El desglose por talla se edita en la orden de venta (tallas regulares y tallas extra).</p>
         </div>
 
         <!-- Procesos -->

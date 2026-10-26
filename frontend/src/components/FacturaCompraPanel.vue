@@ -42,6 +42,12 @@
           </template>
           <div><label class="field-label">Condiciones de pago</label><select v-model="form.payment_terms_template" :disabled="validated" class="field-input mb-3"><option value="">— Sin plantilla —</option><option v-for="p in paymentTermsOptions" :key="p.name" :value="p.name">{{ p.name }}</option></select></div>
         </div>
+        <!-- Flete que cobra el mismo proveedor (viene del recibo): igualarlo a su CFDI. -->
+        <label v-if="doc.flete_importe > 0 && !doc.es_factura_flete && !doc.sin_alta_sat" class="flex items-center gap-1.5 text-[12.5px] text-ink-muted mb-3">
+          <input v-model="form.flete_cobra_iva" type="checkbox" :true-value="1" :false-value="0" :disabled="validated" />
+          El envío ({{ money(doc.flete_importe) }}) lleva IVA en su factura
+          <span v-if="doc.flete_iva" class="text-ink-light">· IVA del flete {{ money(doc.flete_iva) }}</span>
+        </label>
         <div class="border-t border-surface-border pt-2.5 mb-3 flex flex-wrap gap-x-6 gap-y-1 text-[13px]">
           <span class="text-ink-muted">Subtotal <span class="font-medium text-ink tabular-nums">{{ extranjera ? money(doc.net_total, doc.currency) : money(doc.base_net_total) }}</span></span>
           <span v-if="doc.grand_total !== undefined" class="text-ink-muted">Total con impuestos <span class="font-medium text-ink tabular-nums">{{ money(doc.grand_total, extranjera ? doc.currency : undefined) }}</span></span>
@@ -66,14 +72,7 @@
           <a class="doc-action" :href="`/app/purchase-invoice/${doc.name}`" target="_blank">Abrir en ERPNext</a>
         </div>
       </div>
-      <div class="w-full lg:w-[300px] lg:flex-shrink-0 rounded-lg border border-surface-border bg-white overflow-hidden">
-        <div class="flex items-center justify-end px-2 py-1 border-b border-surface-border">
-          <button class="doc-action" @click="$emit('ampliar')">Ampliar</button>
-        </div>
-        <div style="height: 46vh; overflow: auto;">
-          <iframe :key="'pinv' + previewKey" :src="previewUrl" style="width: 250%; height: 250%; transform: scale(0.4); transform-origin: top left; border: 0;" title="Vista previa de la factura de compra"></iframe>
-        </div>
-      </div>
+      <!-- Sin vista previa incrustada: se abre con "Vista previa" en el panel. -->
     </div>
   </div>
 </template>

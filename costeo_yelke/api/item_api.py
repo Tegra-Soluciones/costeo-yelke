@@ -917,6 +917,38 @@ def guardar_tela_conversion(item_code: str, metros_por_kilo=None) -> dict:
 
 
 @frappe.whitelist()
+def insertar_item_con_precio_estandar(doc):
+    """Inserta un Item que trae ``standard_rate`` sin depender de los permisos de
+    quien lo crea.
+
+    ERPNext (Item.after_insert -> add_price) crea solo un Item Price con ese precio,
+    pero sin ignore_permissions: para un usuario sin permiso de crear precios (ej.
+    Enviar Documentos Yelke) el alta del artículo truena con PermissionError aunque
+    el Item traiga ignore_permissions. Aquí se inserta con el precio en 0 -- para que
+    ERPNext no lo intente -- y se crea el MISMO Item Price que habría creado él, ya
+    con permisos de sistema; el precio estándar queda guardado en el artículo."""
+    precio = flt(doc.get("standard_rate"))
+    doc.standard_rate = 0
+    doc.insert()
+    if not precio:
+        return
+    doc.db_set("standard_rate", precio, update_modified=False)
+    import erpnext
+
+    for default in doc.get("item_defaults") or [frappe._dict()]:
+        lista = default.get("default_price_list") or frappe.db.get_single_value(
+            "Selling Settings", "selling_price_list"
+        ) or frappe.db.get_value("Price List", _("Standard Selling"))
+        if not lista or frappe.db.exists("Item Price", {"item_code": doc.name, "price_list": lista, "uom": doc.stock_uom}):
+            continue
+        precio_doc = frappe.get_doc({
+            "doctype": "Item Price", "price_list": lista, "item_code": doc.name, "uom": doc.stock_uom,
+            "brand": doc.get("brand"), "currency": erpnext.get_default_currency(), "price_list_rate": precio,
+        })
+        precio_doc.flags.ignore_permissions = True
+        precio_doc.insert()
+
+
 def create_item(data, ignore_mandatory=False):
     """Create a new Item with all fields including prices and suppliers.
 
@@ -1009,7 +1041,7 @@ def create_item(data, ignore_mandatory=False):
     # se queda vacío en todo item nuevo. Si algún día se desinstala mexico_einvoice,
     # este código sigue funcionando igual -- nunca dependió de que el campo exista.
     doc.flags.ignore_mandatory = True
-    doc.insert()
+    insertar_item_con_precio_estandar(doc)
 
     # Item Price records (created separately after item is saved)
     price_errors = []

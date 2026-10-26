@@ -50,12 +50,6 @@ def _etiqueta(talla_code):
     return " ".join(x for x in (t.get("genero"), t.get("talla") or talla_code) if x), t.get("genero") or ""
 
 
-def _es_linea_extra(desc):
-    # Las líneas de sobrecosto de talla repiten el artículo base (ver
-    # costeo_api._build_talla_extra_description): no son "el producto principal".
-    return "Tallas extra (+" in (desc or "")
-
-
 def _productos_principales(costeo):
     if not costeo or not frappe.db.exists("Costeo", costeo):
         return set()
@@ -70,7 +64,7 @@ def get_desglose_tallas_ov(sales_order: str) -> list:
     principales = _productos_principales(so.get("costeo"))
     out = []
     for it in so.items:
-        if it.item_code not in principales or _es_linea_extra(it.description):
+        if it.item_code not in principales:
             continue
         out.append({
             "row": it.name, "item_code": it.item_code, "item_name": it.item_name, "qty": flt(it.qty),

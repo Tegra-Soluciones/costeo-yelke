@@ -1,6 +1,7 @@
 <!--
   Resumen (solo Director): los indicadores del tablero de Inicio (mismo cálculo,
-  dashboard_metrics), lo que requiere atención y la delegación de aprobaciones.
+  dashboard_metrics), lo que requiere atención, la delegación de aprobaciones y el
+  préstamo de permisos entre usuarios.
 -->
 <template>
   <div class="px-4 lg:px-0 py-4 space-y-4">
@@ -46,6 +47,8 @@
       </template>
       <p v-if="errorDlg" class="text-[12px] text-red-700 mt-2">{{ errorDlg }}</p>
     </div>
+    <!-- Préstamo de permisos de un usuario a otro (api/permisos_temporales.py) -->
+    <PermisosPrestados />
     <p class="text-[11px] text-ink-light text-center pb-2">Año en curso, solo lo validado. Mismo cálculo que Inicio.</p>
   </div>
 </template>
@@ -53,6 +56,7 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import Icono from "@/components/Icono.vue";
+import PermisosPrestados from "@/components/direccion/PermisosPrestados.vue";
 import { call } from "@/utils/frappe.js";
 import { dineroCorto, fecha, numero } from "@/utils/formato.js";
 

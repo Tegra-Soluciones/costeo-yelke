@@ -56,6 +56,9 @@ const props = defineProps({
   venderListo: { type: Boolean, default: false },
   altaProductosListo: { type: Boolean, default: false },
   flujoProduccionListo: { type: Boolean, default: false },
+  // Hay órdenes de venta (aunque sean canceladas): Vender se puede abrir para verlas
+  // como historial aunque el costeo haya regresado a "Cotizado".
+  conOrdenesVenta: { type: Boolean, default: false },
 });
 defineEmits(["select"]);
 
@@ -127,7 +130,10 @@ function stepState(idx) {
 // las remisiones parciales se pueden ir creando lote por lote. "Manufactura" es
 // alcanzable en cuanto existe la Orden de Venta.
 function stepReachable(idx) {
-  if (idx === PREP_MFG_IDX || idx === FLUJO_MFG_IDX) return statusIdx.value >= 2;
+  if (idx === VENDER_IDX && props.conOrdenesVenta) return true;
+  // Alta de Productos y Flujo de Producción: solo con la OV activa ya validada --
+  // con el estado "Orden de Venta" la OV puede seguir en borrador.
+  if (idx === PREP_MFG_IDX || idx === FLUJO_MFG_IDX) return statusIdx.value >= 3 || (statusIdx.value >= 2 && props.venderListo);
   if (idx === ENVIAR_IDX || idx === REPORT_IDX) return statusIdx.value >= 3;
   const orderIdx = STEP_ORDER_IDX[idx];
   return orderIdx != null ? orderIdx <= statusIdx.value : false;

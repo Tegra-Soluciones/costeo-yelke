@@ -116,16 +116,6 @@ def set_costeo_status(costeo: str, status: str) -> dict:
     return {"ok": True, "costeo": costeo, "status": status}
 
 
-def _tallas_extra_para_producto(doc, finished_item):
-    """Filas de tabla_tallas_costeo de este producto que llevan sobrecosto --
-    las que no tienen sobrecosto ya quedan representadas por el precio base,
-    no necesitan línea aparte en la cotización."""
-    return [
-        t for t in doc.get("tabla_tallas_costeo", [])
-        if t.finished_item == finished_item and t.sobrecosto_tipo and t.sobrecosto_tipo != "Ninguno"
-    ]
-
-
 def _talla_label(talla_name):
     return frappe.db.get_value("Talla", talla_name, "talla") or talla_name or ""
 
@@ -138,57 +128,17 @@ def _tallas_label(tallas_field):
     return "/".join(_talla_label(c) for c in codes)
 
 
-def _es_talla_pendiente(t):
-    return (t.get("estado_cantidad") or "Definida") == "Pendiente por cliente"
-
-
-def _sobrecosto_titulo(sobrecosto_tipo, sobrecosto_valor):
-    if sobrecosto_tipo == "Porcentaje":
-        return f"Tallas extra (+{flt(sobrecosto_valor):g}%)"
-    return f"Tallas extra (+${flt(sobrecosto_valor):,.2f} c/u)"
-
-
-def _build_talla_extra_description(base_description, sobrecosto_tipo, sobrecosto_valor, rows):
-    """Descripción autogenerada para la línea de tallas extra: mismo producto,
-    listando qué tallas llevan el sobrecosto. No exige cantidad -- lo normal
-    es que al cotizar no se sepa cuántas piezas serán tallas extra, solo que
-    existe el ajuste de precio; si sí se capturó cantidad por talla, se
-    incluye como referencia. Si alguna fila del grupo sigue 'Pendiente por
-    cliente', se avisa al final -- esa cantidad todavía no es definitiva.
-    Solo aplica a sobrecosto Fijo/Porcentaje -- una talla que necesita material
-    distinto se costea como una 'Variante de talla' aparte (su propio Costeo
-    Producto), no con este mecanismo."""
-    titulo = _sobrecosto_titulo(sobrecosto_tipo, sobrecosto_valor)
-    lineas = []
-    pendiente = False
-    for t in rows:
-        etiqueta = " ".join(filter(None, [t.genero, _tallas_label(t.talla)]))
-        if _es_talla_pendiente(t):
-            pendiente = True
-            sufijo = " (cantidad por confirmar)"
-        else:
-            sufijo = f" × {cint(t.qty)} pza(s)" if flt(t.qty) > 0 else ""
-        lineas.append(f"- {etiqueta}{sufijo}")
-    bloque = f"{titulo}:\n" + "\n".join(lineas)
-    if pendiente:
-        bloque += "\n(cantidad total sujeta a confirmación del cliente)"
-    base = (base_description or "").strip()
-    return f"{base}\n\n{bloque}" if base else bloque
-
-
 def _build_variante_description(genero, tallas, talla_grupo_label, desglose=None):
     """Descripción para la línea de venta de una VARIANTE de talla -- SOLO el
     desglose de qué talla(s) representa, NUNCA la descripción del producto
     base (decisión explícita del usuario: ya la trae la línea del producto
-    base, repetirla en la variante es ruido). Mismo espíritu que
-    _build_talla_extra_description (avisar qué talla(s) se engloban), pero
-    para el mecanismo de variantes (su propia línea, no un ajuste de precio).
+    base, repetirla en la variante es ruido).
 
     ``desglose``: opcional, {talla_code: qty} con la cantidad real que el
     cliente confirmó para CADA talla individual del grupo (capturado en
     'Cantidades confirmadas por talla' de la OV) -- sin esto, se muestra
     solo la etiqueta agrupada (aún no hay nada que desglosar); con esto, se
-    lista una por una con su cantidad, igual que _build_talla_extra_description."""
+    lista una por una con su cantidad."""
     if desglose:
         lineas = [f"- {_talla_label(t)} × {cint(qty)} pza(s)" for t, qty in desglose.items() if flt(qty) > 0]
         if lineas:
@@ -198,159 +148,57 @@ def _build_variante_description(genero, tallas, talla_grupo_label, desglose=None
     return f"Talla: {etiqueta}" if etiqueta else ""
 
 
+def _variante_pendiente(doc, p):
+    """Variante de talla cuya cantidad aún no dice el cliente ("Pendiente por cliente").
+    En la cotización no es una línea (no suma al total): sale solo como información,
+    en "Tallas atípicas · sobre pedido" del formato de impresión."""
+    if not p.get("variante_talla_de"):
+        return False
+    t = next((t for t in doc.get("tabla_tallas_costeo") or [] if t.finished_item == p.finished_item), None)
+    return bool(t and t.estado_cantidad == "Pendiente por cliente")
+
+
 def _venta_items_para_producto(doc, p, extra_fields=None):
-    """Arma las líneas de Item (Quotation o Sales Order, misma forma en ambos)
-    para un Costeo Producto: la línea base con la descripción normal, más una
-    línea aparte por cada grupo de sobrecosto de talla (agrupando las que
-    comparten mismo tipo/valor/material), ya que en la práctica casi nunca se
-    conoce el desglose exacto de piezas por talla extra al cotizar -- solo el
-    % o monto de ajuste. Si sí se captura cantidad por talla y ya está
-    'Definida', esa cantidad se resta de la línea base y se usa en la línea
-    extra en vez del 1 de referencia -- una talla 'Pendiente por cliente'
-    NUNCA resta de la base (no se sabe todavía si ya está incluida en el
-    total o es aparte) y su línea extra siempre queda en 1, de referencia.
-    `extra_fields` son claves adicionales que se copian tal cual a cada línea
-    generada (ej. delivery_date en Sales Order)."""
-    talla_rows = _tallas_extra_para_producto(doc, p.finished_item)
+    """Línea de Item (Quotation o Sales Order, misma forma en ambos) para un
+    Costeo Producto. Siempre UNA línea por producto: las tallas extra se costean
+    como "Variante de talla" (su propio Costeo Producto, con su propia línea).
+    `extra_fields` son claves adicionales que se copian tal cual a la línea
+    (ej. delivery_date en Sales Order)."""
     extra_fields = extra_fields or {}
-
-    # price_list_rate se fija IGUAL a rate en cada línea a propósito: si se deja
-    # que Frappe lo autocomplete, toma el precio de lista del Item (el de la línea
-    # base, sin el ajuste de talla) y calcula un "descuento" = price_list_rate -
-    # rate para las líneas de talla extra -- como esas llevan un rate MAYOR (es un
-    # sobrecosto, no una rebaja), ese descuento sale negativo y se imprime en la
-    # cotización como algo confuso que en realidad no es un descuento real.
-    if not talla_rows:
-        # Una variante de talla creada como "pendiente" (ver crear_variante_talla)
-        # llega aquí con p.qty = 0 -- ERPNext no permite qty 0 en una línea de
-        # Cotización/Orden de Venta/Factura. Se usa 1 de referencia, igual que
-        # cualquier otra cantidad pendiente en esta misma función (ver más abajo,
-        # el grupo de sobrecosto de talla); se corrige después con
-        # actualizar_talla_cantidad o editando la línea a mano una vez que el
-        # cliente confirme cuántas piezas quiere de verdad.
-        qty = p.qty if flt(p.qty) > 0 else 1
-        rate = p.unit_sales_price or 0
-        # uom explícito -- al crear la Cotización/OV con .insert() (documento
-        # nuevo) ERPNext lo autocompleta solo desde el Item, pero al reconstruir
-        # esta línea sobre un documento YA EXISTENTE (.save(), ver
-        # sales_order_api.save_sales_order/save_quotation) ese autocompletado no
-        # es confiable -- sin esto la línea queda sin UOM y truena al Validar.
-        uom = frappe.db.get_value("Item", p.finished_item, "stock_uom") or ""
-        item = {"item_code": p.finished_item, "qty": qty, "rate": rate, "price_list_rate": rate, "uom": uom, **extra_fields}
-        if p.get("variante_talla_de"):
-            talla_row = next((t for t in doc.tabla_tallas_costeo if t.finished_item == p.finished_item), None)
-            tallas = [c.strip() for c in (talla_row.talla if talla_row else "").split(",") if c.strip()]
-            description = _build_variante_description(
-                talla_row.genero if talla_row else "", tallas, p.get("talla_grupo_label"),
-            )
-        else:
-            description = p.description
-        if description:
-            item["description"] = description
-        return [item]
-
-    grupos = {}
-    for t in talla_rows:
-        key = (t.sobrecosto_tipo, flt(t.sobrecosto_valor))
-        grupos.setdefault(key, []).append(t)
-
-    definidas = [t for t in talla_rows if not _es_talla_pendiente(t)]
-    total_talla_qty = sum(flt(t.qty) for t in definidas)
-    base_qty = flt(p.qty) - total_talla_qty if total_talla_qty > 0 else flt(p.qty)
-
-    items = []
-    if base_qty > 0:
-        rate = p.unit_sales_price or 0
-        item = {"item_code": p.finished_item, "qty": base_qty, "rate": rate, "price_list_rate": rate, **extra_fields}
-        if p.description:
-            item["description"] = p.description
-        items.append(item)
-
-    for (sobrecosto_tipo, sobrecosto_valor), rows in grupos.items():
-        algun_pendiente = any(_es_talla_pendiente(t) for t in rows)
-        qty_grupo = sum(flt(t.qty) for t in rows)
-        qty = qty_grupo if (qty_grupo > 0 and not algun_pendiente) else 1
-        rate = rows[0].precio_venta or p.unit_sales_price or 0
-        items.append({
-            "item_code": p.finished_item,
-            "qty": qty,
-            "rate": rate,
-            "price_list_rate": rate,
-            "description": _build_talla_extra_description(p.description, sobrecosto_tipo, sobrecosto_valor, rows),
-            **extra_fields,
-        })
-
-    return items
-
-
-@frappe.whitelist()
-def actualizar_talla_cantidad(costeo: str, talla_row: str, qty: float = 0, estado_cantidad: str = "Definida") -> dict:
-    """Confirma la cantidad real de una talla que estaba 'Pendiente por cliente'
-    (o corrige una ya 'Definida'). Si ya existe una Cotización y/o una Orden de
-    Venta en BORRADOR ligadas a este Costeo, les reconstruye las líneas de ese
-    producto para que reflejen la cantidad nueva (ver _sync_venta_items_desde_tallas).
-    Los documentos ya validados NO se tocan -- se listan en 'omitidos' para que se
-    maneje aparte (ej. una enmienda), ya que no se puede reescribir libremente un
-    documento ya validado."""
-    if estado_cantidad not in ("Definida", "Pendiente por cliente"):
-        frappe.throw(_("Estado de cantidad inválido."))
-
-    doc = frappe.get_doc("Costeo", costeo)
-    row = next((t for t in doc.tabla_tallas_costeo if t.name == talla_row), None)
-    if not row:
-        frappe.throw(_("No se encontró esa fila de talla en este costeo."))
-
-    row.estado_cantidad = estado_cantidad
-    row.qty = flt(qty) if estado_cantidad == "Definida" else 0
-    row.costo_total = flt(row.costo_unitario) * flt(row.qty)
-
-    doc.flags.ignore_permissions = True
-    doc.flags.ignore_mandatory = True
-    doc.save()
-
-    sync = _sync_venta_items_desde_tallas(doc, row.finished_item)
-    return {"ok": True, "estado_cantidad": row.estado_cantidad, "qty": row.qty, **sync}
-
-
-def _sync_venta_items_desde_tallas(doc, finished_item: str = None) -> dict:
-    """Reconstruye, para los documentos de venta EN BORRADOR ligados a este
-    Costeo (Cotización y/o Orden de Venta), las líneas del producto indicado (o
-    de todos si no se especifica) según el estado actual de tabla_tallas_costeo
-    -- misma lógica que al crearlos (_venta_items_para_producto), así que
-    cotizar/vender y luego confirmar cantidades de talla no se desincroniza.
-    Los ya validados se listan en 'omitidos' sin tocarlos."""
-    actualizados, omitidos = [], []
-    productos = [p for p in doc.costeo_producto if not finished_item or p.finished_item == finished_item]
-    if not productos:
-        return {"actualizados": actualizados, "omitidos": omitidos}
-
-    for doctype in ("Quotation", "Sales Order"):
-        if not frappe.db.has_column(doctype, "costeo"):
-            continue
-        for name in frappe.get_all(doctype, filters={"costeo": doc.name}, pluck="name"):
-            vdoc = frappe.get_doc(doctype, name)
-            if vdoc.docstatus != 0:
-                omitidos.append({"doctype": doctype, "name": name})
-                continue
-            extra_fields = {"delivery_date": vdoc.get("delivery_date")} if doctype == "Sales Order" else {}
-            for p in productos:
-                nuevas = _venta_items_para_producto(doc, p, extra_fields=extra_fields)
-                otras = [it for it in vdoc.items if it.item_code != p.finished_item]
-                vdoc.set("items", otras)
-                for it in nuevas:
-                    vdoc.append("items", it)
-            vdoc.flags.ignore_permissions = True
-            vdoc.flags.ignore_mandatory = True
-            vdoc.save()
-            actualizados.append({"doctype": doctype, "name": vdoc.name})
-    return {"actualizados": actualizados, "omitidos": omitidos}
+    # Una variante de talla creada como "pendiente" (ver crear_variante_talla)
+    # llega aquí con p.qty = 0 -- ERPNext no permite qty 0 en una línea de
+    # Cotización/Orden de Venta/Factura. Se usa 1 de referencia; se corrige
+    # cuando el cliente confirma la cantidad (sincronizar_qty_variantes_a_costeo
+    # o editando la línea).
+    qty = p.qty if flt(p.qty) > 0 else 1
+    rate = p.unit_sales_price or 0
+    # price_list_rate se fija IGUAL a rate a propósito: si se deja que Frappe lo
+    # autocomplete con el precio de lista del Item, calcula un "descuento" =
+    # price_list_rate - rate que se imprime en la cotización sin serlo.
+    # uom explícito -- al crear la Cotización/OV con .insert() ERPNext lo
+    # autocompleta desde el Item, pero al reconstruir esta línea sobre un
+    # documento YA EXISTENTE (.save(), ver sales_order_api.save_sales_order/
+    # save_quotation) ese autocompletado no es confiable -- sin esto la línea
+    # queda sin UOM y truena al Validar.
+    uom = frappe.db.get_value("Item", p.finished_item, "stock_uom") or ""
+    item = {"item_code": p.finished_item, "qty": qty, "rate": rate, "price_list_rate": rate, "uom": uom, **extra_fields}
+    if p.get("variante_talla_de"):
+        talla_row = next((t for t in doc.tabla_tallas_costeo if t.finished_item == p.finished_item), None)
+        tallas = [c.strip() for c in (talla_row.talla if talla_row else "").split(",") if c.strip()]
+        description = _build_variante_description(
+            talla_row.genero if talla_row else "", tallas, p.get("talla_grupo_label"),
+        )
+    else:
+        description = p.description
+    if description:
+        item["description"] = description
+    return [item]
 
 
 def _variantes_de_costeo(costeo_name):
     """`finished_item -> {variante_talla_de, talla_grupo_label, genero, tallas}`
     de las variantes de talla de este Costeo (ver crear_variante_talla) -- una
-    variante es siempre 1:1 con su línea de venta (nunca genera más de una, a
-    diferencia de un producto base con sobrecosto por talla), así que
+    variante es siempre 1:1 con su línea de venta, así que
     emparejar por finished_item/item_code es inequívoco. `tallas` es la lista
     de tallas individuales que engloba, cada una como
     {"code": <name real del doctype Talla>, "label": <_talla_label(code)>} --
@@ -364,9 +212,16 @@ def _variantes_de_costeo(costeo_name):
         "Costeo Producto",
         filters={"parent": costeo_name, "variante_talla_de": ["is", "set"]},
         fields=["finished_item", "variante_talla_de", "talla_grupo_label"],
+        order_by="idx",
     )
     if not filas:
         return {}
+    # Nombre del producto base de cada variante: en la OV, "Caballero XXL" a secas no
+    # dice si es la talla del pantalón o de la camisola.
+    nombres_base = {
+        b: frappe.db.get_value("Item", b, "item_name") or b
+        for b in {f.variante_talla_de for f in filas}
+    }
     tallas_por_item = {
         t.finished_item: t for t in frappe.get_all(
             "Costeo Producto Talla",
@@ -380,6 +235,7 @@ def _variantes_de_costeo(costeo_name):
         f["genero"] = t.genero if t else ""
         codes = [c.strip() for c in (t.talla if t else "").split(",") if c.strip()]
         f["tallas"] = [{"code": c, "label": _talla_label(c)} for c in codes]
+        f["producto_base_nombre"] = nombres_base.get(f.variante_talla_de) or f.variante_talla_de
         out[f.finished_item] = f
     return out
 
@@ -415,7 +271,7 @@ def listar_variantes_de_costeo(costeo: str) -> list:
 
 
 @frappe.whitelist()
-def lineas_venta_variantes(costeo: str, finished_items, desglose=None) -> dict:
+def lineas_venta_variantes(costeo: str, finished_items, desglose=None, cantidades=None) -> dict:
     """Arma la línea de venta (item_code/description con la talla/rate/
     price_list_rate/uom) para cada variante indicada de `finished_items`,
     reutilizando _venta_items_para_producto -- la misma función que ya arma
@@ -431,12 +287,20 @@ def lineas_venta_variantes(costeo: str, finished_items, desglose=None) -> dict:
     grupo (capturada en el mismo editor); si se manda, la descripción lista
     talla por talla con su cantidad en vez de solo la etiqueta agrupada.
 
+    ``cantidades``: opcional, {finished_item: qty} -- con ella el precio de la
+    línea sale de la tabla por volumen de la variante para esa cantidad (si la
+    tiene); si no, su precio de venta del costeo. Una talla que el cliente agrega
+    en la OV (ej. 5XL) entra en la línea de su variante y toma ese mismo precio.
+
     Devuelve {finished_item: dict}."""
     if isinstance(finished_items, str):
         finished_items = frappe.parse_json(finished_items)
     if isinstance(desglose, str):
         desglose = frappe.parse_json(desglose)
+    if isinstance(cantidades, str):
+        cantidades = frappe.parse_json(cantidades)
     desglose = desglose or {}
+    cantidades = cantidades or {}
     doc = frappe.get_doc("Costeo", costeo)
     pedidos = set(finished_items or [])
     out = {}
@@ -453,8 +317,32 @@ def lineas_venta_variantes(costeo: str, finished_items, desglose=None) -> dict:
             item["description"] = _build_variante_description(
                 talla_row.genero if talla_row else "", None, p.get("talla_grupo_label"), desglose=desglose_prod,
             )
+        qty = flt(cantidades.get(p.finished_item))
+        if qty > 0:
+            item["rate"] = item["price_list_rate"] = _precio_por_volumen(p.finished_item, qty, doc.cliente) or item["rate"]
         out[p.finished_item] = item
     return out
+
+
+def _precio_por_volumen(item_code, qty, customer=None):
+    """Precio de la tabla por volumen del artículo (Pricing Rule de venta, tipo Rate)
+    para `qty` piezas, o None si ninguna aplica. Una regla del cliente gana sobre una
+    general; a igualdad, la de mayor prioridad."""
+    hoy = nowdate()
+    reglas = frappe.db.sql("""
+        select pr.rate, pr.customer, ifnull(pr.priority, 0) as priority
+        from `tabPricing Rule` pr
+        join `tabPricing Rule Item Code` pri on pri.parent = pr.name
+        where pri.item_code = %(item)s and pr.disable = 0 and pr.selling = 1 and pr.rate_or_discount = 'Rate'
+          and ifnull(pr.min_qty, 0) <= %(qty)s and (ifnull(pr.max_qty, 0) = 0 or pr.max_qty >= %(qty)s)
+          and (ifnull(pr.customer, '') = '' or pr.customer = %(customer)s)
+          and (pr.valid_from is null or pr.valid_from <= %(hoy)s)
+          and (pr.valid_upto is null or pr.valid_upto >= %(hoy)s)
+    """, {"item": item_code, "qty": flt(qty), "customer": customer or "", "hoy": hoy}, as_dict=True)
+    if not reglas:
+        return None
+    reglas.sort(key=lambda r: (1 if r.customer else 0, cint(r.priority)), reverse=True)
+    return flt(reglas[0].rate)
 
 
 def sincronizar_qty_variantes_a_costeo(venta_doc) -> list:
@@ -492,6 +380,14 @@ def sincronizar_qty_variantes_a_costeo(venta_doc) -> list:
     for row in venta_doc.get("items") or []:
         if row.item_code in variantes:
             qty_por_item[row.item_code] = qty_por_item.get(row.item_code, 0) + flt(row.qty)
+
+    # En la COTIZACIÓN una variante sin línea es una talla atípica "sobre pedido" (ver
+    # _variante_pendiente): el cliente todavía no responde, así que se queda como está.
+    # Solo la Orden de Venta toma la ausencia como "no la quiere" (qty 0).
+    if venta_doc.doctype == "Quotation":
+        variantes = {k: v for k, v in variantes.items() if k in qty_por_item}
+        if not variantes:
+            return []
 
     doc = frappe.get_doc("Costeo", costeo_name)
     tocado = False
@@ -551,7 +447,7 @@ def _slug_item_code(base_item_code, texto):
 @frappe.whitelist()
 def crear_variante_talla(costeo: str, producto_base: str, genero: str = None, talla: str = None,
                           qty: float = 0, pendiente: bool = False, item_code: str = None,
-                          talla_grupo_label: str = None) -> dict:
+                          talla_grupo_label: str = None, materiales=None) -> dict:
     """Crea una 'Variante de talla' de un producto ya cargado en el Costeo: un
     renglón de Costeo Producto NUEVO E INDEPENDIENTE (su propio artículo, sus
     propios materiales, sus propias etapas, su propio precio/margen) -- para
@@ -566,19 +462,30 @@ def crear_variante_talla(costeo: str, producto_base: str, genero: str = None, ta
     Producto que se va a clonar.
     ``genero``/``talla``: igual que en Costeo Producto Talla -- una o varias
     tallas (separadas por coma) que cubre esta variante. Se guarda como un
-    renglón de talla informativo en la propia variante (sobrecosto_tipo
-    'Ninguno' -- el precio de la variante ya es el suyo propio, no un ajuste).
+    renglón de talla informativo en la propia variante (el precio de la
+    variante es el suyo propio).
     ``qty``: cantidad a producir de esta variante; si ``pendiente`` es True,
-    qty se ignora y queda en 0 con estado 'Pendiente por cliente' (igual que
-    cualquier talla pendiente, ver actualizar_talla_cantidad).
+    qty se ignora y queda en 0 con estado 'Pendiente por cliente'.
     ``item_code``: opcional -- si no se manda, se genera solo a partir del
-    artículo base + la(s) talla(s)."""
+    artículo base + la(s) talla(s).
+
+    El producto base puede seguir en TEXTO LIBRE (todavía sin artículo, que se
+    da de alta al pasar a cotización): en ese caso la variante también nace en
+    texto libre ("<producto base> - <talla>") y se da de alta en el mismo paso,
+    con el mismo modal, después de su producto base. Las tallas extra se
+    deciden al costear, antes de que exista ningún artículo.
+
+    ``materiales``: opcional, los consumos que CAMBIAN en esta talla, en una sola
+    llamada con la creación -- ``[{material_id, internal_qty}]`` con el material_id
+    del renglón del producto BASE y el consumo por prenda en la UDM de ese renglón.
+    Lo que no venga se clona igual que el base."""
+    if isinstance(materiales, str):
+        materiales = json.loads(materiales) if materiales else []
+    consumos = {m.get("material_id"): flt(m.get("internal_qty")) for m in (materiales or []) if m.get("material_id")}
     doc = frappe.get_doc("Costeo", costeo)
     base = next((p for p in doc.costeo_producto if p.name == producto_base or p.finished_item == producto_base), None)
-    if not base:
+    if not base or not base.finished_item:
         frappe.throw(_("No se encontró ese producto en este costeo."))
-    if not base.finished_item or not frappe.db.exists("Item", base.finished_item):
-        frappe.throw(_("El producto base todavía no tiene un artículo válido -- termina de darlo de alta primero."))
 
     pendiente = frappe.parse_json(pendiente) if isinstance(pendiente, str) else bool(pendiente)
     qty_final = 0 if pendiente else flt(qty)
@@ -586,35 +493,56 @@ def crear_variante_talla(costeo: str, producto_base: str, genero: str = None, ta
         frappe.throw(_("Indica la cantidad de esta variante, o márcala como pendiente."))
 
     label = talla_grupo_label or " ".join(filter(None, [genero, _tallas_label(talla)])) or "Variante"
-    item_code = item_code or _slug_item_code(base.finished_item, label)
-    if frappe.db.exists("Item", item_code):
-        frappe.throw(_("Ya existe un artículo con ese código ({0}).").format(item_code))
+    if frappe.db.exists("Item", base.finished_item):
+        item_code = item_code or _slug_item_code(base.finished_item, label)
+        if frappe.db.exists("Item", item_code):
+            frappe.throw(_("Ya existe un artículo con ese código ({0}).").format(item_code))
 
-    base_item = frappe.get_doc("Item", base.finished_item)
-    nuevo_item = frappe.copy_doc(base_item)
-    nuevo_item.item_code = item_code
-    nuevo_item.item_name = f"{base_item.item_name} - {label}"
-    # La imagen SÍ se hereda a propósito (frappe.copy_doc ya la trae) -- es la
-    # misma prenda, solo cambia talla/consumo; el frontend la vuelve a jalar del
-    # Artículo en cada carga (fetchItemImage), así que basta con no borrarla aquí.
-    # item_defaults (almacén/cuentas por compañía) TAMBIÉN se hereda a
-    # propósito -- es la misma prenda en el mismo almacén, solo cambia la
-    # talla; sin esto la variante quedaba sin almacén de entrega configurado
-    # para ninguna compañía y tronaba al pasarla a Cotización/Orden de Venta
-    # ("Almacén de entrega requerido para el inventario del producto...").
-    nuevo_item.default_bom = None
-    nuevo_item.flags.ignore_permissions = True
-    nuevo_item.flags.ignore_mandatory = True
-    nuevo_item.insert()
+        base_item = frappe.get_doc("Item", base.finished_item)
+        nuevo_item = frappe.copy_doc(base_item)
+        nuevo_item.item_code = item_code
+        nuevo_item.item_name = f"{base_item.item_name} - {label}"
+        # La imagen SÍ se hereda a propósito (frappe.copy_doc ya la trae) -- es la
+        # misma prenda, solo cambia talla/consumo; el frontend la vuelve a jalar del
+        # Artículo en cada carga (fetchItemImage), así que basta con no borrarla aquí.
+        # item_defaults (almacén/cuentas por compañía) TAMBIÉN se hereda a
+        # propósito -- es la misma prenda en el mismo almacén, solo cambia la
+        # talla; sin esto la variante quedaba sin almacén de entrega configurado
+        # para ninguna compañía y tronaba al pasarla a Cotización/Orden de Venta
+        # ("Almacén de entrega requerido para el inventario del producto...").
+        nuevo_item.default_bom = None
+        nuevo_item.flags.ignore_permissions = True
+        nuevo_item.flags.ignore_mandatory = True
+        # La copia trae el precio estándar del base: ver insertar_item_con_precio_estandar
+        # (sin esto, un empleado sin permiso de crear precios no podía crear la variante).
+        item_api.insertar_item_con_precio_estandar(nuevo_item)
+        nuevo_codigo = nuevo_item.name
+    else:
+        # Base en texto libre: la variante también, sin artículo todavía (ver docstring).
+        nuevo_codigo = (item_code or f"{base.finished_item} - {label}").strip().upper()
+        if any(p.finished_item == nuevo_codigo for p in doc.costeo_producto):
+            frappe.throw(_("Este costeo ya tiene un producto llamado «{0}».").format(nuevo_codigo))
 
     nueva = doc.append("costeo_producto", {})
     for f in ("shipping_cost", "labeling_cost", "packaging_cost", "overhead_pct", "margin_pct"):
         nueva.set(f, base.get(f))
-    nueva.finished_item = nuevo_item.name
+    nueva.finished_item = nuevo_codigo
+    # Sin esto la imagen de una variante en texto libre se perdía: no hay artículo
+    # del cual jalarla (en la rama de arriba la trae el artículo clonado).
+    nueva.image = base.get("image")
     nueva.qty = qty_final
     nueva.description = base.description
     nueva.variante_talla_de = base.finished_item
     nueva.talla_grupo_label = label
+    # La variante va justo debajo de su producto base (después de las variantes que ya
+    # tenga), no al final: así se ve en Costear y así salen las líneas de Cotización,
+    # Orden de Venta y Factura, que recorren los productos en este orden.
+    filas = [p for p in doc.costeo_producto if p is not nueva]
+    pos = max(i for i, p in enumerate(filas) if p is base or p.get("variante_talla_de") == base.finished_item) + 1
+    filas.insert(pos, nueva)
+    doc.set("costeo_producto", filas)
+    for i, p in enumerate(doc.costeo_producto, 1):
+        p.idx = i  # set() conserva el idx de las filas que ya existían
 
     # stage_id (Etapas Costeo) y material_id (Costeo Producto Detalle) son
     # identificadores GLOBALES del costeo, no por producto -- varias pantallas
@@ -636,7 +564,7 @@ def crear_variante_talla(costeo: str, producto_base: str, genero: str = None, ta
         data = e.as_dict()
         for k in _CHILD_ROW_SYSTEM_FIELDS:
             data.pop(k, None)
-        data["producto_terminado"] = nuevo_item.name
+        data["producto_terminado"] = nuevo_codigo
         # clonado_de_stage_id: el stage_id ORIGINAL de la base (antes de
         # remapear) -- es lo que le permite a guardar_flujo_operaciones
         # encontrar esta fila cuando alguien edita la operación equivalente
@@ -658,37 +586,67 @@ def crear_variante_talla(costeo: str, producto_base: str, genero: str = None, ta
         data = d.as_dict()
         for k in _CHILD_ROW_SYSTEM_FIELDS:
             data.pop(k, None)
-        data["finished_item"] = nuevo_item.name
+        data["finished_item"] = nuevo_codigo
         # clonado_de_material_id: mismo criterio que clonado_de_stage_id arriba.
         data["clonado_de_material_id"] = d.material_id
         data["material_id"] = material_id_map.get(d.material_id) or frappe.generate_hash(length=10)
         if d.etapa:
             data["etapa"] = stage_id_map.get(d.etapa, d.etapa)
+        # Consumo propio de esta talla (ver ``materiales``): misma fórmula que
+        # ajustar_material_variante_talla y que la pantalla de Costear.
+        if d.material_id in consumos:
+            data["internal_qty"] = consumos[d.material_id]
+            data["rendimiento"] = round(1 / data["internal_qty"], 4) if data["internal_qty"] > 0 else 0
+            data["total"] = round(data["internal_qty"] * flt(d.unit_price or 0), 2)
         # Total a comprar de la VARIANTE (consumo x SUS piezas) -- copiarlo tal cual
         # dejaba el total del producto base en la variante.
-        data["supplier_qty"] = flt(d.internal_qty) * flt(qty_final)
+        data["supplier_qty"] = flt(data.get("internal_qty")) * flt(qty_final)
         doc.append("costeo_producto_detalle", data)
 
     # Costeo Material Etapa (tabla_materiales_etapa): reparte un material entre
     # varias etapas del MISMO producto -- se clonan solo las filas de los
     # materiales que sí se acaban de clonar arriba, con sus ids ya remapeados.
+    # Si la talla cambia el consumo de un material, su reparto por etapa se escala en la
+    # misma proporción -- copiarlo tal cual dejaba el de la base (1.45 m en etapas con
+    # 1.65 m de consumo), y lo que cada etapa recibe ya no sumaba lo que lleva la prenda.
+    consumo_base = {d.material_id: flt(d.internal_qty) for d in doc.costeo_producto_detalle
+                    if d.finished_item == base.finished_item and d.material_id}
     for r in list(doc.get("tabla_materiales_etapa") or []):
         # Solo si su etapa también se clonó: conservar el stage_id original la dejaba
         # apuntando a una etapa del producto base (fila huérfana para la variante).
         if r.material_id in material_id_map and r.stage_id in stage_id_map:
+            qty = flt(r.qty)
+            if r.material_id in consumos and consumo_base.get(r.material_id):
+                qty = round(qty * consumos[r.material_id] / consumo_base[r.material_id], 6)
             doc.append("tabla_materiales_etapa", {
                 "material_id": material_id_map[r.material_id],
                 "stage_id": stage_id_map[r.stage_id],
-                "qty": r.qty,
+                "qty": qty,
             })
 
+    # Piezas declaradas (Costeo Sub Ensamblaje): la variante comparte el flujo de su
+    # base, piezas incluidas. guardar_subensamblajes ya las propaga a las variantes,
+    # pero solo cuando alguien vuelve a guardar el paso Flujo de Producción: una
+    # variante creada DESPUÉS de declarar las piezas nacía sin ellas y se producía
+    # por operación en vez de por pieza, sin ningún aviso. Mismo criterio que allá:
+    # stage_ids traducidos a los de la variante; sin ninguno, la fila no se copia.
+    for s in list(doc.get("tabla_subensamblajes_costeo") or []):
+        if s.producto_terminado != base.finished_item:
+            continue
+        sids = [stage_id_map[x.strip()] for x in (s.stage_ids or "").split(",") if x.strip() in stage_id_map]
+        if not sids:
+            continue
+        doc.append("tabla_subensamblajes_costeo", {
+            "producto_terminado": nuevo_codigo, "nombre": s.nombre,
+            "stage_ids": ",".join(dict.fromkeys(sids)), "multiplicador": s.multiplicador,
+        })
+
     doc.append("tabla_tallas_costeo", {
-        "finished_item": nuevo_item.name,
+        "finished_item": nuevo_codigo,
         "genero": genero or "",
         "talla": talla or "",
         "qty": qty_final,
         "estado_cantidad": "Pendiente por cliente" if pendiente else "Definida",
-        "sobrecosto_tipo": "Ninguno",
     })
 
     doc.flags.ignore_permissions = True
@@ -701,7 +659,7 @@ def crear_variante_talla(costeo: str, producto_base: str, genero: str = None, ta
     doc.flags.ignore_validate_update_after_submit = True
     doc.save()
     frappe.db.commit()
-    return {"item_code": nuevo_item.name, "producto_row": nueva.name}
+    return {"item_code": nuevo_codigo, "producto_row": nueva.name}
 
 
 @frappe.whitelist()
@@ -773,6 +731,8 @@ def crear_cotizacion(
     _aplicar_impuestos_venta(quot, taxes_and_charges or _get_sales_tax_template(doc.compañia))
 
     for p in doc.costeo_producto:
+        if _variante_pendiente(doc, p):
+            continue
         for item in _venta_items_para_producto(doc, p):
             quot.append("items", item)
 
@@ -797,6 +757,7 @@ def materializar_producto_terminado(
     uom_conversions=None,
     description: str = None,
     image: str = None,
+    precios_variantes=None,
 ) -> dict:
     """Materializa el Producto Terminado de un renglón de Costeo: crea el Item (si
     item_code todavía no existe) reutilizando item_api.create_item, con su precio
@@ -809,6 +770,17 @@ def materializar_producto_terminado(
         pricing_rules = json.loads(pricing_rules) if pricing_rules else None
     if isinstance(uom_conversions, str):
         uom_conversions = json.loads(uom_conversions) if uom_conversions else None
+    # {texto de la variante: [reglas de precio por volumen]} -- ver _materializar_variantes.
+    if isinstance(precios_variantes, str):
+        precios_variantes = json.loads(precios_variantes) if precios_variantes else None
+
+    # La tabla por volumen nunca baja del precio de venta del costeo (ni en el producto
+    # base ni en una talla extra): ese precio ya es el piso con el que se costeó.
+    piso = flt(precio_venta, 2)
+    for r in pricing_rules or []:
+        if piso and flt(r.get("rate")) and flt(r.get("rate"), 2) < piso:
+            frappe.throw(_("{0}: el precio por volumen ({1}) no puede ser menor al precio de venta del costeo ({2}).").format(
+                item_name or item_code, frappe.format_value(flt(r.get("rate")), "Currency"), frappe.format_value(piso, "Currency")))
 
     from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _guess_finished_goods_warehouse
 
@@ -924,7 +896,63 @@ def materializar_producto_terminado(
                 )
 
     frappe.db.commit()
-    return {"item_code": item_code}
+    # Al dar de alta el producto base, sus variantes de talla (aún en texto libre) se
+    # dan de alta solas: no tiene caso pedir un modal por cada talla extra.
+    return {"item_code": item_code, "variantes": _materializar_variantes(costeo, item_code, precios_variantes)}
+
+
+def _materializar_variantes(costeo, producto_base, precios_variantes=None):
+    """Da de alta el artículo de cada variante de talla de `producto_base` que siga en
+    texto libre: código "<artículo base>-<talla>" (mismo que crear_variante_talla cuando
+    el base ya era artículo), nombre "<nombre base> - <talla>", la UDM y el grupo del
+    base, y el precio de venta de la PROPIA variante en el costeo. Si el base todavía
+    no es artículo no hace nada. Devuelve [{old, item_code}] para que la pantalla
+    renombre su copia local.
+
+    ``precios_variantes``: {texto de la variante: [{min_qty, max_qty, rate}, ...]} --
+    la escala de precios por volumen de CADA talla, capturada a mano en el mismo modal
+    del producto base (no se deriva de la del base: la decide el usuario). Igual que
+    las del base, son Pricing Rule por código de artículo: el rango lo decide la
+    cantidad de su propia línea en la cotización/OV."""
+    precios_variantes = precios_variantes or {}
+    if not producto_base or not frappe.db.exists("Item", producto_base):
+        return []
+    base = frappe.db.get_value("Item", producto_base, ["item_name", "stock_uom", "item_group", "image"], as_dict=True)
+    filas = frappe.get_all(
+        "Costeo Producto",
+        filters={"parent": costeo, "parenttype": "Costeo", "variante_talla_de": producto_base},
+        fields=["finished_item", "talla_grupo_label", "unit_sales_price", "description", "image"],
+        order_by="idx",
+    )
+    hechas = []
+    for v in filas:
+        if not v.finished_item or frappe.db.exists("Item", v.finished_item):
+            continue
+        etiqueta = v.talla_grupo_label or v.finished_item.rsplit(" - ", 1)[-1]
+        codigo = _slug_item_code(producto_base, etiqueta)
+        n = 2
+        while frappe.db.exists("Item", codigo):  # un código ocupado no detiene la cotización
+            codigo = f"{_slug_item_code(producto_base, etiqueta)}-{n}"
+            n += 1
+        materializar_producto_terminado(
+            costeo=costeo, old_finished_item=v.finished_item, item_code=codigo,
+            item_name=f"{base.item_name} - {etiqueta}", stock_uom=base.stock_uom,
+            precio_venta=v.unit_sales_price, item_group=base.item_group,
+            description=v.description, image=v.image or base.image,
+            pricing_rules=[r for r in (precios_variantes.get(v.finished_item) or []) if flt(r.get("rate")) > 0] or None,
+        )
+        hechas.append({"old": v.finished_item, "item_code": codigo})
+    return hechas
+
+
+@frappe.whitelist()
+def materializar_variantes_talla(costeo: str, producto_base: str, precios_variantes=None) -> dict:
+    """Para un producto base que YA es artículo (se dio de alta antes, o se vinculó a uno
+    existente): da de alta sus variantes de talla pendientes, con la escala de precios
+    por volumen que se haya capturado para cada una."""
+    if isinstance(precios_variantes, str):
+        precios_variantes = json.loads(precios_variantes) if precios_variantes else None
+    return {"variantes": _materializar_variantes(costeo, producto_base, precios_variantes)}
 
 
 @frappe.whitelist()
@@ -942,7 +970,7 @@ def actualizar_cotizacion(
     if doc.docstatus != 0:
         frappe.throw(_("La cotización ya está validada; no se puede editar."))
     doc.valid_till = valid_till or None
-    doc.payment_terms_template = payment_terms_template or None
+    _poner_plantilla_pago(doc, payment_terms_template)
     doc.tc_name = tc_name or None
     doc.terms = resolver_terminos(tc_name)
     doc.currency = currency or doc.currency
@@ -956,16 +984,33 @@ def actualizar_cotizacion(
     if items is not None:
         if isinstance(items, str):
             items = json.loads(items)
-        doc.items = []
+        # Se ACTUALIZAN los renglones que ya existen (por su `name`) en vez de borrar
+        # la tabla y volverla a armar: la pantalla solo edita artículo, cantidad y
+        # precio, y reconstruir desde cero tiraba todo lo demás que trae cada línea --
+        # la descripción armada desde el costeo (con el detalle de la talla extra), la
+        # UDM, el almacén, la plantilla de impuestos, el enlace al origen...
+        existentes = {r.name: r for r in doc.items}
+        filas = []
         for r in items:
             if not r.get("item_code"):
                 continue
-            row = doc.append("items", {})
+            row = existentes.get(r.get("name"))
+            if row is None:
+                row = frappe.new_doc("Quotation Item", parent_doc=doc, parentfield="items")
+            elif row.item_code != r["item_code"]:
+                row.description = None  # otro artículo: su descripción la pone ERPNext
             row.item_code = r["item_code"]
-            row.item_name = r.get("item_name") or r["item_code"]
-            row.description = r.get("description") or ""
+            row.item_name = r.get("item_name") or row.item_name or r["item_code"]
+            if "description" in r:
+                row.description = r.get("description") or row.description
             row.qty = flt(r.get("qty")) or 1
             row.rate = flt(r.get("rate"))
+            # price_list_rate = rate a propósito: ver _venta_items_para_producto.
+            row.price_list_rate = row.rate
+            filas.append(row)
+        doc.set("items", filas)
+        for i, row in enumerate(doc.items, 1):
+            row.idx = i
         doc.flags.ignore_permissions = True
         doc.flags.ignore_mandatory = True
         doc.run_method("set_missing_values")
@@ -1400,6 +1445,8 @@ def get_flujo_operaciones(costeo: str) -> dict:
                 "prenda_armada": op.op_key in ps_flujo.ops_armada[1:] or (
                     bool(op.is_terminal) and bool(ps_flujo.ops_armada)),
                 "stage_ids": sorted(op.member_stage_keys),
+                # Elegido a mano como el paso donde se unen las piezas (ver une_piezas).
+                "une_piezas": bool(op.get("une_piezas")),
                 "candidatos_recibe": candidatos,
             })
         # Materiales directos: qué materia prima se le manda a cada paso, además de
@@ -1474,6 +1521,7 @@ def guardar_flujo_operaciones(costeo: str, cambios, materiales=None) -> dict:
     a qué operación se le manda cada materia prima además de lo que reciba de un
     paso anterior. op_key = "" quita la asignación (vuelve a automática: se
     atribuye sola al/los paso(s) que arrancan de materia prima directa)."""
+    _exigir_flujo_editable(costeo)
     from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_production_operations
 
     if isinstance(cambios, str):
@@ -1622,7 +1670,7 @@ def guardar_flujo_operaciones(costeo: str, cambios, materiales=None) -> dict:
 
 
 @frappe.whitelist()
-def guardar_subensamblajes(costeo: str, producto: str, filas) -> dict:
+def guardar_subensamblajes(costeo: str, producto: str, filas, union_stage_id=None) -> dict:
     """Persiste la declaración de sub-ensamblajes de UN producto BASE (ver
     Costeo Sub Ensamblaje / get_flujo_operaciones -- "sub_ensamblajes"):
     reemplaza TODAS sus filas por las que manda ``filas``:
@@ -1639,7 +1687,13 @@ def guardar_subensamblajes(costeo: str, producto: str, filas) -> dict:
     captura esto aparte -- comparte el flujo de su producto BASE, así que
     esta función propaga la misma declaración a cada variante, traduciendo
     los stage_id de la base a los correspondientes de cada variante (vía
-    clonado_de_stage_id, ver crear_variante_talla)."""
+    clonado_de_stage_id, ver crear_variante_talla).
+
+    ``union_stage_id``: el servicio del paso donde la persona dijo "Aquí se unen las
+    piezas" (Etapas Costeo.une_piezas; vacío = que lo deduzca el sistema, ver
+    _ops_prenda_armada). Se marca solo esa etapa del producto -- y la equivalente
+    de cada variante --, las demás se desmarcan."""
+    _exigir_flujo_editable(costeo)
     from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_production_operations
 
     if isinstance(filas, str):
@@ -1681,6 +1735,17 @@ def guardar_subensamblajes(costeo: str, producto: str, filas) -> dict:
                 "stage_ids": ",".join(sids_var), "multiplicador": mult,
             })
 
+    if frappe.get_meta("Etapas Costeo").has_field("une_piezas"):
+        union = union_stage_id if union_stage_id in stages_validos else None
+        unions = {union} if union else set()
+        for fi_variante in variantes:
+            mapa = variante_stage_map.get(fi_variante) or {}
+            if union and union in mapa:
+                unions.add(mapa[union])
+        for e in doc.tabla_etapas_costeo:
+            if e.producto_terminado in productos_a_limpiar:
+                e.une_piezas = 1 if e.stage_id in unions else 0
+
     doc.flags.ignore_permissions = True
     doc.save()
     frappe.db.commit()
@@ -1703,6 +1768,7 @@ def toggle_no_agrupar(costeo: str, stage_id: str, no_agrupar) -> dict:
     mismo proveedor, si siguen sin marcar, se acomodan solos entre ellos como
     siempre -- esto no apaga la fusión automática en general, solo saca a este
     servicio de ella."""
+    _exigir_flujo_editable(costeo)
     if not frappe.db.exists("Etapas Costeo", {"parent": costeo, "stage_id": stage_id}):
         frappe.throw(_("No se encontró esa etapa en el costeo."))
     valor = 1 if cint(no_agrupar) else 0
@@ -1975,6 +2041,86 @@ def cancelar_documento(doctype: str, name: str) -> dict:
     return {"name": doc.name, "docstatus": doc.docstatus}
 
 
+def _quien_rehace_ov(doc):
+    """La última persona que hizo o editó la OV sin ser quien la cancela: a ella le
+    toca rehacerla. Si solo la tocó quien cancela, nadie (no hay a quién avisar)."""
+    yo = frappe.session.user
+    for v in frappe.get_all("Version", filters={"ref_doctype": "Sales Order", "docname": doc.name},
+                            fields=["owner"], order_by="creation desc"):
+        if v.owner not in (yo, "Administrator", "Guest"):
+            return v.owner
+    for u in (doc.get("enviado_aprobacion_por"), doc.modified_by, doc.owner):
+        if u and u not in (yo, "Administrator", "Guest"):
+            return u
+    return None
+
+
+# Lo que ya salió de una OV y la amarra: mientras exista vivo, la OV no se cancela.
+_DEPENDIENTES_OV = (
+    ("Delivery Note", "Delivery Note Item", "against_sales_order", _("Remisiones")),
+    ("Sales Invoice", "Sales Invoice Item", "sales_order", _("Facturas")),
+    ("Material Request", "Material Request Item", "sales_order", _("Solicitudes de material")),
+    ("Purchase Order", "Purchase Order Item", "sales_order", _("Órdenes de compra")),
+    ("Production Plan", "Production Plan Sales Order", "sales_order", _("Planes de producción")),
+)
+
+
+@frappe.whitelist()
+def cancelar_orden_venta(name: str, motivo: str) -> dict:
+    """Cancela una Orden de Venta validada con su motivo. Solo quien valida documentos
+    (puede_aprobar_documentos). La OV no se borra: se queda en el costeo como historial,
+    con el motivo (campo motivo_cancelacion) y un comentario de quién y por qué.
+
+    No procede mientras algo que salió de ella siga vivo (remisión, factura, compras,
+    producción): eso se cancela primero. Si era la única OV viva del costeo, el costeo
+    regresa a "Cotizado" para poder generar otra."""
+    if not puede_aprobar_documentos():
+        frappe.throw(_("Solo quien valida documentos puede cancelar una orden de venta."), frappe.PermissionError)
+    motivo = (motivo or "").strip()
+    if len(motivo) < 5:
+        frappe.throw(_("Escribe el motivo de la cancelación."))
+    doc = frappe.get_doc("Sales Order", name)
+    if doc.docstatus != 1:
+        frappe.throw(_("Solo se puede cancelar una orden de venta validada."))
+
+    vivos = []
+    for padre, hijo, campo, etiqueta in _DEPENDIENTES_OV:
+        if not frappe.db.has_column(hijo, campo):
+            continue
+        nombres = frappe.db.sql_list(f"""
+            select distinct p.name from `tab{hijo}` h join `tab{padre}` p on p.name = h.parent
+            where h.`{campo}` = %s and p.docstatus = 1""", name)
+        if nombres:
+            vivos.append(f"{etiqueta}: {', '.join(nombres)}")
+    if vivos:
+        frappe.throw(_("Antes de cancelar la orden de venta hay que cancelar lo que salió de ella:") + "<br>" + "<br>".join(vivos),
+                     title=_("La orden de venta tiene documentos vivos"))
+
+    # Quién la retoma: se calcula ANTES de cancelar (la cancelación también queda en el historial).
+    rehacer_por = _quien_rehace_ov(doc)
+    doc.flags.ignore_permissions = True
+    doc.cancel()
+    if frappe.db.has_column("Sales Order", "motivo_cancelacion"):
+        doc.db_set("motivo_cancelacion", motivo, update_modified=False)
+    if rehacer_por and frappe.db.has_column("Sales Order", "rehacer_por"):
+        doc.db_set("rehacer_por", rehacer_por, update_modified=False)
+    doc.add_comment("Comment", _("Orden de venta cancelada. Motivo: {0}").format(frappe.utils.escape_html(motivo)))
+    if rehacer_por:
+        from costeo_yelke.api.aprobaciones import _avisar, ruta_ov_cancelada
+
+        quien = frappe.utils.get_fullname(frappe.session.user)
+        _avisar([rehacer_por], _("{0} canceló la orden de venta {1}: rehazla con la corrección").format(quien, doc.name),
+                "Sales Order", doc.name, mensaje=motivo, ruta=ruta_ov_cancelada(doc.name),
+                boton=_("Abrir el costeo"))
+
+    costeo = doc.get("costeo")
+    if costeo and not frappe.db.exists("Sales Order", {"costeo": costeo, "docstatus": ["<", 2]}):
+        if frappe.db.get_value("Costeo", costeo, "costeo_status") == "Orden de Venta":
+            frappe.db.set_value("Costeo", costeo, "costeo_status", "Cotizado", update_modified=False)
+    frappe.db.commit()
+    return {"name": doc.name, "docstatus": doc.docstatus, "motivo_cancelacion": motivo}
+
+
 @frappe.whitelist()
 def crear_revision_costeo(costeo: str, motivo: str = None) -> dict:
     """Crea una nueva revisión (borrador) de un Costeo ya validado o cancelado, enlazada
@@ -2002,6 +2148,53 @@ def crear_revision_costeo(costeo: str, motivo: str = None) -> dict:
     nuevo.insert()
     frappe.db.commit()
     return {"name": nuevo.name}
+
+
+@frappe.whitelist()
+def reabrir_costeo(costeo: str, motivo: str = None) -> dict:
+    """Regresa a borrador el MISMO costeo para corregirlo tras un rechazo de la
+    cotización -- en lugar de crear_revision_costeo, que dejaba el costeo original
+    cancelado ("reemplazado por una revisión") como basura en la lista. Las
+    cotizaciones rechazadas siguen ligadas a este costeo y quedan como su historial.
+
+    Solo procede mientras el costeo no haya pasado a venta: sin órdenes de venta
+    vivas ni cotizaciones vigentes (validadas y no rechazadas, o en borrador)."""
+    doc = frappe.get_doc("Costeo", costeo)
+    if not doc.has_permission("write"):
+        frappe.throw(_("No tienes permiso para editar este costeo."), frappe.PermissionError)
+    if doc.docstatus == 0:
+        return {"name": doc.name, "docstatus": 0}
+    if doc.docstatus == 2 and frappe.db.exists("Costeo", {"amended_from": costeo}):
+        frappe.throw(_("Este costeo ya fue reemplazado por una revisión; edita la revisión."))
+
+    if frappe.db.has_column("Sales Order", "costeo") and frappe.db.exists(
+        "Sales Order", {"costeo": costeo, "docstatus": ["<", 2]}
+    ):
+        frappe.throw(_("El costeo ya tiene una orden de venta; ya no se puede reabrir."))
+    for q in frappe.get_all("Quotation", filters={"costeo": costeo, "docstatus": ["<", 2]},
+                            fields=["name", "docstatus", "status"]):
+        if q.docstatus == 0:
+            frappe.throw(_("La cotización {0} sigue en borrador: elimínala antes de editar el costeo.").format(q.name))
+        if q.status != "Lost":
+            frappe.throw(_("La cotización {0} sigue vigente: márcala como rechazada antes de editar el costeo.").format(q.name))
+
+    meta = frappe.get_meta("Costeo")
+    # Mismo efecto que un "deshacer validación": el documento y todas sus tablas hijas
+    # vuelven a docstatus 0. Al validarlo otra vez pasa de nuevo por aprobación.
+    for df in meta.get_table_fields():
+        frappe.db.sql(f"update `tab{df.options}` set docstatus = 0 where parent = %s and parenttype = 'Costeo'", costeo)
+    from costeo_yelke.api.aprobaciones import _CAMPOS_APROBACION, BORRADOR
+
+    valores = {"docstatus": 0, "costeo_status": "Borrador"}
+    for campo in _CAMPOS_APROBACION:
+        df = meta.get_field(campo)
+        if df:
+            valores[campo] = BORRADOR if campo == "estado_aprobacion_yelke" else (0 if df.fieldtype == "Check" else None)
+    frappe.db.set_value("Costeo", costeo, valores)
+    doc.add_comment("Comment", _("Costeo reabierto para editar tras el rechazo de la cotización.")
+                    + (f" {_('Motivo')}: {frappe.utils.escape_html(motivo.strip())}" if (motivo or "").strip() else ""))
+    frappe.db.commit()
+    return {"name": doc.name, "docstatus": 0}
 
 
 @frappe.whitelist()
@@ -2152,7 +2345,8 @@ def _ligar_orden_venta_a_cotizacion(so, costeo):
     _venta_items_para_producto, así que normalmente coinciden 1 a 1."""
     if not frappe.db.has_column("Quotation", "costeo"):
         return
-    quot = frappe.db.get_value("Quotation", {"costeo": costeo, "docstatus": 1}, "name", order_by="creation desc")
+    # La rechazada (Lost) se queda en el historial del costeo: nunca es la que se vende.
+    quot = frappe.db.get_value("Quotation", {"costeo": costeo, "docstatus": 1, "status": ["!=", "Lost"]}, "name", order_by="creation desc")
     if not quot:
         return
     libres = frappe.get_all(
@@ -2185,7 +2379,7 @@ def actualizar_orden_venta(
         doc.delivery_date = delivery_date
         for it in doc.items:
             it.delivery_date = delivery_date
-    doc.payment_terms_template = payment_terms_template or None
+    _poner_plantilla_pago(doc, payment_terms_template)
     doc.tc_name = tc_name or None
     doc.terms = resolver_terminos(tc_name)
     doc.po_no = po_no or None
@@ -2435,7 +2629,7 @@ def actualizar_factura_venta(name: str, posting_date=None, payment_terms_templat
         doc.posting_date = posting_date
     if due_date:
         doc.due_date = due_date
-    doc.payment_terms_template = payment_terms_template or None
+    _poner_plantilla_pago(doc, payment_terms_template)
     doc.tc_name = tc_name or None
     doc.terms = resolver_terminos(tc_name)
     doc.flags.ignore_permissions = True
@@ -3437,6 +3631,17 @@ def get_factura_compra(name: str) -> dict:
         "es_factura_flete": cint(doc.get("es_factura_flete")),
         "flete_origen_doctype": doc.get("flete_origen_doctype") or "",
         "flete_origen": doc.get("flete_origen") or "",
+        # Flete que cobra el mismo proveedor (heredado del recibo): su IVA se ajusta
+        # aquí contra el CFDI (fletes.ajustar_iva_flete).
+        "flete_importe": next((flt(t.tax_amount) for t in (doc.get("taxes") or [])
+                               if t.description == FLETE_DESCRIPTION and t.category != "Valuation"), 0),
+        # Lo que la factura trae de verdad (una creada antes de la casilla puede tenerla
+        # marcada sin el renglón); al guardar, ajustar_iva_flete lo pone o lo quita.
+        "flete_cobra_iva": 1 if any(t.description == "IVA del flete" for t in (doc.get("taxes") or [])) else 0,
+        "flete_iva": next((flt(t.tax_amount) for t in (doc.get("taxes") or [])
+                           if t.description == "IVA del flete"), 0),
+        "sin_alta_sat": cint(frappe.db.get_value("Supplier", doc.supplier, "sin_alta_sat"))
+                        if frappe.db.has_column("Supplier", "sin_alta_sat") else 0,
         # Archivos de la factura (patch v0_2_58): el PDF es obligatorio para validar.
         "archivos_factura": frappe.db.has_column("Purchase Invoice", "factura_pdf"),
         "factura_pdf": doc.get("factura_pdf") or "",
@@ -3450,7 +3655,8 @@ def get_factura_compra(name: str) -> dict:
 
 @frappe.whitelist()
 def actualizar_factura_compra(name: str, posting_date=None, due_date=None, bill_no=None, bill_date=None,
-                              payment_terms_template=None, tc_name=None, conversion_rate=None) -> dict:
+                              payment_terms_template=None, tc_name=None, conversion_rate=None,
+                              flete_cobra_iva=None) -> dict:
     """Actualiza los datos manuales de una factura de compra en borrador."""
     requiere_vista("facturas")
     doc = frappe.get_doc("Purchase Invoice", name)
@@ -3465,13 +3671,15 @@ def actualizar_factura_compra(name: str, posting_date=None, due_date=None, bill_
         doc.bill_no = bill_no or None
     if bill_date:
         doc.bill_date = bill_date
-    doc.payment_terms_template = payment_terms_template or None
+    _poner_plantilla_pago(doc, payment_terms_template)
     doc.tc_name = tc_name or None
     doc.terms = resolver_terminos(tc_name)
     # Factura en moneda extranjera: el tipo de cambio que vale es el de la factura
     # (el del DOF de su fecha), capturado a mano.
     if doc.currency != _moneda_compania(doc.company) and flt(conversion_rate) > 0:
         doc.conversion_rate = flt(conversion_rate)
+    if flete_cobra_iva is not None and doc.meta.has_field("flete_cobra_iva"):
+        doc.flete_cobra_iva = 1 if cint(flete_cobra_iva) else 0
     doc.flags.ignore_permissions = True
     doc.save()
     return {"name": doc.name}
@@ -3570,57 +3778,82 @@ def _precio_acordado_vigente(item_code, customer):
     return row
 
 
+def _ultimo_precio_venta(item_code, customer):
+    """Último precio con el que se le vendió ese artículo a ese cliente: el renglón de
+    la Orden de Venta validada más reciente. None si nunca se le ha vendido."""
+    r = frappe.db.sql(
+        """select soi.rate from `tabSales Order Item` soi
+           join `tabSales Order` so on so.name = soi.parent
+           where so.docstatus = 1 and so.customer = %s and soi.item_code = %s
+           order by so.transaction_date desc, so.creation desc, soi.idx asc limit 1""",
+        (customer, item_code),
+    )
+    return flt(r[0][0]) if r else None
+
+
+def _precio_nueva_ov(item_code, customer, respaldo):
+    """Precio de un artículo en una OV nueva de pedido recurrente: manda el precio
+    acordado (validado) si existe; si no, el último precio con que se le vendió al
+    cliente; y si tampoco hay, el de la OV base (``respaldo``)."""
+    acordado = _precio_acordado_vigente(item_code, customer)
+    if acordado:
+        return {"rate": flt(acordado.price_list_rate), "origen": "acordado", "tiene_precio_acordado": True,
+                "vigente": bool(acordado.vigente), "valid_upto": acordado.valid_upto}
+    ultimo = _ultimo_precio_venta(item_code, customer)
+    return {"rate": ultimo if ultimo is not None else flt(respaldo), "origen": "ultimo", "tiene_precio_acordado": False,
+            "vigente": True, "valid_upto": None}
+
+
 @frappe.whitelist()
 def get_precio_acordado_status(sales_order: str) -> dict:
-    """Estado del precio acordado de cada artículo de la OV -- para habilitar o
-    bloquear "Generar réplica" en el SPA antes de intentarlo (mismo criterio que
-    generar_replica_ov revalida del lado servidor)."""
+    """Precios con los que saldría una OV nueva basada en esta -- para "Generar nueva
+    OV" en el SPA (mismo criterio que generar_replica_ov revalida del lado servidor).
+
+    El precio acordado tiene prioridad; un artículo sin precio acordado ya no bloquea:
+    toma el último precio con que se le vendió al cliente. Lo único que bloquea es un
+    precio acordado VENCIDO, salvo para quien puede aprobar precios."""
+    from costeo_yelke.roles import puede_aprobar_precios
+
     so = frappe.get_doc("Sales Order", sales_order)
     items = []
     for it in so.items:
-        row = _precio_acordado_vigente(it.item_code, so.customer)
-        items.append({
-            "item_code": it.item_code,
-            "item_name": it.item_name,
-            "qty": flt(it.qty),
-            "rate": flt(row.price_list_rate) if row else flt(it.rate),
-            "tiene_precio_acordado": bool(row),
-            "vigente": bool(row and row.vigente),
-            "valid_upto": row.valid_upto if row else None,
-        })
-    puede_generar = bool(items) and all(i["tiene_precio_acordado"] and i["vigente"] for i in items)
-    vencido = bool(items) and all(i["tiene_precio_acordado"] for i in items) and not puede_generar
+        items.append({"item_code": it.item_code, "item_name": it.item_name, "qty": flt(it.qty),
+                      **_precio_nueva_ov(it.item_code, so.customer, it.rate)})
+    vencido = any(i["tiene_precio_acordado"] and not i["vigente"] for i in items)
     return {
         "items": items,
-        "puede_generar": puede_generar,
+        "puede_generar": bool(items) and not vencido,
         "vencido": vencido,
-        "es_ceo": "CEO" in frappe.get_roles(),
+        "es_ceo": puede_aprobar_precios(),
     }
 
 
 @frappe.whitelist()
 def generar_replica_ov(sales_order: str, items) -> dict:
-    """Crea una Orden de Venta nueva reusando los mismos artículos y precios
-    acordados de una OV existente del mismo cliente -- salta Costear/Cotizar por
-    completo para un pedido recurrente que ya conoce el precio. Bloqueada si el
-    precio acordado ya venció, salvo para el rol "CEO" (validación de permisos: no
-    se borra ni se modifica el precio acordado, solo se autoriza generar con él)."""
+    """Crea una Orden de Venta nueva reusando los mismos artículos de una OV existente
+    del mismo cliente -- salta Costear/Cotizar para un pedido recurrente. El precio de
+    cada artículo lo decide el servidor (_precio_nueva_ov): el acordado si existe, si
+    no el último con que se le vendió. Un precio acordado vencido solo lo puede usar
+    quien aprueba precios (no se borra ni se modifica, solo se autoriza generar con él)."""
+    from costeo_yelke.roles import puede_aprobar_precios
+
     if isinstance(items, str):
         items = json.loads(items)
     if not items:
         frappe.throw(_("Agrega al menos un artículo."))
 
     so = frappe.get_doc("Sales Order", sales_order)
-    es_ceo = "CEO" in frappe.get_roles()
+    puede_vencido = puede_aprobar_precios()
+    rate_base = {it.item_code: it.rate for it in so.items}
 
+    precios = {}
     for it in items:
-        row = _precio_acordado_vigente(it["item_code"], so.customer)
-        if not row:
-            frappe.throw(_('{0} no tiene precio acordado -- usa "Fijar Precio" desde la cotización primero.').format(it["item_code"]))
-        if not row.vigente and not es_ceo:
+        p = _precio_nueva_ov(it["item_code"], so.customer, rate_base.get(it["item_code"], it.get("rate")))
+        if p["tiene_precio_acordado"] and not p["vigente"] and not puede_vencido:
             frappe.throw(_(
-                "El precio acordado de {0} venció el {1}. Un usuario con rol CEO debe generar esta réplica para desbloquearlo."
-            ).format(it["item_code"], formatdate(row.valid_upto)))
+                "El precio acordado de {0} venció el {1}. Alguien que apruebe precios debe generar esta OV, o vuelve a fijarlo desde la cotización."
+            ).format(it["item_code"], formatdate(p["valid_upto"])))
+        precios[it["item_code"]] = p["rate"]
 
     new_so = frappe.new_doc("Sales Order")
     new_so.customer = so.customer
@@ -3633,7 +3866,7 @@ def generar_replica_ov(sales_order: str, items) -> dict:
         new_so.append("items", {
             "item_code": it["item_code"],
             "qty": flt(it.get("qty")) or 1,
-            "rate": flt(it.get("rate")),
+            "rate": precios[it["item_code"]],
         })
     new_so.flags.ignore_permissions = True
     new_so.insert()
@@ -3687,6 +3920,23 @@ def get_item_price(item_code, price_list=None):
     )
     currency = frappe.db.get_value("Price List", price_list, "currency") or "MXN"
     return {"price": float(price or 0), "currency": currency, "price_list": price_list}
+
+
+@frappe.whitelist()
+def servicios_de_proveedor(supplier: str) -> list:
+    """Servicios (grupo Servicios) registrados a ese proveedor: los que tiene en su
+    lista de precios de COMPRA (mismo criterio que proveedores_para_item) o en la
+    tabla de proveedores del artículo. Para filtrar el buscador de servicios del
+    paso cuando ya se eligió el taller en Costear."""
+    if not supplier:
+        return []
+    por_precio = frappe.get_all("Item Price", filters={"supplier": supplier, "buying": 1}, pluck="item_code")
+    por_proveedor = frappe.get_all("Item Supplier", filters={"supplier": supplier, "parenttype": "Item"}, pluck="parent")
+    codigos = list(dict.fromkeys([*por_precio, *por_proveedor]))
+    if not codigos:
+        return []
+    return frappe.get_all("Item", filters={"name": ["in", codigos], "item_group": "Servicios", "disabled": 0},
+                          pluck="name", order_by="name asc")
 
 
 @frappe.whitelist()
@@ -4599,6 +4849,32 @@ def _get_sales_tax_template(company: str):
     return rows[0].name if rows else None
 
 
+def _poner_plantilla_pago(doc, plantilla):
+    """Cambia la plantilla de condiciones de pago y hace que el calendario la siga.
+
+    ERPNext solo arma ``payment_schedule`` desde la plantilla cuando la tabla está
+    vacía (AccountsController.set_payment_schedule): si solo se cambia la plantilla,
+    el calendario viejo se queda -- y es lo que sale impreso (ej. la plantilla dice
+    "50% anticipo" y el PDF sigue diciendo "30 días de Crédito"). Se vacía cuando la
+    plantilla cambia, o cuando el calendario no corresponde a ella (documentos que
+    quedaron así antes de esta corrección), y el validate del save lo vuelve a armar."""
+    plantilla = plantilla or None
+    if doc.get("payment_schedule") and (
+        plantilla != (doc.payment_terms_template or None) or not _calendario_es_de(doc, plantilla)
+    ):
+        doc.payment_schedule = []
+    doc.payment_terms_template = plantilla
+
+
+def _calendario_es_de(doc, plantilla):
+    terminos = [r.payment_term or None for r in doc.payment_schedule]
+    if not plantilla:
+        return not any(terminos)
+    return terminos == frappe.get_all(
+        "Payment Terms Template Detail", filters={"parent": plantilla}, pluck="payment_term", order_by="idx asc"
+    )
+
+
 def _aplicar_impuestos_venta(doc, template):
     """Aplica una plantilla de impuestos de venta (IVA) poblando doc.taxes -- fijar
     solo taxes_and_charges no llena la tabla hija (mismo patrón que _aplicar_impuestos_doc,
@@ -4640,6 +4916,25 @@ def get_costeo_related(costeo: str, sales_order: str = None) -> dict:
         out["quotations"] = rows
         if rows:
             out["quotation"] = rows[0]
+        # Cotizaciones de las revisiones ANTERIORES de este costeo (cadena amended_from):
+        # "Editar Costeo" tras un rechazo crea una revisión nueva y la cotización
+        # rechazada se queda colgada del costeo viejo -- sin esto desaparecía de la
+        # pantalla. Van aparte, de solo lectura, para no contar como "la" cotización
+        # vigente ni esconder el formulario de nueva cotización de la revisión.
+        historial, anterior, vistos = [], frappe.db.get_value("Costeo", costeo, "amended_from"), {costeo}
+        while anterior and anterior not in vistos:
+            vistos.add(anterior)
+            for q in frappe.get_all(
+                "Quotation",
+                filters={"costeo": anterior},
+                fields=["name", "status", "docstatus", "grand_total", "currency",
+                        "order_lost_reason", "transaction_date", "creation"],
+                order_by="creation desc",
+            ):
+                q["costeo"] = anterior
+                historial.append(q)
+            anterior = frappe.db.get_value("Costeo", anterior, "amended_from")
+        out["quotations_historial"] = historial
 
     if frappe.db.has_column("Sales Order", "costeo"):
         # Igual que con Quotation: puede haber varias OV bajo un mismo Costeo (réplicas
@@ -4650,7 +4945,11 @@ def get_costeo_related(costeo: str, sales_order: str = None) -> dict:
             filters={"costeo": costeo},
             fields=["name", "status", "docstatus", "grand_total", "currency",
                     "delivery_date", "payment_terms_template", "tc_name", "contact_email",
-                    "contact_mobile", "selling_price_list", "taxes_and_charges", "po_no"],
+                    "contact_mobile", "selling_price_list", "taxes_and_charges", "po_no"]
+                   # La OC del cliente adjunta (patch v0_2_56): sin ella en la respuesta, la
+                   # pantalla la mostraba vacía al volver aunque sí estuviera guardada.
+                   + (["oc_cliente_archivo"] if frappe.db.has_column("Sales Order", "oc_cliente_archivo") else [])
+                   + (["motivo_cancelacion"] if frappe.db.has_column("Sales Order", "motivo_cancelacion") else []),
             order_by="creation desc",
         )
         # Cantidad por producto de cada OV -- la tarjeta "Orden de venta" del menú de
@@ -4668,14 +4967,17 @@ def get_costeo_related(costeo: str, sales_order: str = None) -> dict:
             for r in rows:
                 r["cantidades"] = por_so.get(r["name"], [])
         out["sales_orders"] = rows
-        if rows:
-            out["sales_order"] = rows[0]
+        # La OV vigente es la más reciente que NO esté cancelada: una cancelada se queda
+        # en la lista solo como historial (ver cancelar_orden_venta).
+        vivas = [r for r in rows if r["docstatus"] != 2]
+        if vivas:
+            out["sales_order"] = vivas[0]
 
     # OV activa para remisiones/factura: la que mandó el SPA si de verdad pertenece a
     # este Costeo, si no la más reciente (mismo comportamiento que antes de existir
     # selección explícita).
     active_so = None
-    if sales_order and any(r["name"] == sales_order for r in out["sales_orders"]):
+    if sales_order and any(r["name"] == sales_order and r["docstatus"] != 2 for r in out["sales_orders"]):
         active_so = sales_order
     elif out["sales_order"]:
         active_so = out["sales_order"]["name"]
@@ -4787,6 +5089,125 @@ def get_historial_costeo(costeo: str) -> dict:
         )
 
     return {"cadena": cadena, "cotizaciones": cotizaciones}
+
+
+# Estados en los que el flujo ya se confirmó ("Confirmar y pasar a producción"): sus
+# BOMs y Subcontracting BOMs existen, y cambiar el flujo por debajo los dejaría sin
+# coincidir. Solo se vuelve a editar con revertir_flujo_produccion.
+_ESTADOS_FLUJO_CONFIRMADO = ("En Producción", "Entregado", "Completado")
+
+
+def _exigir_flujo_editable(costeo):
+    if frappe.db.get_value("Costeo", costeo, "costeo_status") in _ESTADOS_FLUJO_CONFIRMADO:
+        frappe.throw(
+            _("El flujo de producción ya está confirmado. Para corregirlo usa «Revertir flujo» en Flujo de Producción."),
+            title=_("Flujo confirmado"),
+        )
+
+
+@frappe.whitelist()
+def revertir_flujo_produccion(costeo: str) -> dict:
+    """Deshace "Confirmar y pasar a producción" para poder corregir el flujo: cancela y
+    borra el Plan de producción, los Subcontracting BOMs y las BOMs del costeo, intenta
+    borrar los artículos de pieza intermedia que ya nadie usa, y regresa el costeo a
+    "Orden de Venta" (Flujo de Producción vuelve a ser editable).
+
+    Solo se puede mientras del plan no haya salido nada: con una solicitud de material,
+    una OC, una orden de trabajo o una remisión activas, se pide cancelarlas primero --
+    ahí ya hay compras o producción reales detrás. Todo o nada: si algo no se puede
+    cancelar o borrar, no queda ningún cambio a medias."""
+    requiere_vista("preparacion")
+    doc = frappe.get_doc("Costeo", costeo)
+    if doc.costeo_status not in _ESTADOS_FLUJO_CONFIRMADO:
+        frappe.throw(_("El flujo de este costeo todavía no se ha confirmado: se puede editar directamente."))
+    if doc.costeo_status != "En Producción":
+        frappe.throw(_("Este costeo ya tiene entregas ({0}): el flujo ya no se puede revertir.").format(doc.costeo_status))
+
+    bloqueos = []
+    for dt, etiqueta in (("Material Request", _("Solicitud de material")), ("Purchase Order", _("Orden de compra")),
+                         ("Work Order", _("Orden de trabajo")), ("Delivery Note", _("Remisión"))):
+        if frappe.db.has_column(dt, "costeo"):
+            for n in frappe.get_all(dt, filters={"costeo": costeo, "docstatus": ["<", 2]}, pluck="name"):
+                bloqueos.append(f"{etiqueta} {n}")
+    if bloqueos:
+        frappe.throw(
+            _("Del plan ya salieron documentos de producción: {0}. Cancélalos primero; después podrás revertir el flujo.")
+            .format(", ".join(bloqueos)),
+            title=_("No se puede revertir todavía"),
+        )
+
+    productos = {p.finished_item for p in doc.costeo_producto}
+    planes = frappe.get_all("Production Plan", filters={"costeo": costeo, "docstatus": ["<", 2]}, fields=["name", "docstatus"])
+    sub_boms = frappe.get_all("Subcontracting BOM", filters={"costeo": costeo}, pluck="name") \
+        if frappe.db.has_column("Subcontracting BOM", "costeo") else []
+    boms = frappe.get_all("BOM", filters={"costeo": costeo, "docstatus": ["<", 2]}, fields=["name", "docstatus", "item"])
+    intermedios = sorted({b.item for b in boms if b.item not in productos})
+    hecho = {"planes": [], "subcontracting_boms": [], "boms": [], "articulos": [], "articulos_conservados": []}
+
+    def _cancelar(dt, name):
+        d = frappe.get_doc(dt, name)
+        if d.docstatus == 1:
+            d.flags.ignore_permissions = True
+            d.cancel()
+
+    def _en_orden(nombres, accion):
+        """Una BOM que es componente de otra no se cancela ni se borra mientras la de
+        arriba siga viva: se reintenta en vueltas hasta que no quede ninguna o ya no
+        avance (ahí sí es un bloqueo real y se reporta)."""
+        pendientes = list(nombres)
+        while pendientes:
+            fallos, ultimo = [], None
+            for n in pendientes:
+                frappe.db.savepoint("revertir_flujo")
+                try:
+                    accion(n)
+                except Exception as e:
+                    frappe.db.rollback(save_point="revertir_flujo")
+                    fallos.append(n)
+                    ultimo = e
+            if len(fallos) == len(pendientes):
+                raise frappe.ValidationError(_("{0}: {1}").format(fallos[0], ultimo))
+            pendientes = fallos
+
+    try:
+        for p in planes:
+            _cancelar("Production Plan", p.name)
+            frappe.db.savepoint("revertir_plan")
+            try:
+                frappe.delete_doc("Production Plan", p.name, ignore_permissions=True)
+            except frappe.LinkExistsError:
+                # Lo liga algún documento ya cancelado: queda cancelado (no cuenta como
+                # plan vigente, ver _get_plan_for_so) y al confirmar se crea uno nuevo.
+                frappe.db.rollback(save_point="revertir_plan")
+            hecho["planes"].append(p.name)
+        for n in sub_boms:
+            frappe.delete_doc("Subcontracting BOM", n, ignore_permissions=True)
+            hecho["subcontracting_boms"].append(n)
+        _en_orden([b.name for b in boms if b.docstatus == 1], lambda n: _cancelar("BOM", n))
+        _en_orden([b.name for b in boms], lambda n: frappe.delete_doc("BOM", n, ignore_permissions=True))
+        hecho["boms"] = [b.name for b in boms]
+        for item in intermedios:
+            frappe.db.savepoint("revertir_item")
+            try:
+                frappe.delete_doc("Item", item, ignore_permissions=True)
+                hecho["articulos"].append(item)
+            except Exception:
+                # Lo usa algo más (otro costeo con el mismo producto, un movimiento
+                # cancelado...): se queda; al volver a confirmar se reutiliza.
+                frappe.db.rollback(save_point="revertir_item")
+                hecho["articulos_conservados"].append(item)
+    except Exception as e:
+        frappe.db.rollback()
+        frappe.throw(_("No se pudo revertir el flujo, no se cambió nada. Detalle: {0}").format(e),
+                     title=_("No se pudo revertir"))
+
+    frappe.db.set_value("Costeo", costeo, "costeo_status", "Orden de Venta")
+    doc.add_comment("Comment", _(
+        "Flujo de producción revertido para corregirlo. Se borraron: {0} plan(es), {1} Subcontracting BOM, "
+        "{2} BOM y {3} artículo(s) de pieza intermedia."
+    ).format(len(hecho["planes"]), len(hecho["subcontracting_boms"]), len(hecho["boms"]), len(hecho["articulos"])))
+    frappe.db.commit()
+    return {"ok": True, **hecho}
 
 
 @frappe.whitelist()
@@ -5393,12 +5814,36 @@ def _precio_para_oc(item_code, supplier, company=None, costeo=None, uom=None):
     return _get_buying_rate(item_code, supplier, uom=uom)
 
 
+@frappe.whitelist()
+def marcar_proveedor_sin_alta_sat(po: str, sin_alta: int = 0) -> dict:
+    """Desde la orden a taller: marca si el proveedor está o no dado de alta en el SAT
+    (dato del PROVEEDOR, vale para todas sus órdenes nuevas) y, si esta orden sigue en
+    borrador, le quita o le pone el IVA. Una orden ya validada no se toca."""
+    requiere_vista("preparacion", "talleres")
+    sin_alta = cint(sin_alta)
+    doc = frappe.get_doc("Purchase Order", po)
+    if not frappe.db.has_column("Supplier", "sin_alta_sat"):
+        frappe.throw(_("Falta el campo del proveedor (patch v0_2_65)."))
+    frappe.db.set_value("Supplier", doc.supplier, "sin_alta_sat", sin_alta)
+    if doc.docstatus == 0:
+        flete = [r for r in (doc.get("taxes") or []) if r.description == FLETE_DESCRIPTION]
+        doc.set("taxes", flete)
+        doc.taxes_and_charges = None
+        if not sin_alta:
+            _aplicar_impuestos_doc(doc)
+        doc.flags.ignore_permissions = True
+        doc.save()
+    return {"sin_alta_sat": sin_alta, "docstatus": doc.docstatus, "net_total": doc.net_total,
+            "total_taxes_and_charges": doc.total_taxes_and_charges, "grand_total": doc.grand_total}
+
+
 def _aplicar_impuestos_doc(doc):
     """Aplica la plantilla de impuestos de compra que le toca al PROVEEDOR del documento
     (formal / con retención / informal, ver costeo._get_purchase_tax_template) si el doc
     aún no tiene impuestos. La fila de flete ("Flete / Envío") no cuenta como impuesto:
     antes, si el flete se capturaba primero, el IVA ya nunca se aplicaba."""
-    if any(r.description != FLETE_DESCRIPTION for r in (doc.get("taxes") or [])):
+    from costeo_yelke.api.fletes import FLETE_IVA_DESCRIPTION
+    if any(r.description not in (FLETE_DESCRIPTION, FLETE_IVA_DESCRIPTION) for r in (doc.get("taxes") or [])):
         return False
     from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _get_purchase_tax_template
     from erpnext.controllers.accounts_controller import get_taxes_and_charges
@@ -6690,7 +7135,8 @@ def get_subcontratos(plan: str) -> dict:
         pos = frappe.get_all(
             "Purchase Order",
             filters={"name": ["in", po_names], "is_subcontracted": 1},
-            fields=["name", "supplier", "supplier_name", "docstatus", "status", "grand_total", "per_received"],
+            fields=["name", "supplier", "supplier_name", "docstatus", "status", "grand_total", "per_received"]
+                   + (["enviado_el"] if frappe.db.has_column("Purchase Order", "enviado_el") else []),
             order_by="creation asc",
         )
     return {"ocs": pos}
@@ -10195,6 +10641,10 @@ def get_documento_compra(doctype: str, name: str) -> dict:
         "conversion_rate": flt(doc.get("conversion_rate")) or 1.0,
         "monedas": _monedas_activas() if doctype in ("Purchase Order", "Supplier Quotation") else [],
         "grand_total": doc.get("grand_total"),
+        "net_total": doc.get("net_total"),
+        "total_taxes_and_charges": doc.get("total_taxes_and_charges"),
+        "sin_alta_sat": cint(frappe.db.get_value("Supplier", doc.get("supplier"), "sin_alta_sat"))
+                        if doc.get("supplier") and frappe.db.has_column("Supplier", "sin_alta_sat") else 0,
         "contact_email": doc.get("contact_email") or "",
         "contact_mobile": doc.get("contact_mobile") or "",
         # El costo de envío nunca se conoce todavía al momento de la OC -- se
@@ -10209,6 +10659,7 @@ def get_documento_compra(doctype: str, name: str) -> dict:
         "flete_modo": doc.get("flete_modo") or "",
         "flete_proveedor": doc.get("flete_proveedor") or "",
         "flete_incluye_iva": cint(doc.get("flete_incluye_iva")),
+        "flete_cobra_iva": cint(doc.get("flete_cobra_iva")) if meta.has_field("flete_cobra_iva") else 0,
         "factura_flete": doc.get("factura_flete") or "",
         "enviado_el": str(doc.get("enviado_el") or "") if meta.get_field("enviado_el") else "",
         # Doble validación (Enviar -> Revisor -> Aprobador) -- hoy solo Purchase
@@ -10242,7 +10693,7 @@ def guardar_documento_compra(doctype: str, name: str, schedule_date=None, valid_
                              transaction_date=None, posting_date=None, payment_terms_template=None,
                              tc_name=None, items=None, shipping_cost=None, supplier=None,
                              currency=None, conversion_rate=None, flete_modo=None, flete_proveedor=None,
-                             flete_incluye_iva=None) -> dict:
+                             flete_incluye_iva=None, flete_cobra_iva=None) -> dict:
     """Guarda ediciones de un documento de compra en borrador.
 
     La UDM de línea, y el proveedor del documento completo, solo se pueden cambiar en la
@@ -10283,7 +10734,7 @@ def guardar_documento_compra(doctype: str, name: str, schedule_date=None, valid_
     if valid_till and meta.get_field("valid_till"):
         doc.valid_till = valid_till
     if meta.get_field("payment_terms_template"):
-        doc.payment_terms_template = payment_terms_template or None
+        _poner_plantilla_pago(doc, payment_terms_template)
     if meta.get_field("tc_name"):
         doc.tc_name = tc_name or None
         if meta.get_field("terms"):
@@ -10382,6 +10833,9 @@ def guardar_documento_compra(doctype: str, name: str, schedule_date=None, valid_
             doc.flete_proveedor = flete_proveedor or None
         if flete_incluye_iva is not None:
             doc.flete_incluye_iva = 1 if cint(flete_incluye_iva) else 0
+        # IVA del flete del mismo proveedor (fletes.ajustar_iva_flete, al guardar).
+        if flete_cobra_iva is not None and meta.get_field("flete_cobra_iva"):
+            doc.flete_cobra_iva = 1 if cint(flete_cobra_iva) else 0
         if doc.flete_modo != "Paquetería externa":
             doc.flete_proveedor = None
     if doctype in ("Purchase Order", "Purchase Receipt") and shipping_cost is not None and meta.get_field("taxes"):
@@ -10654,8 +11108,7 @@ def get_reporte_final(costeo: str, sales_order: str = None) -> dict:
         costo_u = flt(p.total_unit_cost)
         venta_u = flt(p.unit_sales_price)
         # total_sales_price ya guardado es exacto cuando la cantidad coincide con la del
-        # costeo (puede incluir sobrecosto de tallas extraordinarias, no solo venta_u*qty);
-        # si la OV activa tiene otra cantidad (réplica), se recalcula proporcional.
+        # costeo; si la OV activa tiene otra cantidad (réplica), se recalcula proporcional.
         if abs(qty - flt(p.qty)) < 0.001:
             venta_total_row = flt(p.total_sales_price) or (venta_u * qty)
         else:
@@ -11086,7 +11539,24 @@ def enviar_por_correo(doctype: str, name: str, recipients: str, subject: str = N
         reference_doctype=doctype,
         reference_name=name,
     )
-    if doctype == "Purchase Order" and frappe.db.has_column("Purchase Order", "enviado_el"):
-        frappe.db.set_value("Purchase Order", name, "enviado_el", frappe.utils.now_datetime(), update_modified=False)
-        frappe.db.commit()
+    _marcar_enviado(doctype, name, _("Enviado por correo a {0}").format(", ".join(recipient_list)))
     return {"ok": True, "sent_to": recipient_list, "attachment": used}
+
+
+def _marcar_enviado(doctype, name, comentario):
+    """Orden de compra enviada al proveedor (correo o WhatsApp): queda la fecha en
+    enviado_el, que es lo que la pantalla muestra como "Enviada", y un comentario."""
+    if doctype != "Purchase Order" or not frappe.db.has_column("Purchase Order", "enviado_el"):
+        return
+    frappe.db.set_value("Purchase Order", name, "enviado_el", frappe.utils.now_datetime(), update_modified=False)
+    frappe.get_doc("Purchase Order", name).add_comment("Info", comentario)
+    frappe.db.commit()
+
+
+@frappe.whitelist()
+def marcar_enviado_whatsapp(doctype: str, name: str, telefono: str = None) -> dict:
+    """El envío por WhatsApp pasa fuera del sistema (se descargan los PDF y se abre el
+    chat): la pantalla avisa aquí que se mandó, para dejarlo como enviado."""
+    frappe.get_doc(doctype, name).check_permission("read")
+    _marcar_enviado(doctype, name, _("Enviado por WhatsApp{0}").format(f" a {telefono}" if telefono else ""))
+    return {"ok": True, "enviado_el": str(frappe.db.get_value(doctype, name, "enviado_el") or "") if doctype == "Purchase Order" else ""}

@@ -113,7 +113,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
 
   const docCompra = ref(null);
   const docCompraItems = ref([]);
-  const docCompraForm = reactive({ schedule_date: "", valid_till: "", payment_terms_template: "", tc_name: "", shipping_cost: 0, supplier: "", currency: "", conversion_rate: 1, flete_modo: "", flete_proveedor: "", flete_incluye_iva: 0 });
+  const docCompraForm = reactive({ schedule_date: "", valid_till: "", payment_terms_template: "", tc_name: "", shipping_cost: 0, supplier: "", currency: "", conversion_rate: 1, flete_modo: "", flete_proveedor: "", flete_incluye_iva: 0, flete_cobra_iva: 1 });
   const docCompraValidated = computed(() => docCompra.value?.docstatus === 1);
   const docCompraHasRate = computed(() => docCompraItems.value.some((i) => i.has_rate));
   const ocSelected = ref("");
@@ -371,7 +371,19 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     finally { advancing.value = false; }
   }
   async function validarSolicitud() {
+    // Un solo lote: si nadie dividió la solicitud, entera se vuelve el "Lote 1" -- el
+    // mismo lote que armaría el usuario con "+ Lote" y "Repartir en partes iguales"
+    // (todas las piezas y todas las tallas de la OV), por el MISMO camino de siempre
+    // (mr_dividir_en_lotes_por_piezas). Antes se validaba sin lote y el lote no
+    // existía hasta abrirlo a mano en Producción.
+    const loteAutomatico = !mrLotes.value.length && (planDetail.value?.po_items || []).length > 0;
+    if (loteAutomatico) {
+      addMrLote();
+      mrLotes.value[0].fecha_requerida = mrSchedule.value || "";
+      repartirMrLotesIgual();
+    }
     if (mrLotesInvalidos.value) {
+      if (loteAutomatico) mrLotes.value = [];
       const conTallas = (planDetail.value?.po_items || []).some(
         (p) => mrLoteTallasDescuadradas(p.item_code) || mrLoteTotalFueraDeMargen(p.item_code));
       showToast(conTallas
@@ -502,6 +514,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     docCompraForm.flete_modo = r.flete_modo || "Lo cobra el proveedor";
     docCompraForm.flete_proveedor = r.flete_proveedor || "";
     docCompraForm.flete_incluye_iva = r.flete_incluye_iva || 0;
+    docCompraForm.flete_cobra_iva = r.flete_cobra_iva ? 1 : 0;
     docCompraForm.conversion_rate = r.conversion_rate || 1;
     previewKey.value++;
   }
@@ -526,7 +539,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
         supplier: docCompraForm.supplier || null,
         currency: docCompra.value.has_currency ? (docCompraForm.currency || null) : null,
         ...(docCompra.value.has_shipping ? { flete_modo: docCompraForm.flete_modo || "", flete_proveedor: docCompraForm.flete_proveedor || "",
-          flete_incluye_iva: docCompraForm.flete_incluye_iva ? 1 : 0 } : {}),
+          flete_incluye_iva: docCompraForm.flete_incluye_iva ? 1 : 0, flete_cobra_iva: docCompraForm.flete_cobra_iva ? 1 : 0 } : {}),
         conversion_rate: docCompra.value.has_currency && docCompraForm.currency !== docCompra.value.company_currency ? (Number(docCompraForm.conversion_rate) || null) : null,
       });
       await loadDocCompra(docCompra.value.doctype, docCompra.value.name);
@@ -549,7 +562,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
         supplier: docCompraForm.supplier || null,
         currency: docCompra.value.has_currency ? (docCompraForm.currency || null) : null,
         ...(docCompra.value.has_shipping ? { flete_modo: docCompraForm.flete_modo || "", flete_proveedor: docCompraForm.flete_proveedor || "",
-          flete_incluye_iva: docCompraForm.flete_incluye_iva ? 1 : 0 } : {}),
+          flete_incluye_iva: docCompraForm.flete_incluye_iva ? 1 : 0, flete_cobra_iva: docCompraForm.flete_cobra_iva ? 1 : 0 } : {}),
         conversion_rate: docCompra.value.has_currency && docCompraForm.currency !== docCompra.value.company_currency ? (Number(docCompraForm.conversion_rate) || null) : null,
       });
       await call("costeo_yelke.api.costeo_api.validar_documento", { doctype: docCompra.value.doctype, name: docCompra.value.name });
@@ -601,7 +614,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   const reciboOcSel = ref("");
   const reciboPr = ref(null);
   const reciboItems = ref([]);
-  const reciboForm = reactive({ posting_date: "", shipping_cost: null, conversion_rate: 1, flete_modo: "", flete_proveedor: "", flete_incluye_iva: 0 });
+  const reciboForm = reactive({ posting_date: "", shipping_cost: null, conversion_rate: 1, flete_modo: "", flete_proveedor: "", flete_incluye_iva: 0, flete_cobra_iva: 1 });
   const reciboValidated = computed(() => reciboPr.value?.docstatus === 1);
   // % de avance de materia prima -- ya calculado en el backend contra el total de
   // TODA la Solicitud de Material (los 3 lotes, aunque sus OC individuales no
@@ -672,6 +685,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     reciboForm.flete_modo = r.flete_modo || "Lo cobra el proveedor";
     reciboForm.flete_proveedor = r.flete_proveedor || "";
     reciboForm.flete_incluye_iva = r.flete_incluye_iva || 0;
+    reciboForm.flete_cobra_iva = r.flete_cobra_iva ? 1 : 0;
   }
   async function crearRecibo() {
     if (!reciboOcSel.value) return;
@@ -686,7 +700,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   }
   // Quién cobra el envío del recibo (ver PurchaseDocPanel / api/fletes.py).
   const fleteRecibo = () => ({ flete_modo: reciboForm.flete_modo || "", flete_proveedor: reciboForm.flete_proveedor || "",
-    flete_incluye_iva: reciboForm.flete_incluye_iva ? 1 : 0 });
+    flete_incluye_iva: reciboForm.flete_incluye_iva ? 1 : 0, flete_cobra_iva: reciboForm.flete_cobra_iva ? 1 : 0 });
   // Solo en moneda extranjera: el tipo de cambio del recibo (ver PurchaseDocPanel).
   const tcRecibo = () => (reciboPr.value && reciboPr.value.currency !== reciboPr.value.company_currency
     ? (Number(reciboForm.conversion_rate) || null) : null);
@@ -825,49 +839,15 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     } catch { /* ignore */ }
     await loadLotesProduccion();
   }
-  /** Revisa y valida las OC de taller que sigan en borrador, y RECARGA `subOcs`.
-   *  La relectura NO es opcional: `subOcs` es lo que pinta la lista "Órdenes a
-   *  talleres", y sin volver a leerla las órdenes se quedaban en "Borrador" ahí
-   *  aunque ya estuvieran validadas -- el panel sí las mostraba bien porque lee el
-   *  documento por su cuenta, y de ahí que la lista y el panel se contradijeran. */
-  async function validarOcsTallerPendientes() {
-    // Quien no puede aprobar no las valida: las ENVÍA a aprobación (api/aprobaciones.py)
-    // y el lote se abre en cuanto Dirección las apruebe.
-    const permisos = await cargarPermisosAprobacion();
-    let enviadas = 0;
-    for (const po of subOcs.value) {
-      if (po.docstatus !== 0) continue;
-      if (!permisos.puede_aprobar) {
-        try {
-          await call("costeo_yelke.api.aprobaciones.enviar_a_aprobacion", { doctype: "Purchase Order", name: po.name });
-          enviadas += 1;
-        } catch { /* ya estaba en aprobación */ }
-        continue;
-      }
-      try {
-        await call("costeo_yelke.api.costeo_api.marcar_revisado_documento", { doctype: "Purchase Order", name: po.name });
-      } catch { /* ya revisada, o sin permiso -- se intenta validar de todos modos */ }
-      try {
-        await call("costeo_yelke.api.costeo_api.validar_documento", { doctype: "Purchase Order", name: po.name });
-      } catch (e) {
-        showToast(`No se pudo validar ${po.name} automáticamente (${e.message || "revisa permisos"}) -- valídala a mano.`, "error");
-      }
-    }
-    if (enviadas) {
-      showToast(`${enviadas === 1 ? "La orden a taller se envió" : `${enviadas} órdenes a taller se enviaron`} a aprobación. El lote se abre en cuanto Dirección las apruebe.`);
-    }
-    try {
-      const r = await call("costeo_yelke.api.costeo_api.get_subcontratos", { plan: planDetail.value.name });
-      subOcs.value = r.ocs || [];
-    } catch { /* si falla la relectura, se refresca al volver a entrar a la vista */ }
-  }
-
+  // Las órdenes a talleres ya no se validan solas: se revisan y validan una por una
+  // desde su panel (Preparación · Órdenes a talleres), donde también se marca si el
+  // taller está dado de alta en el SAT.
   async function crearSubcontratos() {
     advancing.value = true;
     try {
       await call("costeo_yelke.api.costeo_api.plan_crear_subcontratacion", { plan: planDetail.value.name });
       await loadSubcontratos();
-      showToast("Órdenes de subcontrato creadas");
+      showToast("Órdenes a talleres creadas en borrador: revisa y valida cada una");
     } catch (e) { showToast(e.message || "Error", "error"); }
     finally { advancing.value = false; }
   }
@@ -1576,8 +1556,6 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
       const rsub = await call("costeo_yelke.api.costeo_api.get_subcontratos", { plan: planDetail.value.name });
       subOcs.value = rsub.ocs || [];
 
-      await validarOcsTallerPendientes();
-
       const r = await call("costeo_yelke.api.costeo_api.get_lotes_produccion", { plan: planDetail.value.name });
       lotesProduccion.value = r.lotes || [];
       loteRefsCosteo.value = r.lote_refs_costeo || [];
@@ -1585,7 +1563,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
 
       if (productosCosteo.value.every((p) => !p.root_po)) return; // template ofrece "Crear órdenes de subcontrato" a mano
       const pendiente = productosCosteo.value.find((p) => p.root_po && p.root_po_docstatus !== 1);
-      if (pendiente) { await loadSub(pendiente.root_po); subSel.value = pendiente.root_po; return; } // respaldo manual (no se pudo validar sola)
+      if (pendiente) { await loadSub(pendiente.root_po); subSel.value = pendiente.root_po; return; } // falta revisarla y validarla a mano
 
       nuevoLoteForm.porProducto = productosCosteo.value.map((p) => ({
         finished_item: p.finished_item,
@@ -2127,7 +2105,6 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     piezaFoco, pasoSeleccionado,
     celdasSel, celdaSeleccionada, toggleCelda, limpiarCeldas, celdaDe,
     toggleColumna, columnaTodaSel, gruposSel, crearOrdenesSeleccion, prendasDelLote,
-    validarOcsTallerPendientes,
     primeraEtapaQty, primeraEtapaLoading, primeraEtapaLimitado, sugerirPrimeraEtapaQty,
     crearRfqLote, crearSqLote,
     omGeneral, omCab, omDama, omProc, omTablas, omArchivos, omUploading, omEditable,

@@ -107,6 +107,9 @@ html body:last-child .print-format td img { width: auto !important; }
 .yk-pago { background: #fafafa; border-left: 1mm solid #ff6b15; padding: 2.8mm 3.5mm; }
 .yk-plazo { width: 100%; border-collapse: collapse; margin-top: 0.8mm; }
 .yk-plazo td { padding: 0.6mm 0 !important; font-size: 7.5pt; border: 0 !important; vertical-align: middle; }
+.yk-plazo tr.sep td { padding-top: 1.8mm !important; border-top: 0.2mm solid #e8e8e8 !important; }
+.yk-plazo td.yk-plazo-det { padding: 0 0 0.6mm !important; font-size: 6.8pt; color: #666; line-height: 1.4; }
+.yk-plazo .yk-desc { color: #1a7f4b; }
 .pdf-container .yk-chip { display: inline-block; background: #ff6b15; color: #fff; font-size: 6.5pt; font-weight: 600;
     letter-spacing: 1px; text-transform: uppercase; padding: 0.5mm 2mm; border-radius: 0.8mm; white-space: nowrap; }
 .yk-letra { margin-top: 2mm; color: #777; font-style: italic; font-size: 7.3pt; }
@@ -340,15 +343,48 @@ html body:last-child .print-format td img { width: auto !important; }
 
 
 {#- Condiciones de pago: el TÍTULO del plazo ("30 días de Crédito"), nunca la descripción. -#}
+{#- Regla de crédito de un plazo, en palabras ("A 30 días", "1 mes después del fin de
+    mes"). El calendario del documento no la guarda: se lee de la plantilla del
+    documento y, si no está ahí, del propio Término de pago. -#}
+{%- macro regla_plazo(doc, term) -%}
+{%- set campos = ["due_date_based_on", "credit_days", "credit_months"] -%}
+{%- set r = (frappe.db.get_value("Payment Terms Template Detail", {"parent": doc.get("payment_terms_template"), "payment_term": term.payment_term}, campos, as_dict=1)
+             if doc.get("payment_terms_template") and term.payment_term else None)
+            or (frappe.db.get_value("Payment Term", term.payment_term, campos, as_dict=1) if term.payment_term else None) -%}
+{%- if r -%}
+  {%- if r.due_date_based_on == "Month(s) after the end of the invoice month" -%}
+    {{ r.credit_months or 0 }} {{ "mes" if (r.credit_months or 0) == 1 else "meses" }} después del fin de mes
+  {%- elif r.due_date_based_on == "Day(s) after the end of the invoice month" -%}
+    {{ (r.credit_days ~ " días después del fin de mes") if r.credit_days else "Al fin de mes" }}
+  {%- elif r.credit_days -%}
+    A {{ r.credit_days }} días
+  {%- else -%}
+    Inmediato
+  {%- endif -%}
+{%- endif -%}
+{%- endmacro -%}
+
+{#- Condiciones de pago: el calendario del documento tal como quedó configurado en
+    su plantilla -- cada plazo con su nombre, porcentaje (e importe si hay varios),
+    regla de crédito, vencimiento, forma de pago, descripción y descuento por
+    pronto pago, solo lo que el plazo traiga capturado. -#}
 {%- macro terminos_pago(doc) -%}
 <div class="yk-pago">
-    <span class="yk-lbl">Condiciones de pago</span>
+    <span class="yk-lbl">Condiciones de pago{% if doc.get("payment_terms_template") %} · {{ doc.payment_terms_template }}{% endif %}</span>
     {% if doc.payment_schedule %}
     <table class="yk-plazo">
         {% for term in doc.payment_schedule %}
-        <tr>
+        {%- set regla = regla_plazo(doc, term) | trim -%}
+        <tr class="{{ 'sep' if not loop.first else '' }}">
             <td><span class="yk-chip">{{ term.payment_term or doc.get("payment_terms_template") or "Pago único" }}</span></td>
-            <td class="num">Vence <b>{{ fecha_corta(term.due_date) if term.due_date else "—" }}</b> · {{ "{:,.0f}".format(term.invoice_portion or 0) }}%{% if doc.payment_schedule|length > 1 %} · {{ term.get_formatted("payment_amount", doc) }}{% endif %}</td>
+            <td class="num"><b>{{ "{:,.0f}".format(term.invoice_portion or 0) }}%</b>{% if doc.payment_schedule|length > 1 %} · {{ term.get_formatted("payment_amount", doc) }}{% endif %}</td>
+        </tr>
+        <tr>
+            <td colspan="2" class="yk-plazo-det">
+                {% if regla %}{{ regla }} · {% endif %}vence <b>{{ fecha_corta(term.due_date) if term.due_date else "—" }}</b>{% if term.mode_of_payment %} · {{ term.mode_of_payment }}{% endif %}
+                {% if term.description %}<div>{{ term.description }}</div>{% endif %}
+                {% if term.discount %}<div class="yk-desc">Descuento por pronto pago: {{ ("{:,.0f}".format(term.discount) ~ "%") if term.discount_type == "Percentage" else term.get_formatted("discount", doc) }}{% if term.discount_date %} pagando a más tardar el {{ fecha_corta(term.discount_date) }}{% endif %}</div>{% endif %}
+            </td>
         </tr>
         {% endfor %}
     </table>
@@ -397,7 +433,9 @@ html body:last-child .print-format td img { width: auto !important; }
 
 {#- Cierre completo: pago + notas a la izquierda, totales a la derecha, firmas.
     `mostrar_totales` en falso para formatos que pintan sus propios totales. -#}
-{%- macro cierre(doc, texto_pie="", mostrar_pagos=true, mostrar_totales=true) -%}
+{#- El cierre en dos partes para que un formato pueda meter algo entre los totales y
+    las firmas (la Cotización pone ahí tallas atípicas y precios por volumen). -#}
+{%- macro pagos_y_totales(doc, mostrar_pagos=true, mostrar_totales=true) -%}
 {% if mostrar_pagos or mostrar_totales or doc.get("terms") %}
 <table class="yk-cierre">
     <tr>
@@ -408,10 +446,18 @@ html body:last-child .print-format td img { width: auto !important; }
     </tr>
 </table>
 {% endif %}
+{%- endmacro -%}
+
+{%- macro terminos_y_firmas(doc, texto_pie="") -%}
 {#- Términos a todo el ancho: en la columna de pago quedaban apretados. -#}
 {{ terminos(doc) }}
 {{ firmas(doc) }}
 {{ pie(texto_pie) }}
+{%- endmacro -%}
+
+{%- macro cierre(doc, texto_pie="", mostrar_pagos=true, mostrar_totales=true) -%}
+{{ pagos_y_totales(doc, mostrar_pagos, mostrar_totales) }}
+{{ terminos_y_firmas(doc, texto_pie) }}
 {%- endmacro -%}
 
 

@@ -92,6 +92,12 @@ class Costeo(Document):
         self.cleanup_orphan_children()
         self.derivar_precio_unitario()
 
+    def before_update_after_submit(self):
+        # Guardar un costeo ya validado no pasa por validate(): sin esto el precio por
+        # pieza llegaba tal cual lo mandó la pantalla (con más decimales que los que
+        # guarda el campo) y Frappe lo rechazaba como "cambio después del envío".
+        self.derivar_precio_unitario()
+
     def derivar_precio_unitario(self):
         """`unit_price` SIEMPRE es el precio por UDM base; lo que se captura puede ser
         el de la UDM de compra.
@@ -115,7 +121,10 @@ class Costeo(Document):
                 d.conversion_factor = flt(d.get("conversion_factor")) or 1
                 continue
             if flt(d.get("precio_compra")):
-                d.unit_price = flt(d.precio_compra) / factor
+                # Redondeado a la precisión del campo: sin esto, guardar un costeo ya
+                # validado truena con "No se permite cambiar Precio Unitario después del
+                # envío" (0.099277 en la base vs 0.0992766203... recién dividido).
+                d.unit_price = flt(flt(d.precio_compra) / factor, d.precision("unit_price"))
 
     def before_submit(self):
         """Aquí sí se exige todo lo obligatorio -- 'antes solo lo checaba el SPA
@@ -231,6 +240,21 @@ class Costeo(Document):
                 "tabla_materiales_etapa",
                 [r for r in self.get("tabla_materiales_etapa") if r.material_id in mats and r.stage_id in etapas],
             )
+
+        # Piezas (sub-ensamblajes) del flujo: igual, se ligan por stage_id. Al borrar
+        # o volver a crear una variante quedaban piezas de un producto que ya no
+        # existe o de etapas ya borradas, y salían como artículos por dar de alta.
+        if self.get("tabla_subensamblajes_costeo"):
+            etapas = {e.stage_id for e in (self.get("tabla_etapas_costeo") or []) if e.stage_id}
+            vivas = []
+            for r in self.get("tabla_subensamblajes_costeo"):
+                antes = [s for s in (r.stage_ids or "").split(",") if s]
+                ids = [s for s in antes if s in etapas]
+                # Una pieza recién agregada, sin etapas marcadas todavía, se respeta.
+                if r.producto_terminado in valid_items and (ids or not antes):
+                    r.stage_ids = ",".join(ids)
+                    vivas.append(r)
+            self.set("tabla_subensamblajes_costeo", vivas)
 
 
 def _as_dict(doc):
@@ -774,6 +798,9 @@ def _resolve_production_operations(etapas, producto=None):
             # de fusión más abajo); los demás siguen fusionándose entre sí como
             # siempre.
             no_agrupar=bool(n.get("no_agrupar")),
+            # "Aquí se unen las piezas" (ver Etapas Costeo.une_piezas): el punto de
+            # ensamble elegido a mano en Flujo de Producción (ver _ops_prenda_armada).
+            une_piezas=bool(n.get("une_piezas")),
             output_item=None,
         )
         order.append(nk)
@@ -790,6 +817,7 @@ def _resolve_production_operations(etapas, producto=None):
                 dst.servicios.append(s)
         dst.member_stage_keys |= src.member_stage_keys
         dst.stage_subensamblajes += src.stage_subensamblajes
+        dst.une_piezas = bool(dst.get("une_piezas") or src.get("une_piezas"))
         for o in ops.values():
             if src.op_key in o.upstream_keys:
                 o.upstream_keys.discard(src.op_key)
@@ -1315,12 +1343,33 @@ def _ops_prenda_armada(no_terminales, ops, piezas_de_op, avisos, producto_termin
         for nombre in piezas_de_op.get(op.op_key) or ():
             ultima_de_pieza[nombre] = op.op_key
 
-    # Primera operación sin piezas y sin trabajo por pieza después (condiciones 1 y 2).
-    ensamble = next((
-        op.op_key for op in no_terminales
-        if not piezas_de_op.get(op.op_key)
-        and not (abajo(op.op_key) & set(marcadas))
-    ), None)
+    # Elegido a mano ("Aquí se unen las piezas" en Flujo de Producción): manda sobre
+    # la deducción, pero se revisa que tenga sentido -- que ninguna pieza se siga
+    # trabajando ahí ni después. Las condiciones 1 y 2 de arriba, dichas al revés.
+    elegida = next((op for op in no_terminales if op.get("une_piezas")), None)
+    if elegida:
+        ensamble = elegida.op_key
+        slug = _op_slug(elegida.servicios, elegida.supplier)
+        en_union = sorted(piezas_de_op.get(ensamble) or ())
+        if en_union:
+            avisos.append(
+                f'"{producto_terminado}": en "{slug}" se unen las piezas, pero ahí está marcada '
+                f'{", ".join(en_union)} como trabajo aparte -- quita esa palomita o elige otro paso.')
+            return []
+        despues_con_piezas = [por_key[k] for k in marcadas if k in abajo(ensamble)]
+        if despues_con_piezas:
+            avisos.append(
+                f'"{producto_terminado}": después de "{slug}", donde se unen las piezas, todavía hay '
+                f'trabajo por pieza en "{_op_slug(despues_con_piezas[0].servicios, despues_con_piezas[0].supplier)}" '
+                f'-- la unión debe ir después de ese paso.')
+            return []
+    else:
+        # Primera operación sin piezas y sin trabajo por pieza después (condiciones 1 y 2).
+        ensamble = next((
+            op.op_key for op in no_terminales
+            if not piezas_de_op.get(op.op_key)
+            and not (abajo(op.op_key) & set(marcadas))
+        ), None)
     if not ensamble:
         return []
     # Condición 3: si no le llegan todas, no se adivina -- se dice cuáles faltan y
@@ -1437,6 +1486,11 @@ def _crear_almacen_proveedor(company, supplier):
 
 def _get_purchase_tax_template(company, supplier=None):
     if not company:
+        return None
+
+    # Proveedor sin alta en el SAT: no emite factura, no se le paga IVA (patch v0_2_65).
+    if supplier and frappe.db.has_column("Supplier", "sin_alta_sat") \
+            and frappe.db.get_value("Supplier", supplier, "sin_alta_sat"):
         return None
 
     # Plantilla según el tipo de proveedor (formal / con retención / informal): la

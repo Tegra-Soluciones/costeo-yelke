@@ -347,7 +347,8 @@ def al_guardar(doc, method=None):
         return
     from frappe.core.doctype.version.version import get_diff
 
-    if not get_diff(antes, doc):
+    diff = get_diff(antes, doc)
+    if not diff or not _cambio_comercial(diff):
         return
     cambios = {"cambio_tras_envio": 1}
     texto = _("Cambió después de enviarse a aprobación")
@@ -359,6 +360,22 @@ def al_guardar(doc, method=None):
     doc.db_set(cambios, update_modified=False)
     if not ya_marcado:
         doc.add_comment("Info", texto)
+
+
+def _cambio_comercial(diff):
+    """¿El cambio toca la orden en sí? La ficha de manufactura del taller (campos y
+    tablas om_*) se guarda junto con la OC y se vuelve a escribir en cada guardado: si
+    contara, "Validar" (que guarda primero) borraría la revisión recién hecha y la
+    orden nunca se podría validar."""
+    def comercial(nombre):
+        return not str(nombre or "").startswith("om_")
+    for clave in ("changed",):
+        if any(comercial(c[0]) for c in (diff.get(clave) or [])):
+            return True
+    for clave in ("added", "removed", "row_changed"):
+        if any(comercial(c[0]) for c in (diff.get(clave) or [])):
+            return True
+    return False
 
 
 def al_revisar(doctype, name):
@@ -852,11 +869,43 @@ def _resueltos_hoy():
     return salida
 
 
+def ruta_ov_cancelada(name):
+    """Enlace al costeo de una OV cancelada, en Vender y resaltando esa OV."""
+    from urllib.parse import quote
+
+    costeo = frappe.db.get_value("Sales Order", name, "costeo")
+    if not costeo:
+        return _ruta_doc("Sales Order", name)
+    params = {"step": "2", "highlight": name, "doctype": "Sales Order"}
+    compania = compania_de("Sales Order", name)
+    if compania:
+        params["compania"] = compania
+    return f"/costeo-yelke/costeo/{quote(costeo)}?" + "&".join(f"{k}={quote(str(v))}" for k, v in params.items())
+
+
+def _ov_canceladas_por_rehacer(user):
+    """OV que se cancelaron y le toca rehacer a `user` (costeo_api.cancelar_orden_venta):
+    salen mientras su costeo no tenga una OV nueva viva creada después de cancelarse."""
+    if not frappe.db.has_column("Sales Order", "rehacer_por"):
+        return []
+    salida = []
+    for f in frappe.get_all("Sales Order", filters={"docstatus": 2, "rehacer_por": user},
+                            fields=["name", "costeo", "motivo_cancelacion", "modified"]):
+        if f.costeo and frappe.db.exists("Sales Order", {
+                "costeo": f.costeo, "docstatus": ["<", 2], "creation": [">", f.modified]}):
+            continue
+        salida.append({"doctype": "Sales Order", "name": f.name, "etiqueta": _("Orden de venta cancelada"),
+                       "motivo": f.motivo_cancelacion, "ruta": ruta_ov_cancelada(f.name),
+                       "compania": compania_de("Sales Order", f.name), "accion": _("Rehacer")})
+    return salida
+
+
 @frappe.whitelist()
 def get_mis_devueltos() -> dict:
-    """Lo que le regresaron al usuario y no ha reenviado (campana + Inicio del empleado)."""
+    """Lo que le regresaron al usuario y no ha reenviado (campana + Inicio del empleado):
+    documentos devueltos en aprobación y órdenes de venta canceladas que le toca rehacer."""
     user = frappe.session.user
-    salida = []
+    salida = _ov_canceladas_por_rehacer(user)
     for doctype in DOCUMENTOS_CON_APROBACION:
         for f in frappe.get_all(
                 doctype,

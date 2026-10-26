@@ -111,17 +111,26 @@
                 <a v-if="doc.factura_flete" :href="`/app/purchase-invoice/${doc.factura_flete}`" target="_blank" class="text-brand-600 hover:underline">Factura del flete: {{ doc.factura_flete }}</a>
               </p>
             </template>
+            <!-- El mismo proveedor: según su CFDI, el envío lleva IVA o no (fletes.ajustar_iva_flete). -->
+            <template v-if="form.flete_modo !== 'Paquetería externa' && Number(form.shipping_cost) > 0 && !doc.sin_alta_sat">
+              <label class="col-span-2 flex items-center gap-1.5 text-[12px] text-ink-muted -mt-1">
+                <input v-model="form.flete_cobra_iva" type="checkbox" :true-value="1" :false-value="0" :disabled="isValidated" />
+                El proveedor cobra IVA sobre el envío
+                <span class="text-ink-light">· {{ form.flete_cobra_iva ? `+ ${ivaFlete.toLocaleString("es-MX", { style: "currency", currency: "MXN" })} de IVA en su factura (no va al inventario)` : "sin IVA" }}</span>
+              </label>
+            </template>
           </div>
         </div>
       </div>
 
       <table class="w-full text-sm mt-3">
-        <thead><tr class="text-left text-xs font-semibold text-ink-light border-b border-surface-border"><th class="py-2">Artículo</th><th class="py-2 w-20 text-right">Cant.</th><th class="py-2 w-16">UOM</th><th v-if="hasRate" class="py-2 w-24 text-right">Precio<span v-if="doc.currency && doc.currency !== doc.company_currency"> {{ doc.currency }}</span></th><th v-if="showWarehouse" class="py-2">Almacén</th></tr></thead>
+        <thead><tr class="text-left text-xs font-semibold text-ink-light border-b border-surface-border"><th class="py-2">Artículo</th><th class="py-2 w-20 text-right">Cant.</th><th class="py-2 w-16">UOM</th><th v-if="hasRate" class="py-2 w-24 text-right">Precio<span v-if="doc.currency && doc.currency !== doc.company_currency"> {{ doc.currency }}</span></th><th v-if="conImportes" class="py-2 w-28 text-right">Importe</th><th v-if="showWarehouse && !conImportes" class="py-2">Almacén</th></tr></thead>
         <tbody>
           <tr v-for="it in filas" :key="it.name" class="border-b border-surface-border/60">
             <td class="py-1.5 pr-2 font-mono text-[12px]">
               {{ it.item_code }}
               <span v-if="it._piezas > 1" class="ml-1.5 font-sans text-[11px] text-ink-muted">· {{ it._piezas }} piezas</span>
+              <span v-if="conImportes && it.producto_terminado" class="block font-sans text-[11px] text-ink-light">{{ it.producto_terminado }}</span>
               <!-- Corregir la UDM del ARTÍCULO sin salir de la orden: el factor de un
                    múltiplo o el check de "paquete completo". Es dato maestro, así que
                    se ofrece aunque la orden ya esté validada (arregla lo que sigue,
@@ -146,9 +155,15 @@
               <span v-else class="text-ink-muted text-xs">{{ it.uom }}</span>
             </td>
             <td v-if="hasRate" class="py-1.5 pr-2"><input v-if="!isValidated && it.has_rate && !agrupaPiezas" v-model.number="it.rate" type="number" min="0" step="0.01" class="field-input text-right" /><span v-else class="block text-right">{{ it.rate }}</span></td>
-            <td v-if="showWarehouse" class="py-1.5 pr-2 text-ink-muted text-xs">{{ it.warehouse }}</td>
+            <td v-if="conImportes" class="py-1.5 pr-2 text-right tabular-nums font-medium">{{ dinero(importe(it)) }}</td>
+            <td v-if="showWarehouse && !conImportes" class="py-1.5 pr-2 text-ink-muted text-xs">{{ it.warehouse }}</td>
           </tr>
         </tbody>
+        <tfoot v-if="conImportes && doc.net_total != null" class="text-[12.5px]">
+          <tr><td :colspan="hasRate ? 4 : 3" class="pt-2.5 pr-2 text-right text-ink-muted">Subtotal</td><td class="pt-2.5 pr-2 text-right tabular-nums">{{ dinero(doc.net_total) }}</td></tr>
+          <tr><td :colspan="hasRate ? 4 : 3" class="py-1 pr-2 text-right text-ink-muted">{{ doc.sin_alta_sat ? "IVA · sin alta en el SAT" : "IVA" }}</td><td class="py-1 pr-2 text-right tabular-nums">{{ dinero(doc.total_taxes_and_charges) }}</td></tr>
+          <tr class="border-t border-surface-border"><td :colspan="hasRate ? 4 : 3" class="pt-1.5 pr-2 text-right font-semibold text-ink">Total</td><td class="pt-1.5 pr-2 text-right tabular-nums font-semibold text-ink text-[14px]">{{ dinero(doc.grand_total) }}</td></tr>
+        </tfoot>
       </table>
       <p v-if="helpText" class="text-[12px] text-ink-muted mt-2 flex items-center gap-1.5"><svg class="w-3.5 h-3.5 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>{{ helpText }}</p>
 
@@ -242,6 +257,9 @@ const props = defineProps({
   // subcontratación) siguen editables como siempre.
   editableQty: { type: Boolean, default: true },
   sinAcciones: { type: Boolean, default: false },
+  // Columna de importe y totales al pie (subtotal, IVA, total). En la orden a un
+  // taller, el importe de cada renglón agrupado es la suma de todas sus piezas.
+  conImportes: { type: Boolean, default: false },
   helpText: { type: String, default: "" },
   validateLabel: { type: String, default: "Validar" },
   validatedText: { type: String, default: "Validada" },
@@ -262,6 +280,7 @@ const props = defineProps({
   puedeAprobar: { type: Boolean, default: true },
 });
 const emit = defineEmits(["save", "validate", "review", "pull-prices", "send", "preview", "shipping-missing"]);
+const ivaFlete = computed(() => Math.round((Number(props.form.shipping_cost) || 0) * 16) / 100);
 // Base sin IVA del flete externo (lo que se suma al inventario).
 const baseFlete = computed(() => {
   const v = Number(props.form.shipping_cost) || 0;
@@ -292,6 +311,9 @@ watch(() => props.form.currency, (nueva, vieja) => {
 });
 
 const isValidated = computed(() => Number(props.doc.docstatus) === 1);
+// Importe del renglón: el agrupado por piezas trae la suma de sus piezas (_importe).
+const importe = (it) => (it._importe != null ? it._importe : (it.amount != null ? it.amount : (Number(it.qty) || 0) * (Number(it.rate) || 0)));
+const dinero = (v) => new Intl.NumberFormat("es-MX", { style: "currency", currency: props.doc?.currency || "MXN" }).format(Number(v) || 0);
 const hasRate = computed(() => props.items.some((i) => i.has_rate));
 
 // Maquila por pieza: el documento lleva un renglón por PIEZA (frente, espalda,

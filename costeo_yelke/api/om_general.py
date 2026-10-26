@@ -201,6 +201,28 @@ def _serializar(om):
     }
 
 
+def exigir_om_para_validar(doc, method=None):
+    """before_submit de Purchase Order: una orden a un taller (maquila) no se valida si
+    falta la orden de manufactura general de algún producto de su orden de venta.
+
+    Es la misma regla que la pantalla (omCompleta: cada producto de get_oms_generales
+    con su ficha) puesta en el documento, para que tampoco pase por la aprobación de
+    Dirección, el escritorio de ERPNext o cualquier API. Costeos sin productos base
+    (no aplica) y órdenes de materia prima no se tocan."""
+    if not doc.get("is_subcontracted") or not doc.get("costeo"):
+        return
+    sales_order = None
+    if doc.get("production_plan"):
+        sales_order = frappe.db.get_value("Production Plan Sales Order", {"parent": doc.production_plan}, "sales_order")
+    productos = get_oms_generales(doc.costeo, sales_order).get("productos") or []
+    faltan = [p["item_name"] or p["producto"] for p in productos if not p.get("om")]
+    if faltan:
+        frappe.throw(
+            _("Falta capturar la orden de manufactura de: {0}. Sin ella la orden al taller no se puede validar "
+              "(Producción · Preparar · Orden de manufactura).").format(", ".join(faltan)),
+            title=_("Falta la orden de manufactura"))
+
+
 @frappe.whitelist()
 def get_oms_generales(costeo: str, sales_order: str = None) -> dict:
     """Las órdenes de manufactura generales del costeo, una por producto base, con sus

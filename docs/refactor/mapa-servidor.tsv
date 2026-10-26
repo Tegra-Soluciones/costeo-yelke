@@ -1,0 +1,257 @@
+simbolo	tipo	whitelist	linea_519ce25	lineas	destino	usado_desde
+LOTE_UOM	constante		23	1	costeo_yelke.dominio.comun.constantes	ingenieria.articulos,ingenieria.boms
+get_costeo_list	funcion	W	27	9	costeo_yelke.dominio.costeo.ciclo	
+get_company_defaults	funcion	W	39	68	costeo_yelke.dominio.costeo.ciclo	
+set_costeo_status	funcion	W	110	7	costeo_yelke.dominio.costeo.ciclo	
+_tallas_extra_para_producto	funcion		119	8	costeo_yelke.dominio.ventas.lineas	
+_talla_label	funcion		129	2	costeo_yelke.dominio.ventas.lineas	
+_tallas_label	funcion		133	6	costeo_yelke.dominio.ventas.lineas	costeo.variantes
+_es_talla_pendiente	funcion		141	2	costeo_yelke.dominio.ventas.lineas	
+_sobrecosto_titulo	funcion		145	4	costeo_yelke.dominio.ventas.lineas	
+_build_talla_extra_description	funcion		151	26	costeo_yelke.dominio.ventas.lineas	
+_build_variante_description	funcion		179	20	costeo_yelke.dominio.ventas.lineas	
+_venta_items_para_producto	funcion		201	83	costeo_yelke.dominio.ventas.lineas	ventas.cotizacion,ventas.orden_venta
+actualizar_talla_cantidad	funcion	W	287	26	costeo_yelke.dominio.ventas.lineas	
+_sync_venta_items_desde_tallas	funcion		315	32	costeo_yelke.dominio.ventas.lineas	
+_variantes_de_costeo	funcion		349	36	costeo_yelke.dominio.ventas.lineas	
+adjuntar_info_variante	funcion		387	18	costeo_yelke.dominio.ventas.lineas	
+listar_variantes_de_costeo	funcion	W	408	7	costeo_yelke.dominio.ventas.lineas	
+lineas_venta_variantes	funcion	W	418	40	costeo_yelke.dominio.ventas.lineas	
+sincronizar_qty_variantes_a_costeo	funcion		460	80	costeo_yelke.dominio.ventas.lineas	documentos.validacion
+_CHILD_ROW_SYSTEM_FIELDS	constante		542	2	costeo_yelke.dominio.costeo.variantes	
+_slug_item_code	funcion		546	3	costeo_yelke.dominio.costeo.variantes	
+crear_variante_talla	funcion	W	552	153	costeo_yelke.dominio.costeo.variantes	
+ajustar_material_variante_talla	funcion	W	708	28	costeo_yelke.dominio.costeo.variantes	
+crear_cotizacion	funcion	W	739	46	costeo_yelke.dominio.ventas.cotizacion	
+materializar_producto_terminado	funcion	W	788	140	costeo_yelke.dominio.ingenieria.articulos	
+actualizar_cotizacion	funcion	W	931	46	costeo_yelke.dominio.ventas.cotizacion	
+_piece_states_de	funcion		979	21	costeo_yelke.dominio.ingenieria.piezas	ingenieria.articulos,ingenieria.boms,ingenieria.flujo,talleres.envios,talleres.lotes,talleres.paradas,talleres.ramas,vistas.lotes
+_items_intermedios	funcion		1002	8	costeo_yelke.dominio.ingenieria.piezas	ingenieria.articulos,talleres.envios
+get_articulos_pendientes	funcion	W	1013	110	costeo_yelke.dominio.ingenieria.articulos	
+materializar_articulo	funcion	W	1126	81	costeo_yelke.dominio.ingenieria.articulos	
+auto_materializar_subensamblajes	funcion	W	1210	37	costeo_yelke.dominio.ingenieria.articulos	planeacion.plan
+get_flujo_operaciones	funcion	W	1250	206	costeo_yelke.dominio.ingenieria.flujo	
+guardar_flujo_operaciones	funcion	W	1459	163	costeo_yelke.dominio.ingenieria.flujo	
+guardar_subensamblajes	funcion	W	1625	63	costeo_yelke.dominio.ingenieria.flujo	
+toggle_no_agrupar	funcion	W	1691	32	costeo_yelke.dominio.ingenieria.flujo	
+set_tipo_formato_cotizacion	funcion	W	1726	10	costeo_yelke.dominio.ventas.cotizacion	
+_vistas_de_documento	funcion		1738	27	costeo_yelke.dominio.comun.permisos	compras.documento,documentos.validacion
+DOCTYPES_FLUJO_COSTEO	constante		1771	6	costeo_yelke.dominio.documentos.validacion	
+_exigir_doctype_del_flujo	funcion		1779	6	costeo_yelke.dominio.documentos.validacion	
+validar_documento	funcion	W	1788	57	costeo_yelke.dominio.documentos.validacion	
+marcar_revisado_documento	funcion	W	1848	21	costeo_yelke.dominio.documentos.validacion	
+puede_validar_costeo	funcion	W	1872	5	costeo_yelke.dominio.documentos.validacion	
+get_permisos_validacion_yelke	funcion	W	1880	13	costeo_yelke.dominio.documentos.validacion	
+_contabilizar_overhead_factura	funcion		1895	15	costeo_yelke.dominio.facturacion.overhead	documentos.validacion
+get_default_print_format	funcion	W	1913	24	costeo_yelke.dominio.documentos.impresion	documentos.envio
+_marcar_costeo_cancelado_si_aplica	funcion		1939	11	costeo_yelke.dominio.documentos.validacion	
+cancelar_documento	funcion	W	1953	13	costeo_yelke.dominio.documentos.validacion	
+crear_revision_costeo	funcion	W	1969	26	costeo_yelke.dominio.costeo.ciclo	
+get_revisiones_costeo	funcion	W	1998	10	costeo_yelke.dominio.costeo.ciclo	
+asignar_documento	funcion	W	2011	15	costeo_yelke.dominio.documentos.validacion	
+validar_oc_cliente_adjunta	funcion		2028	18	costeo_yelke.dominio.ventas.orden_venta	
+get_cotizacion_defaults	funcion	W	2049	31	costeo_yelke.dominio.ventas.cotizacion	
+crear_orden_venta	funcion	W	2083	51	costeo_yelke.dominio.ventas.orden_venta	
+_ligar_orden_venta_a_cotizacion	funcion		2136	26	costeo_yelke.dominio.ventas.orden_venta	
+actualizar_orden_venta	funcion	W	2165	25	costeo_yelke.dominio.ventas.orden_venta	
+produccion_completa	funcion	W	2193	180	costeo_yelke.dominio.talleres.avance	
+crear_factura_venta	funcion	W	2376	39	costeo_yelke.dominio.facturacion.venta	
+actualizar_factura_venta	funcion	W	2418	16	costeo_yelke.dominio.facturacion.venta	
+_stock_warehouse_for	funcion		2441	8	costeo_yelke.dominio.entregas.remision	
+_entrega_de_lote	funcion		2451	38	costeo_yelke.dominio.entregas.remision	vistas.lotes
+crear_remision	funcion	W	2492	96	costeo_yelke.dominio.entregas.remision	
+get_remision	funcion	W	2591	38	costeo_yelke.dominio.entregas.remision	
+actualizar_remision	funcion	W	2632	42	costeo_yelke.dominio.entregas.remision	
+_payable_account_para_proveedor	funcion		2676	21	costeo_yelke.dominio.entregas.flete_cliente	
+_crear_poliza_flete_remision	funcion		2699	40	costeo_yelke.dominio.entregas.flete_cliente	entregas.remision
+_overhead_pct_promedio	funcion		2741	11	costeo_yelke.dominio.facturacion.overhead	
+_pinvs_validadas_de_oc	funcion		2754	9	costeo_yelke.dominio.costos.costo_real	
+_facturado_de_oc	funcion		2765	27	costeo_yelke.dominio.costos.costo_real	
+_costo_real_de_oc	funcion		2794	21	costeo_yelke.dominio.costos.costo_real	reportes.reporte_final
+_por_facturar_de_oc	funcion		2817	9	costeo_yelke.dominio.costos.costo_real	reportes.reporte_final
+_flete_materiales_de_oc	funcion		2828	16	costeo_yelke.dominio.costos.costo_real	reportes.reporte_final
+_maquila_recibida_de_oc	funcion		2846	21	costeo_yelke.dominio.costos.costo_real	
+_material_sobrante_de_costeo	funcion		2869	60	costeo_yelke.dominio.costos.costo_real	reportes.reporte_final
+_costo_directo_real	funcion		2931	60	costeo_yelke.dominio.costos.costo_real	facturacion.overhead
+_crear_poliza_overhead_venta	funcion		2993	60	costeo_yelke.dominio.facturacion.overhead	
+validar_remision	funcion	W	3056	31	costeo_yelke.dominio.entregas.remision	
+_pinv_for	funcion		3093	10	costeo_yelke.dominio.facturacion.compra	
+get_facturas_compra	funcion	W	3106	127	costeo_yelke.dominio.facturacion.compra	
+_pinvs_de_oc	funcion		3235	12	costeo_yelke.dominio.facturacion.compra	
+_recepciones_servicio_de_oc	funcion		3249	15	costeo_yelke.dominio.facturacion.compra	
+_asegurar_recepciones_servicio	funcion		3266	12	costeo_yelke.dominio.facturacion.compra	
+_maquila_pendiente_de_facturar	funcion		3280	5	costeo_yelke.dominio.facturacion.compra	vistas.lotes
+_factura_de_recepciones	funcion		3287	12	costeo_yelke.dominio.facturacion.compra	vistas.lotes
+_estado_factura_sco	funcion		3301	21	costeo_yelke.dominio.facturacion.compra	vistas.lotes
+crear_factura_compra	funcion	W	3325	76	costeo_yelke.dominio.facturacion.compra	
+get_factura_compra	funcion	W	3404	35	costeo_yelke.dominio.facturacion.compra	
+actualizar_factura_compra	funcion	W	3442	26	costeo_yelke.dominio.facturacion.compra	
+dashboard_metrics	funcion	W	3471	133	costeo_yelke.dominio.reportes.tablero	
+crear_boms	funcion	W	3607	10	costeo_yelke.dominio.planeacion.legado	
+delete_costeo	funcion	W	3620	4	costeo_yelke.dominio.costeo.ciclo	
+delete_quotation	funcion	W	3627	8	costeo_yelke.dominio.ventas.orden_venta	
+delete_sales_order	funcion	W	3638	6	costeo_yelke.dominio.ventas.orden_venta	
+_precio_acordado_price_list	funcion		3646	2	costeo_yelke.dominio.ventas.precio_acordado	
+_precio_acordado_vigente	funcion		3650	16	costeo_yelke.dominio.ventas.precio_acordado	ventas.orden_venta
+get_precio_acordado_status	funcion	W	3669	25	costeo_yelke.dominio.ventas.precio_acordado	
+generar_replica_ov	funcion	W	3697	40	costeo_yelke.dominio.ventas.orden_venta	
+eliminar_orden_y_costeo	funcion	W	3740	20	costeo_yelke.dominio.costeo.ciclo	
+duplicate_costeo	funcion	W	3763	8	costeo_yelke.dominio.costeo.ciclo	
+get_item_price	funcion	W	3774	11	costeo_yelke.dominio.catalogo.precios	
+proveedores_para_item	funcion	W	3788	21	costeo_yelke.dominio.catalogo.precios	
+_stage_sort_key_int	funcion		3811	6	costeo_yelke.dominio.ingenieria.boms	
+_match_material_stage	funcion		3819	15	costeo_yelke.dominio.ingenieria.boms	
+_split_materials_by_stage	funcion		3836	50	costeo_yelke.dominio.ingenieria.boms	
+_repair_stale_bom_no	funcion		3888	40	costeo_yelke.dominio.ingenieria.boms	
+_splits_por_pieza	funcion		3930	12	costeo_yelke.dominio.ingenieria.boms	
+_materiales_por_pieza	funcion		3944	39	costeo_yelke.dominio.ingenieria.boms	
+_fila_bom_semi	funcion		3985	29	costeo_yelke.dominio.ingenieria.boms	
+_fila_bom_material	funcion		4016	2	costeo_yelke.dominio.ingenieria.boms	
+_uom_material	funcion		4020	6	costeo_yelke.dominio.ingenieria.boms	
+_bom_specs_de_producto	funcion		4028	80	costeo_yelke.dominio.ingenieria.boms	
+crear_boms_spa	funcion	W	4111	126	costeo_yelke.dominio.ingenieria.boms	planeacion.plan
+crear_solicitud_material	funcion	W	4240	38	costeo_yelke.dominio.planeacion.legado	
+crear_ordenes_trabajo	funcion	W	4281	51	costeo_yelke.dominio.planeacion.legado	
+crear_pos_subcontratacion	funcion	W	4335	21	costeo_yelke.dominio.planeacion.legado	
+_crear_un_subcontracting_bom	funcion		4358	80	costeo_yelke.dominio.ingenieria.boms	
+crear_subcontracting_bom	funcion	W	4441	58	costeo_yelke.dominio.ingenieria.boms	planeacion.plan
+_get_plan_for_so	funcion		4501	18	costeo_yelke.dominio.comun.alcance	planeacion.plan
+desbloquear_plan_produccion	funcion	W	4522	87	costeo_yelke.dominio.planeacion.plan	
+_fill_mr_items_from_inventory	funcion		4611	37	costeo_yelke.dominio.planeacion.plan	
+_fill_po_items_from_costeo	funcion		4650	24	costeo_yelke.dominio.planeacion.plan	
+_get_sales_tax_template	funcion		4678	17	costeo_yelke.dominio.ventas.impuestos	ventas.cotizacion,ventas.orden_venta
+_aplicar_impuestos_venta	funcion		4697	11	costeo_yelke.dominio.ventas.impuestos	ventas.cotizacion,ventas.orden_venta
+get_costeo_related	funcion	W	4713	116	costeo_yelke.dominio.costeo.relacionados	
+_get_cadena_costeo	funcion		4831	33	costeo_yelke.dominio.costeo.relacionados	
+get_historial_costeo	funcion	W	4867	18	costeo_yelke.dominio.costeo.relacionados	
+preparar_produccion	funcion	W	4888	59	costeo_yelke.dominio.planeacion.plan	
+get_produccion_docs	funcion	W	4950	63	costeo_yelke.dominio.planeacion.plan	
+get_plan_detail	funcion	W	5016	86	costeo_yelke.dominio.planeacion.plan	
+_QTY_TOLERANCIA_PCT	constante		5104	1	costeo_yelke.dominio.planeacion.plan	planeacion.solicitud
+guardar_plan	funcion	W	5108	48	costeo_yelke.dominio.planeacion.plan	
+plan_obtener_materias_primas	funcion	W	5159	12	costeo_yelke.dominio.planeacion.plan	
+_mrs_activos_del_plan	funcion		5173	16	costeo_yelke.dominio.planeacion.solicitud	compras.recibos
+plan_crear_solicitud_material	funcion	W	5192	24	costeo_yelke.dominio.planeacion.solicitud	
+_asignar_proveedores_a_mrs	funcion		5218	25	costeo_yelke.dominio.planeacion.solicitud	
+get_solicitud_material	funcion	W	5246	47	costeo_yelke.dominio.planeacion.solicitud	
+_uom_conversion_factor	funcion		5295	13	costeo_yelke.dominio.comun.unidades	compras.precios
+_convertir_uom_compra	funcion		5310	23	costeo_yelke.dominio.comun.unidades	compras.documento
+_es_compra_por_paquete	funcion		5335	31	costeo_yelke.dominio.comun.unidades	compras.documento,compras.ordenes,planeacion.lotes_material
+guardar_solicitud_material	funcion	W	5369	44	costeo_yelke.dominio.planeacion.solicitud	
+_precio_costeo_material	funcion		5415	16	costeo_yelke.dominio.compras.precios	compras.recibos
+_precio_para_oc	funcion		5433	56	costeo_yelke.dominio.compras.precios	compras.documento
+_aplicar_impuestos_doc	funcion		5491	20	costeo_yelke.dominio.compras.precios	compras.recibos
+_aplicar_precios_oc	funcion		5513	17	costeo_yelke.dominio.compras.precios	compras.ordenes
+mr_crear_oc	funcion	W	5533	169	costeo_yelke.dominio.compras.ordenes	
+mr_crear_ocs_por_lotes	funcion	W	5705	21	costeo_yelke.dominio.compras.ordenes	
+mr_dividir_en_lotes	funcion	W	5729	59	costeo_yelke.dominio.planeacion.lotes_material	
+_material_por_pieza	funcion		5790	47	costeo_yelke.dominio.planeacion.lotes_material	
+_materiales_de_lotes_por_piezas	funcion		5839	19	costeo_yelke.dominio.planeacion.lotes_material	
+mr_preview_lotes_materiales	funcion	W	5861	15	costeo_yelke.dominio.planeacion.lotes_material	
+mr_dividir_en_lotes_por_piezas	funcion	W	5879	152	costeo_yelke.dominio.planeacion.lotes_material	
+_guardar_piezas_por_lote	funcion		6033	37	costeo_yelke.dominio.planeacion.lotes_material	
+posicion_material_costeo	funcion	W	6073	116	costeo_yelke.dominio.planeacion.posicion	compras.ordenes
+mr_generar_oc_lote	funcion	W	6192	104	costeo_yelke.dominio.compras.ordenes	
+oc_jalar_precios	funcion	W	6299	11	costeo_yelke.dominio.compras.ordenes	
+get_recibos	funcion	W	6313	76	costeo_yelke.dominio.compras.recibos	
+_TOL_RECIBO	constante		6401	1	costeo_yelke.dominio.compras.recibos	talleres.recibos
+_pendiente_por_recibir	funcion		6404	4	costeo_yelke.dominio.compras.recibos	
+_recibos_de	funcion		6410	12	costeo_yelke.dominio.compras.recibos	
+_estado_recibos	funcion		6424	17	costeo_yelke.dominio.compras.recibos	
+estado_recibos_oc	funcion		6443	3	costeo_yelke.dominio.compras.recibos	facturacion.compra,vistas.lotes
+estado_recibos_sco	funcion		6448	4	costeo_yelke.dominio.compras.recibos	talleres.recibos,talleres.subcontratos,vistas.lotes
+crear_recibo_oc	funcion	W	6455	38	costeo_yelke.dominio.compras.recibos	
+get_estado_recibos	funcion	W	6496	5	costeo_yelke.dominio.compras.recibos	
+_quitar_renglones_en_cero	funcion		6503	15	costeo_yelke.dominio.compras.recibos	compras.documento,talleres.recibos
+_OM_GENERAL	constante		6520	4	costeo_yelke.dominio.talleres.orden_manufactura	
+_OM_CAB	constante		6524	1	costeo_yelke.dominio.talleres.orden_manufactura	
+_OM_DAMA	constante		6525	1	costeo_yelke.dominio.talleres.orden_manufactura	
+_om_decode_tables	funcion		6528	59	costeo_yelke.dominio.talleres.orden_manufactura	
+_om_encode_tables	funcion		6589	31	costeo_yelke.dominio.talleres.orden_manufactura	
+get_om	funcion	W	6623	35	costeo_yelke.dominio.talleres.orden_manufactura	
+_guardar_om_una	funcion		6660	60	costeo_yelke.dominio.talleres.orden_manufactura	
+guardar_om	funcion	W	6723	39	costeo_yelke.dominio.talleres.orden_manufactura	
+get_subcontratos	funcion	W	6765	27	costeo_yelke.dominio.talleres.subcontratos	
+_po_for_bom_item	funcion		6794	25	costeo_yelke.dominio.talleres.subcontratos	
+_lote_refs_del_costeo	funcion		6821	23	costeo_yelke.dominio.comun.alcance	vistas.lotes
+_ovs_del_costeo	funcion		6846	5	costeo_yelke.dominio.comun.alcance	
+_ov_del_plan	funcion		6853	3	costeo_yelke.dominio.comun.alcance	
+_alcance_ov	funcion		6858	56	costeo_yelke.dominio.comun.alcance	facturacion.compra,vistas.lotes
+get_lotes_produccion	funcion	W	6917	439	costeo_yelke.dominio.vistas.lotes	
+_party_links	funcion		7362	15	costeo_yelke.dominio.comun.contactos	entregas.remision,talleres.subcontratos
+_producto_de_fg	funcion		7379	14	costeo_yelke.dominio.comun.productos	talleres.encargos,talleres.lotes,talleres.paradas,talleres.saldos,vistas.lotes
+_productos_terminados_de_costeo	funcion		7395	7	costeo_yelke.dominio.comun.productos	entregas.remision,talleres.encargos,talleres.lotes,talleres.paradas,talleres.saldos,vistas.lotes
+_po_subcontratacion_lineas	funcion		7404	84	costeo_yelke.dominio.talleres.saldos	talleres.encargos,talleres.subcontratos
+_po_saldo_por_producto	funcion		7490	13	costeo_yelke.dominio.talleres.saldos	talleres.encargos
+_po_saldo_por_fg	funcion		7505	10	costeo_yelke.dominio.talleres.saldos	talleres.encargos,talleres.paradas
+sub_get_flujo	funcion	W	7518	141	costeo_yelke.dominio.talleres.subcontratos	
+_sub_qty_disponible_info	funcion		7661	109	costeo_yelke.dominio.talleres.encargos	
+sub_qty_disponible	funcion	W	7773	5	costeo_yelke.dominio.talleres.encargos	
+_piezas_por_prenda_de_po	funcion		7780	27	costeo_yelke.dominio.talleres.encargos	
+_repartir_qty_en_filas	funcion		7809	37	costeo_yelke.dominio.talleres.encargos	
+_precios_de_la_oc	funcion		7848	17	costeo_yelke.dominio.talleres.encargos	
+sub_crear_sco	funcion	W	7868	226	costeo_yelke.dominio.talleres.encargos	talleres.lotes,talleres.paradas
+_redondear_arriba_por_material	funcion		8096	39	costeo_yelke.dominio.talleres.encargos	talleres.envios
+redondear_materia_prima_sco	funcion		8137	15	costeo_yelke.dominio.talleres.encargos	
+ajustar_consumo_a_existencia_taller	funcion		8154	40	costeo_yelke.dominio.talleres.recibos	
+_default_landed_cost_account	funcion		8196	10	costeo_yelke.dominio.comun.costos_adicionales	compras.flete
+_landed_cost_row	funcion		8208	28	costeo_yelke.dominio.comun.costos_adicionales	talleres.encargos,talleres.envios,talleres.recibos
+sub_guardar_sco	funcion	W	8239	34	costeo_yelke.dominio.talleres.encargos	
+sub_validar_sco	funcion	W	8276	8	costeo_yelke.dominio.talleres.encargos	talleres.lotes,talleres.paradas
+_etapas_rows_for_po	funcion		8286	38	costeo_yelke.dominio.talleres.envios	
+_stage_material_warehouses	funcion		8326	32	costeo_yelke.dominio.talleres.envios	talleres.encargos,talleres.subcontratos
+_stage_source_warehouse_for_po	funcion		8360	36	costeo_yelke.dominio.talleres.envios	
+_stage_source_warehouse	funcion		8398	3	costeo_yelke.dominio.talleres.envios	
+_aplicar_almacenes_origen_por_material	funcion		8403	17	costeo_yelke.dominio.talleres.envios	
+_redondear_qty_arriba	funcion		8422	20	costeo_yelke.dominio.talleres.envios	
+sub_transferir_material	funcion	W	8445	46	costeo_yelke.dominio.talleres.envios	
+_necesidad_exacta_sco	funcion		8493	20	costeo_yelke.dominio.talleres.envios	
+_ajustar_a_existencia	funcion		8515	80	costeo_yelke.dominio.talleres.envios	
+_descontar_lo_que_ya_tiene_el_taller	funcion		8597	41	costeo_yelke.dominio.talleres.envios	
+_comprometido_en_talleres	funcion		8640	31	costeo_yelke.dominio.talleres.envios	talleres.sobrantes
+_repartir_lo_que_ya_tiene	funcion		8673	29	costeo_yelke.dominio.talleres.envios	
+sub_saldo_talleres	funcion	W	8705	51	costeo_yelke.dominio.talleres.sobrantes	costos.costo_real,talleres.envios
+sub_devolver_material	funcion	W	8759	130	costeo_yelke.dominio.talleres.sobrantes	
+sub_get_transferencia	funcion	W	8892	64	costeo_yelke.dominio.talleres.envios	
+get_stock_disponible	funcion	W	8959	8	costeo_yelke.dominio.talleres.envios	
+sub_guardar_transferencia	funcion	W	8970	57	costeo_yelke.dominio.talleres.envios	
+sub_validar_transferencia	funcion	W	9030	10	costeo_yelke.dominio.talleres.envios	
+_exigir_existencia_envio	funcion		9042	27	costeo_yelke.dominio.talleres.envios	
+sub_crear_recibo	funcion	W	9072	26	costeo_yelke.dominio.talleres.recibos	talleres.envios
+_transitive_upstream	funcion		9100	21	costeo_yelke.dominio.talleres.ramas	talleres.lotes
+_lote_paradas	funcion		9123	164	costeo_yelke.dominio.talleres.lotes	talleres.paradas,vistas.lotes
+lote_abrir	funcion	W	9290	86	costeo_yelke.dominio.talleres.lotes	
+_parada_entregas_registradas	funcion		9378	29	costeo_yelke.dominio.talleres.paradas	
+_productos_del_lote	funcion		9409	31	costeo_yelke.dominio.talleres.lotes	talleres.paradas
+_parada_subensamblajes	funcion		9442	43	costeo_yelke.dominio.talleres.paradas	talleres.lotes,talleres.ramas,vistas.lotes
+_ramas_por_pieza	funcion		9487	171	costeo_yelke.dominio.talleres.ramas	vistas.lotes
+_parada_stage_ids	funcion		9660	14	costeo_yelke.dominio.talleres.paradas	
+parada_registrar_entrega	funcion	W	9677	200	costeo_yelke.dominio.talleres.paradas	
+sub_enviar_material	funcion	W	9880	31	costeo_yelke.dominio.talleres.envios	
+sub_get_recibo	funcion	W	9914	33	costeo_yelke.dominio.talleres.recibos	
+sub_guardar_recibo	funcion	W	9950	55	costeo_yelke.dominio.talleres.recibos	
+_dedupe_items_por_proveedor	funcion		10007	10	costeo_yelke.dominio.compras.cotizaciones_proveedor	
+mr_crear_rfq	funcion	W	10020	30	costeo_yelke.dominio.compras.cotizaciones_proveedor	
+mr_crear_presupuesto_proveedor	funcion	W	10053	27	costeo_yelke.dominio.compras.cotizaciones_proveedor	
+FLETE_DESCRIPTION	constante		10082	1	costeo_yelke.dominio.compras.flete	compras.precios
+_get_shipping_row_amount	funcion		10085	6	costeo_yelke.dominio.compras.flete	compras.documento,costos.costo_real
+_set_purchase_shipping_row	funcion		10093	41	costeo_yelke.dominio.compras.flete	compras.documento
+_envio_capturado_taxes	funcion		10136	2	costeo_yelke.dominio.compras.flete	compras.documento
+validar_envio_capturado_recibo	funcion		10140	28	costeo_yelke.dominio.compras.flete	
+_monedas_activas	funcion		10176	2	costeo_yelke.dominio.comun.moneda	compras.documento
+_moneda_compania	funcion		10180	2	costeo_yelke.dominio.comun.moneda	compras.documento,facturacion.compra
+_tipo_cambio	funcion		10184	10	costeo_yelke.dominio.comun.moneda	
+tipo_cambio_referencia	funcion	W	10197	8	costeo_yelke.dominio.comun.moneda	
+_aplicar_moneda	funcion		10207	24	costeo_yelke.dominio.comun.moneda	compras.documento
+get_documento_compra	funcion	W	10234	85	costeo_yelke.dominio.compras.documento	
+preview_conversion_uom_oc	funcion	W	10322	11	costeo_yelke.dominio.compras.documento	
+guardar_documento_compra	funcion	W	10336	152	costeo_yelke.dominio.compras.documento	
+_validar_sobrecompra_contra_solicitud	funcion		10490	56	costeo_yelke.dominio.compras.documento	
+plan_dividir_lotes	funcion	W	10549	55	costeo_yelke.dominio.planeacion.legado	
+plan_crear_ordenes_trabajo	funcion	W	10607	9	costeo_yelke.dominio.planeacion.legado	
+plan_crear_subcontratacion	funcion	W	10619	81	costeo_yelke.dominio.planeacion.plan	
+get_reporte_final	funcion	W	10703	371	costeo_yelke.dominio.reportes.reporte_final	
+contacto_principal_proveedor	funcion	W	11077	35	costeo_yelke.dominio.documentos.contactos	
+exigir_documento_enviable	funcion		11114	11	costeo_yelke.dominio.documentos.envio	
+validar_envio_documento	funcion	W	11128	4	costeo_yelke.dominio.documentos.envio	
+enviar_por_correo	funcion	W	11135	53	costeo_yelke.dominio.documentos.envio	

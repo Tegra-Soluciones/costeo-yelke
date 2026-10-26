@@ -67,7 +67,8 @@
   "old_parent": "Tallas numéricas - DAMA-MX",
   "parent_talla": "Tallas numéricas - DAMA-MX",
   "sistema": "Numérico",
-  "talla": "00"
+  "talla": "00",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -81,7 +82,8 @@
   "old_parent": "Tallas numéricas - DAMA-MX",
   "parent_talla": "Tallas numéricas - DAMA-MX",
   "sistema": "Numérico",
-  "talla": "0"
+  "talla": "0",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -95,7 +97,8 @@
   "old_parent": "Tallas numéricas - DAMA-MX",
   "parent_talla": "Tallas numéricas - DAMA-MX",
   "sistema": "Numérico",
-  "talla": "2"
+  "talla": "2",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -109,7 +112,8 @@
   "old_parent": "Tallas numéricas - DAMA-MX",
   "parent_talla": "Tallas numéricas - DAMA-MX",
   "sistema": "Numérico",
-  "talla": "4"
+  "talla": "4",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -123,7 +127,8 @@
   "old_parent": "Tallas numéricas - DAMA-MX",
   "parent_talla": "Tallas numéricas - DAMA-MX",
   "sistema": "Numérico",
-  "talla": "6"
+  "talla": "6",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -137,7 +142,8 @@
   "old_parent": "Tallas numéricas - DAMA-MX",
   "parent_talla": "Tallas numéricas - DAMA-MX",
   "sistema": "Numérico",
-  "talla": "8"
+  "talla": "8",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -151,7 +157,8 @@
   "old_parent": "Tallas numéricas - DAMA-MX",
   "parent_talla": "Tallas numéricas - DAMA-MX",
   "sistema": "Numérico",
-  "talla": "10"
+  "talla": "10",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -165,7 +172,8 @@
   "old_parent": "Tallas numéricas - DAMA-MX",
   "parent_talla": "Tallas numéricas - DAMA-MX",
   "sistema": "Numérico",
-  "talla": "12"
+  "talla": "12",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -179,7 +187,8 @@
   "old_parent": "Tallas numéricas - DAMA-MX",
   "parent_talla": "Tallas numéricas - DAMA-MX",
   "sistema": "Numérico",
-  "talla": "14"
+  "talla": "14",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -193,7 +202,8 @@
   "old_parent": "Tallas numéricas - DAMA-MX",
   "parent_talla": "Tallas numéricas - DAMA-MX",
   "sistema": "Numérico",
-  "talla": "16"
+  "talla": "16",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -207,7 +217,8 @@
   "old_parent": "Tallas numéricas - DAMA-MX",
   "parent_talla": "Tallas numéricas - DAMA-MX",
   "sistema": "Numérico",
-  "talla": "18"
+  "talla": "18",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -221,7 +232,8 @@
   "old_parent": "Tallas numéricas - DAMA-MX",
   "parent_talla": "Tallas numéricas - DAMA-MX",
   "sistema": "Numérico",
-  "talla": "20"
+  "talla": "20",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -235,7 +247,8 @@
   "old_parent": "Tallas numéricas - DAMA-MX",
   "parent_talla": "Tallas numéricas - DAMA-MX",
   "sistema": "Numérico",
-  "talla": "22"
+  "talla": "22",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -249,7 +262,8 @@
   "old_parent": "Tallas numéricas - DAMA-MX",
   "parent_talla": "Tallas numéricas - DAMA-MX",
   "sistema": "Numérico",
-  "talla": "24"
+  "talla": "24",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -263,7 +277,8 @@
   "old_parent": "Tallas numéricas - DAMA-MX",
   "parent_talla": "Tallas numéricas - DAMA-MX",
   "sistema": "Numérico",
-  "talla": "26"
+  "talla": "26",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -277,7 +292,8 @@
   "old_parent": "Tallas numéricas - DAMA-MX",
   "parent_talla": "Tallas numéricas - DAMA-MX",
   "sistema": "Numérico",
-  "talla": "28"
+  "talla": "28",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -291,7 +307,8 @@
   "old_parent": "Tallas numéricas - DAMA-MX",
   "parent_talla": "Tallas numéricas - DAMA-MX",
   "sistema": "Numérico",
-  "talla": "30"
+  "talla": "30",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -305,7 +322,8 @@
   "old_parent": "Tallas numéricas - DAMA-MX",
   "parent_talla": "Tallas numéricas - DAMA-MX",
   "sistema": "Numérico",
-  "talla": "32"
+  "talla": "32",
+  "uso_comun": 0
  },
  {
   "abreviatura": "DAMA-LETRA",
@@ -333,7 +351,8 @@
   "old_parent": "Tallas por letras - DAMA-MX",
   "parent_talla": "Tallas por letras - DAMA-MX",
   "sistema": "Letra",
-  "talla": "XXS"
+  "talla": "XXS",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -347,7 +366,8 @@
   "old_parent": "Tallas por letras - DAMA-MX",
   "parent_talla": "Tallas por letras - DAMA-MX",
   "sistema": "Letra",
-  "talla": "XS"
+  "talla": "XS",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -361,7 +381,8 @@
   "old_parent": "Tallas por letras - DAMA-MX",
   "parent_talla": "Tallas por letras - DAMA-MX",
   "sistema": "Letra",
-  "talla": "S"
+  "talla": "S",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -375,7 +396,8 @@
   "old_parent": "Tallas por letras - DAMA-MX",
   "parent_talla": "Tallas por letras - DAMA-MX",
   "sistema": "Letra",
-  "talla": "M"
+  "talla": "M",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -389,7 +411,8 @@
   "old_parent": "Tallas por letras - DAMA-MX",
   "parent_talla": "Tallas por letras - DAMA-MX",
   "sistema": "Letra",
-  "talla": "L"
+  "talla": "L",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -403,7 +426,8 @@
   "old_parent": "Tallas por letras - DAMA-MX",
   "parent_talla": "Tallas por letras - DAMA-MX",
   "sistema": "Letra",
-  "talla": "XL"
+  "talla": "XL",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -417,7 +441,8 @@
   "old_parent": "Tallas por letras - DAMA-MX",
   "parent_talla": "Tallas por letras - DAMA-MX",
   "sistema": "Letra",
-  "talla": "XXL"
+  "talla": "XXL",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -431,7 +456,8 @@
   "old_parent": "Tallas por letras - DAMA-MX",
   "parent_talla": "Tallas por letras - DAMA-MX",
   "sistema": "Letra",
-  "talla": "3XL"
+  "talla": "3XL",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -445,7 +471,8 @@
   "old_parent": "Tallas por letras - DAMA-MX",
   "parent_talla": "Tallas por letras - DAMA-MX",
   "sistema": "Letra",
-  "talla": "4XL"
+  "talla": "4XL",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -459,7 +486,8 @@
   "old_parent": "Tallas por letras - DAMA-MX",
   "parent_talla": "Tallas por letras - DAMA-MX",
   "sistema": "Letra",
-  "talla": "5XL"
+  "talla": "5XL",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -473,7 +501,8 @@
   "old_parent": "Tallas por letras - DAMA-MX",
   "parent_talla": "Tallas por letras - DAMA-MX",
   "sistema": "Letra",
-  "talla": "6XL"
+  "talla": "6XL",
+  "uso_comun": 0
  },
  {
   "abreviatura": "CAB-MX",
@@ -515,7 +544,8 @@
   "old_parent": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "parent_talla": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "sistema": "Numérico",
-  "talla": "26"
+  "talla": "26",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -529,7 +559,8 @@
   "old_parent": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "parent_talla": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "sistema": "Numérico",
-  "talla": "28"
+  "talla": "28",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -543,7 +574,8 @@
   "old_parent": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "parent_talla": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "sistema": "Numérico",
-  "talla": "30"
+  "talla": "30",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -557,7 +589,8 @@
   "old_parent": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "parent_talla": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "sistema": "Numérico",
-  "talla": "32"
+  "talla": "32",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -571,7 +604,8 @@
   "old_parent": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "parent_talla": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "sistema": "Numérico",
-  "talla": "34"
+  "talla": "34",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -585,7 +619,8 @@
   "old_parent": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "parent_talla": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "sistema": "Numérico",
-  "talla": "36"
+  "talla": "36",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -599,7 +634,8 @@
   "old_parent": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "parent_talla": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "sistema": "Numérico",
-  "talla": "38"
+  "talla": "38",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -613,7 +649,8 @@
   "old_parent": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "parent_talla": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "sistema": "Numérico",
-  "talla": "40"
+  "talla": "40",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -627,7 +664,8 @@
   "old_parent": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "parent_talla": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "sistema": "Numérico",
-  "talla": "42"
+  "talla": "42",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -641,7 +679,8 @@
   "old_parent": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "parent_talla": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "sistema": "Numérico",
-  "talla": "44"
+  "talla": "44",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -655,7 +694,8 @@
   "old_parent": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "parent_talla": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "sistema": "Numérico",
-  "talla": "46"
+  "talla": "46",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -669,7 +709,8 @@
   "old_parent": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "parent_talla": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "sistema": "Numérico",
-  "talla": "48"
+  "talla": "48",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -683,7 +724,8 @@
   "old_parent": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "parent_talla": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "sistema": "Numérico",
-  "talla": "50"
+  "talla": "50",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -697,7 +739,8 @@
   "old_parent": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "parent_talla": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "sistema": "Numérico",
-  "talla": "52"
+  "talla": "52",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -711,7 +754,8 @@
   "old_parent": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "parent_talla": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "sistema": "Numérico",
-  "talla": "54"
+  "talla": "54",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -725,7 +769,8 @@
   "old_parent": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "parent_talla": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "sistema": "Numérico",
-  "talla": "56"
+  "talla": "56",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -739,7 +784,8 @@
   "old_parent": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "parent_talla": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "sistema": "Numérico",
-  "talla": "58"
+  "talla": "58",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -753,7 +799,8 @@
   "old_parent": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "parent_talla": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "sistema": "Numérico",
-  "talla": "60"
+  "talla": "60",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -767,7 +814,8 @@
   "old_parent": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "parent_talla": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "sistema": "Numérico",
-  "talla": "62"
+  "talla": "62",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -781,7 +829,8 @@
   "old_parent": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "parent_talla": "Pantalones / jeans / prendas inferiores - CAB-MX",
   "sistema": "Numérico",
-  "talla": "64"
+  "talla": "64",
+  "uso_comun": 0
  },
  {
   "abreviatura": "CAB-CAM",
@@ -809,7 +858,8 @@
   "old_parent": "Camisas / prendas superiores numéricas - CAB-MX",
   "parent_talla": "Camisas / prendas superiores numéricas - CAB-MX",
   "sistema": "Numérico",
-  "talla": "34"
+  "talla": "34",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -823,7 +873,8 @@
   "old_parent": "Camisas / prendas superiores numéricas - CAB-MX",
   "parent_talla": "Camisas / prendas superiores numéricas - CAB-MX",
   "sistema": "Numérico",
-  "talla": "35"
+  "talla": "35",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -837,7 +888,8 @@
   "old_parent": "Camisas / prendas superiores numéricas - CAB-MX",
   "parent_talla": "Camisas / prendas superiores numéricas - CAB-MX",
   "sistema": "Numérico",
-  "talla": "36"
+  "talla": "36",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -851,7 +903,8 @@
   "old_parent": "Camisas / prendas superiores numéricas - CAB-MX",
   "parent_talla": "Camisas / prendas superiores numéricas - CAB-MX",
   "sistema": "Numérico",
-  "talla": "37"
+  "talla": "37",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -865,7 +918,8 @@
   "old_parent": "Camisas / prendas superiores numéricas - CAB-MX",
   "parent_talla": "Camisas / prendas superiores numéricas - CAB-MX",
   "sistema": "Numérico",
-  "talla": "38"
+  "talla": "38",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -879,7 +933,8 @@
   "old_parent": "Camisas / prendas superiores numéricas - CAB-MX",
   "parent_talla": "Camisas / prendas superiores numéricas - CAB-MX",
   "sistema": "Numérico",
-  "talla": "39"
+  "talla": "39",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -893,7 +948,8 @@
   "old_parent": "Camisas / prendas superiores numéricas - CAB-MX",
   "parent_talla": "Camisas / prendas superiores numéricas - CAB-MX",
   "sistema": "Numérico",
-  "talla": "40"
+  "talla": "40",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -907,7 +963,8 @@
   "old_parent": "Camisas / prendas superiores numéricas - CAB-MX",
   "parent_talla": "Camisas / prendas superiores numéricas - CAB-MX",
   "sistema": "Numérico",
-  "talla": "41"
+  "talla": "41",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -921,7 +978,8 @@
   "old_parent": "Camisas / prendas superiores numéricas - CAB-MX",
   "parent_talla": "Camisas / prendas superiores numéricas - CAB-MX",
   "sistema": "Numérico",
-  "talla": "42"
+  "talla": "42",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -935,7 +993,8 @@
   "old_parent": "Camisas / prendas superiores numéricas - CAB-MX",
   "parent_talla": "Camisas / prendas superiores numéricas - CAB-MX",
   "sistema": "Numérico",
-  "talla": "43"
+  "talla": "43",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -949,7 +1008,8 @@
   "old_parent": "Camisas / prendas superiores numéricas - CAB-MX",
   "parent_talla": "Camisas / prendas superiores numéricas - CAB-MX",
   "sistema": "Numérico",
-  "talla": "44"
+  "talla": "44",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -963,7 +1023,8 @@
   "old_parent": "Camisas / prendas superiores numéricas - CAB-MX",
   "parent_talla": "Camisas / prendas superiores numéricas - CAB-MX",
   "sistema": "Numérico",
-  "talla": "45"
+  "talla": "45",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -977,7 +1038,8 @@
   "old_parent": "Camisas / prendas superiores numéricas - CAB-MX",
   "parent_talla": "Camisas / prendas superiores numéricas - CAB-MX",
   "sistema": "Numérico",
-  "talla": "46"
+  "talla": "46",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -991,7 +1053,8 @@
   "old_parent": "Camisas / prendas superiores numéricas - CAB-MX",
   "parent_talla": "Camisas / prendas superiores numéricas - CAB-MX",
   "sistema": "Numérico",
-  "talla": "48"
+  "talla": "48",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -1005,7 +1068,8 @@
   "old_parent": "Camisas / prendas superiores numéricas - CAB-MX",
   "parent_talla": "Camisas / prendas superiores numéricas - CAB-MX",
   "sistema": "Numérico",
-  "talla": "50"
+  "talla": "50",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -1019,7 +1083,8 @@
   "old_parent": "Camisas / prendas superiores numéricas - CAB-MX",
   "parent_talla": "Camisas / prendas superiores numéricas - CAB-MX",
   "sistema": "Numérico",
-  "talla": "52"
+  "talla": "52",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -1033,7 +1098,8 @@
   "old_parent": "Camisas / prendas superiores numéricas - CAB-MX",
   "parent_talla": "Camisas / prendas superiores numéricas - CAB-MX",
   "sistema": "Numérico",
-  "talla": "54"
+  "talla": "54",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -1047,7 +1113,8 @@
   "old_parent": "Camisas / prendas superiores numéricas - CAB-MX",
   "parent_talla": "Camisas / prendas superiores numéricas - CAB-MX",
   "sistema": "Numérico",
-  "talla": "56"
+  "talla": "56",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -1061,7 +1128,8 @@
   "old_parent": "Camisas / prendas superiores numéricas - CAB-MX",
   "parent_talla": "Camisas / prendas superiores numéricas - CAB-MX",
   "sistema": "Numérico",
-  "talla": "58"
+  "talla": "58",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -1075,7 +1143,8 @@
   "old_parent": "Camisas / prendas superiores numéricas - CAB-MX",
   "parent_talla": "Camisas / prendas superiores numéricas - CAB-MX",
   "sistema": "Numérico",
-  "talla": "60"
+  "talla": "60",
+  "uso_comun": 0
  },
  {
   "abreviatura": "CAB-LETRA",
@@ -1103,7 +1172,8 @@
   "old_parent": "Tallas por letras - CAB-MX",
   "parent_talla": "Tallas por letras - CAB-MX",
   "sistema": "Letra",
-  "talla": "XXS"
+  "talla": "XXS",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -1117,7 +1187,8 @@
   "old_parent": "Tallas por letras - CAB-MX",
   "parent_talla": "Tallas por letras - CAB-MX",
   "sistema": "Letra",
-  "talla": "XS"
+  "talla": "XS",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -1131,7 +1202,8 @@
   "old_parent": "Tallas por letras - CAB-MX",
   "parent_talla": "Tallas por letras - CAB-MX",
   "sistema": "Letra",
-  "talla": "S"
+  "talla": "S",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -1145,7 +1217,8 @@
   "old_parent": "Tallas por letras - CAB-MX",
   "parent_talla": "Tallas por letras - CAB-MX",
   "sistema": "Letra",
-  "talla": "M"
+  "talla": "M",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -1159,7 +1232,8 @@
   "old_parent": "Tallas por letras - CAB-MX",
   "parent_talla": "Tallas por letras - CAB-MX",
   "sistema": "Letra",
-  "talla": "L"
+  "talla": "L",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -1173,7 +1247,8 @@
   "old_parent": "Tallas por letras - CAB-MX",
   "parent_talla": "Tallas por letras - CAB-MX",
   "sistema": "Letra",
-  "talla": "XL"
+  "talla": "XL",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -1187,7 +1262,8 @@
   "old_parent": "Tallas por letras - CAB-MX",
   "parent_talla": "Tallas por letras - CAB-MX",
   "sistema": "Letra",
-  "talla": "XXL"
+  "talla": "XXL",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -1201,7 +1277,8 @@
   "old_parent": "Tallas por letras - CAB-MX",
   "parent_talla": "Tallas por letras - CAB-MX",
   "sistema": "Letra",
-  "talla": "3XL"
+  "talla": "3XL",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -1215,7 +1292,8 @@
   "old_parent": "Tallas por letras - CAB-MX",
   "parent_talla": "Tallas por letras - CAB-MX",
   "sistema": "Letra",
-  "talla": "4XL"
+  "talla": "4XL",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -1229,7 +1307,8 @@
   "old_parent": "Tallas por letras - CAB-MX",
   "parent_talla": "Tallas por letras - CAB-MX",
   "sistema": "Letra",
-  "talla": "5XL"
+  "talla": "5XL",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -1243,7 +1322,8 @@
   "old_parent": "Tallas por letras - CAB-MX",
   "parent_talla": "Tallas por letras - CAB-MX",
   "sistema": "Letra",
-  "talla": "6XL"
+  "talla": "6XL",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -1257,7 +1337,8 @@
   "old_parent": "Tallas por letras - CAB-MX",
   "parent_talla": "Tallas por letras - CAB-MX",
   "sistema": "Letra",
-  "talla": "7XL"
+  "talla": "7XL",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -1271,7 +1352,8 @@
   "old_parent": "Tallas por letras - CAB-MX",
   "parent_talla": "Tallas por letras - CAB-MX",
   "sistema": "Letra",
-  "talla": "8XL"
+  "talla": "8XL",
+  "uso_comun": 0
  },
  {
   "abreviatura": "CAB-IMPAR",
@@ -1299,7 +1381,8 @@
   "old_parent": "Numeración impar - CAB-MX",
   "parent_talla": "Numeración impar - CAB-MX",
   "sistema": "Impar",
-  "talla": "1"
+  "talla": "1",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -1313,7 +1396,8 @@
   "old_parent": "Numeración impar - CAB-MX",
   "parent_talla": "Numeración impar - CAB-MX",
   "sistema": "Impar",
-  "talla": "3"
+  "talla": "3",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -1327,7 +1411,8 @@
   "old_parent": "Numeración impar - CAB-MX",
   "parent_talla": "Numeración impar - CAB-MX",
   "sistema": "Impar",
-  "talla": "5"
+  "talla": "5",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -1341,7 +1426,8 @@
   "old_parent": "Numeración impar - CAB-MX",
   "parent_talla": "Numeración impar - CAB-MX",
   "sistema": "Impar",
-  "talla": "7"
+  "talla": "7",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -1355,7 +1441,8 @@
   "old_parent": "Numeración impar - CAB-MX",
   "parent_talla": "Numeración impar - CAB-MX",
   "sistema": "Impar",
-  "talla": "9"
+  "talla": "9",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -1369,7 +1456,8 @@
   "old_parent": "Numeración impar - CAB-MX",
   "parent_talla": "Numeración impar - CAB-MX",
   "sistema": "Impar",
-  "talla": "11"
+  "talla": "11",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -1383,7 +1471,8 @@
   "old_parent": "Numeración impar - CAB-MX",
   "parent_talla": "Numeración impar - CAB-MX",
   "sistema": "Impar",
-  "talla": "13"
+  "talla": "13",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -1397,7 +1486,8 @@
   "old_parent": "Numeración impar - CAB-MX",
   "parent_talla": "Numeración impar - CAB-MX",
   "sistema": "Impar",
-  "talla": "15"
+  "talla": "15",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -1411,7 +1501,8 @@
   "old_parent": "Numeración impar - CAB-MX",
   "parent_talla": "Numeración impar - CAB-MX",
   "sistema": "Impar",
-  "talla": "17"
+  "talla": "17",
+  "uso_comun": 1
  },
  {
   "abreviatura": null,
@@ -1425,7 +1516,8 @@
   "old_parent": "Numeración impar - CAB-MX",
   "parent_talla": "Numeración impar - CAB-MX",
   "sistema": "Impar",
-  "talla": "19"
+  "talla": "19",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -1439,7 +1531,8 @@
   "old_parent": "Numeración impar - CAB-MX",
   "parent_talla": "Numeración impar - CAB-MX",
   "sistema": "Impar",
-  "talla": "21"
+  "talla": "21",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -1453,7 +1546,8 @@
   "old_parent": "Numeración impar - CAB-MX",
   "parent_talla": "Numeración impar - CAB-MX",
   "sistema": "Impar",
-  "talla": "23"
+  "talla": "23",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -1467,7 +1561,8 @@
   "old_parent": "Numeración impar - CAB-MX",
   "parent_talla": "Numeración impar - CAB-MX",
   "sistema": "Impar",
-  "talla": "25"
+  "talla": "25",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -1481,7 +1576,8 @@
   "old_parent": "Numeración impar - CAB-MX",
   "parent_talla": "Numeración impar - CAB-MX",
   "sistema": "Impar",
-  "talla": "27"
+  "talla": "27",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -1495,7 +1591,8 @@
   "old_parent": "Numeración impar - CAB-MX",
   "parent_talla": "Numeración impar - CAB-MX",
   "sistema": "Impar",
-  "talla": "29"
+  "talla": "29",
+  "uso_comun": 0
  },
  {
   "abreviatura": null,
@@ -1509,6 +1606,7 @@
   "old_parent": "Numeración impar - CAB-MX",
   "parent_talla": "Numeración impar - CAB-MX",
   "sistema": "Impar",
-  "talla": "31"
+  "talla": "31",
+  "uso_comun": 0
  }
 ]

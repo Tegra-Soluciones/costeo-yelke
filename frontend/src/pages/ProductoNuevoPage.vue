@@ -102,12 +102,12 @@
               <div class="grid grid-cols-2 gap-4">
                 <div>
                   <FieldLabel>Código de Artículo <Req /></FieldLabel>
-                  <input v-model="form.item_code" class="field-input" :class="err('item_code')" placeholder="Ej: YLK-CHA-TIM" />
+                  <input v-model="form.item_code" v-mayus class="field-input" :class="err('item_code')" placeholder="Ej: YLK-CHA-TIM" />
                   <ErrMsg :v="errors.item_code" />
                 </div>
                 <div>
                   <FieldLabel>Nombre del Artículo</FieldLabel>
-                  <input v-model="form.item_name" class="field-input" placeholder="Nombre descriptivo" />
+                  <input v-model="form.item_name" v-mayus class="field-input" placeholder="Nombre descriptivo" />
                 </div>
                 <div>
                   <FieldLabel>Grupo de Artículo <Req /></FieldLabel>

@@ -1,7 +1,11 @@
 <template>
   <div v-if="open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" @click.self="$emit('cancel')">
     <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-5">
-      <p class="text-sm font-semibold text-ink">Dar de alta el producto terminado</p>
+      <p class="text-sm font-semibold text-ink">{{ soloTallas ? "Tallas extra de " + finishedItemText : "Dar de alta el producto terminado" }}</p>
+      <p v-if="soloTallas" class="text-[12px] text-ink-muted mt-0.5 mb-4">
+        El producto ya está dado de alta. Sus tallas extra se crean ahora, cada una con su propio precio.
+      </p>
+      <template v-if="!soloTallas">
       <p class="text-[12px] text-ink-muted mt-0.5 mb-4">
         <span class="font-medium">"{{ finishedItemText }}"</span> todavía no existe como artículo en el ERP.
         Para pasar a cotización necesitamos crearlo — o vincular uno que ya hayas dado de alta antes.
@@ -38,12 +42,12 @@
       <template v-else>
         <div class="mb-3">
           <label class="field-label">Código del artículo <span class="text-red-400">*</span></label>
-          <input v-model="form.item_code" class="field-input" placeholder="Ej: YLK-CHA-TIM" :class="errors.item_code ? 'border-red-400' : ''" />
+          <input v-model="form.item_code" v-mayus class="field-input" placeholder="Ej: YLK-CHA-TIM" :class="errors.item_code ? 'border-red-400' : ''" />
         </div>
 
         <div class="mb-3">
           <label class="field-label">Nombre <span class="text-red-400">*</span></label>
-          <input v-model="form.item_name" class="field-input" placeholder="Nombre del producto" :class="errors.item_name ? 'border-red-400' : ''" />
+          <input v-model="form.item_name" v-mayus class="field-input" placeholder="Nombre del producto" :class="errors.item_name ? 'border-red-400' : ''" />
         </div>
 
         <div class="mb-3">
@@ -85,7 +89,7 @@
           <div v-for="(r, idx) in form.rangos" :key="idx" class="grid grid-cols-[1fr_1fr_1fr_28px] gap-2 items-center mb-1.5">
             <input v-model.number="r.min_qty" type="number" min="0" step="1" class="field-input min-w-0" />
             <input v-model.number="r.max_qty" type="number" min="0" step="1" class="field-input min-w-0" placeholder="Sin tope" />
-            <div class="flex items-center border border-surface-border rounded-lg bg-white min-w-0">
+            <div class="flex items-center border rounded-lg bg-white min-w-0" :class="bajoPiso(r, form.precio_venta) ? 'border-red-400' : 'border-surface-border'">
               <span class="pl-2 text-xs text-ink-light select-none">$</span>
               <input v-model.number="r.rate" type="number" min="0" step="0.01" class="flex-1 min-w-0 py-2 pr-2 pl-1 text-sm focus:outline-none bg-transparent" />
             </div>
@@ -93,20 +97,61 @@
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
             </button>
           </div>
+          <p v-if="form.rangos.some(r => bajoPiso(r, form.precio_venta))" class="text-[11px] text-red-600 mt-1">Ningún precio puede ser menor al del costeo (${{ (form.precio_venta || 0).toFixed(2) }}).</p>
           <button class="text-[12px] font-medium text-brand-600 hover:text-brand-700 mt-1" @click="addRango">+ Agregar rango</button>
         </div>
       </template>
+      </template>
 
-      <p class="text-[11px] text-ink-light bg-surface-raised rounded-lg px-3 py-2 mb-1">
+      <!-- Tallas extra de este producto: se dan de alta solas junto con él, cada una con
+           su propio precio; aquí se le puede capturar su propia escala por volumen. -->
+      <div v-if="tallasExtra.length" class="mb-3 border-t border-surface-border pt-3">
+        <p class="text-[13px] font-medium text-ink mb-0.5">Tallas extra</p>
+        <p class="text-[11px] text-ink-light mb-2">Se dan de alta solas con su propio precio. La escala por volumen de cada talla es opcional y se aplica según la cantidad de su propia línea.</p>
+        <div v-for="t in tallasExtra" :key="t.text" class="border border-surface-border rounded-lg mb-2 overflow-hidden">
+          <div class="flex items-center gap-2 px-3 py-2 bg-white">
+            <div class="flex-1 min-w-0">
+              <p class="text-[12.5px] font-medium text-ink truncate">{{ t.label || t.text }}</p>
+              <p class="text-[11px] text-ink-light">Precio ${{ (t.precio || 0).toFixed(2) }}<template v-if="rangosConPrecio(t).length"> · {{ rangosConPrecio(t).length }} rango(s) por volumen</template></p>
+            </div>
+            <button type="button" class="text-[12px] font-medium text-brand-600 hover:text-brand-700 flex-shrink-0" @click="toggleTalla(t)">
+              {{ tallasForm[t.text]?.abierto ? "Ocultar" : "Precios por volumen" }}
+            </button>
+          </div>
+          <div v-if="tallasForm[t.text]?.abierto" class="p-3 bg-surface-raised/40 border-t border-surface-border">
+            <div class="grid grid-cols-[1fr_1fr_1fr_28px] gap-2 mb-1.5 px-0.5">
+              <span class="text-[11px] font-medium text-ink-muted">Desde (cant.)</span>
+              <span class="text-[11px] font-medium text-ink-muted">Hasta (cant.)</span>
+              <span class="text-[11px] font-medium text-ink-muted">Precio</span>
+              <span></span>
+            </div>
+            <div v-for="(r, idx) in tallasForm[t.text].rangos" :key="idx" class="grid grid-cols-[1fr_1fr_1fr_28px] gap-2 items-center mb-1.5">
+              <input v-model.number="r.min_qty" type="number" min="0" step="1" class="field-input min-w-0" />
+              <input v-model.number="r.max_qty" type="number" min="0" step="1" class="field-input min-w-0" placeholder="Sin tope" />
+              <div class="flex items-center border rounded-lg bg-white min-w-0" :class="bajoPiso(r, t.precio) ? 'border-red-400' : 'border-surface-border'">
+                <span class="pl-2 text-xs text-ink-light select-none">$</span>
+                <input v-model.number="r.rate" type="number" min="0" step="0.01" class="flex-1 min-w-0 py-2 pr-2 pl-1 text-sm focus:outline-none bg-transparent" />
+              </div>
+              <button class="h-7 w-7 flex items-center justify-center text-ink-muted hover:bg-red-50 hover:text-red-500 rounded-lg" @click="tallasForm[t.text].rangos.splice(idx, 1)">
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+              </button>
+            </div>
+            <p v-if="tallasForm[t.text].rangos.some(r => bajoPiso(r, t.precio))" class="text-[11px] text-red-600 mt-1">Ningún precio puede ser menor al del costeo (${{ (t.precio || 0).toFixed(2) }}).</p>
+            <button class="text-[12px] font-medium text-brand-600 hover:text-brand-700 mt-1" @click="addRangoTalla(t)">+ Agregar rango</button>
+          </div>
+        </div>
+      </div>
+
+      <p v-if="!soloTallas" class="text-[11px] text-ink-light bg-surface-raised rounded-lg px-3 py-2 mb-1">
         <template v-if="mode === 'existing'">El producto quedará vinculado a este renglón del costeo.</template>
         <template v-else>Se asignará automáticamente a <strong>{{ company || '—' }}</strong> · Lista de precios: <strong>Venta estándar</strong>.</template>
       </p>
 
       <div class="flex gap-2 justify-end mt-4">
         <button class="px-3 py-1.5 text-[13px] text-ink-muted hover:bg-surface-raised rounded-lg" @click="$emit('cancel')">Cancelar</button>
-        <button :disabled="saving" class="px-4 py-1.5 text-[13px] font-medium text-white bg-brand-500 hover:bg-brand-600 disabled:opacity-50 rounded-lg flex items-center gap-2" @click="onConfirm">
+        <button :disabled="saving || hayPrecioBajoPiso()" class="px-4 py-1.5 text-[13px] font-medium text-white bg-brand-500 hover:bg-brand-600 disabled:opacity-50 rounded-lg flex items-center gap-2" @click="onConfirm">
           <svg v-if="saving" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-          {{ saving ? (mode === 'existing' ? "Vinculando…" : "Creando…") : (mode === 'existing' ? "Vincular y continuar" : "Crear y continuar") }}
+          {{ saving ? (mode === 'existing' ? "Vinculando…" : "Creando…") : soloTallas ? "Crear tallas y continuar" : (mode === 'existing' ? "Vincular y continuar" : "Crear y continuar") }}
         </button>
       </div>
     </div>
@@ -124,6 +169,14 @@ const props = defineProps({
   suggestedPrice: { type: Number, default: 0 },
   suggestedDescription: { type: String, default: "" },
   suggestedImage: { type: String, default: "" },
+  // Variante de talla: su código sale del artículo base (lo calcula la página) y no
+  // se le sugiere "usar existente" -- el parecido más cercano sería su propio base.
+  suggestedCode: { type: String, default: "" },
+  esVariante: { type: Boolean, default: false },
+  // Variantes de talla de este producto aún sin artículo: [{text, label, precio}].
+  tallasExtra: { type: Array, default: () => [] },
+  // El producto base ya es artículo: el modal solo pide la escala de sus tallas extra.
+  soloTallas: { type: Boolean, default: false },
   company: { type: String, default: "" },
   saving: { type: Boolean, default: false },
 });
@@ -142,6 +195,41 @@ const form = reactive({
   precio_venta: 0, conPrecioVolumen: false, rangos: [],
 });
 const errors = reactive({ item_code: false, item_name: false, stock_uom: false, existing: false });
+const tallasForm = reactive({});
+// Rangos del producto base cuando YA es artículo (modo solo tallas): se leen de sus
+// reglas de precio para proponer los mismos "desde/hasta" en cada talla.
+const rangosBase = ref([]);
+async function cargarRangosBase(itemCode) {
+  try {
+    const reglas = await call("costeo_yelke.api.item_api.get_pricing_rules", { item_code: itemCode });
+    rangosBase.value = (reglas || []).filter(r => r.selling && !r.disable && r.rate_or_discount === "Rate")
+      .map(r => ({ min_qty: r.min_qty, max_qty: r.max_qty || "" }));
+  } catch { rangosBase.value = []; }
+}
+
+// Al abrir la escala de una talla se proponen los mismos rangos (desde/hasta) que se
+// capturaron para el producto base, con el precio vacío: el precio lo pone el usuario.
+function toggleTalla(t) {
+  const f = tallasForm[t.text];
+  f.abierto = !f.abierto;
+  if (f.abierto && !f.rangos.length) {
+    const base = form.conPrecioVolumen && form.rangos.length ? form.rangos : rangosBase.value;
+    f.rangos = base.length
+      ? base.map(r => ({ min_qty: r.min_qty, max_qty: r.max_qty, rate: null }))
+      : [{ min_qty: 1, max_qty: "", rate: null }];
+  }
+}
+function addRangoTalla(t) {
+  const rangos = tallasForm[t.text].rangos;
+  const prevMax = rangos.length ? rangos[rangos.length - 1].max_qty : 0;
+  rangos.push({ min_qty: (prevMax || 0) + 1 || 1, max_qty: "", rate: null });
+}
+const rangosConPrecio = (t) => (tallasForm[t.text]?.rangos || []).filter(r => r.rate > 0);
+function tallasPrecios() {
+  return Object.fromEntries(props.tallasExtra
+    .map(t => [t.text, rangosConPrecio(t).map(r => ({ rate_or_discount: "Rate", min_qty: r.min_qty || 0, max_qty: r.max_qty || 0, rate: r.rate }))])
+    .filter(([, reglas]) => reglas.length));
+}
 
 async function onSelectExisting(code, { suggested = false } = {}) {
   existingPreview.value = null;
@@ -196,8 +284,8 @@ watch(() => props.open, (isOpen) => {
   existingItemCode.value = "";
   existingPreview.value = null;
   existingSuggested.value = false;
-  autoSuggestExisting(props.finishedItemText);
-  form.item_code = suggestCode(props.finishedItemText);
+  if (!props.esVariante) autoSuggestExisting(props.finishedItemText);
+  form.item_code = props.suggestedCode || suggestCode(props.finishedItemText);
   form.item_name = props.finishedItemText;
   form.stock_uom = "H87 - Pieza"; // default -- la mayoría de los productos terminados se venden por pieza, pero se puede cambiar libremente
   form.precio_venta = props.suggestedPrice || 0;
@@ -205,10 +293,29 @@ watch(() => props.open, (isOpen) => {
   form.rangos = [];
   form.description = props.suggestedDescription || "";
   form.image = props.suggestedImage || "";
+  Object.keys(tallasForm).forEach(k => delete tallasForm[k]);
+  props.tallasExtra.forEach(t => { tallasForm[t.text] = { abierto: false, rangos: [] }; });
+  rangosBase.value = [];
+  if (props.soloTallas) cargarRangosBase(props.finishedItemText);
   errors.item_code = false; errors.item_name = false; errors.stock_uom = false; errors.existing = false;
 });
 
+// La tabla por volumen nunca baja del precio de venta del costeo (el piso): ni en el
+// producto base ni en las tallas extra. El servidor lo vuelve a revisar.
+function bajoPiso(r, piso) {
+  return Number(r.rate) > 0 && Number(piso) > 0 && Math.round(Number(r.rate) * 100) < Math.round(Number(piso) * 100);
+}
+function hayPrecioBajoPiso() {
+  if (form.conPrecioVolumen && !props.soloTallas && form.rangos.some(r => bajoPiso(r, form.precio_venta))) return true;
+  return props.tallasExtra.some(t => (tallasForm[t.text]?.rangos || []).some(r => bajoPiso(r, t.precio)));
+}
+
 function onConfirm() {
+  if (hayPrecioBajoPiso()) return;
+  if (props.soloTallas) {
+    emit("confirm", { solo_tallas: true, tallas_precios: tallasPrecios() });
+    return;
+  }
   if (mode.value === "existing") {
     errors.existing = !existingItemCode.value;
     if (errors.existing) return;
@@ -220,6 +327,7 @@ function onConfirm() {
       image: existingPreview.value?.image || null,
       precio_venta: form.precio_venta || 0,
       pricing_rules: [],
+      tallas_precios: tallasPrecios(),
     });
     return;
   }
@@ -243,6 +351,7 @@ function onConfirm() {
     image: form.image || null,
     precio_venta: form.precio_venta || 0,
     pricing_rules,
+    tallas_precios: tallasPrecios(),
   });
 }
 </script>

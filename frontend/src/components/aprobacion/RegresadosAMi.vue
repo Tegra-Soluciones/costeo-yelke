@@ -1,7 +1,7 @@
 <!--
   "Te regresaron para corregir": lo que Dirección o el revisor le devolvieron al
-  usuario y todavía no reenvía (api/aprobaciones.get_mis_devueltos). Va en Inicio;
-  no se pinta si no hay nada.
+  usuario y todavía no reenvía, y las órdenes de venta que Dirección canceló y le toca
+  rehacer (api/aprobaciones.get_mis_devueltos). Va en Inicio; no se pinta si no hay nada.
 -->
 <template>
   <div v-if="items.length" class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
@@ -19,7 +19,7 @@
           <p class="text-[13px] font-medium text-amber-950">{{ d.etiqueta }} · <span class="font-mono">{{ d.name }}</span></p>
           <p v-if="d.motivo" class="text-[12.5px] text-amber-900 truncate">“{{ d.motivo }}”</p>
         </div>
-        <span class="text-amber-800 text-[12px] font-medium whitespace-nowrap">Corregir ›</span>
+        <span class="text-amber-800 text-[12px] font-medium whitespace-nowrap">{{ d.accion || "Corregir" }} ›</span>
       </RouterLink>
     </div>
   </div>

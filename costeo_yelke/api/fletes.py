@@ -201,3 +201,68 @@ def validar_factura_flete(doc, method=None):
     if not frappe.db.has_column("Purchase Invoice", "factura_pdf") and not frappe.db.exists(
             "File", {"attached_to_doctype": "Purchase Invoice", "attached_to_name": doc.name}):
         frappe.throw(_("Adjunta el CFDI (XML o PDF) y, si aplica, la carta porte antes de validar la factura del flete."))
+
+
+# ── IVA del flete que cobra el mismo proveedor ──────────────────────────────
+
+FLETE_IVA_DESCRIPTION = "IVA del flete"
+
+
+def _cuenta_iva(doc):
+    """La cuenta de IVA de la propia compra; si no trae, la de la plantilla de fletes."""
+    for t in doc.get("taxes") or []:
+        if t.charge_type == "On Net Total" and flt(t.rate) == TASA_IVA * 100 and t.add_deduct_tax != "Deduct":
+            return t.account_head
+    abbr = frappe.get_cached_value("Company", doc.company, "abbr")
+    return frappe.db.get_value("Purchase Taxes and Charges",
+                               {"parent": f"FLETE IVA 16% - {abbr}", "parenttype": "Purchase Taxes and Charges Template"},
+                               "account_head")
+
+
+def _recalcular(doc):
+    doc.calculate_taxes_and_totals()
+    # El reparto del flete al costo de cada renglón (item_tax_amount) se calcula sobre
+    # los impuestos de antes; se rehace para que el recibo capitalice solo el flete.
+    if doc.doctype in ("Purchase Receipt", "Purchase Invoice") and hasattr(doc, "update_valuation_rate"):
+        doc.update_valuation_rate()
+
+
+def ajustar_iva_flete(doc, method=None):
+    """validate de Orden de compra, Recibo y Factura de compra (después de
+    quitar_iva_sin_alta_sat): con el flete cobrado por el MISMO proveedor y la casilla
+    "cobra IVA" marcada, pone justo debajo del flete el renglón "IVA del flete" (16%
+    sobre el renglón anterior, categoría Total: el IVA es acreditable, no costo del
+    inventario). Si no aplica, lo quita. Se rehace en cada guardado para que el
+    renglón de referencia (row_id) nunca quede apuntando a otro."""
+    if not doc.meta.has_field("flete_cobra_iva") or doc.get("es_factura_flete"):
+        return
+    from costeo_yelke.api.costeo_api import FLETE_DESCRIPTION
+
+    taxes = [t for t in (doc.get("taxes") or []) if t.description != FLETE_IVA_DESCRIPTION]
+    había = len(taxes) != len(doc.get("taxes") or [])
+    flete = next((t for t in taxes if t.description == FLETE_DESCRIPTION), None)
+    sin_sat = frappe.db.has_column("Supplier", "sin_alta_sat") and doc.get("supplier") \
+        and frappe.db.get_value("Supplier", doc.supplier, "sin_alta_sat")
+    aplica = (flete and flt(flete.tax_amount) > 0 and frappe.utils.cint(doc.get("flete_cobra_iva"))
+              and doc.get("flete_modo") != "Paquetería externa" and not sin_sat
+              and flete.category != "Valuation")
+    cuenta = _cuenta_iva(doc) if aplica else None
+    if not (aplica and cuenta):
+        if había:
+            doc.set("taxes", taxes)
+            for i, t in enumerate(doc.taxes, 1):
+                t.idx = i
+            _recalcular(doc)
+        return
+    pos = taxes.index(flete)
+    doc.set("taxes", taxes[:pos + 1])
+    doc.append("taxes", {
+        "charge_type": "On Previous Row Amount", "row_id": str(pos + 1), "rate": TASA_IVA * 100,
+        "account_head": cuenta, "description": FLETE_IVA_DESCRIPTION, "category": "Total",
+        "add_deduct_tax": "Add",
+    })
+    for t in taxes[pos + 1:]:
+        doc.append("taxes", t)
+    for i, t in enumerate(doc.taxes, 1):
+        t.idx = i
+    _recalcular(doc)

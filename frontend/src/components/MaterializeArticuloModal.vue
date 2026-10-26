@@ -9,12 +9,12 @@
 
       <div class="mb-3">
         <label class="field-label">Código del artículo <span class="text-red-400">*</span></label>
-        <input v-model="form.item_code" class="field-input" placeholder="Ej: YLK-TEL-NEG" :class="errors.item_code ? 'border-red-400' : ''" />
+        <input v-model="form.item_code" v-mayus class="field-input" placeholder="Ej: YLK-TEL-NEG" :class="errors.item_code ? 'border-red-400' : ''" />
       </div>
 
       <div class="mb-3">
         <label class="field-label">Nombre <span class="text-red-400">*</span></label>
-        <input v-model="form.item_name" class="field-input" placeholder="Nombre del artículo" :class="errors.item_name ? 'border-red-400' : ''" />
+        <input v-model="form.item_name" v-mayus class="field-input" placeholder="Nombre del artículo" :class="errors.item_name ? 'border-red-400' : ''" />
       </div>
 
       <div class="mb-3">

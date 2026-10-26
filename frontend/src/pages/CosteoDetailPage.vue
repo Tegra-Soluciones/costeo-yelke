@@ -8,6 +8,30 @@
       @confirm="doDelete" @cancel="confirmDelete.open = false"
     />
     <ConfirmDialog
+      v-model="confirmFlujoDlg.open" variant="warning"
+      title="¿Confirmar el flujo de producción?"
+      message="Revisa bien antes de continuar: se crean las BOMs, los Subcontracting BOMs y el plan de producción con este flujo, y después ya no se podrá editar (solo revirtiéndolo)."
+      confirm-label="Sí, confirmar y pasar a producción"
+      @confirm="aceptarConfirmarFlujo" @cancel="confirmFlujoDlg.open = false"
+    >
+      <div v-if="resumenConfirmarFlujo.length" class="mt-3 max-h-72 overflow-y-auto space-y-2">
+        <div v-for="r in resumenConfirmarFlujo" :key="r.producto" class="rounded-lg border border-gray-200 px-3 py-2 text-[12px]">
+          <p class="font-semibold text-gray-900 truncate">{{ r.producto }}</p>
+          <p class="text-gray-500">{{ r.pasos }} {{ r.pasos === 1 ? "paso" : "pasos" }}<template v-if="r.piezas"> · {{ r.piezas }} piezas · se unen en {{ r.union || "el paso final" }}</template></p>
+          <ul v-if="r.avisos.length" class="mt-1 space-y-0.5 text-amber-700">
+            <li v-for="(a, i) in r.avisos" :key="i">• {{ a }}</li>
+          </ul>
+        </div>
+      </div>
+    </ConfirmDialog>
+    <ConfirmDialog
+      v-model="confirmRevertir.open"
+      title="¿Revertir el flujo de producción?"
+      :message="`Se cancelan y borran las BOMs, los Subcontracting BOMs y el plan de producción de ${docName}, y el proyecto regresa a Flujo de Producción para corregirlo. Después tendrás que volver a confirmarlo. Solo se puede si todavía no hay solicitudes de material, órdenes de compra ni órdenes de trabajo.`"
+      confirm-label="Sí, revertir" :loading="confirmRevertir.loading"
+      @confirm="revertirFlujo" @cancel="confirmRevertir.open = false"
+    />
+    <ConfirmDialog
       v-model="confirmCancel.open"
       :title="headerDoc && headerDoc.isCosteo ? 'Cancelar Costeo' : `Cancelar ${headerDoc?.doctype || ''}`"
       :message="`¿Cancelar la validación de ${headerDoc?.name || docName}?${headerDoc && headerDoc.isCosteo ? ' Después podrás eliminarlo.' : ''}`"
@@ -35,6 +59,13 @@
       :actual="precioEnEdicion?.unit_sales_price || 0" @cerrar="precioEnEdicion = null" @confirmar="aplicarPrecio"
     />
 
+    <!-- Imagen del producto: del equipo, pegada o desde un enlace -->
+    <DialogoImagen
+      :abierto="!!imagenEnEdicion" :producto="imagenEnEdicion?.finished_item || 'Producto nuevo'"
+      :actual="imagenEnEdicion?.image || ''" doctype="Costeo" :docname="docName || ''"
+      @cerrar="imagenEnEdicion = null" @elegida="aplicarImagen"
+    />
+
     <!-- Modal: materializar producto terminado (al pasar a cotización) -->
     <MaterializeProductModal
       :open="materializeModal.open"
@@ -42,6 +73,10 @@
       :suggested-price="materializeModal.suggestedPrice"
       :suggested-description="materializeModal.suggestedDescription"
       :suggested-image="materializeModal.suggestedImage"
+      :suggested-code="materializeModal.suggestedCode"
+      :es-variante="materializeModal.esVariante"
+      :tallas-extra="materializeModal.tallasExtra"
+      :solo-tallas="materializeModal.soloTallas"
       :company="form.compania"
       :saving="materializeModal.saving"
       @cancel="cancelMaterialize"
@@ -84,7 +119,7 @@
             </div>
             <div class="border-t border-surface-border py-1">
               <button v-if="headerDoc.docstatus === 1" class="action-item text-amber-600 hover:bg-amber-50 hover:text-amber-700" @click="openCancel">Cancelar validación</button>
-              <button v-if="headerDoc.isCosteo && (headerDoc.docstatus === 1 || headerDoc.docstatus === 2)" class="action-item text-brand-600 hover:bg-brand-50 hover:text-brand-700" @click="openRevisionModal">Crear revisión</button>
+              <button v-if="headerDoc.isCosteo && headerDoc.docstatus === 1" class="action-item text-brand-600 hover:bg-brand-50 hover:text-brand-700" @click="openRevisionModal">Editar costeo</button>
               <button v-if="headerDoc.isCosteo" class="action-item text-red-500 hover:bg-red-50 hover:text-red-600" @click="openDelete">Eliminar</button>
             </div>
           </div>
@@ -123,7 +158,7 @@
         Validar
       </button>
 
-      <button v-if="!isNew && cta" :disabled="advancing || !canAdvanceCta" class="h-8 px-4 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 transition-colors disabled:opacity-40 flex items-center gap-1.5" :title="canAdvanceCta ? '' : 'Completa los pendientes'" @click="advance">
+      <button v-if="!isNew && cta" :disabled="advancing || !canAdvanceCta" class="h-8 px-4 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 transition-colors disabled:opacity-40 flex items-center gap-1.5" :title="canAdvanceCta ? '' : (cta.action === 'ir_preparar_manufactura' ? 'Primero valida la orden de venta' : 'Completa los pendientes')" @click="advance">
         <svg v-if="advancing" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
         {{ cta.label }}
         <svg v-if="!advancing" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5-5 5M6 12h12"/></svg>
@@ -133,6 +168,7 @@
     <CosteoStepper
       v-if="!isNew && docName" :model-value="docStatus" :active-step="activeStep"
       :vender-listo="soValidated"
+      :con-ordenes-venta="related.sales_orders.length > 0"
       :alta-productos-listo="pendientesArticulos.length === 0"
       :flujo-produccion-listo="manufacturaGuardada || hasPlan"
       @select="goStep"
@@ -171,23 +207,26 @@
     </div>
 
     <!-- ══════════ STEP 0 · COSTEAR ══════════ -->
-    <div v-else-if="activeStep === 0" class="p-5 pb-40">
+    <!-- Mismo contenido de siempre, con el lenguaje de Producción/Dirección (p-*):
+         datos generales en una franja, y cada producto en dos columnas -- a la
+         izquierda qué es y cómo se hace (pasos, servicios, materias primas), a la
+         derecha cuánto cuesta y en cuánto se vende, fija mientras se baja. -->
+    <div v-else-if="activeStep === 0" class="px-5 lg:px-8 py-6 pb-40">
       <fieldset :disabled="!canEditCosteo" class="border-0 p-0 m-0 min-w-0" :class="!canEditCosteo ? 'opacity-70' : ''">
-      <div class="flex gap-5 items-start max-w-[1400px] mx-auto">
-      <div class="flex-1 min-w-0 space-y-4">
-        <section class="bg-white rounded-xl border border-surface-border">
-          <div class="px-5 py-3 border-b border-surface-border"><h3 class="section-title">Información general</h3></div>
-          <div class="p-5 grid grid-cols-2 gap-4">
-            <div class="col-span-2">
-              <label class="field-label">Título <span class="text-ink-light font-normal">(opcional, para identificarlo más fácil)</span></label>
-              <input v-model="form.titulo" type="text" class="field-input" placeholder="Ej: Playeras Polo Ferromex 2026" />
+      <div class="max-w-[1320px] mx-auto space-y-6">
+        <section class="p-panel">
+          <div class="px-5 pt-4"><p class="p-eyebrow">Datos del costeo</p></div>
+          <div class="px-5 pt-3 pb-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-x-4 gap-y-3.5">
+            <div class="md:col-span-2">
+              <label class="p-field-label">Título <span class="text-ink-light font-normal">(opcional, para identificarlo más fácil)</span></label>
+              <input v-model="form.titulo" v-mayus type="text" class="p-field" placeholder="Ej: Playeras Polo Ferromex 2026" />
             </div>
-            <div><label class="field-label">Cliente <span class="text-red-400">*</span></label><LinkInput v-model="form.cliente" doctype="Customer" placeholder="Buscar cliente…" :error="!!errors.cliente" /></div>
-            <div><label class="field-label">Fecha <span class="text-red-400">*</span></label><input v-model="form.fecha" type="date" class="field-input" :class="errors.fecha ? 'border-red-400' : ''" /></div>
-            <div><label class="field-label">Compañía <span class="text-red-400">*</span></label><LinkInput v-model="form.compania" doctype="Company" placeholder="Compañía…" :error="!!errors.compania" /></div>
-            <div class="flex items-end pb-1.5">
-              <label class="flex items-center gap-2 text-[13px] text-ink cursor-pointer select-none">
-                <input v-model="form.guardar_como_plantilla" type="checkbox" class="w-4 h-4 rounded border-surface-border" />
+            <div><label class="p-field-label">Cliente <span class="text-red-400">*</span></label><LinkInput v-model="form.cliente" doctype="Customer" placeholder="Buscar cliente…" :error="!!errors.cliente" /></div>
+            <div><label class="p-field-label">Fecha <span class="text-red-400">*</span></label><input v-model="form.fecha" type="date" class="p-field" :class="errors.fecha ? 'border-red-400' : ''" /></div>
+            <div><label class="p-field-label">Compañía <span class="text-red-400">*</span></label><LinkInput v-model="form.compania" doctype="Company" placeholder="Compañía…" :error="!!errors.compania" /></div>
+            <div class="md:col-span-1 xl:col-span-3 flex items-end pb-2">
+              <label class="flex items-center gap-2 text-[13px] text-ink-muted cursor-pointer select-none">
+                <input v-model="form.guardar_como_plantilla" type="checkbox" class="w-4 h-4 rounded border-surface-border accent-brand-500" />
                 Guardar productos como plantilla al guardar
               </label>
             </div>
@@ -196,353 +235,391 @@
                Esta sección solo se muestra cuando get_company_defaults NO logró
                resolver alguno por nombre -- si ya se autocompletaron los 3, se
                mantiene oculta para no meter ruido visual en el flujo normal. -->
-          <div v-if="form.compania && faltanAlmacenes" class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 pt-3 border-t border-surface-border">
-            <div>
-              <label class="field-label">Almacén de materia prima <span class="text-red-400">*</span></label>
-              <LinkInput v-model="form.almacen_materias_primas" doctype="Warehouse" :filters="warehouseFilters" placeholder="Almacén…" :error="!!errors.almacen_materias_primas" />
-            </div>
-            <div>
-              <label class="field-label">Almacén de trabajo en proceso <span class="text-red-400">*</span></label>
-              <LinkInput v-model="form.almacen_trabajo_en_proceso" doctype="Warehouse" :filters="warehouseFilters" placeholder="Almacén…" :error="!!errors.almacen_trabajo_en_proceso" />
-            </div>
-            <div>
-              <label class="field-label">Centro de costos <span class="text-red-400">*</span></label>
-              <LinkInput v-model="form.centro_de_costos" doctype="Cost Center" :filters="costCenterFilters" placeholder="Centro de costos…" :error="!!errors.centro_de_costos" />
+          <div v-if="form.compania && faltanAlmacenes" class="px-5 py-4 border-t border-surface-border">
+            <p class="text-[12px] text-amber-800 mb-3 flex items-start gap-1.5">
+              <Icono nombre="alerta" class="w-4 h-4 flex-shrink-0 mt-px" />
+              No encontramos los almacenes de esta compañía por su nombre — elígelos aquí para poder guardar.
+            </p>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label class="p-field-label">Almacén de materia prima <span class="text-red-400">*</span></label>
+                <LinkInput v-model="form.almacen_materias_primas" doctype="Warehouse" :filters="warehouseFilters" placeholder="Almacén…" :error="!!errors.almacen_materias_primas" />
+              </div>
+              <div>
+                <label class="p-field-label">Almacén de trabajo en proceso <span class="text-red-400">*</span></label>
+                <LinkInput v-model="form.almacen_trabajo_en_proceso" doctype="Warehouse" :filters="warehouseFilters" placeholder="Almacén…" :error="!!errors.almacen_trabajo_en_proceso" />
+              </div>
+              <div>
+                <label class="p-field-label">Centro de costos <span class="text-red-400">*</span></label>
+                <LinkInput v-model="form.centro_de_costos" doctype="Cost Center" :filters="costCenterFilters" placeholder="Centro de costos…" :error="!!errors.centro_de_costos" />
+              </div>
             </div>
           </div>
-          <p v-if="form.compania && faltanAlmacenes" class="text-[11.5px] text-amber-700 mt-2 flex items-start gap-1.5">
-            <svg class="w-4 h-4 flex-shrink-0 mt-px" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.71-3l-6.93-12a2 2 0 00-3.42 0l-6.93 12a2 2 0 001.71 3z"/></svg>
-            No encontramos los almacenes de esta compañía por su nombre — elígelos aquí arriba para poder guardar.
-          </p>
           <!-- Configuración contable incompleta de la compañía (ver compania_setup.diagnostico_compania):
                solo avisa, no bloquea -- con esto el inventario/maquila no se reflejan bien en contabilidad. -->
-          <div v-if="form.compania && diagCompania.faltantes.length" class="mx-5 mb-4 mt-1 text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            <p class="font-semibold mb-0.5">La configuración contable de {{ form.compania }} está incompleta</p>
-            <ul class="list-disc pl-4 space-y-0.5">
+          <div v-if="form.compania && diagCompania.faltantes.length" class="px-5 py-3 border-t border-surface-border bg-amber-50/60 rounded-b-xl text-[12px] text-amber-900">
+            <p class="font-semibold mb-0.5 flex items-center gap-1.5"><Icono nombre="alerta" class="w-3.5 h-3.5" />La configuración contable de {{ form.compania }} está incompleta</p>
+            <ul class="list-disc pl-9 space-y-0.5">
               <li v-for="f in diagCompania.faltantes" :key="f">{{ f }}</li>
             </ul>
           </div>
         </section>
 
-        <section class="bg-white rounded-xl border border-surface-border">
-          <div class="px-5 py-3 border-b border-surface-border flex items-center justify-between">
-            <h3 class="section-title">Productos a costear</h3>
-            <button class="add-link" @click="addProducto"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Agregar producto</button>
+        <section>
+          <div class="flex items-end justify-between gap-3 mb-3">
+            <div>
+              <p class="p-eyebrow">Productos a costear</p>
+              <p v-if="productos.length" class="p-meta mt-0.5">{{ productos.length }} {{ productos.length === 1 ? "producto" : "productos" }} · precios sin IVA</p>
+            </div>
+            <button type="button" class="p-btn-secondary h-8 px-3" @click="addProducto"><Icono nombre="mas" class="w-3.5 h-3.5" :grosor="2.2" />Agregar producto</button>
           </div>
 
-          <div v-if="!productos.length" class="py-12 flex flex-col items-center gap-2 text-ink-light">
-            <svg class="w-9 h-9 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.2"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10"/></svg>
-            <p class="text-sm">Agrega al menos un producto terminado</p>
-            <button class="text-xs text-brand-600 font-medium hover:underline" @click="addProducto">+ Agregar producto</button>
+          <div v-if="!productos.length" class="p-panel py-12 flex flex-col items-center gap-2 text-ink-light">
+            <Icono nombre="paquete" class="w-8 h-8 text-ink-xlight" :grosor="1.3" />
+            <p class="text-[13px]">Agrega al menos un producto terminado</p>
+            <button type="button" class="add-link" @click="addProducto"><Icono nombre="mas" class="w-3.5 h-3.5" :grosor="2.2" />Agregar producto</button>
           </div>
 
-          <div v-else class="divide-y divide-surface-border">
-            <div v-for="(prod, idx) in productos" :key="prod._tid">
-              <div class="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-surface-raised/50 transition-colors group" :class="{ 'pl-10': prod.variante_talla_de }" @click="toggleProduct(prod._tid)">
+          <div v-else class="space-y-3">
+            <div v-for="prod in productosApilados" :key="prod._tid" class="p-panel" :class="{ 'ml-8': prod.variante_talla_de }">
+              <!-- Renglón del producto: siempre visible, abre/cierra el detalle -->
+              <div class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-zinc-50 rounded-xl transition-colors group" :class="expandedTids.has(prod._tid) ? 'rounded-b-none' : ''" @click="toggleProduct(prod._tid)">
                 <svg class="w-4 h-4 text-ink-light flex-shrink-0 transition-transform" :class="expandedTids.has(prod._tid) ? 'rotate-90' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-                <img v-if="prod.image" :src="prod.image" class="w-9 h-9 rounded-lg object-cover border border-surface-border flex-shrink-0" alt="" />
-                <div v-else class="w-9 h-9 rounded-lg bg-surface-raised border border-surface-border flex items-center justify-center flex-shrink-0">
+                <img v-if="prod.image" :src="prod.image" class="w-10 h-10 rounded-lg object-cover border border-surface-border flex-shrink-0" alt="" />
+                <div v-else class="w-10 h-10 rounded-lg bg-surface-raised flex items-center justify-center flex-shrink-0">
                   <svg class="w-4 h-4 text-ink-xlight" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
                 </div>
                 <div class="flex-1 min-w-0">
-                  <span v-if="prod.finished_item" class="font-medium text-sm text-ink">{{ prod.finished_item }}</span>
-                  <span v-else class="text-sm text-ink-light italic">Sin producto</span>
-                  <span v-if="prod.qty" class="ml-2 text-xs text-ink-light">× {{ prod.qty }}</span>
-                  <span v-if="prod.variante_talla_de" class="ml-2 text-[11px] px-1.5 py-0.5 rounded-full bg-brand-50 text-brand-600">Variante de talla de {{ prod.variante_talla_de }}<template v-if="prod.talla_grupo_label"> · {{ prod.talla_grupo_label }}</template></span>
+                  <p class="flex items-center gap-2 min-w-0">
+                    <span v-if="prod.finished_item" class="font-semibold text-[14px] text-ink truncate">{{ prod.finished_item }}</span>
+                    <span v-else class="text-[14px] text-ink-light italic">Sin producto</span>
+                  </p>
+                  <p v-if="prod.variante_talla_de" class="mt-1"><span class="p-pill-now h-5 text-[11px]">Variante de talla de {{ prod.variante_talla_de }}<template v-if="prod.talla_grupo_label"> · {{ prod.talla_grupo_label }}</template></span></p>
                 </div>
-                <div class="flex items-center gap-3 text-xs">
-                  <span class="text-ink-light">Costo <span class="text-ink font-medium">{{ fmtC(prod.total_unit_cost) }}</span></span>
-                  <span class="font-semibold text-ink">{{ fmtC(prod.total_sales_price) }}</span>
+                <div class="hidden sm:flex items-center gap-6 text-right">
+                  <!-- Sin cantidad (p. ej. una talla extra que el cliente aún no define) no se muestra nada. -->
+                  <div v-if="prod.qty > 0">
+                    <p class="text-[10.5px] text-ink-light">Cantidad</p>
+                    <p class="text-[13px] font-medium text-ink tabular-nums">{{ Number(prod.qty).toLocaleString("es-MX") }} pzas</p>
+                  </div>
+                  <div>
+                    <p class="text-[10.5px] text-ink-light">Costo unitario</p>
+                    <p class="text-[13px] font-medium text-ink tabular-nums">{{ fmtC(prod.total_unit_cost) }}</p>
+                  </div>
+                  <div>
+                    <p class="text-[10.5px] text-ink-light">Venta total</p>
+                    <p class="text-[14px] font-semibold text-ink tabular-nums">{{ fmtC(prod.total_sales_price) }}</p>
+                  </div>
                 </div>
-                <button class="opacity-0 group-hover:opacity-100 w-6 h-6 flex items-center justify-center rounded hover:bg-red-50 hover:text-red-500 text-gray-300 transition-all flex-shrink-0" @click.stop="removeProducto(idx)" title="Eliminar">
-                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                <button type="button" class="opacity-0 group-hover:opacity-100 w-7 h-7 flex items-center justify-center rounded-md hover:bg-red-50 hover:text-red-500 text-ink-xlight transition-all flex-shrink-0" title="Eliminar" @click.stop="removeProducto(productos.indexOf(prod))">
+                  <Icono nombre="x" class="w-3.5 h-3.5" :grosor="2" />
                 </button>
               </div>
 
-              <div v-if="expandedTids.has(prod._tid)" class="bg-surface-raised/40 border-t border-surface-border px-5 pt-4 pb-14 space-y-4">
-                <div class="flex gap-4 items-start">
-                  <div class="w-36 h-36 flex-shrink-0 rounded-lg border border-surface-border overflow-hidden bg-white relative group/img" :class="canEditCosteo ? 'cursor-pointer' : 'cursor-default'" @click="pickImage(prod)" title="Subir imagen del producto">
-                    <img v-if="prod.image" :src="prod.image" class="w-full h-full object-cover" alt="" />
-                    <div v-else class="w-full h-full flex items-center justify-center text-ink-xlight">
-                      <svg class="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.4"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                    </div>
-                    <div class="absolute inset-0 bg-black/50 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
-                      <svg class="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                    </div>
-                  </div>
-                  <div class="flex-1 grid grid-cols-3 gap-3">
-                    <div class="col-span-2"><label class="field-label">Producto terminado <span class="text-red-400">*</span></label><LinkInput v-model="prod.finished_item" doctype="Item" :filters="ITEM_FILTERS.terminado" placeholder="Producto terminado…" @update:model-value="onProductoItemChange(prod)" /></div>
-                    <div><label class="field-label">Cantidad <span class="text-red-400">*</span></label><input v-model.number="prod.qty" type="number" min="1" class="field-input" @input="onProdQtyChange(prod)" /></div>
-                    <div class="col-span-3"><label class="field-label">Descripción <span class="text-ink-light font-normal">(opcional)</span></label><textarea v-model="prod.description" rows="2" class="field-input resize-none" placeholder="Descripción del producto…"></textarea></div>
-                  </div>
-                </div>
-
-                <div class="bg-white rounded-lg border border-surface-border overflow-hidden">
-                  <div class="p-4">
-                    <div class="flex items-center gap-2 mb-3">
-                      <svg class="w-4 h-4 text-ink-light flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 10v2m9-8a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                      <h4 class="text-[13px] font-semibold text-ink">Costo y precio de venta</h4>
-                    </div>
-                    <div class="grid grid-cols-6 gap-2">
-                      <div><label class="field-label mb-0.5">Overhead %</label><div class="relative"><input v-model.number="prod.overhead_pct" type="number" min="0" max="100" class="field-input py-1.5 pr-7" @input="recalcProducto(prod)" /><span class="suffix">%</span></div></div>
-                      <div><label class="field-label mb-0.5">Flete / envío</label><div class="relative"><span class="prefix">$</span><input v-model.number="prod.shipping_cost" type="number" min="0" class="field-input py-1.5 pl-6" @input="recalcProducto(prod)" /></div></div>
-                      <div><label class="field-label mb-0.5">Etiquetado</label><div class="relative"><span class="prefix">$</span><input v-model.number="prod.labeling_cost" type="number" min="0" class="field-input py-1.5 pl-6" @input="recalcProducto(prod)" /></div></div>
-                      <div><label class="field-label mb-0.5">Empaquetado</label><div class="relative"><span class="prefix">$</span><input v-model.number="prod.packaging_cost" type="number" min="0" class="field-input py-1.5 pl-6" @input="recalcProducto(prod)" /></div></div>
-                      <div><label class="field-label mb-0.5">Margen %</label><div class="relative"><input v-model.number="prod.margin_pct" type="number" min="0" max="99" class="field-input py-1.5 pr-7" @input="onMarginChange(prod)" /><span class="suffix">%</span></div></div>
-                      <div>
-                        <label class="field-label mb-0.5 flex items-center gap-1">Precio unit.<span v-if="prod.precio_manual" class="text-[9.5px] font-normal text-brand-600 bg-brand-50 border border-brand-200 rounded px-1" title="Precio fijado a mano -- no se recalcula aunque cambien costos, el margen se ajusta a él">fijo</span></label>
-                        <!-- El precio se escribe dos veces, la primera oculta (pedido de Yelke): DialogoPrecio. -->
-                        <button
-                          type="button" class="field-input py-1.5 px-2 text-left flex items-center justify-between gap-1 disabled:opacity-60"
-                          :disabled="!canEditCosteo" title="Cambiar el precio de venta (se escribe dos veces)" @click="abrirPrecio(prod)"
-                        >
-                          <span class="text-brand-600 font-semibold tabular-nums truncate">{{ fmtC(prod.unit_sales_price) }}</span>
-                          <span v-if="canEditCosteo" class="text-[10.5px] font-medium text-ink-light flex-shrink-0">Cambiar</span>
-                        </button>
+              <div v-if="expandedTids.has(prod._tid)" class="border-t border-surface-border p-5 space-y-6">
+                  <div class="flex gap-4 items-start">
+                    <div class="w-28 h-28 flex-shrink-0 rounded-xl border border-surface-border overflow-hidden bg-surface-raised relative group/img" :class="canEditCosteo ? 'cursor-pointer' : 'cursor-default'" title="Cambiar imagen del producto (archivo, pegar o enlace)" @click="pickImage(prod)">
+                      <img v-if="prod.image" :src="prod.image" class="w-full h-full object-cover" alt="" />
+                      <div v-else class="w-full h-full flex flex-col items-center justify-center gap-1 text-ink-xlight">
+                        <svg class="w-9 h-9" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.4"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                        <span class="text-[10.5px]">Imagen</span>
+                      </div>
+                      <div class="absolute inset-0 bg-black/45 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
+                        <svg class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                       </div>
                     </div>
-                  </div>
-
-                  <div class="bg-surface-raised/60 border-t border-surface-border px-4 py-3 grid grid-cols-3 gap-3">
-                    <div class="metric bg-white">
-                      <p class="metric-label">Telas <span class="font-normal text-ink-xlight">/ pza</span></p>
-                      <p class="metric-val text-[15px]">{{ fmtC(telasCost(prod)) }}</p>
-                      <p class="text-[11px] text-ink-light mt-0.5">{{ fmtC(telasCost(prod) * (prod.qty || 0)) }} <span class="text-ink-xlight">total × {{ prod.qty || 0 }} pzas</span></p>
-                    </div>
-                    <div class="metric bg-white">
-                      <p class="metric-label">Avíos <span class="font-normal text-ink-xlight">/ pza</span></p>
-                      <p class="metric-val text-[15px]">{{ fmtC(aviosCost(prod)) }}</p>
-                      <p class="text-[11px] text-ink-light mt-0.5">{{ fmtC(aviosCost(prod) * (prod.qty || 0)) }} <span class="text-ink-xlight">total × {{ prod.qty || 0 }} pzas</span></p>
-                    </div>
-                    <div class="metric bg-white">
-                      <p class="metric-label">Servicios y otros <span class="font-normal text-ink-xlight">/ pza</span></p>
-                      <p class="metric-val text-[15px]">{{ fmtC(serviciosCost(prod)) }}</p>
-                      <p class="text-[11px] text-ink-light mt-0.5">{{ fmtC(serviciosCost(prod) * (prod.qty || 0)) }} <span class="text-ink-xlight">total × {{ prod.qty || 0 }} pzas</span></p>
+                    <div class="flex-1 min-w-0 grid grid-cols-3 gap-x-3 gap-y-3">
+                      <div class="col-span-2"><label class="p-field-label">Producto terminado <span class="text-red-400">*</span></label><LinkInput v-model="prod.finished_item" v-mayus doctype="Item" :filters="ITEM_FILTERS.terminado" placeholder="Producto terminado…" @update:model-value="onProductoItemChange(prod)" /></div>
+                      <div><label class="p-field-label">Cantidad <span class="text-red-400">*</span></label><input v-model.number="prod.qty" type="number" min="1" class="p-field tabular-nums" @input="onProdQtyChange(prod)" /></div>
+                      <div class="col-span-3"><label class="p-field-label">Descripción <span class="text-ink-light font-normal">(opcional)</span></label><textarea v-model="prod.description" v-mayus rows="2" class="p-field h-auto py-2 resize-none" placeholder="Descripción del producto…"></textarea></div>
                     </div>
                   </div>
 
-                  <div class="border-t border-surface-border px-4 py-3">
-                    <div class="flex items-center justify-between mb-1.5">
-                      <p class="text-[10.5px] font-semibold text-ink-muted uppercase tracking-wide">Resumen</p>
-                      <span class="text-[10px] font-medium text-ink-light" title="Estos precios y costos no incluyen IVA">Precios sin IVA</span>
+                  <!-- Costo y precio de venta: una franja, arriba de los pasos para que las tablas usen todo el ancho. -->
+                  <div class="rounded-xl bg-zinc-50/70 border border-surface-border p-4 grid md:grid-cols-2 xl:grid-cols-[1.05fr_1fr_1.1fr] gap-x-7 gap-y-5">
+                    <div class="space-y-4">
+                    <!-- Precio de venta: se escribe dos veces, la primera oculta (pedido de Yelke): DialogoPrecio. -->
+                    <div>
+                      <p class="p-eyebrow flex items-center gap-1.5">Precio de venta unitario
+                        <span v-if="prod.precio_manual" class="normal-case tracking-normal text-[10px] font-medium text-brand-700 bg-brand-50 border border-brand-200 rounded px-1" title="Precio fijado a mano -- no se recalcula aunque cambien costos, el margen se ajusta a él">fijo</span>
+                      </p>
+                      <button
+                        type="button" class="mt-1.5 w-full flex items-center justify-between gap-2 rounded-xl bg-white border border-surface-border px-3.5 py-2.5 text-left hover:border-brand-300 transition-colors disabled:hover:border-surface-border"
+                        :disabled="!canEditCosteo" title="Cambiar el precio de venta (se escribe dos veces)" @click="abrirPrecio(prod)"
+                      >
+                        <span class="text-[22px] font-semibold tracking-tight text-brand-600 tabular-nums truncate">{{ fmtC(prod.unit_sales_price) }}</span>
+                        <span v-if="canEditCosteo" class="flex items-center gap-1 text-[12px] font-medium text-ink-muted flex-shrink-0"><Icono nombre="editar" class="w-3.5 h-3.5" />Cambiar</span>
+                      </button>
                     </div>
-                    <table class="w-full text-sm">
-                      <thead>
-                        <tr class="text-[11px] text-ink-light">
-                          <th class="text-left font-medium pb-1"></th>
-                          <th class="text-right font-medium pb-1 w-28">Por pieza</th>
-                          <th class="text-right font-medium pb-1 w-28">× {{ prod.qty || 0 }} pzas</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr class="border-t border-surface-border/60">
-                          <td class="py-1.5 text-ink-muted">Costo directo</td>
-                          <td class="py-1.5 text-right text-ink">{{ fmtC(directCost(prod)) }}</td>
-                          <td class="py-1.5 text-right text-ink">{{ fmtC(directCost(prod) * (prod.qty || 0)) }}</td>
-                        </tr>
-                        <tr>
-                          <td class="py-1.5 text-ink-muted">Overhead</td>
-                          <td class="py-1.5 text-right text-ink">{{ fmtC(prod.overhead_amt) }}</td>
-                          <td class="py-1.5 text-right text-ink">{{ fmtC((prod.overhead_amt || 0) * (prod.qty || 0)) }}</td>
-                        </tr>
-                        <tr class="border-t border-surface-border font-semibold">
-                          <td class="py-1.5 text-ink">Costo total</td>
-                          <td class="py-1.5 text-right text-ink">{{ fmtC(prod.total_unit_cost) }}</td>
-                          <td class="py-1.5 text-right text-ink">{{ fmtC((prod.total_unit_cost || 0) * (prod.qty || 0)) }}</td>
-                        </tr>
-                        <tr class="text-green-600">
-                          <td class="py-1.5"><span class="inline-flex items-center gap-1.5">Utilidad esperada <span class="text-[10px] font-medium text-green-700 bg-green-50 rounded px-1 py-px">{{ prod.margin_pct || 0 }}%</span></span></td>
-                          <td class="py-1.5 text-right">{{ fmtC(expectedProfit(prod)) }}</td>
-                          <td class="py-1.5 text-right">{{ fmtC(expectedProfit(prod) * (prod.qty || 0)) }}</td>
-                        </tr>
-                        <tr class="border-t border-surface-border font-semibold text-brand-600">
-                          <td class="py-1.5">Precio de venta</td>
-                          <td class="py-1.5 text-right">{{ fmtC(prod.unit_sales_price) }}</td>
-                          <td class="py-1.5 text-right">{{ fmtC(prod.total_sales_price) }}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
 
-                <div class="bg-white rounded-lg border border-surface-border p-4">
-                    <div v-for="(punto, pi) in puntosDe(prod.finished_item)" :key="punto.grupo_id" class="rounded-lg border border-surface-border mb-3 overflow-visible">
-                      <!-- Encabezado del punto: solo el proveedor. El orden real del flujo
-                           (quién recibe de quién) se ajusta en Flujo de Producción, no aquí --
-                           para que Costear no se infle con una decisión que todavía no toca. -->
-                      <div class="bg-surface-raised/60 px-3 py-2 flex items-center gap-2 flex-wrap">
-                        <span class="w-5 h-5 rounded-full bg-white ring-1 ring-surface-border flex items-center justify-center text-[10px] font-semibold text-ink-muted flex-shrink-0">{{ pi + 1 }}</span>
-                        <LinkInput :model-value="punto.servicios[0].proveedor" @update:model-value="v => setPuntoProveedor(punto, v)" doctype="Supplier" placeholder="Taller / proveedor…" class="w-96 max-w-full" />
-                        <button class="del-btn ml-auto" title="Eliminar este punto completo" @click="removePunto(punto, prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
+                    <div>
+                      <p class="p-eyebrow mb-2">Costo y margen</p>
+                      <div class="grid grid-cols-3 gap-x-2.5 gap-y-2.5">
+                        <div><label class="p-field-label">Overhead</label><div class="relative"><input v-model.number="prod.overhead_pct" type="number" min="0" max="100" class="p-field pr-7 tabular-nums" @input="recalcProducto(prod)" /><span class="suffix">%</span></div></div>
+                        <div><label class="p-field-label">Margen</label><div class="relative"><input v-model.number="prod.margin_pct" type="number" min="0" max="99" class="p-field pr-7 tabular-nums" @input="onMarginChange(prod)" /><span class="suffix">%</span></div></div>
+                        <div><label class="p-field-label">Flete / envío</label><div class="relative"><span class="prefix">$</span><input v-model.number="prod.shipping_cost" type="number" min="0" class="p-field pl-6 tabular-nums" @input="recalcProducto(prod)" /></div></div>
+                        <div><label class="p-field-label">Etiquetado</label><div class="relative"><span class="prefix">$</span><input v-model.number="prod.labeling_cost" type="number" min="0" class="p-field pl-6 tabular-nums" @input="recalcProducto(prod)" /></div></div>
+                        <div><label class="p-field-label">Empaquetado</label><div class="relative"><span class="prefix">$</span><input v-model.number="prod.packaging_cost" type="number" min="0" class="p-field pl-6 tabular-nums" @input="recalcProducto(prod)" /></div></div>
                       </div>
+                    </div>
 
-                      <!-- Servicios de este punto -->
-                      <table class="w-full table-fixed text-sm mt-2">
-                        <thead><tr class="text-left text-xs font-semibold text-ink-light"><th class="py-1.5 pl-3">Servicio</th><th class="py-1.5 w-28">UDM</th><th class="py-1.5 w-24 text-right" title="Cuántas veces se cobra el servicio por cada prenda (normalmente 1)">Operaciones por prenda</th><th class="py-1.5 w-24 text-right">Costo</th><th class="py-1.5 w-24 text-right pr-3">Total</th><th class="w-7"></th></tr></thead>
+                    </div>
+
+                    <!-- De qué se compone el costo por pieza: barra 100 % apilada (paleta
+                         validada del tablero) + la lista con montos, que es la que se lee. -->
+                    <div>
+                      <p class="p-eyebrow mb-2">Composición por pieza</p>
+                      <div v-if="telasCost(prod) + aviosCost(prod) + serviciosCost(prod) > 0" class="flex h-2 gap-[2px] rounded-full overflow-hidden mb-2.5" role="img" aria-label="Telas, avíos y servicios por pieza">
+                        <div v-for="c in composicionCosto(prod).filter(c => c.pct > 0)" :key="c.etiqueta" :style="{ width: `${c.pct}%`, background: c.color }" :title="`${c.etiqueta}: ${fmtC(c.monto)} (${c.pct.toFixed(1)} %)`"></div>
+                      </div>
+                      <table class="w-full text-[12.5px]">
+                        <thead><tr class="text-[10.5px] text-ink-light"><th class="text-left font-medium pb-1"></th><th class="text-right font-medium pb-1">Por pieza</th><th class="text-right font-medium pb-1">Total × {{ prod.qty || 0 }} pzas</th></tr></thead>
                         <tbody>
-                          <tr v-for="e in punto.servicios" :key="e._tid" class="align-top">
-                            <td class="py-1 pl-3 pr-2"><LinkInput v-model="e.servicio" doctype="Item" :filters="ITEM_FILTERS.servicio" placeholder="Servicio…" @update:model-value="onEtapaServicioChange(e, prod)" /></td>
-                            <td class="py-1 pr-2"><LinkInput v-model="e.lote_uom" doctype="UOM" placeholder="UDM" class="min-w-0" /></td>
-                            <td class="py-1 pr-2"><input v-model.number="e.operaciones_por_pieza" type="number" min="0" step="1" placeholder="1" class="field-input text-right" title="Cuántas veces se aplica esta operación en CADA pieza -- ej. 4 segmentos de cinta reflejante por prenda" @input="recalcPrecioOperacion(e, prod)" /></td>
-                            <td class="py-1 pr-2"><div class="relative"><span class="prefix text-xs">$</span><input v-model.number="e.precio_por_operacion" type="number" min="0" step="0.01" class="field-input text-right pl-4" title="Precio de cada una" @input="recalcPrecioOperacion(e, prod)" /></div></td>
-                            <td class="py-1 pr-3 text-right font-medium text-ink pt-2.5">{{ fmtC(precioPorPiezaEtapa(e)) }}</td>
-                            <td class="py-1"><button class="del-btn" @click="removeServicioDePunto(e, punto, prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button></td>
+                          <tr v-for="c in composicionCosto(prod)" :key="c.etiqueta">
+                            <td class="py-1 text-ink-muted"><span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-[3px]" :style="{ background: c.color }"></span>{{ c.etiqueta }}</span></td>
+                            <td class="py-1 text-right text-ink tabular-nums">{{ fmtC(c.monto) }}</td>
+                            <td class="py-1 text-right text-ink-muted tabular-nums">{{ fmtC(c.monto * (prod.qty || 0)) }}</td>
                           </tr>
                         </tbody>
                       </table>
-                      <button class="add-link ml-3 mb-2" @click="addServicioAPunto(punto, prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Agregar servicio a este punto</button>
+                    </div>
 
-                      <!-- Materias primas de este punto -->
-                      <div class="border-t border-surface-border bg-surface-raised/30 px-3 py-2">
-                        <p class="text-[11px] font-semibold text-ink-muted uppercase tracking-wide mb-1.5">Materias primas de este punto</p>
-                        <table v-if="materialesDelPunto(punto).length" class="w-full text-sm mb-2" style="table-layout: auto;">
-                          <colgroup>
-                            <col style="width: 22%">
-                            <col style="width: 20%">
-                            <col style="width: 9%">
-                            <col style="width: 12%">
-                            <col style="width: 17%">
-                            <col style="width: 11%">
-                            <col style="width: 9%">
-                            <col style="width: 28px">
-                          </colgroup>
-                          <thead><tr class="text-left text-[11px] font-semibold text-ink-light"><th class="py-1">Artículo</th><th class="py-1">Proveedor</th><th class="py-1">Tipo</th><th class="py-1">UDM</th><th class="py-1">Rendimiento / Consumo</th><th class="py-1 text-right">Precio / UDM</th><th class="py-1 text-right">Total</th><th></th></tr></thead>
-                          <tbody>
-                            <tr v-for="d in materialesDelPunto(punto)" :key="d._tid" class="align-top">
-                              <td class="py-1 pr-2">
-                                <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
-                                <LinkInput v-model="d.item" doctype="Item" :filters="ITEM_FILTERS.mp" placeholder="Materia prima…" @update:model-value="onDetalleItemChange(d, prod)" />
-                              </td>
-                              <td class="py-1 pr-2">
-                                <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
-                                <select v-model="d.supplier" @change="onSupplierChange(d, prod)" :disabled="!d.item" class="field-input">
-                                  <option value="">{{ !d.item ? 'Elige artículo' : '— Proveedor —' }}</option>
-                                  <option v-for="o in allSuppliers" :key="o.name" :value="o.name">{{ o.nombre_comercial || o.supplier_name || o.name }}</option>
-                                </select>
-                              </td>
-                              <td class="py-1 pr-2">
-                                <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
-                                <select v-model="d.tipo_material" class="field-input" @change="onTipoMaterialChange(d, prod)">
-                                  <option value="">— Tipo —</option>
-                                  <option value="Tela">Tela</option>
-                                  <option value="Avío">Avío</option>
-                                </select>
-                              </td>
-                              <td class="py-1 pr-2">
-                                <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
-                                <!-- Con articulo elegido, la UDM es la BASE de ese articulo y no se
-                                     escoge a mano: el consumo del costeo siempre va en esa unidad.
-                                     Sin articulo (material en texto libre) sigue el selector por tipo. -->
-                                <div v-if="d.item && udmBaseDe(d)" class="field-input bg-surface-raised/60 truncate" :title="`UDM base de ${d.item} — el consumo se captura en esta unidad`">
-                                  {{ udmBaseDe(d) }}
-                                </div>
-                                <select v-else v-model="d.internal_uom" class="field-input" :disabled="!d.tipo_material" @change="onUdmSelectChange(d, prod)">
-                                  <option value="">{{ d.tipo_material ? '— UDM —' : 'Elige tipo' }}</option>
-                                  <option v-for="o in udmOptionsFor(d)" :key="o.value" :value="o.value">{{ o.label }}</option>
-                                </select>
-                              </td>
-                              <td class="py-1 pr-2">
-                                <div class="flex items-center gap-1 mb-1">
-                                  <template v-if="qtyModeLocked(d)">
-                                    <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-brand-100 text-brand-700 font-semibold">{{ QTY_MODE_LABEL[qtyModeFor(d)] }}</span>
-                                  </template>
-                                  <template v-else>
-                                    <button type="button" class="text-[10px] px-1.5 py-0.5 rounded-full" :class="qtyModeFor(d) === 'rendimiento' ? 'bg-brand-100 text-brand-700 font-semibold' : 'text-ink-light hover:bg-surface-raised'" @click="d._qtyMode = 'rendimiento'">Rendimiento</button>
-                                    <button type="button" class="text-[10px] px-1.5 py-0.5 rounded-full" :class="qtyModeFor(d) === 'consumo' ? 'bg-brand-100 text-brand-700 font-semibold' : 'text-ink-light hover:bg-surface-raised'" @click="d._qtyMode = 'consumo'">Consumo</button>
-                                  </template>
-                                </div>
-                                <input v-if="qtyModeFor(d) === 'consumo'" v-model.number="d.internal_qty" type="number" min="0" step="1" class="field-input text-right" placeholder="UDM por pza" @input="onConsumoInput(d, prod)" />
-                                <input v-else-if="qtyModeFor(d) === 'piezas'" :value="piezasPorPrenda(d)" type="number" min="0" step="1" class="field-input text-right" placeholder="pzas por prenda" @input="onPiezasInput(d, prod, $event.target.value)" />
-                                <input v-else v-model.number="d.rendimiento" type="number" min="0" step="1" class="field-input text-right" placeholder="pzas por UDM" @input="onRendimientoInput(d, prod)" />
-                                <p class="text-[10.5px] text-ink-light mt-1 truncate">
-                                  <template v-if="qtyModeFor(d) === 'consumo'">≈ {{ fmtQty(d.rendimiento) }} pzas/{{ d.internal_uom || 'UDM' }}</template>
-                                  <template v-else-if="qtyModeFor(d) === 'piezas'">1 {{ d.internal_uom }} = {{ fmtQty(piezasPorUdm(d)) }} pzas</template>
-                                  <template v-else>≈ {{ fmtQty(d.internal_qty) }} {{ d.internal_uom || 'UDM' }}/pza</template>
-                                  · total: {{ fmtQty(d.supplier_qty) }} {{ d.internal_uom || 'UDM' }}
-                                </p>
-                              </td>
-                              <td class="py-1 pr-2">
-                                <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
-                                <div class="relative">
-                                  <span class="prefix text-xs">$</span>
-                                  <input v-model.number="d.precio_compra" type="number" min="0" step="0.01" class="field-input text-right pl-5" :class="d.tipo_material === 'Tela' ? 'pr-6' : ''" @input="onPrecioCompraInput(d, prod)" />
-                                  <button v-if="d.tipo_material === 'Tela'" type="button" class="absolute right-1 top-1/2 -translate-y-1/2 text-ink-light hover:text-brand-600" title="Convertir precio de $/kg a $/m" @click="openTelaConvert(d, prod)">
-                                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><rect x="5" y="3" width="14" height="18" rx="2"/><path stroke-linecap="round" d="M8 7h8M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01"/></svg>
-                                  </button>
-                                  <template v-if="telaConvertModal.open && telaConvertModal.d === d">
-                                    <div class="fixed inset-0 z-40" @click="closeTelaConvert()"></div>
-                                    <div class="absolute z-50 right-0 top-full mt-1 w-64 bg-white border border-surface-border rounded-lg shadow-lg p-3 text-left">
-                                      <p class="text-xs font-semibold text-ink mb-2">Convertir $/kg → $/m</p>
-                                      <label class="field-label mb-0.5">Precio por kilo (el que te dio el proveedor)</label>
-                                      <div class="relative mb-2"><span class="prefix text-xs">$</span><input v-model.number="telaConvertModal.precio_kg" type="number" min="0" step="0.01" class="field-input text-right pl-5 py-1" /></div>
-                                      <label class="field-label mb-0.5">Metros que salen de 1 kilo</label>
-                                      <input v-model.number="telaConvertModal.metros_por_kilo" type="number" min="0" step="0.01" placeholder="ej. 5.2" class="field-input text-right py-1" />
-                                      <p class="text-[11px] text-ink-muted mt-2">Precio por metro: <span class="font-semibold text-brand-600">{{ fmtC(telaConvertPrecioM) }}</span></p>
-                                      <p v-if="telaConvertModal.itemExists" class="text-[10px] text-ink-xlight mt-1">Se guarda en el artículo para no repetirlo la próxima vez.</p>
-                                      <p v-else class="text-[10px] text-ink-xlight mt-1">Este artículo aún no existe como Item -- no se podrá guardar para después.</p>
-                                      <p class="text-[10px] text-ink-xlight mt-1">Al usar este precio la UDM del renglón cambia a Metro -- ahí capturas tú el consumo por prenda.</p>
-                                      <div class="flex items-center justify-end gap-3 mt-3">
-                                        <button type="button" class="text-xs text-ink-light hover:text-ink" @click="closeTelaConvert()">Cancelar</button>
-                                        <button type="button" class="text-xs font-semibold text-white bg-brand-500 hover:bg-brand-600 rounded-lg px-3 py-1.5" @click="aplicarTelaConvert()">Usar este precio</button>
-                                      </div>
-                                    </div>
-                                  </template>
-                                </div>
-                                <!-- En que UDM cotiza el proveedor. El precio se teclea tal como lo
-                                     da (725.76 el Mazo) y el unitario por UDM base se deriva solo:
-                                     asi nadie tiene que dividir a mano. Solo aparece cuando el
-                                     articulo tiene mas de una UDM dada de alta. -->
-                                <select
-                                  v-if="udmsCompraDe(d).length > 1"
-                                  v-model="d.supplier_uom" class="field-input mt-1 text-[11px] py-0.5"
-                                  title="UDM en la que el proveedor cotiza este precio"
-                                  @change="onUdmCompraChange(d, prod)"
-                                >
-                                  <option v-for="u in udmsCompraDe(d)" :key="u.uom" :value="u.uom">
-                                    por {{ u.uom }}{{ u.uom === udmBaseDe(d) ? '' : ` (${fmtQty(u.conversion_factor)} ${udmBaseDe(d)})` }}
-                                  </option>
-                                </select>
-                                <p v-if="factorCompra(d) !== 1" class="text-[10.5px] text-ink-light mt-0.5 text-right">
-                                  = {{ fmtC(d.unit_price) }} / {{ udmBaseDe(d) || 'UDM' }}
-                                </p>
-                              </td>
-                              <td class="py-1 pr-2 text-right font-medium text-ink">
-                                <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
-                                {{ fmtC(d.total) }}
-                              </td>
-                              <td class="py-1">
-                                <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
-                                <button class="del-btn" @click="removeDetalle(d, prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
-                              </td>
+                    <div>
+                      <div class="flex items-center justify-between mb-1.5">
+                        <p class="p-eyebrow">Resumen</p>
+                        <span class="text-[10.5px] text-ink-light" title="Estos precios y costos no incluyen IVA">Precios sin IVA</span>
+                      </div>
+                      <div class="rounded-xl bg-white border border-surface-border px-3.5 py-2">
+                        <table class="w-full text-[12.5px]">
+                          <thead>
+                            <tr class="text-[10.5px] text-ink-light">
+                              <th class="text-left font-medium pb-1"></th>
+                              <th class="text-right font-medium pb-1">Por pieza</th>
+                              <th class="text-right font-medium pb-1">× {{ prod.qty || 0 }} pzas</th>
+                            </tr>
+                          </thead>
+                          <tbody class="tabular-nums">
+                            <tr>
+                              <td class="py-1 text-ink-muted">Costo directo</td>
+                              <td class="py-1 text-right text-ink">{{ fmtC(directCost(prod)) }}</td>
+                              <td class="py-1 text-right text-ink">{{ fmtC(directCost(prod) * (prod.qty || 0)) }}</td>
+                            </tr>
+                            <tr>
+                              <td class="py-1 text-ink-muted">Overhead</td>
+                              <td class="py-1 text-right text-ink">{{ fmtC(prod.overhead_amt) }}</td>
+                              <td class="py-1 text-right text-ink">{{ fmtC((prod.overhead_amt || 0) * (prod.qty || 0)) }}</td>
+                            </tr>
+                            <tr class="border-t border-surface-border font-semibold">
+                              <td class="py-1.5 text-ink">Costo total</td>
+                              <td class="py-1.5 text-right text-ink">{{ fmtC(prod.total_unit_cost) }}</td>
+                              <td class="py-1.5 text-right text-ink">{{ fmtC((prod.total_unit_cost || 0) * (prod.qty || 0)) }}</td>
+                            </tr>
+                            <tr class="text-emerald-700">
+                              <td class="py-1"><span class="inline-flex items-center gap-1.5">Utilidad esperada <span class="text-[10px] font-medium bg-emerald-50 rounded px-1 py-px">{{ prod.margin_pct || 0 }}%</span></span></td>
+                              <td class="py-1 text-right">{{ fmtC(expectedProfit(prod)) }}</td>
+                              <td class="py-1 text-right">{{ fmtC(expectedProfit(prod) * (prod.qty || 0)) }}</td>
+                            </tr>
+                            <tr class="border-t border-surface-border font-semibold text-brand-600">
+                              <td class="py-1.5">Precio de venta</td>
+                              <td class="py-1.5 text-right">{{ fmtC(prod.unit_sales_price) }}</td>
+                              <td class="py-1.5 text-right">{{ fmtC(prod.total_sales_price) }}</td>
                             </tr>
                           </tbody>
                         </table>
-                        <p v-else class="text-[11.5px] text-ink-xlight mb-2">Ninguna todavía.</p>
-                        <button class="add-link" @click="addMaterialAPunto(punto, prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Agregar material</button>
                       </div>
                     </div>
+                  </div>
 
-                    <button type="button" class="w-full py-4 rounded-lg border-2 border-dashed border-surface-border hover:border-brand-300 hover:bg-brand-50/40 text-ink-muted hover:text-brand-600 flex items-center justify-center gap-2 text-[13px] font-medium transition-colors" @click="addPunto(prod)">
-                      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
-                      Agregar paso
-                    </button>
+                  <!-- Pasos de producción: cada uno es un taller/proveedor con sus servicios
+                       y las materias primas que se usan ahí. -->
+                  <div>
+                    <div class="flex items-baseline justify-between gap-3 mb-2.5">
+                      <p class="p-eyebrow">Pasos de producción</p>
+                      <p class="p-meta">Materias primas + etapas: <b class="font-semibold text-ink tabular-nums">{{ fmtC(totalMaterias(prod) + totalEtapas(prod)) }}</b> <span class="text-ink-light">por pieza</span></p>
+                    </div>
+
+                    <div class="space-y-3">
+                      <div v-for="(punto, pi) in puntosDe(prod.finished_item)" :key="punto.grupo_id" class="rounded-xl border border-surface-border overflow-visible">
+                        <!-- Encabezado del punto: solo el proveedor. El orden real del flujo
+                             (quién recibe de quién) se ajusta en Flujo de Producción, no aquí --
+                             para que Costear no se infle con una decisión que todavía no toca. -->
+                        <div class="px-3 py-2.5 flex items-center gap-2.5 flex-wrap border-b border-surface-border">
+                          <span class="w-6 h-6 rounded-full bg-zinc-100 flex items-center justify-center text-[11px] font-semibold text-ink-muted flex-shrink-0">{{ pi + 1 }}</span>
+                          <LinkInput :model-value="punto.servicios[0].proveedor" doctype="Supplier" placeholder="Taller / proveedor…" class="w-96 max-w-full" @update:model-value="v => setPuntoProveedor(punto, v)" />
+                          <button type="button" class="del-btn ml-auto" title="Eliminar este punto completo" @click="removePunto(punto, prod)"><Icono nombre="x" class="w-3.5 h-3.5" :grosor="2" /></button>
+                        </div>
+
+                        <!-- Servicios de este punto -->
+                        <div class="px-3 pt-2.5 pb-1">
+                          <p class="flex items-center gap-1.5 text-[11.5px] font-medium text-ink-muted mb-1"><Icono nombre="servicio" class="w-3.5 h-3.5 text-ink-light" />Servicios</p>
+                          <table class="w-full table-fixed text-[13px]">
+                            <thead><tr class="text-left text-[11px] font-medium text-ink-light"><th class="py-1 font-medium">Servicio</th><th class="py-1 w-28 font-medium">UDM</th><th class="py-1 w-24 text-right font-medium" title="Cuántas veces se cobra el servicio por cada prenda (normalmente 1)">Operaciones por prenda</th><th class="py-1 w-24 text-right font-medium">Costo</th><th class="py-1 w-24 text-right pr-1 font-medium">Total</th><th class="w-7"></th></tr></thead>
+                            <tbody>
+                              <tr v-for="e in punto.servicios" :key="e._tid" class="align-top">
+                                <td class="py-1 pr-2"><LinkInput v-model="e.servicio" v-mayus doctype="Item" :filters="filtrosServicio(punto)" :placeholder="placeholderServicio(punto)" @update:model-value="onEtapaServicioChange(e, prod)" /></td>
+                                <td class="py-1 pr-2"><LinkInput v-model="e.lote_uom" doctype="UOM" placeholder="UDM" class="min-w-0" /></td>
+                                <td class="py-1 pr-2"><input v-model.number="e.operaciones_por_pieza" type="number" min="0" step="1" placeholder="1" class="field-input text-right" title="Cuántas veces se aplica esta operación en CADA pieza -- ej. 4 segmentos de cinta reflejante por prenda" @input="recalcPrecioOperacion(e, prod)" /></td>
+                                <td class="py-1 pr-2"><div class="relative"><span class="prefix text-xs">$</span><input v-model.number="e.precio_por_operacion" type="number" min="0" step="0.01" class="field-input text-right pl-4" title="Precio de cada una" @input="recalcPrecioOperacion(e, prod)" /></div></td>
+                                <td class="py-1 pr-1 text-right font-medium text-ink tabular-nums pt-2.5">{{ fmtC(precioPorPiezaEtapa(e)) }}</td>
+                                <td class="py-1"><button type="button" class="del-btn mt-1.5" @click="removeServicioDePunto(e, punto, prod)"><Icono nombre="x" class="w-3.5 h-3.5" :grosor="2" /></button></td>
+                              </tr>
+                            </tbody>
+                          </table>
+                          <button type="button" class="add-link -ml-2.5" @click="addServicioAPunto(punto, prod)"><Icono nombre="mas" class="w-3.5 h-3.5" :grosor="2.2" />Agregar servicio a este punto</button>
+                        </div>
+
+                        <!-- Materias primas de este punto -->
+                        <div class="border-t border-surface-border/70 px-3 pt-2.5 pb-1">
+                          <p class="flex items-center gap-1.5 text-[11.5px] font-medium text-ink-muted mb-1"><Icono nombre="material" class="w-3.5 h-3.5 text-ink-light" />Materias primas de este punto</p>
+                          <table v-if="materialesDelPunto(punto).length" class="w-full text-[13px] mb-1" style="table-layout: auto;">
+                            <colgroup>
+                              <col style="width: 22%">
+                              <col style="width: 20%">
+                              <col style="width: 9%">
+                              <col style="width: 12%">
+                              <col style="width: 17%">
+                              <col style="width: 11%">
+                              <col style="width: 9%">
+                              <col style="width: 28px">
+                            </colgroup>
+                            <thead><tr class="text-left text-[11px] text-ink-light"><th class="py-1 font-medium">Artículo</th><th class="py-1 font-medium">Proveedor</th><th class="py-1 font-medium">Tipo</th><th class="py-1 font-medium">UDM</th><th class="py-1 font-medium">Rendimiento / Consumo</th><th class="py-1 text-right font-medium">Precio / UDM</th><th class="py-1 text-right font-medium">Total</th><th></th></tr></thead>
+                            <tbody>
+                              <tr v-for="d in materialesDelPunto(punto)" :key="d._tid" class="align-top">
+                                <td class="py-1 pr-2">
+                                  <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
+                                  <LinkInput v-model="d.item" v-mayus doctype="Item" :filters="ITEM_FILTERS.mp" placeholder="Materia prima…" @update:model-value="onDetalleItemChange(d, prod)" />
+                                </td>
+                                <td class="py-1 pr-2">
+                                  <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
+                                  <select v-model="d.supplier" :disabled="!d.item" class="field-input" @change="onSupplierChange(d, prod)">
+                                    <option value="">{{ !d.item ? 'Elige artículo' : '— Proveedor —' }}</option>
+                                    <option v-for="o in allSuppliers" :key="o.name" :value="o.name">{{ o.nombre_comercial || o.supplier_name || o.name }}</option>
+                                  </select>
+                                </td>
+                                <td class="py-1 pr-2">
+                                  <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
+                                  <select v-model="d.tipo_material" class="field-input" @change="onTipoMaterialChange(d, prod)">
+                                    <option value="">— Tipo —</option>
+                                    <option value="Tela">Tela</option>
+                                    <option value="Avío">Avío</option>
+                                  </select>
+                                </td>
+                                <td class="py-1 pr-2">
+                                  <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
+                                  <!-- Con articulo elegido, la UDM es la BASE de ese articulo y no se
+                                       escoge a mano: el consumo del costeo siempre va en esa unidad.
+                                       Sin articulo (material en texto libre) sigue el selector por tipo. -->
+                                  <div v-if="d.item && udmBaseDe(d)" class="field-input bg-surface-raised/60 truncate" :title="`UDM base de ${d.item} — el consumo se captura en esta unidad`">
+                                    {{ udmBaseDe(d) }}
+                                  </div>
+                                  <select v-else v-model="d.internal_uom" class="field-input" :disabled="!d.tipo_material" @change="onUdmSelectChange(d, prod)">
+                                    <option value="">{{ d.tipo_material ? '— UDM —' : 'Elige tipo' }}</option>
+                                    <option v-for="o in udmOptionsFor(d)" :key="o.value" :value="o.value">{{ o.label }}</option>
+                                  </select>
+                                </td>
+                                <td class="py-1 pr-2">
+                                  <div class="flex items-center gap-1 mb-1">
+                                    <template v-if="qtyModeLocked(d)">
+                                      <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-brand-100 text-brand-700 font-semibold">{{ QTY_MODE_LABEL[qtyModeFor(d)] }}</span>
+                                    </template>
+                                    <template v-else>
+                                      <button type="button" class="text-[10px] px-1.5 py-0.5 rounded-full" :class="qtyModeFor(d) === 'rendimiento' ? 'bg-brand-100 text-brand-700 font-semibold' : 'text-ink-light hover:bg-surface-raised'" @click="d._qtyMode = 'rendimiento'">Rendimiento</button>
+                                      <button type="button" class="text-[10px] px-1.5 py-0.5 rounded-full" :class="qtyModeFor(d) === 'consumo' ? 'bg-brand-100 text-brand-700 font-semibold' : 'text-ink-light hover:bg-surface-raised'" @click="d._qtyMode = 'consumo'">Consumo</button>
+                                    </template>
+                                  </div>
+                                  <input v-if="qtyModeFor(d) === 'consumo'" v-model.number="d.internal_qty" type="number" min="0" step="1" class="field-input text-right" placeholder="UDM por pza" @input="onConsumoInput(d, prod)" />
+                                  <input v-else-if="qtyModeFor(d) === 'piezas'" :value="piezasPorPrenda(d)" type="number" min="0" step="1" class="field-input text-right" placeholder="pzas por prenda" @input="onPiezasInput(d, prod, $event.target.value)" />
+                                  <input v-else v-model.number="d.rendimiento" type="number" min="0" step="1" class="field-input text-right" placeholder="pzas por UDM" @input="onRendimientoInput(d, prod)" />
+                                  <p class="text-[10.5px] text-ink-light mt-1 truncate">
+                                    <template v-if="qtyModeFor(d) === 'consumo'">≈ {{ fmtQty(d.rendimiento) }} pzas/{{ d.internal_uom || 'UDM' }}</template>
+                                    <template v-else-if="qtyModeFor(d) === 'piezas'">1 {{ d.internal_uom }} = {{ fmtQty(piezasPorUdm(d)) }} pzas</template>
+                                    <template v-else>≈ {{ fmtQty(d.internal_qty) }} {{ d.internal_uom || 'UDM' }}/pza</template>
+                                    · total: {{ fmtQty(d.supplier_qty) }} {{ d.supplier_uom || d.internal_uom || 'UDM' }}
+                                  </p>
+                                </td>
+                                <td class="py-1 pr-2">
+                                  <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
+                                  <div class="relative">
+                                    <span class="prefix text-xs">$</span>
+                                    <input v-model.number="d.precio_compra" type="number" min="0" step="0.01" class="field-input text-right pl-5" :class="d.tipo_material === 'Tela' ? 'pr-6' : ''" @input="onPrecioCompraInput(d, prod)" />
+                                    <button v-if="d.tipo_material === 'Tela'" type="button" class="absolute right-1 top-1/2 -translate-y-1/2 text-ink-light hover:text-brand-600" title="Convertir precio de $/kg a $/m" @click="openTelaConvert(d, prod)">
+                                      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><rect x="5" y="3" width="14" height="18" rx="2"/><path stroke-linecap="round" d="M8 7h8M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01"/></svg>
+                                    </button>
+                                    <template v-if="telaConvertModal.open && telaConvertModal.d === d">
+                                      <div class="fixed inset-0 z-40" @click="closeTelaConvert()"></div>
+                                      <div class="absolute z-50 right-0 top-full mt-1 w-64 bg-white border border-surface-border rounded-xl shadow-lg p-3 text-left">
+                                        <p class="text-xs font-semibold text-ink mb-2">Convertir $/kg → $/m</p>
+                                        <label class="field-label mb-0.5">Precio por kilo (el que te dio el proveedor)</label>
+                                        <div class="relative mb-2"><span class="prefix text-xs">$</span><input v-model.number="telaConvertModal.precio_kg" type="number" min="0" step="0.01" class="field-input text-right pl-5 py-1" /></div>
+                                        <label class="field-label mb-0.5">Metros que salen de 1 kilo</label>
+                                        <input v-model.number="telaConvertModal.metros_por_kilo" type="number" min="0" step="0.01" placeholder="ej. 5.2" class="field-input text-right py-1" />
+                                        <p class="text-[11px] text-ink-muted mt-2">Precio por metro: <span class="font-semibold text-brand-600">{{ fmtC(telaConvertPrecioM) }}</span></p>
+                                        <p v-if="telaConvertModal.itemExists" class="text-[10px] text-ink-xlight mt-1">Se guarda en el artículo para no repetirlo la próxima vez.</p>
+                                        <p v-else class="text-[10px] text-ink-xlight mt-1">Este artículo aún no existe como Item -- no se podrá guardar para después.</p>
+                                        <p class="text-[10px] text-ink-xlight mt-1">Al usar este precio la UDM del renglón cambia a Metro -- ahí capturas tú el consumo por prenda.</p>
+                                        <div class="flex items-center justify-end gap-3 mt-3">
+                                          <button type="button" class="text-xs text-ink-light hover:text-ink" @click="closeTelaConvert()">Cancelar</button>
+                                          <button type="button" class="text-xs font-semibold text-white bg-brand-500 hover:bg-brand-600 rounded-lg px-3 py-1.5" @click="aplicarTelaConvert()">Usar este precio</button>
+                                        </div>
+                                      </div>
+                                    </template>
+                                  </div>
+                                  <!-- En que UDM cotiza el proveedor. El precio se teclea tal como lo
+                                       da (725.76 el Mazo) y el unitario por UDM base se deriva solo:
+                                       asi nadie tiene que dividir a mano. Solo aparece cuando el
+                                       articulo tiene mas de una UDM dada de alta. -->
+                                  <select
+                                    v-if="udmsCompraDe(d).length > 1"
+                                    v-model="d.supplier_uom" class="field-input mt-1 text-[11px] py-0.5"
+                                    title="UDM en la que el proveedor cotiza este precio"
+                                    @change="onUdmCompraChange(d, prod)"
+                                  >
+                                    <option v-for="u in udmsCompraDe(d)" :key="u.uom" :value="u.uom">
+                                      por {{ u.uom }}{{ u.uom === udmBaseDe(d) ? '' : ` (${fmtQty(u.conversion_factor)} ${udmBaseDe(d)})` }}
+                                    </option>
+                                  </select>
+                                  <p v-if="factorCompra(d) !== 1" class="text-[10.5px] text-ink-light mt-0.5 text-right">
+                                    = {{ fmtC(d.unit_price) }} / {{ udmBaseDe(d) || 'UDM' }}
+                                  </p>
+                                </td>
+                                <td class="py-1 pr-2 text-right font-medium text-ink tabular-nums">
+                                  <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
+                                  <span class="inline-block pt-2">{{ fmtC(d.total) }}</span>
+                                </td>
+                                <td class="py-1">
+                                  <div class="flex items-center gap-1 mb-1 invisible" aria-hidden="true"><span class="text-[10px] px-1.5 py-0.5 rounded-full">·</span></div>
+                                  <button type="button" class="del-btn mt-1.5" @click="removeDetalle(d, prod)"><Icono nombre="x" class="w-3.5 h-3.5" :grosor="2" /></button>
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                          <p v-else class="text-[12px] text-ink-xlight py-1">Ninguna todavía.</p>
+                          <button type="button" class="add-link -ml-2.5" @click="addMaterialAPunto(punto, prod)"><Icono nombre="mas" class="w-3.5 h-3.5" :grosor="2.2" />Agregar material</button>
+                        </div>
+                      </div>
+
+                      <button type="button" class="w-full h-11 rounded-xl border border-dashed border-surface-border hover:border-brand-300 hover:bg-brand-50/40 text-ink-muted hover:text-brand-600 flex items-center justify-center gap-2 text-[13px] font-medium transition-colors" @click="addPunto(prod)">
+                        <Icono nombre="mas" class="w-4 h-4" :grosor="2" />
+                        Agregar paso
+                      </button>
+                    </div>
 
                     <!-- Materiales pendientes de asignar a un punto -- NO es un estado normal:
                          todo material siempre se usa en algún punto concreto de verdad, así que
                          esto solo debería aparecer con costeos capturados antes de este árbol.
                          Por eso ya no hay botón para crear materiales sueltos a propósito --
                          solo un aviso con una forma rápida de resolver los que ya existían. -->
-                    <div v-if="materialesSinPunto(prod.finished_item).length" class="mt-3 pt-3 border-t border-amber-200">
-                      <p class="text-[11px] font-semibold text-amber-700 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
-                        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.71-3l-6.93-12a2 2 0 00-3.42 0l-6.93 12a2 2 0 001.71 3z"/></svg>
-                        Pendientes de asignar a un punto <span class="font-normal normal-case text-amber-600">— sin esto, el sistema los atribuye solos al arranque del flujo, lo cual puede ser incorrecto</span>
+                    <div v-if="materialesSinPunto(prod.finished_item).length" class="mt-3 rounded-xl border border-amber-200 bg-amber-50/50 px-3 py-2.5">
+                      <p class="text-[12px] font-semibold text-amber-800 mb-1.5 flex items-start gap-1.5">
+                        <Icono nombre="alerta" class="w-3.5 h-3.5 flex-shrink-0 mt-px" />
+                        <span>Pendientes de asignar a un punto <span class="font-normal text-amber-700">— sin esto, el sistema los atribuye solos al arranque del flujo, lo cual puede ser incorrecto</span></span>
                       </p>
-                      <table class="w-full table-fixed text-sm">
+                      <table class="w-full table-fixed text-[13px]">
                         <tbody>
-                          <tr v-for="d in materialesSinPunto(prod.finished_item)" :key="d._tid" class="border-b border-surface-border/60 align-top">
-                            <td class="py-1.5 pr-2 w-1/5"><LinkInput v-model="d.item" doctype="Item" :filters="ITEM_FILTERS.mp" placeholder="Materia prima…" @update:model-value="onDetalleItemChange(d, prod)" /></td>
+                          <tr v-for="d in materialesSinPunto(prod.finished_item)" :key="d._tid" class="border-b border-amber-200/60 last:border-0 align-top">
+                            <td class="py-1.5 pr-2 w-1/5"><LinkInput v-model="d.item" v-mayus doctype="Item" :filters="ITEM_FILTERS.mp" placeholder="Materia prima…" @update:model-value="onDetalleItemChange(d, prod)" /></td>
                             <td class="py-1.5 pr-2 w-1/5">
-                              <select v-model="d.supplier" @change="onSupplierChange(d, prod)" :disabled="!d.item" class="field-input">
+                              <select v-model="d.supplier" :disabled="!d.item" class="field-input" @change="onSupplierChange(d, prod)">
                                 <option value="">{{ !d.item ? 'Elige artículo' : '— Proveedor —' }}</option>
                                 <option v-for="o in allSuppliers" :key="o.name" :value="o.name">{{ o.supplier_name || o.name }}</option>
                               </select>
@@ -561,318 +638,362 @@
                                 <option v-for="(pt, pti) in puntosDe(prod.finished_item)" :key="pt.grupo_id" :value="pt.grupo_id">Punto {{ pti + 1 }} · {{ nombreProveedor(pt.servicios[0].proveedor) || 'sin proveedor' }}</option>
                               </select>
                             </td>
-                            <td class="py-1.5 w-7"><button class="del-btn" @click="removeDetalle(d, prod)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button></td>
+                            <td class="py-1.5 w-7"><button type="button" class="del-btn" @click="removeDetalle(d, prod)"><Icono nombre="x" class="w-3.5 h-3.5" :grosor="2" /></button></td>
                           </tr>
                         </tbody>
                       </table>
                     </div>
-
-                    <div class="flex items-center justify-between mt-3 pt-3 border-t border-surface-border text-[12px]">
-                      <span class="text-ink-muted">Total materias primas + etapas <span class="text-ink-xlight">por pieza</span></span>
-                      <span class="font-semibold text-ink">{{ fmtC(totalMaterias(prod) + totalEtapas(prod)) }}</span>
-                    </div>
-                </div>
-
-
-                <!-- Variante de talla: para una talla que necesita MÁS/DISTINTO material
-                     (no solo un ajuste de precio) -- se costea como su propio producto,
-                     independiente, con sus propios materiales/etapas/precio. -->
-                <button
-                  v-if="varianteWizard.finished_item !== prod.finished_item"
-                  class="w-full py-3 rounded-lg border-2 border-dashed border-surface-border hover:border-brand-300 hover:bg-brand-50/40 text-sm font-semibold text-ink-muted hover:text-brand-600 transition-colors flex items-center justify-center gap-2"
-                  @click="abrirVarianteWizard(prod)"
-                ><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Agregar variante por talla</button>
-
-                <div v-else class="bg-white rounded-lg border border-surface-border p-4">
-                  <div class="flex items-center justify-between mb-3">
-                    <h4 class="text-[13px] font-semibold text-ink">Nueva variante por talla</h4>
-                    <button class="text-ink-light hover:text-ink text-xs" @click="cerrarVarianteWizard">Cancelar</button>
                   </div>
 
-                  <!-- Paso 1: qué tallas cubre y cuántas piezas -->
-                  <template v-if="varianteWizard.step === 1">
-                    <p class="text-[12px] text-ink-muted mb-3">Se va a crear como un producto nuevo, independiente, con su propio artículo, precio y materiales (clonados de este como punto de partida) -- su propia línea en Cotización/Orden de Venta/Factura.</p>
-                    <div class="flex items-center gap-1 mb-2">
-                      <select v-model="varianteWizard.genero" class="field-input" style="flex: 0 0 110px;" @change="varianteWizard.grupo_talla = ''; varianteWizard.talla = '';">
-                        <option value="">Género…</option>
-                        <option value="Dama">Dama</option>
-                        <option value="Caballero">Caballero</option>
-                      </select>
-                      <select v-model="varianteWizard.grupo_talla" class="field-input min-w-0" style="flex: 1 1 auto;" :disabled="!varianteWizard.genero" @change="varianteWizard.talla = ''">
-                        <option value="">{{ varianteWizard.genero ? 'Tipo de prenda…' : '— elige género —' }}</option>
-                        <option v-for="g in gruposDeGenero(varianteWizard.genero)" :key="g.name" :value="g.name">{{ g.talla }}</option>
-                      </select>
-                    </div>
-                    <div v-if="varianteWizard.grupo_talla" class="flex flex-wrap gap-1 mb-3">
-                      <button
-                        v-for="s in tallasDeGrupo(varianteWizard.grupo_talla)" :key="s.name" type="button"
-                        class="px-2 py-1 rounded text-[11px] border transition-colors"
-                        :class="varianteWizardTallas.includes(s.name) ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-ink-muted border-surface-border hover:border-brand-300'"
-                        @click="toggleVarianteWizardTalla(s.name)"
-                      >{{ s.talla }}</button>
-                    </div>
-                    <div class="flex items-center gap-3 mb-3">
-                      <div class="flex-1">
-                        <label class="field-label">Cantidad</label>
-                        <input v-model.number="varianteWizard.qty" type="number" min="0" :disabled="varianteWizard.pendiente" class="field-input" />
-                      </div>
-                      <label class="flex items-center gap-1.5 text-[12.5px] text-ink-muted cursor-pointer select-none mt-4">
-                        <input type="checkbox" v-model="varianteWizard.pendiente" class="w-3.5 h-3.5" />
-                        Cantidad pendiente por confirmar
-                      </label>
-                    </div>
-                    <button :disabled="varianteWizard.loading || !varianteWizardTallas.length || (!varianteWizard.pendiente && !varianteWizard.qty)" class="h-9 px-4 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="crearVarianteTalla(prod)">Crear variante</button>
-                  </template>
+                  <!-- Variante de talla: para una talla que necesita MÁS/DISTINTO material
+                       (no solo un ajuste de precio) -- se costea como su propio producto,
+                       independiente, con sus propios materiales/etapas/precio. -->
+                  <button
+                    v-if="!prod.finished_item || varianteWizard.finished_item !== prod.finished_item"
+                    type="button" class="add-link -ml-2.5 disabled:opacity-40" :disabled="!prod.finished_item"
+                    :title="prod.finished_item ? '' : 'Elige primero el producto terminado'"
+                    @click="abrirVarianteWizard(prod)"
+                  ><Icono nombre="mas" class="w-3.5 h-3.5" :grosor="2.2" />Agregar variante por talla</button>
 
-                  <!-- Paso 2: materiales con consumo distinto -->
-                  <template v-else>
-                    <p class="text-[12px] text-ink-muted mb-3">
-                      Variante <strong>{{ varianteWizard.item_code }}</strong> creada, con los mismos materiales del producto base como punto de partida.
-                      Agrega aquí solo los materiales que cambian de consumo para esta talla.
-                    </p>
-                    <table v-if="varianteWizard.materiales.length" class="w-full text-sm mb-3">
-                      <thead><tr class="border-b border-surface-border text-left text-xs font-semibold text-ink-light"><th class="py-2">Material</th><th class="py-2 w-32 text-right">Consumo/pieza</th></tr></thead>
-                      <tbody>
-                        <tr v-for="m in varianteWizard.materiales" :key="m.item" class="border-b border-surface-border/60">
-                          <td class="py-1.5">{{ m.item }}</td>
-                          <td class="py-1.5 text-right tabular-nums">{{ m.internal_qty }}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                    <div class="flex items-center gap-2 flex-wrap">
-                      <select v-model="varianteWizard.nuevoMaterial" class="field-input flex-1 min-w-[160px]">
-                        <option value="">— elige el material —</option>
-                        <option v-for="m in materialesDe(prod.finished_item)" :key="m._tid" :value="m.item">{{ m.item }}</option>
-                      </select>
-                      <input v-model.number="varianteWizard.nuevoConsumo" type="number" min="0" step="1" placeholder="Consumo/pieza nuevo" class="field-input w-40" />
-                      <button :disabled="varianteWizard.loading || !varianteWizard.nuevoMaterial" class="h-9 px-4 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="agregarMaterialVariante(prod)">+ Agregar material</button>
+                  <!-- Variante por talla en UN solo formulario: qué tallas cubre, cuántas piezas
+                       y qué materiales cambian -- todo se manda junto al crearla
+                       (crear_variante_talla con ``materiales``). Antes había un segundo paso
+                       para los materiales y lo escrito se perdía si no se presionaba
+                       "Agregar material" antes de "Listo". -->
+                  <div v-else class="rounded-xl border border-surface-border overflow-hidden">
+                    <div class="px-4 py-3 border-b border-surface-border flex items-start justify-between gap-3">
+                      <div>
+                        <p class="text-[13.5px] font-semibold text-ink">Nueva variante por talla</p>
+                        <p class="p-meta mt-0.5">Se crea como un producto aparte, con su propio artículo, precio y materiales, y su propia línea en cotización, orden de venta y factura.</p>
+                      </div>
+                      <button type="button" class="p-btn-ghost h-7 px-2 text-[12px] flex-shrink-0" @click="cerrarVarianteWizard">Cancelar</button>
                     </div>
-                    <button class="add-link mt-3" @click="cerrarVarianteWizard">Listo, terminar</button>
-                  </template>
-                </div>
+
+                    <div class="p-4 space-y-5">
+                      <div>
+                        <p class="p-eyebrow mb-2">Talla y cantidad</p>
+                        <div class="grid sm:grid-cols-[150px_minmax(0,1fr)_130px] gap-3 items-end">
+                          <div>
+                            <label class="p-field-label">Género</label>
+                            <select v-model="varianteWizard.genero" class="p-field" @change="varianteWizard.grupo_talla = ''; varianteWizard.talla = '';">
+                              <option value="">Género…</option>
+                              <option value="Dama">Dama</option>
+                              <option value="Caballero">Caballero</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label class="p-field-label">Tipo de prenda</label>
+                            <select v-model="varianteWizard.grupo_talla" class="p-field" :disabled="!varianteWizard.genero" @change="varianteWizard.talla = ''">
+                              <option value="">{{ varianteWizard.genero ? 'Tipo de prenda…' : '— elige género —' }}</option>
+                              <option v-for="g in gruposDeGenero(varianteWizard.genero)" :key="g.name" :value="g.name">{{ g.talla }}</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label class="p-field-label">Cantidad</label>
+                            <input v-model.number="varianteWizard.qty" type="number" min="0" :disabled="varianteWizard.pendiente" class="p-field text-right tabular-nums" />
+                          </div>
+                        </div>
+                        <div v-if="varianteWizard.grupo_talla" class="mt-3">
+                          <p class="p-field-label">Tallas que cubre</p>
+                          <div class="flex flex-wrap gap-1.5">
+                            <button
+                              v-for="s in tallasDeGrupo(varianteWizard.grupo_talla)" :key="s.name" type="button"
+                              class="h-7 min-w-[36px] px-2.5 rounded-md text-[12px] border transition-colors"
+                              :class="varianteWizardTallas.includes(s.name) ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-ink-muted border-surface-border hover:border-brand-300'"
+                              @click="toggleVarianteWizardTalla(s.name)"
+                            >{{ s.talla }}</button>
+                          </div>
+                        </div>
+                        <label class="mt-3 inline-flex items-center gap-1.5 text-[12.5px] text-ink-muted cursor-pointer select-none">
+                          <input v-model="varianteWizard.pendiente" type="checkbox" class="w-3.5 h-3.5 accent-brand-500" />
+                          Cantidad pendiente por confirmar
+                        </label>
+                      </div>
+
+                      <div v-if="materialesBaseVariante(prod).length">
+                        <p class="p-eyebrow">Materiales de esta talla</p>
+                        <p class="p-meta mt-0.5 mb-2">Vienen igual que el producto base. Cambia solo los que esta talla lleva de más o de menos.</p>
+                        <div class="rounded-lg border border-surface-border divide-y divide-surface-border">
+                          <div class="grid grid-cols-[minmax(0,1fr)_120px_190px] gap-3 px-3 py-1.5 text-[11px] text-ink-light bg-zinc-50/70">
+                            <span>Material</span><span class="text-right">Base</span><span class="text-right">Esta talla</span>
+                          </div>
+                          <div
+                            v-for="d in materialesBaseVariante(prod)" :key="d.material_id"
+                            class="grid grid-cols-[minmax(0,1fr)_120px_190px] gap-3 px-3 py-2 items-center"
+                            :class="cambiaEnTalla(d) ? 'bg-brand-50/40' : ''"
+                          >
+                            <div class="min-w-0">
+                              <p class="text-[12.5px] text-ink truncate" :title="d.item">{{ d.item }}</p>
+                              <p class="text-[11px] text-ink-light truncate">{{ unidadDeFila(d).etiqueta }}<template v-if="unidadDeFila(d).ayuda"> · {{ unidadDeFila(d).ayuda }}</template></p>
+                            </div>
+                            <span class="text-right text-[12.5px] text-ink-muted tabular-nums">{{ consumoBase(d) }}</span>
+                            <div class="flex items-center justify-end gap-2">
+                              <span v-if="cambiaEnTalla(d)" class="text-[11px] font-semibold tabular-nums" :class="diferenciaTalla(d) > 0 ? 'text-brand-700' : 'text-ink-muted'">{{ diferenciaTalla(d) > 0 ? '+' : '' }}{{ diferenciaTalla(d) }}</span>
+                              <input
+                                :value="valorTalla(d)" type="number" min="0" step="any"
+                                class="p-field h-8 w-28 text-right tabular-nums" :class="cambiaEnTalla(d) ? 'border-brand-300 ring-1 ring-brand-200' : ''"
+                                @input="varianteWizard.consumos[d.material_id] = $event.target.value"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="px-4 py-3 border-t border-surface-border bg-zinc-50/60 flex items-center justify-between gap-3">
+                      <p class="p-meta">{{ cambiosVariante(prod) ? `${cambiosVariante(prod)} ${cambiosVariante(prod) === 1 ? "material cambia" : "materiales cambian"} en esta talla` : "Mismos materiales que el producto base" }}</p>
+                      <button type="button" :disabled="varianteWizard.loading || !varianteWizardTallas.length || (!varianteWizard.pendiente && !varianteWizard.qty)" class="p-btn-primary" @click="crearVarianteTalla(prod)">
+                        {{ varianteWizard.loading ? "Creando…" : "Crear variante" }}
+                      </button>
+                    </div>
+                  </div>
+
               </div>
             </div>
           </div>
         </section>
       </div>
-
-      </div>
       </fieldset>
     </div>
 
     <!-- ══════════ STEP 1 · COTIZAR ══════════ -->
-    <div v-else-if="activeStep === 1" class="p-5 pb-20">
-      <div class="max-w-6xl mx-auto space-y-3">
+    <!-- Lenguaje de Producción/Dirección (p-*), igual que Costear: cada cotización es
+         una tarjeta; al abrirla, a la izquierda sus datos y acciones, a la derecha la
+         vista previa del PDF. -->
+    <div v-else-if="activeStep === 1" class="px-5 lg:px-8 py-6 pb-20">
+      <div class="max-w-[1320px] mx-auto space-y-3">
+        <div v-if="related.quotations.length" class="flex items-end justify-between gap-3 mb-1">
+          <div>
+            <p class="p-eyebrow">Cotizaciones</p>
+            <p class="p-meta mt-0.5">{{ related.quotations.length }} {{ related.quotations.length === 1 ? "cotización" : "cotizaciones" }} de este costeo</p>
+          </div>
+        </div>
 
         <!-- Lista de cotizaciones del costeo (acordeón, mismo patrón que Productos a costear) -->
-        <div v-for="q in related.quotations" :key="q.name" class="group bg-white rounded-xl border border-surface-border overflow-hidden" :id="`doc-hl-${q.name}`" :class="{ 'doc-highlight-flash': highlightTarget === q.name }">
-          <div class="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-surface-raised/50 transition-colors" @click="toggleQuotation(q)">
+        <div v-for="q in related.quotations" :key="q.name" class="group p-panel" :id="`doc-hl-${q.name}`" :class="{ 'doc-highlight-flash': highlightTarget === q.name }">
+          <div class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-zinc-50 rounded-xl transition-colors" :class="expandedQuotName === q.name ? 'rounded-b-none' : ''" @click="toggleQuotation(q)">
             <svg class="w-4 h-4 text-ink-light flex-shrink-0 transition-transform" :class="expandedQuotName === q.name ? 'rotate-90' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-            <p class="text-sm font-semibold text-ink">{{ q.name }}</p>
-            <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full" :class="q.status === 'Lost' ? 'bg-red-50 text-red-600' : (q.docstatus === 2 ? 'bg-surface-raised text-ink-light' : (q.docstatus === 1 ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'))">{{ q.status === 'Lost' ? 'Rechazada' : (q.docstatus === 2 ? 'Cancelada' : (q.docstatus === 1 ? 'Validada' : 'Borrador')) }}</span>
-            <span class="ml-auto text-[13px] font-medium text-ink">{{ fmtC(q.grand_total) }}</span>
-            <button class="opacity-0 group-hover:opacity-100 w-6 h-6 flex items-center justify-center rounded hover:bg-red-50 hover:text-red-500 text-gray-300 transition-all flex-shrink-0" @click.stop="openDeleteQuot(q.name)" title="Eliminar cotización">
+            <Icono nombre="documento" class="w-4 h-4 text-ink-light flex-shrink-0" />
+            <p class="text-[14px] font-semibold text-ink">{{ q.name }}</p>
+            <span :class="q.status === 'Lost' ? 'p-pill-bad' : (q.docstatus === 2 ? 'p-pill-off' : (q.docstatus === 1 ? 'p-pill-ok' : 'p-pill-wait'))">{{ q.status === 'Lost' ? 'Rechazada' : (q.docstatus === 2 ? 'Cancelada' : (q.docstatus === 1 ? 'Validada' : 'Borrador')) }}</span>
+            <div class="ml-auto text-right">
+              <p class="text-[10.5px] text-ink-light">Total</p>
+              <p class="text-[14px] font-semibold text-ink tabular-nums">{{ fmtC(q.grand_total) }}</p>
+            </div>
+            <button type="button" class="opacity-0 group-hover:opacity-100 w-7 h-7 flex items-center justify-center rounded-md hover:bg-red-50 hover:text-red-500 text-ink-xlight transition-all flex-shrink-0" title="Eliminar cotización" @click.stop="openDeleteQuot(q.name)">
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
             </button>
           </div>
 
-          <div v-if="expandedQuotName === q.name" class="bg-surface-raised/40 border-t border-surface-border p-5 space-y-5">
+          <div v-if="expandedQuotName === q.name" class="border-t border-surface-border grid lg:grid-cols-[360px_minmax(0,1fr)]">
             <!-- La tabla de artículos se quitó a propósito: los productos/precios ya
                  quedaron fijos desde Costear, este paso no permite editarlos -- se
                  siguen guardando/enviando tal cual (cotItems), solo ya no se muestran
                  ni se pueden tocar aquí. -->
 
-            <div class="flex gap-5 items-start">
-              <!-- Izquierda: campos manuales -->
-              <div class="w-80 flex-shrink-0 bg-white rounded-xl border border-surface-border p-5">
-                <p class="text-sm font-semibold text-ink mb-1">Datos de la cotización</p>
-                <p class="text-[12px] text-ink-muted mb-4">Completa lo que no viene del costeo. Productos y totales son automáticos.</p>
+            <!-- Izquierda: campos manuales y acciones -->
+            <div class="min-w-0 p-5 space-y-5 lg:border-r border-surface-border">
+              <div v-if="q.status === 'Lost'" class="rounded-xl bg-red-50/70 border border-red-100 px-3.5 py-3">
+                <p class="text-[12.5px] font-semibold text-red-700 flex items-center gap-1.5"><Icono nombre="alerta" class="w-3.5 h-3.5" />Cotización rechazada</p>
+                <p v-if="q.order_lost_reason" class="text-[12px] text-red-600 mt-0.5">{{ q.order_lost_reason }}</p>
+                <button type="button" :disabled="advancing" class="mt-2.5 w-full text-left rounded-lg bg-white border border-red-200 px-3 py-2 hover:bg-red-50 disabled:opacity-50" @click="openRevisionModal">
+                  <span class="block text-[12.5px] font-semibold text-red-700">Editar Costeo</span>
+                  <span class="block text-[11px] text-red-500">Toda corrección (precio, condiciones, materiales, cantidades…) se hace desde el costeo.</span>
+                </button>
+              </div>
 
-                <div v-if="q.status === 'Lost'" class="bg-red-50 border border-red-100 rounded-lg px-3 py-2.5 mb-4">
-                  <p class="text-[11.5px] font-semibold text-red-700 mb-0.5">Cotización rechazada</p>
-                  <p v-if="q.order_lost_reason" class="text-[11.5px] text-red-600 mb-2.5">{{ q.order_lost_reason }}</p>
-                  <div class="space-y-1.5">
-                    <button :disabled="advancing" class="w-full text-left text-[11.5px] font-medium text-red-700 bg-white border border-red-200 rounded-lg px-2.5 py-1.5 hover:bg-red-100/50 disabled:opacity-50" @click="openRevisionModal">
-                      Editar Costeo
-                      <span class="block text-[10.5px] font-normal text-red-500">Toda corrección (precio, condiciones, materiales, cantidades…) se hace desde el costeo.</span>
-                    </button>
+              <div v-if="q.docstatus === 2" class="rounded-xl bg-zinc-50 border border-surface-border px-3.5 py-3">
+                <p class="text-[12.5px] font-semibold text-ink">Cotización cancelada</p>
+                <p class="text-[12px] text-ink-muted mt-0.5">El proyecto quedó marcado como cancelado. Si en realidad sigue en pie, edita el costeo para reactivarlo con una revisión nueva.</p>
+                <button type="button" :disabled="advancing" class="mt-2.5 w-full text-left rounded-lg bg-white border border-surface-border px-3 py-2 hover:bg-surface-raised disabled:opacity-50" @click="openRevisionModal">
+                  <span class="block text-[12.5px] font-semibold text-ink">Editar Costeo</span>
+                  <span class="block text-[11px] text-ink-light">Regresa el costeo a borrador y reactiva el proyecto.</span>
+                </button>
+              </div>
+
+              <div>
+                <p class="p-eyebrow">Datos de la cotización</p>
+                <p class="p-meta mt-0.5 mb-3">Completa lo que no viene del costeo. Productos y totales son automáticos.</p>
+                <div class="grid grid-cols-2 gap-x-3 gap-y-3">
+                  <div><label class="p-field-label">Vigencia (válida hasta)</label><input v-model="cotForm.valid_till" type="date" class="p-field" :disabled="q.docstatus === 1" /></div>
+                  <div><label class="p-field-label">Moneda</label>
+                    <select v-model="cotForm.currency" class="p-field" :disabled="q.docstatus === 1">
+                      <option v-for="c in cotDefaults.currencies" :key="c.name" :value="c.name">{{ c.name }}</option>
+                    </select>
                   </div>
-                </div>
-
-                <div v-if="q.docstatus === 2" class="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 mb-4">
-                  <p class="text-[11.5px] font-semibold text-ink mb-0.5">Cotización cancelada</p>
-                  <p class="text-[11.5px] text-ink-muted mb-2.5">El proyecto quedó marcado como cancelado. Si en realidad sigue en pie, edita el costeo para reactivarlo con una revisión nueva.</p>
-                  <button :disabled="advancing" class="w-full text-left text-[11.5px] font-medium text-ink bg-white border border-surface-border rounded-lg px-2.5 py-1.5 hover:bg-surface-raised disabled:opacity-50" @click="openRevisionModal">
-                    Editar Costeo
-                    <span class="block text-[10.5px] font-normal text-ink-light">Crea una revisión del costeo y reactiva el proyecto.</span>
-                  </button>
-                </div>
-
-                <label class="field-label">Vigencia (válida hasta)</label>
-                <input v-model="cotForm.valid_till" type="date" class="field-input mb-3" :disabled="q.docstatus === 1" />
-
-                <label class="field-label">Condiciones de pago</label>
-                <select v-model="cotForm.payment_terms_template" class="field-input mb-3" :disabled="q.docstatus === 1">
-                  <option value="">— Sin plantilla —</option>
-                  <option v-for="p in cotDefaults.payment_terms_templates" :key="p.name" :value="p.name">{{ p.name }}</option>
-                </select>
-
-                <label class="field-label">Términos y condiciones</label>
-                <select v-model="cotForm.tc_name" class="field-input mb-3" :disabled="q.docstatus === 1">
-                  <option value="">— Sin términos —</option>
-                  <option v-for="t in cotDefaults.terms" :key="t.name" :value="t.name">{{ t.name }}</option>
-                </select>
-
-                <label class="field-label">Vista de impresión</label>
-                <select v-model="cotForm.custom_tipo_formato" class="field-input mb-3" :disabled="q.docstatus === 1" @change="onTipoFormatoChange">
-                  <option value="Normal">Normal</option>
-                  <option value="Volumen">Por volumen</option>
-                </select>
-
-                <label class="field-label">Moneda</label>
-                <select v-model="cotForm.currency" class="field-input mb-3" :disabled="q.docstatus === 1">
-                  <option v-for="c in cotDefaults.currencies" :key="c.name" :value="c.name">{{ c.name }}</option>
-                </select>
-
-                <label class="field-label">Lista de Precios</label>
-                <select v-model="cotForm.selling_price_list" class="field-input mb-3" :disabled="q.docstatus === 1">
-                  <option value="">— Sin lista —</option>
-                  <option v-for="pl in cotDefaults.price_lists" :key="pl.name" :value="pl.name">{{ pl.name }}</option>
-                </select>
-
-                <label class="field-label">Impuestos y Cargos</label>
-                <select v-model="cotForm.taxes_and_charges" class="field-input mb-3" :disabled="q.docstatus === 1">
-                  <option value="">— Sin plantilla —</option>
-                  <option v-for="t in cotDefaults.tax_templates" :key="t.name" :value="t.name">{{ t.name }}</option>
-                </select>
-
-                <label class="field-label">Email de contacto</label>
-                <input v-model="cotForm.contact_email" type="email" class="field-input mb-3" :disabled="q.docstatus === 1" placeholder="correo@cliente.com" />
-
-                <label class="field-label">WhatsApp / Móvil</label>
-                <input v-model="cotForm.contact_mobile" type="tel" class="field-input mb-4" :disabled="q.docstatus === 1" placeholder="+52 55 1234 5678" />
-
-                <div class="space-y-2">
-                  <template v-if="q.docstatus !== 1">
-                    <FranjaAprobacion
-                      doctype="Quotation" :name="q.name" :guardar="guardarCambiosCotizacion"
-                      @estado="(s) => (aprobPanel[q.name] = s)" @cambio="trasAprobacionVenta"
-                    />
-                    <button :disabled="advancing" class="w-full h-9 text-sm font-medium text-ink border border-surface-border rounded-lg hover:bg-surface-raised disabled:opacity-50" @click="guardarCambiosCotizacion">Guardar cambios</button>
-                    <button v-if="validaDirecto(q.name) && !enAprobacion(q.name)" :disabled="advancing" class="w-full h-9 text-sm font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex items-center justify-center gap-1.5" @click="validarDoc('Quotation', q.name)">
-                      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Validar cotización
-                    </button>
-                  </template>
-                  <div class="grid grid-cols-2 gap-2 pt-1">
-                    <button v-if="q.docstatus === 1" class="doc-action justify-center" @click="openSend('Quotation', q.name, q.contact_email, q.contact_mobile)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
-                    <button class="doc-action justify-center" @click="downloadPdf('Quotation', q.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>Descargar</button>
-                    <button class="doc-action justify-center" @click="printDocView('Quotation', q.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>Imprimir</button>
-                    <button class="doc-action justify-center" @click="openAssign('Quotation', q.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Asignar</button>
+                  <div class="col-span-2"><label class="p-field-label">Condiciones de pago</label>
+                    <select v-model="cotForm.payment_terms_template" class="p-field" :disabled="q.docstatus === 1">
+                      <option value="">— Sin plantilla —</option>
+                      <option v-for="p in cotDefaults.payment_terms_templates" :key="p.name" :value="p.name">{{ p.name }}</option>
+                    </select>
                   </div>
-                  <a class="doc-action justify-center w-full" :href="`/app/quotation/${q.name}`" target="_blank"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>Abrir en ERPNext</a>
-
-                  <div v-if="q.docstatus === 1 && q.status !== 'Lost'" class="pt-2 mt-1 border-t border-surface-border space-y-2">
-                    <button
-                      class="w-full h-8 text-[12.5px] font-semibold text-white bg-orange-500 rounded-lg hover:bg-orange-600 disabled:opacity-50 disabled:hover:bg-orange-500 disabled:cursor-not-allowed"
-                      :disabled="precioAcordadoStatus.todos_validados"
-                      :title="precioAcordadoStatus.todos_validados ? 'El precio acordado ya está validado -- no se puede volver a fijar/editar desde aquí.' : ''"
-                      @click="openAcordadoModal"
-                    >Fijar Precio</button>
-                    <div v-if="precioAcordadoStatus.items.length" class="flex items-center justify-between gap-2 px-0.5">
-                      <span class="text-[11px] font-medium" :class="precioAcordadoStatus.todos_validados ? 'text-green-600' : 'text-amber-600'">
-                        Precio acordado: {{ precioAcordadoStatus.todos_validados ? 'Validado' : 'Borrador' }} ({{ precioAcordadoStatus.items.length }})
-                      </span>
-                      <button v-if="!precioAcordadoStatus.todos_validados && precioAcordadoStatus.es_ceo" :disabled="advancing" class="text-[11px] font-semibold text-brand-600 hover:text-brand-700 hover:underline disabled:opacity-50" @click="validarPrecioAcordado">Validar</button>
-                    </div>
-                    <button class="w-full h-8 text-[12.5px] font-medium text-red-500 border border-red-200 rounded-lg hover:bg-red-50" @click="openRechazarModal">Marcar rechazada</button>
+                  <div class="col-span-2"><label class="p-field-label">Términos y condiciones</label>
+                    <select v-model="cotForm.tc_name" class="p-field" :disabled="q.docstatus === 1">
+                      <option value="">— Sin términos —</option>
+                      <option v-for="t in cotDefaults.terms" :key="t.name" :value="t.name">{{ t.name }}</option>
+                    </select>
                   </div>
-
-                  <div class="pt-3 mt-2 border-t border-surface-border">
-                    <AttachmentsPanel doctype="Quotation" :docname="q.name" />
+                  <div class="col-span-2"><label class="p-field-label">Lista de Precios</label>
+                    <select v-model="cotForm.selling_price_list" class="p-field" :disabled="q.docstatus === 1">
+                      <option value="">— Sin lista —</option>
+                      <option v-for="pl in cotDefaults.price_lists" :key="pl.name" :value="pl.name">{{ pl.name }}</option>
+                    </select>
                   </div>
+                  <div class="col-span-2"><label class="p-field-label">Impuestos y Cargos</label>
+                    <select v-model="cotForm.taxes_and_charges" class="p-field" :disabled="q.docstatus === 1">
+                      <option value="">— Sin plantilla —</option>
+                      <option v-for="t in cotDefaults.tax_templates" :key="t.name" :value="t.name">{{ t.name }}</option>
+                    </select>
+                  </div>
+                  <div class="col-span-2"><label class="p-field-label">Email de contacto</label><input v-model="cotForm.contact_email" type="email" class="p-field" :disabled="q.docstatus === 1" placeholder="correo@cliente.com" /></div>
+                  <div class="col-span-2"><label class="p-field-label">WhatsApp / Móvil</label><input v-model="cotForm.contact_mobile" type="tel" class="p-field" :disabled="q.docstatus === 1" placeholder="+52 55 1234 5678" /></div>
                 </div>
               </div>
 
-              <!-- Derecha: vista previa del PDF (zoom reducido) -->
-              <div class="flex-1 min-w-0 bg-white rounded-xl border border-surface-border overflow-hidden">
-                <div class="flex items-center justify-end px-2 py-1.5 border-b border-surface-border">
-                  <button class="doc-action" @click="openPdf('Quotation', q.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5h-4m4 0v-4m0 4l-5-5"/></svg>Ampliar</button>
+              <div class="space-y-2">
+                <template v-if="q.docstatus !== 1">
+                  <FranjaAprobacion
+                    doctype="Quotation" :name="q.name" :guardar="guardarCambiosCotizacion"
+                    @estado="(s) => (aprobPanel[q.name] = s)" @cambio="trasAprobacionVenta"
+                  />
+                  <button v-if="validaDirecto(q.name) && !enAprobacion(q.name)" type="button" :disabled="advancing" class="p-btn-primary w-full" @click="validarDoc('Quotation', q.name)">
+                    <Icono nombre="check-circulo" class="w-4 h-4" />Validar cotización
+                  </button>
+                  <button type="button" :disabled="advancing" class="p-btn-secondary w-full" @click="guardarCambiosCotizacion">Guardar cambios</button>
+                </template>
+                <div class="flex flex-wrap gap-1.5 pt-1">
+                  <button v-if="q.docstatus === 1" type="button" class="doc-action" @click="openSend('Quotation', q.name, q.contact_email, q.contact_mobile)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
+                  <button type="button" class="doc-action" @click="downloadPdf('Quotation', q.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>Descargar</button>
+                  <button type="button" class="doc-action" @click="printDocView('Quotation', q.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>Imprimir</button>
+                  <button type="button" class="doc-action" @click="openAssign('Quotation', q.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Asignar</button>
+                  <a class="doc-action" :href="`/app/quotation/${q.name}`" target="_blank"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>Abrir en ERPNext</a>
                 </div>
-                <div style="height: 70vh; overflow: auto;">
-                  <iframe :key="previewKey" :src="printUrl('Quotation', q.name)" style="width: 143%; height: 143%; transform: scale(0.7); transform-origin: top left; border: 0;" title="Vista previa de la cotización"></iframe>
+              </div>
+
+              <div v-if="q.docstatus === 1 && q.status !== 'Lost'" class="pt-4 border-t border-surface-border space-y-2">
+                <p class="p-eyebrow">Precio acordado</p>
+                <button
+                  type="button"
+                  class="p-btn w-full bg-orange-500 text-white hover:bg-orange-600 disabled:hover:bg-orange-500"
+                  :disabled="precioAcordadoStatus.todos_validados"
+                  :title="precioAcordadoStatus.todos_validados ? 'El precio acordado ya está validado -- no se puede volver a fijar/editar desde aquí.' : ''"
+                  @click="openAcordadoModal"
+                >Fijar Precio</button>
+                <div v-if="precioAcordadoStatus.items.length" class="flex items-center justify-between gap-2">
+                  <span :class="precioAcordadoStatus.todos_validados ? 'p-pill-ok' : 'p-pill-wait'">
+                    Precio acordado: {{ precioAcordadoStatus.todos_validados ? 'Validado' : 'Borrador' }} ({{ precioAcordadoStatus.items.length }})
+                  </span>
+                  <button v-if="!precioAcordadoStatus.todos_validados && precioAcordadoStatus.es_ceo" type="button" :disabled="advancing" class="text-[12px] font-semibold text-brand-600 hover:text-brand-700 hover:underline disabled:opacity-50" @click="validarPrecioAcordado">Validar</button>
                 </div>
+                <button type="button" class="p-btn w-full h-8 text-[12.5px] font-medium text-red-600 border border-red-200 hover:bg-red-50" @click="openRechazarModal">Marcar rechazada</button>
+              </div>
+
+              <div class="pt-4 border-t border-surface-border">
+                <AttachmentsPanel doctype="Quotation" :docname="q.name" />
+              </div>
+            </div>
+
+            <!-- Derecha: vista previa del PDF (zoom reducido) -->
+            <div class="min-w-0 border-t lg:border-t-0 border-surface-border flex flex-col">
+              <div class="flex items-center justify-between px-4 py-2 border-b border-surface-border">
+                <p class="p-eyebrow">Vista previa</p>
+                <button type="button" class="doc-action" @click="openPdf('Quotation', q.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5h-4m4 0v-4m0 4l-5-5"/></svg>Ampliar</button>
+              </div>
+              <!-- Crece hasta el final del formulario de la izquierda (nunca menos de 70vh):
+                   el iframe va absoluto y escalado a 0.7, así llena el contenedor sin
+                   depender de una altura fija. -->
+              <div class="relative flex-1 bg-zinc-50 rounded-br-xl overflow-hidden" style="min-height: 70vh;">
+                <iframe :key="previewKey" :src="printUrl('Quotation', q.name)" class="absolute top-0 left-0" style="width: 143%; height: 143%; transform: scale(0.7); transform-origin: top left; border: 0;" title="Vista previa de la cotización"></iframe>
               </div>
             </div>
           </div>
         </div>
 
-        <p v-if="!related.quotations.length" class="text-center text-ink-light text-sm py-10">Todavía no hay cotizaciones para este costeo.</p>
-
         <!-- Crear la primera cotización -->
-        <div v-if="!related.quotations.length" class="w-80 bg-white rounded-xl border border-surface-border p-5">
-          <p class="text-sm font-semibold text-ink mb-1">Nueva cotización</p>
-          <p class="text-[12px] text-ink-muted mb-4">Completa lo que no viene del costeo. Productos y totales son automáticos.</p>
-
-          <label class="field-label">Vigencia (válida hasta)</label>
-          <input v-model="cotForm.valid_till" type="date" class="field-input mb-3" />
-
-          <label class="field-label">Condiciones de pago</label>
-          <select v-model="cotForm.payment_terms_template" class="field-input mb-3">
-            <option value="">— Sin plantilla —</option>
-            <option v-for="p in cotDefaults.payment_terms_templates" :key="p.name" :value="p.name">{{ p.name }}</option>
-          </select>
-
-          <label class="field-label">Términos y condiciones</label>
-          <select v-model="cotForm.tc_name" class="field-input mb-3">
-            <option value="">— Sin términos —</option>
-            <option v-for="t in cotDefaults.terms" :key="t.name" :value="t.name">{{ t.name }}</option>
-          </select>
-
-          <label class="field-label">Vista de impresión</label>
-          <select v-model="cotForm.custom_tipo_formato" class="field-input mb-3" @change="onTipoFormatoChange">
-            <option value="Normal">Normal</option>
-            <option value="Volumen">Por volumen</option>
-          </select>
-
-          <label class="field-label">Moneda</label>
-          <select v-model="cotForm.currency" class="field-input mb-3">
-            <option v-for="c in cotDefaults.currencies" :key="c.name" :value="c.name">{{ c.name }}</option>
-          </select>
-
-          <label class="field-label">Lista de Precios</label>
-          <select v-model="cotForm.selling_price_list" class="field-input mb-3">
-            <option value="">— Sin lista —</option>
-            <option v-for="pl in cotDefaults.price_lists" :key="pl.name" :value="pl.name">{{ pl.name }}</option>
-          </select>
-
-          <label class="field-label">Impuestos y Cargos</label>
-          <select v-model="cotForm.taxes_and_charges" class="field-input mb-3">
-            <option value="">— Sin plantilla —</option>
-            <option v-for="t in cotDefaults.tax_templates" :key="t.name" :value="t.name">{{ t.name }}</option>
-          </select>
-
-          <label class="field-label">Email de contacto</label>
-          <input v-model="cotForm.contact_email" type="email" class="field-input mb-3" placeholder="correo@cliente.com" />
-
-          <label class="field-label">WhatsApp / Móvil</label>
-          <input v-model="cotForm.contact_mobile" type="tel" class="field-input mb-4" placeholder="+52 55 1234 5678" />
-
-          <div class="border-t border-surface-border pt-3 mb-4 space-y-1">
-            <div class="flex justify-between text-[13px]"><span class="text-ink-muted">Productos</span><span>{{ productos.length }}</span></div>
-            <div class="flex justify-between text-[13px]"><span class="text-ink-muted">Total venta</span><span class="font-medium">{{ fmtC(totalVenta) }}</span></div>
+        <div v-if="!related.quotations.length" class="p-panel max-w-[560px] mx-auto mt-4">
+          <div class="px-5 pt-5">
+            <p class="p-eyebrow">Nueva cotización</p>
+            <p class="p-h1 mt-1">Todavía no hay cotizaciones para este costeo.</p>
+            <p class="p-meta mt-1">Completa lo que no viene del costeo. Productos y totales son automáticos.</p>
           </div>
+          <div class="px-5 pt-4 pb-5 grid grid-cols-2 gap-x-3 gap-y-3">
+            <div><label class="p-field-label">Vigencia (válida hasta)</label><input v-model="cotForm.valid_till" type="date" class="p-field" /></div>
+            <div><label class="p-field-label">Moneda</label>
+              <select v-model="cotForm.currency" class="p-field">
+                <option v-for="c in cotDefaults.currencies" :key="c.name" :value="c.name">{{ c.name }}</option>
+              </select>
+            </div>
+            <div><label class="p-field-label">Condiciones de pago</label>
+              <select v-model="cotForm.payment_terms_template" class="p-field">
+                <option value="">— Sin plantilla —</option>
+                <option v-for="p in cotDefaults.payment_terms_templates" :key="p.name" :value="p.name">{{ p.name }}</option>
+              </select>
+            </div>
+            <div><label class="p-field-label">Términos y condiciones</label>
+              <select v-model="cotForm.tc_name" class="p-field">
+                <option value="">— Sin términos —</option>
+                <option v-for="t in cotDefaults.terms" :key="t.name" :value="t.name">{{ t.name }}</option>
+              </select>
+            </div>
+            <div class="col-span-2"><label class="p-field-label">Lista de Precios</label>
+              <select v-model="cotForm.selling_price_list" class="p-field">
+                <option value="">— Sin lista —</option>
+                <option v-for="pl in cotDefaults.price_lists" :key="pl.name" :value="pl.name">{{ pl.name }}</option>
+              </select>
+            </div>
+            <div class="col-span-2"><label class="p-field-label">Impuestos y Cargos</label>
+              <select v-model="cotForm.taxes_and_charges" class="p-field">
+                <option value="">— Sin plantilla —</option>
+                <option v-for="t in cotDefaults.tax_templates" :key="t.name" :value="t.name">{{ t.name }}</option>
+              </select>
+            </div>
+            <div><label class="p-field-label">Email de contacto</label><input v-model="cotForm.contact_email" type="email" class="p-field" placeholder="correo@cliente.com" /></div>
+            <div><label class="p-field-label">WhatsApp / Móvil</label><input v-model="cotForm.contact_mobile" type="tel" class="p-field" placeholder="+52 55 1234 5678" /></div>
+          </div>
+          <div class="px-5 py-4 border-t border-surface-border flex items-center justify-between gap-4 bg-zinc-50/60 rounded-b-xl">
+            <div class="flex items-center gap-6">
+              <div><p class="text-[10.5px] text-ink-light">Productos</p><p class="text-[14px] font-semibold tabular-nums">{{ productos.length }}</p></div>
+              <div><p class="text-[10.5px] text-ink-light">Total venta</p><p class="text-[14px] font-semibold tabular-nums">{{ fmtC(totalVenta) }}</p></div>
+            </div>
+            <button type="button" :disabled="advancing" class="p-btn-primary" @click="guardarBorradorCotizacion">
+              <svg v-if="advancing" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+              Guardar como borrador
+            </button>
+          </div>
+        </div>
 
-          <button :disabled="advancing" class="w-full h-9 text-sm font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex items-center justify-center gap-2" @click="guardarBorradorCotizacion">
-            <svg v-if="advancing" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-            Guardar como borrador
-          </button>
+        <!-- Historial: cotizaciones de revisiones anteriores del costeo (la rechazada
+             que llevó a "Editar Costeo" se queda en el costeo viejo). Solo lectura. -->
+        <div v-if="related.quotations_historial.length" class="pt-4">
+          <p class="p-eyebrow">Historial</p>
+          <p class="p-meta mt-0.5 mb-2">Cotizaciones de revisiones anteriores de este costeo. Solo consulta.</p>
+          <div class="p-panel divide-y divide-surface-border">
+            <div v-for="q in related.quotations_historial" :key="q.name" class="flex items-center gap-3 px-4 py-3">
+              <Icono nombre="documento" class="w-4 h-4 text-ink-xlight flex-shrink-0" />
+              <div class="min-w-0">
+                <p class="text-[13.5px] font-semibold text-ink-muted">{{ q.name }}</p>
+                <p class="text-[11.5px] text-ink-light truncate">
+                  {{ q.transaction_date }} · Costeo {{ q.costeo }}<template v-if="q.order_lost_reason"> · Motivo: {{ q.order_lost_reason }}</template>
+                </p>
+              </div>
+              <span class="flex-shrink-0" :class="q.status === 'Lost' ? 'p-pill-bad' : (q.docstatus === 2 ? 'p-pill-off' : (q.docstatus === 1 ? 'p-pill-ok' : 'p-pill-wait'))">{{ q.status === 'Lost' ? 'Rechazada' : (q.docstatus === 2 ? 'Cancelada' : (q.docstatus === 1 ? 'Validada' : 'Borrador')) }}</span>
+              <p class="ml-auto text-[13.5px] font-semibold text-ink-muted tabular-nums flex-shrink-0">{{ fmtC(q.grand_total) }}</p>
+              <button type="button" class="doc-action flex-shrink-0" @click="openPdf('Quotation', q.name)"><Icono nombre="documento" class="w-3.5 h-3.5" />Ver PDF</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
     <!-- ══════════ STEP 2 · VENDER ══════════ -->
-    <div v-else-if="activeStep === 2" class="p-5 pb-20">
-      <div class="max-w-6xl mx-auto space-y-3">
+    <div v-else-if="activeStep === 2" class="px-5 lg:px-8 py-6 pb-20">
+      <div class="max-w-[1320px] mx-auto space-y-3">
+        <div v-if="related.sales_orders.length" class="flex items-end justify-between gap-3 mb-1">
+          <div>
+            <p class="p-eyebrow">Órdenes de venta</p>
+            <p class="p-meta mt-0.5">{{ related.sales_orders.length }} {{ related.sales_orders.length === 1 ? "orden" : "órdenes" }} de este costeo</p>
+          </div>
+        </div>
 
         <!-- Generar nueva OV: a nivel costeo, no dentro de una orden en particular --
              toma como base la última OV validada (o la que se elija abajo si hay
@@ -880,310 +1001,380 @@
              Oculto mientras esa OV base no tenga precio acordado fijado; si lo
              tiene pero ya venció, el botón avisa en vez de desaparecer -- quien
              tenga rol CEO puede destrabarlo desde el propio modal. -->
-        <div v-if="nuevaOvGate.show" class="bg-white rounded-xl border p-4 flex items-center justify-between gap-3" :class="nuevaOvGate.vencido ? 'border-amber-200 bg-amber-50/30' : 'border-surface-border'">
-          <div>
-            <p class="text-sm font-semibold mb-0.5" :class="nuevaOvGate.vencido ? 'text-amber-800' : 'text-ink'">
-              {{ nuevaOvGate.vencido ? 'Precio acordado caducado' : 'Generar nueva OV' }}
-            </p>
-            <p class="text-[12px]" :class="nuevaOvGate.vencido ? 'text-amber-700' : 'text-ink-muted'">
-              <template v-if="nuevaOvGate.vencido">
-                El precio acordado para un nuevo pedido de este cliente ya venció.
-                <template v-if="nuevaOvGate.esCeo">Tienes permiso de CEO para generar la OV de todos modos, o actualízalo desde "Fijar Precio" en la cotización.</template>
-                <template v-else>Pide a alguien con rol CEO que la genere, o actualiza el precio desde "Fijar Precio" en la cotización.</template>
-              </template>
-              <template v-else>Pedido recurrente del mismo cliente: crea otra Orden de Venta con los productos y el precio ya acordado, solo ajustando la cantidad -- sin volver a cotizar.</template>
-            </p>
+        <div v-if="nuevaOvGate.show" class="p-panel px-4 py-3.5 flex items-center justify-between gap-4" :class="nuevaOvGate.vencido ? '!border-amber-200 !bg-amber-50/50' : ''">
+          <div class="flex items-start gap-3 min-w-0">
+            <span class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" :class="nuevaOvGate.vencido ? 'bg-amber-100 text-amber-700' : 'bg-brand-50 text-brand-600'">
+              <Icono :nombre="nuevaOvGate.vencido ? 'reloj' : 'actualizar'" class="w-4 h-4" />
+            </span>
+            <div class="min-w-0">
+              <p class="text-[13.5px] font-semibold" :class="nuevaOvGate.vencido ? 'text-amber-800' : 'text-ink'">
+                {{ nuevaOvGate.vencido ? 'Precio acordado caducado' : 'Generar nueva OV' }}
+              </p>
+              <p class="text-[12px] mt-0.5" :class="nuevaOvGate.vencido ? 'text-amber-700' : 'text-ink-muted'">
+                <template v-if="nuevaOvGate.vencido">
+                  El precio acordado para un nuevo pedido de este cliente ya venció.
+                  <template v-if="nuevaOvGate.esCeo">Tienes permiso para aprobar precios: puedes generar la OV de todos modos, o actualízalo desde "Fijar Precio" en la cotización.</template>
+                  <template v-else>Pide a alguien que apruebe precios que la genere, o actualiza el precio desde "Fijar Precio" en la cotización.</template>
+                </template>
+                <template v-else>Pedido recurrente del mismo cliente: crea otra Orden de Venta con los mismos productos, solo ajustando la cantidad -- sin volver a cotizar. Usa el precio acordado y, si un producto no lo tiene, el último precio con que se le vendió.</template>
+              </p>
+            </div>
           </div>
           <button
-            class="h-9 px-4 text-[13px] font-semibold rounded-lg flex-shrink-0"
+            type="button"
+            class="p-btn flex-shrink-0"
             :class="nuevaOvGate.vencido ? 'text-amber-800 bg-amber-100 hover:bg-amber-200' : 'text-white bg-brand-500 hover:bg-brand-600'"
             @click="openNuevaOvModal()"
-          >{{ nuevaOvGate.vencido ? 'Precio caducado -- revisar' : '+ Generar nueva OV' }}</button>
+          ><Icono v-if="!nuevaOvGate.vencido" nombre="mas" class="w-3.5 h-3.5" :grosor="2.2" />{{ nuevaOvGate.vencido ? 'Precio caducado -- revisar' : 'Generar nueva OV' }}</button>
         </div>
 
         <!-- Lista de órdenes de venta del costeo (acordeón, mismo patrón que Cotizar) -->
-        <div v-for="so in related.sales_orders" :key="so.name" class="group bg-white rounded-xl border border-surface-border overflow-hidden" :id="`doc-hl-${so.name}`" :class="{ 'doc-highlight-flash': highlightTarget === so.name }">
-          <div class="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-surface-raised/50 transition-colors" @click="toggleSalesOrder(so)">
+        <div v-for="so in related.sales_orders" :key="so.name" class="group p-panel" :id="`doc-hl-${so.name}`" :class="{ 'doc-highlight-flash': highlightTarget === so.name }">
+          <div class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-zinc-50 rounded-xl transition-colors" :class="expandedSOName === so.name ? 'rounded-b-none' : ''" @click="toggleSalesOrder(so)">
             <svg class="w-4 h-4 text-ink-light flex-shrink-0 transition-transform" :class="expandedSOName === so.name ? 'rotate-90' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-            <p class="text-sm font-semibold text-ink">{{ so.name }}</p>
-            <span v-if="activeSOName === so.name" class="text-[10.5px] font-semibold px-2 py-0.5 rounded-full bg-brand-100 text-brand-700">OV activa</span>
-            <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full" :class="so.docstatus === 2 ? 'bg-surface-raised text-ink-light' : (so.docstatus === 1 ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700')">{{ so.docstatus === 2 ? 'Cancelada' : (so.docstatus === 1 ? 'Validada' : 'Borrador') }}</span>
-            <span class="ml-auto text-[13px] font-medium text-ink">{{ fmtC(so.grand_total) }}</span>
-            <button class="opacity-0 group-hover:opacity-100 w-6 h-6 flex items-center justify-center rounded hover:bg-red-50 hover:text-red-500 text-gray-300 transition-all flex-shrink-0" @click.stop="openDeleteSO(so.name)" title="Eliminar orden de venta">
+            <Icono nombre="factura" class="w-4 h-4 text-ink-light flex-shrink-0" />
+            <p class="text-[14px] font-semibold text-ink">{{ so.name }}</p>
+            <span v-if="activeSOName === so.name" class="p-pill-now">OV activa</span>
+            <span :class="so.docstatus === 2 ? 'p-pill-off' : (so.docstatus === 1 ? 'p-pill-ok' : 'p-pill-wait')">{{ so.docstatus === 2 ? 'Cancelada' : (so.docstatus === 1 ? 'Validada' : 'Borrador') }}</span>
+            <div class="ml-auto text-right">
+              <p class="text-[10.5px] text-ink-light">Total</p>
+              <p class="text-[14px] font-semibold text-ink tabular-nums">{{ fmtC(so.grand_total) }}</p>
+            </div>
+            <button v-if="so.docstatus !== 2" type="button" class="opacity-0 group-hover:opacity-100 w-7 h-7 flex items-center justify-center rounded-md hover:bg-red-50 hover:text-red-500 text-ink-xlight transition-all flex-shrink-0" title="Eliminar orden de venta" @click.stop="openDeleteSO(so.name)">
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
             </button>
           </div>
 
-          <div v-if="expandedSOName === so.name" class="bg-surface-raised/40 border-t border-surface-border p-5">
-            <div class="flex gap-5 items-start">
-              <!-- Izquierda: campos manuales -->
-              <div class="w-80 flex-shrink-0 bg-white rounded-xl border border-surface-border p-5">
-                <div v-if="activeSOName !== so.name" class="mb-3">
-                  <button class="w-full h-8 text-[12.5px] font-semibold text-brand-700 bg-brand-50 rounded-lg hover:bg-brand-100" @click="setActiveSO(so.name)">Usar como OV activa para Producir/Enviar/Facturar/Reportar</button>
+          <div v-if="expandedSOName === so.name" class="border-t border-surface-border">
+            <!-- Tallas del pedido, a todo el ancho y antes que los datos: es lo que más
+                 se captura en la OV y con columnas por talla se lee de un vistazo. -->
+            <div v-if="hayTallasOV(so)" class="p-5 border-b border-surface-border bg-zinc-50/70 space-y-6">
+              <!-- Desglose por talla del PRODUCTO PRINCIPAL (tallas normales). La suma
+                   debe ser exacta a la cantidad del producto (la del costeo); al guardar
+                   se escribe como lista debajo de la descripción y la Orden de
+                   Manufactura lo toma para su desglose de tallas (api/tallas_ov.py).
+                   Solo las tallas de uso común del tipo elegido (ver tallasRegulares):
+                   las demás son tallas extra y van abajo, con su propio precio. Se
+                   puede repartir entre Caballero y Dama (un bloque por género). -->
+              <div v-if="so.docstatus === 0 && soDesgloseForm.length">
+                <div class="flex items-end justify-between gap-3 mb-3">
+                  <div>
+                    <p class="p-eyebrow">Desglose por talla · tallas regulares</p>
+                    <p class="p-meta mt-0.5">Debe sumar exacto la cantidad del producto.</p>
+                  </div>
+                  <button
+                    type="button"
+                    :disabled="soDesgloseSaving"
+                    class="p-btn-secondary h-8 text-[12.5px] flex-shrink-0"
+                    @click="guardarDesgloseOV(so)"
+                  >{{ soDesgloseSaving ? "Guardando…" : "Guardar desglose" }}</button>
                 </div>
-                <p class="text-sm font-semibold text-ink mb-1">Datos de la orden de venta</p>
-                <p class="text-[12px] text-ink-muted mb-4">Completa lo que no viene del costeo. Productos y totales son automáticos.</p>
-
-                <label class="field-label">Tiempo de entrega (semanas)</label>
-                <input v-model.number="soForm.delivery_weeks" type="number" min="1" step="1" placeholder="Ej: 3" class="field-input mb-1" :disabled="so.docstatus === 1" @input="onDeliveryWeeksChange" />
-                <p class="text-[10.5px] text-ink-light mb-3">{{ soForm.delivery_date ? `Vigencia: ${soForm.delivery_date}` : 'Captura las semanas para calcular la fecha' }}</p>
-
-                <label class="field-label">Condiciones de pago</label>
-                <select v-model="soForm.payment_terms_template" class="field-input mb-3" :disabled="so.docstatus === 1">
-                  <option value="">— Sin plantilla —</option>
-                  <option v-for="p in cotDefaults.payment_terms_templates" :key="p.name" :value="p.name">{{ p.name }}</option>
-                </select>
-
-                <label class="field-label">Términos y condiciones</label>
-                <select v-model="soForm.tc_name" class="field-input mb-3" :disabled="so.docstatus === 1">
-                  <option value="">— Sin términos —</option>
-                  <option v-for="t in cotDefaults.terms" :key="t.name" :value="t.name">{{ t.name }}</option>
-                </select>
-
-                <label class="field-label">OC del Cliente <span v-if="ocClienteEsArchivo" class="text-red-500">*</span></label>
-                <!-- Con el campo disponible (patch v0_2_56) la OC del cliente es el
-                     ARCHIVO y es obligatoria; en un sitio que todavía no lo corrió se
-                     sigue capturando el número, para no dejar el paso sin el dato. -->
-                <OcClienteAdjunto
-                  v-if="ocClienteEsArchivo"
-                  v-model="soForm.oc_cliente_archivo" class="mb-3"
-                  :solo-lectura="so.docstatus === 1" :subiendo="ocClienteSubiendo"
-                  @archivo="(ev) => subirOcCliente(ev, 'Sales Order', so.name)"
-                  @quitar="quitarOcCliente('Sales Order', so.name)"
-                />
-                <input v-else v-model="soForm.po_no" type="text" class="field-input mb-3" :disabled="so.docstatus === 1" placeholder="Número de orden de compra" />
-
-                <label class="field-label">Moneda</label>
-                <select v-model="soForm.currency" class="field-input mb-3" :disabled="so.docstatus === 1">
-                  <option v-for="c in cotDefaults.currencies" :key="c.name" :value="c.name">{{ c.name }}</option>
-                </select>
-
-                <label class="field-label">Lista de Precios</label>
-                <select v-model="soForm.selling_price_list" class="field-input mb-3" :disabled="so.docstatus === 1">
-                  <option value="">— Sin lista —</option>
-                  <option v-for="pl in cotDefaults.price_lists" :key="pl.name" :value="pl.name">{{ pl.name }}</option>
-                </select>
-
-                <label class="field-label">Impuestos y Cargos</label>
-                <select v-model="soForm.taxes_and_charges" class="field-input mb-3" :disabled="so.docstatus === 1">
-                  <option value="">— Sin plantilla —</option>
-                  <option v-for="t in cotDefaults.tax_templates" :key="t.name" :value="t.name">{{ t.name }}</option>
-                </select>
-
-                <label class="field-label">Email de contacto</label>
-                <input v-model="soForm.contact_email" type="email" class="field-input mb-3" :disabled="so.docstatus === 1" placeholder="correo@cliente.com" />
-
-                <label class="field-label">WhatsApp / Móvil</label>
-                <input v-model="soForm.contact_mobile" type="tel" class="field-input mb-4" :disabled="so.docstatus === 1" placeholder="+52 55 1234 5678" />
-
-                <div class="space-y-2">
-                  <template v-if="so.docstatus !== 1">
-                    <FranjaAprobacion
-                      doctype="Sales Order" :name="so.name" :guardar="guardarCambiosOrdenVenta"
-                      @estado="(s) => (aprobPanel[so.name] = s)" @cambio="trasAprobacionVenta"
-                    />
-                    <button :disabled="advancing" class="w-full h-9 text-sm font-medium text-ink border border-surface-border rounded-lg hover:bg-surface-raised disabled:opacity-50" @click="guardarCambiosOrdenVenta">Guardar cambios</button>
-                    <button v-if="validaDirecto(so.name) && !enAprobacion(so.name)" :disabled="advancing" class="w-full h-9 text-sm font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex items-center justify-center gap-1.5" @click="validarDoc('Sales Order', so.name)">
-                      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Validar orden
-                    </button>
-                  </template>
-                  <div class="grid grid-cols-2 gap-2 pt-1">
-                    <button v-if="so.docstatus === 1" class="doc-action justify-center" @click="openSend('Sales Order', so.name, so.contact_email, so.contact_mobile)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
-                    <button class="doc-action justify-center" @click="downloadPdf('Sales Order', so.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>Descargar</button>
-                    <button class="doc-action justify-center" @click="printDocView('Sales Order', so.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>Imprimir</button>
-                    <button class="doc-action justify-center" @click="openAssign('Sales Order', so.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Asignar</button>
-                  </div>
-                  <a class="doc-action justify-center w-full" :href="`/app/sales-order/${so.name}`" target="_blank"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>Abrir en ERPNext</a>
-
-                  <!-- Desglose por talla del PRODUCTO PRINCIPAL (tallas normales). La suma
-                       debe ser exacta a la cantidad del producto (la del costeo); al guardar
-                       se escribe como lista debajo de la descripción y la Orden de
-                       Manufactura lo toma para su desglose de tallas (api/tallas_ov.py). -->
-                  <div v-if="so.docstatus === 0 && soDesgloseForm.length" class="pt-3 mt-2 border-t border-surface-border">
-                    <p class="text-[12.5px] font-semibold text-ink mb-0.5">Desglose por talla</p>
-                    <p class="text-[11px] text-ink-muted mb-2">Cuántas piezas de cada talla lleva el producto. Debe sumar exacto la cantidad del costeo.</p>
-                    <div v-for="d in soDesgloseForm" :key="d.row" class="mb-3">
-                      <div class="flex items-center justify-between gap-2 mb-1.5">
-                        <span class="text-[12.5px] text-ink truncate" :title="d.item_name">{{ d.item_name }}</span>
-                        <span class="text-[11px] tabular-nums" :class="sumaDesglose(d) === d.qty ? 'text-green-700' : 'text-amber-600'">{{ sumaDesglose(d) }} / {{ d.qty }}</span>
-                      </div>
-                      <div class="grid grid-cols-2 gap-1.5 mb-1.5">
-                        <select v-model="d.genero" class="field-input text-xs py-1" @change="d.grupo = ''">
+                <div class="rounded-xl bg-white border border-surface-border divide-y divide-surface-border">
+                  <div v-for="d in soDesgloseForm" :key="d.row" class="px-4 py-3">
+                    <div class="flex items-center gap-2.5">
+                      <span class="flex-1 min-w-0 text-[13px] font-medium text-ink truncate" :title="d.item_name">{{ d.item_name }}</span>
+                      <span class="tabular-nums w-24 justify-center" :class="sumaDesglose(d) === d.qty ? 'p-pill-ok' : 'p-pill-wait'">{{ sumaDesglose(d) }} / {{ d.qty }}</span>
+                    </div>
+                    <div v-for="(b, bi) in d.bloques" :key="bi" class="mt-3">
+                      <div class="flex items-center gap-2.5 flex-wrap">
+                        <select v-model="b.genero" class="p-field h-8 w-36 text-[12.5px]" @change="b.grupo = ''; limpiarDesglose(d)">
                           <option value="">Género…</option>
-                          <option v-for="g in ['Dama', 'Caballero']" :key="g" :value="g">{{ g }}</option>
+                          <option v-for="g in generosLibres(d, b)" :key="g" :value="g">{{ g }}</option>
                         </select>
-                        <select v-model="d.grupo" class="field-input text-xs py-1" :disabled="!d.genero">
+                        <select v-model="b.grupo" class="p-field h-8 w-72 max-w-full text-[12.5px]" :disabled="!b.genero" @change="limpiarDesglose(d)">
                           <option value="">Tipo de talla…</option>
-                          <option v-for="g in gruposDeGenero(d.genero)" :key="g.name" :value="g.name">{{ g.talla }}</option>
+                          <option v-for="g in gruposDeGenero(b.genero)" :key="g.name" :value="g.name">{{ g.talla }}</option>
                         </select>
+                        <button v-if="d.bloques.length > 1" type="button" class="h-8 w-8 flex items-center justify-center rounded-md text-ink-light hover:bg-red-50 hover:text-red-500" title="Quitar este género" @click="d.bloques.splice(bi, 1); limpiarDesglose(d)">
+                          <Icono nombre="x" class="w-3.5 h-3.5" :grosor="2" />
+                        </button>
                       </div>
-                      <div v-if="d.grupo" class="grid grid-cols-3 gap-1.5">
-                        <label v-for="t in tallasParaDesglose(d)" :key="t.name" class="flex items-center gap-1">
-                          <span class="text-[11px] text-ink-muted w-9 text-right">{{ t.talla }}</span>
-                          <input v-model.number="d.valores[t.name]" type="number" min="0" step="1" class="field-input w-full text-xs py-0.5" />
+                      <div v-if="b.grupo" class="mt-2 flex flex-wrap items-end gap-2">
+                        <label v-for="t in tallasRegulares(d, b)" :key="t.name" class="w-[68px]">
+                          <span class="block text-[11.5px] font-medium text-ink-muted text-center mb-1">{{ t.talla }}</span>
+                          <input v-model.number="d.valores[t.name]" type="number" min="0" step="1" class="p-field h-8 px-1.5 text-[13px] text-center tabular-nums" />
                         </label>
                       </div>
-                      <button
-                        v-if="d.grupo && tallasOcultas(d)"
-                        type="button"
-                        class="mt-1 text-[11px] text-brand-600 hover:underline"
-                        @click="d.verTodas = !d.verTodas"
-                      >{{ d.verTodas ? "Ver solo las tallas más usadas" : `Ver todas las tallas (${tallasOcultas(d)} más)` }}</button>
                     </div>
-                    <button
-                      :disabled="soDesgloseSaving"
-                      class="w-full h-8 text-[12.5px] font-medium text-ink border border-surface-border rounded-lg hover:bg-surface-raised disabled:opacity-50"
-                      @click="guardarDesgloseOV(so)"
-                    >{{ soDesgloseSaving ? "Guardando…" : "Guardar desglose" }}</button>
+                    <button v-if="d.bloques.length < 2" type="button" class="add-link mt-3" @click="d.bloques.push({ genero: generosLibres(d)[0] || '', grupo: '' })">
+                      <Icono nombre="mas" class="w-3.5 h-3.5" :grosor="2.2" />Agregar {{ generosLibres(d)[0] || "otro género" }}
+                    </button>
                   </div>
-                  <!-- OV validada: el desglose ya no se edita, pero se sigue viendo. -->
-                  <div v-else-if="so.docstatus === 1 && soDesgloseForm.some((d) => (d.filas || []).length)" class="pt-3 mt-2 border-t border-surface-border">
-                    <p class="text-[12.5px] font-semibold text-ink mb-2">Desglose por talla</p>
-                    <div v-for="d in soDesgloseForm.filter((x) => (x.filas || []).length)" :key="d.row" class="mb-2">
-                      <div class="flex items-center justify-between gap-2 mb-1">
-                        <span class="text-[12.5px] text-ink truncate" :title="d.item_name">{{ d.item_name }}</span>
-                        <span class="text-[11px] tabular-nums text-green-700">{{ sumaDesglose(d) }} / {{ d.qty }}</span>
-                      </div>
-                      <div class="flex flex-wrap gap-1.5">
-                        <span v-for="f in d.filas" :key="f.talla" class="text-[11.5px] px-2 py-0.5 rounded-full bg-surface-raised border border-surface-border">{{ f.etiqueta }} <b class="font-semibold">{{ f.qty }}</b></span>
-                      </div>
+                </div>
+              </div>
+              <!-- OV validada: el desglose ya no se edita, pero se sigue viendo. -->
+              <div v-else-if="so.docstatus === 1 && soDesgloseForm.some((d) => (d.filas || []).length)">
+                <p class="p-eyebrow mb-2">Desglose por talla · tallas regulares</p>
+                <div class="rounded-xl bg-white border border-surface-border divide-y divide-surface-border">
+                  <div v-for="d in soDesgloseForm.filter((x) => (x.filas || []).length)" :key="d.row" class="px-4 py-3">
+                    <div class="flex items-center gap-3">
+                      <span class="flex-1 min-w-0 text-[13px] font-medium text-ink truncate" :title="d.item_name">{{ d.item_name }}</span>
+                      <span class="p-pill-ok tabular-nums flex-shrink-0">{{ sumaDesglose(d) }} / {{ d.qty }}</span>
+                    </div>
+                    <div class="flex flex-wrap gap-1.5 mt-2">
+                      <span v-for="f in d.filas" :key="f.talla" class="p-pill-off">{{ f.etiqueta }} <b class="font-semibold text-ink">{{ f.qty }}</b></span>
                     </div>
                   </div>
+                </div>
+              </div>
 
-                  <!-- Cantidades confirmadas por talla -- solo aquí (OV), nunca en la
-                       Cotización: es en esta etapa donde el cliente confirma las
-                       cantidades oficiales de cada variante, o las quita si no las
-                       quiere. Se refleja en el Costeo hasta Validar esta orden. -->
-                  <div v-if="so.docstatus === 0 && variantesDelCosteo.length" class="pt-3 mt-2 border-t border-surface-border">
-                    <p class="text-[12.5px] font-semibold text-ink mb-0.5">Cantidades confirmadas por talla</p>
-                    <p class="text-[11px] text-ink-muted mb-2">Ajusta la cantidad real que confirmó el cliente. Pon 0 para quitarla del pedido -- se actualiza en el Costeo al Validar esta orden.</p>
-                    <div v-if="soVariantesLoading" class="text-[12px] text-ink-light py-2 text-center">Cargando…</div>
-                    <div v-else class="space-y-2.5">
-                      <div v-for="v in soVariantesForm" :key="v.item_code">
-                        <label class="flex items-center gap-2">
-                          <span class="flex-1 text-[12.5px] text-ink truncate" :class="{ 'text-ink-light': !v.qty }" :title="v.talla_grupo_label">{{ v.talla_grupo_label }}</span>
-                          <input v-model.number="v.qty" type="number" min="0" step="1" class="field-input w-20 text-xs py-1" />
-                        </label>
-                        <!-- Desglose por talla individual -- solo si el grupo engloba más
-                             de una (ej. "XXL/3XL"); es únicamente para la descripción de
-                             la línea, no cambia la cantidad total de arriba. -->
-                        <div v-if="v.qty && v.tallas.length > 1" class="mt-1 ml-3 pl-2 border-l-2 border-surface-border space-y-1">
-                          <div v-for="t in v.tallas" :key="t.code" class="flex items-center gap-2">
-                            <span class="flex-1 text-[11.5px] text-ink-muted">{{ t.label }}</span>
-                            <input v-model.number="v.desglose[t.code]" type="number" min="0" step="1" class="field-input w-16 text-xs py-0.5" />
-                          </div>
-                          <p class="text-[10.5px]" :class="Object.values(v.desglose).reduce((a,b)=>a+(Number(b)||0),0) === v.qty ? 'text-ink-light' : 'text-amber-600'">
-                            Suma: {{ Object.values(v.desglose).reduce((a,b)=>a+(Number(b)||0),0) }} / {{ v.qty }}
-                          </p>
+              <!-- Cantidades confirmadas por talla -- solo aquí (OV), nunca en la
+                   Cotización: es en esta etapa donde el cliente confirma las
+                   cantidades oficiales de cada variante, o las quita si no las
+                   quiere. Se refleja en el Costeo hasta Validar esta orden. -->
+              <div v-if="so.docstatus === 0 && variantesDelCosteo.length">
+                <div class="flex items-end justify-between gap-3 mb-3">
+                  <div>
+                    <p class="p-eyebrow">Tallas extra</p>
+                    <p class="p-meta mt-0.5">Piezas que confirmó el cliente por talla. Con 0 se quita del pedido.</p>
+                  </div>
+                  <button
+                    type="button"
+                    :disabled="soVariantesSaving || soVariantesLoading"
+                    class="p-btn-secondary h-8 text-[12.5px] flex-shrink-0"
+                    @click="guardarVariantesOV(so)"
+                  >{{ soVariantesSaving ? "Guardando…" : "Guardar cantidades" }}</button>
+                </div>
+                <div v-if="soVariantesLoading" class="p-meta py-2 text-center">Cargando…</div>
+                <div v-else class="space-y-3">
+                  <div v-for="g in soVariantesGrupos" :key="g.base" class="rounded-xl bg-white border border-surface-border">
+                    <p class="px-4 pt-3 pb-2 text-[13px] font-medium text-ink truncate border-b border-surface-border" :title="g.base">{{ g.nombre }}</p>
+                    <div class="divide-y divide-surface-border">
+                      <!-- Cada talla de la variante con sus piezas; el total es la suma. Se
+                           puede agregar cualquier talla NO regular de su tipo (ej. 5XL): entra
+                           en la línea de esta variante, con su mismo precio. -->
+                      <div v-for="v in g.variantes" :key="v.item_code" class="px-4 py-3">
+                        <div class="flex items-center gap-3">
+                          <p class="flex-1 min-w-0 text-[13px] font-medium truncate" :class="totalVariante(v) ? 'text-ink' : 'text-ink-light'" :title="v.talla_grupo_label">{{ v.talla_grupo_label }}</p>
+                          <span class="tabular-nums" :class="totalVariante(v) ? 'p-pill-ok' : 'p-pill-off'">{{ totalVariante(v) }} pzas</span>
+                        </div>
+                        <div class="mt-2 flex flex-wrap items-end gap-2">
+                          <label v-for="t in v.codigos" :key="t.code" class="w-[68px]">
+                            <span class="block text-[11.5px] font-medium text-ink-muted text-center mb-1">{{ t.label }}</span>
+                            <input v-model.number="v.desglose[t.code]" type="number" min="0" step="1" class="p-field h-8 px-1.5 text-[13px] text-center tabular-nums" />
+                          </label>
+                          <select v-if="tallasExtraDisponibles(v).length" class="p-field h-8 w-44 text-[12.5px]" value="" @change="agregarTallaVariante(v, $event.target.value); $event.target.value = ''">
+                            <option value="">+ Agregar talla</option>
+                            <option v-for="t in tallasExtraDisponibles(v)" :key="t.name" :value="t.name">{{ t.talla }}</option>
+                          </select>
                         </div>
                       </div>
                     </div>
-                    <button
-                      :disabled="soVariantesSaving || soVariantesLoading"
-                      class="w-full h-8 mt-2.5 text-[12.5px] font-medium text-ink border border-surface-border rounded-lg hover:bg-surface-raised disabled:opacity-50"
-                      @click="guardarVariantesOV(so)"
-                    >{{ soVariantesSaving ? "Guardando…" : "Guardar cantidades" }}</button>
-                  </div>
-                  <!-- OV validada: las tallas extra ya no se editan, pero se siguen viendo. -->
-                  <div v-else-if="so.docstatus === 1 && soVariantesForm.length" class="pt-3 mt-2 border-t border-surface-border">
-                    <p class="text-[12.5px] font-semibold text-ink mb-2">Cantidades confirmadas por talla</p>
-                    <div v-for="v in soVariantesForm" :key="v.item_code" class="mb-2">
-                      <div class="flex items-center justify-between gap-2 mb-1">
-                        <span class="text-[12.5px] text-ink truncate" :title="v.talla_grupo_label">{{ v.talla_grupo_label }}</span>
-                        <span class="text-[11px] tabular-nums text-green-700">{{ v.qty }}</span>
-                      </div>
-                      <div v-if="tallasConPiezas(v).length" class="flex flex-wrap gap-1.5">
-                        <span v-for="t in tallasConPiezas(v)" :key="t.code" class="text-[11.5px] px-2 py-0.5 rounded-full bg-surface-raised border border-surface-border">{{ t.label }} <b class="font-semibold">{{ t.qty }}</b></span>
-                      </div>
-                      <p v-else-if="v.tallas.length > 1" class="text-[11px] text-ink-light">Sin desglose capturado por talla.</p>
-                    </div>
-                  </div>
-
-                  <div class="pt-3 mt-2 border-t border-surface-border">
-                    <AttachmentsPanel doctype="Sales Order" :docname="so.name" />
                   </div>
                 </div>
               </div>
-
-              <!-- Derecha: vista previa del PDF -->
-              <div class="flex-1 min-w-0 bg-white rounded-xl border border-surface-border overflow-hidden">
-                <div class="flex items-center justify-end px-2 py-1.5 border-b border-surface-border">
-                  <button class="doc-action" @click="openPdf('Sales Order', so.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5h-4m4 0v-4m0 4l-5-5"/></svg>Ampliar</button>
-                </div>
-                <div style="height: 70vh; overflow: auto;">
-                  <iframe :key="previewKey" :src="printUrl('Sales Order', so.name)" style="width: 143%; height: 143%; transform: scale(0.7); transform-origin: top left; border: 0;" title="Vista previa de la orden de venta"></iframe>
+              <!-- OV validada: las tallas extra ya no se editan, pero se siguen viendo. -->
+              <div v-else-if="so.docstatus === 1 && soVariantesForm.length">
+                <p class="p-eyebrow mb-2">Tallas extra</p>
+                <div class="space-y-3">
+                  <div v-for="g in soVariantesGrupos" :key="g.base" class="rounded-xl bg-white border border-surface-border">
+                    <p class="px-4 pt-3 pb-2 text-[13px] font-medium text-ink truncate border-b border-surface-border" :title="g.base">{{ g.nombre }}</p>
+                    <div class="divide-y divide-surface-border">
+                      <div v-for="v in g.variantes" :key="v.item_code" class="px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-2">
+                        <p class="w-48 min-w-0 text-[13px] font-medium text-ink truncate" :title="v.talla_grupo_label">{{ v.talla_grupo_label }}</p>
+                        <p class="w-24 text-[13px]"><span class="text-[11.5px] text-ink-muted">Total</span> <b class="font-semibold tabular-nums">{{ v.qty }}</b></p>
+                        <div v-if="tallasConPiezas(v).length" class="flex-1 flex flex-wrap items-center gap-1.5 pl-6 border-l border-surface-border">
+                          <span v-for="t in tallasConPiezas(v)" :key="t.code" class="p-pill-off">{{ t.label }} <b class="font-semibold text-ink">{{ t.qty }}</b></span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
+
+          <div class="grid lg:grid-cols-[360px_minmax(0,1fr)]">
+            <!-- Izquierda: campos manuales y acciones -->
+            <div class="min-w-0 p-5 space-y-5 lg:border-r border-surface-border">
+              <!-- Cancelada: se queda como historial, solo lectura y nunca como OV activa. -->
+              <div v-if="so.docstatus === 2" class="rounded-xl bg-zinc-50 border border-surface-border px-3.5 py-3">
+                <p class="text-[12.5px] font-semibold text-ink flex items-center gap-1.5"><Icono nombre="alerta" class="w-3.5 h-3.5" />Orden de venta cancelada</p>
+                <p v-if="so.motivo_cancelacion" class="text-[12px] text-ink-muted mt-0.5">{{ so.motivo_cancelacion }}</p>
+              </div>
+              <button v-else-if="activeSOName !== so.name" type="button" class="p-btn w-full h-auto min-h-[2.25rem] py-2 whitespace-normal text-[12.5px] text-brand-700 bg-brand-50 hover:bg-brand-100" @click="setActiveSO(so.name)">Usar como OV activa para Producir/Enviar/Facturar/Reportar</button>
+
+              <div>
+                <p class="p-eyebrow">Datos de la orden de venta</p>
+                <p class="p-meta mt-0.5 mb-3">Completa lo que no viene del costeo. Productos y totales son automáticos.</p>
+                <div class="grid grid-cols-2 gap-x-3 gap-y-3">
+                  <div class="col-span-2">
+                    <label class="p-field-label">Tiempo de entrega (semanas)</label>
+                    <div class="flex items-center gap-3">
+                      <input v-model.number="soForm.delivery_weeks" type="number" min="1" step="1" placeholder="Ej: 3" class="p-field w-28 tabular-nums" :disabled="so.docstatus !== 0" @input="onDeliveryWeeksChange" />
+                      <p class="text-[11.5px] text-ink-light">{{ soForm.delivery_date ? `Vigencia: ${soForm.delivery_date}` : 'Captura las semanas para calcular la fecha' }}</p>
+                    </div>
+                  </div>
+                  <div class="col-span-2"><label class="p-field-label">Condiciones de pago</label>
+                    <select v-model="soForm.payment_terms_template" class="p-field" :disabled="so.docstatus !== 0">
+                      <option value="">— Sin plantilla —</option>
+                      <option v-for="p in cotDefaults.payment_terms_templates" :key="p.name" :value="p.name">{{ p.name }}</option>
+                    </select>
+                  </div>
+                  <div class="col-span-2"><label class="p-field-label">Términos y condiciones</label>
+                    <select v-model="soForm.tc_name" class="p-field" :disabled="so.docstatus !== 0">
+                      <option value="">— Sin términos —</option>
+                      <option v-for="t in cotDefaults.terms" :key="t.name" :value="t.name">{{ t.name }}</option>
+                    </select>
+                  </div>
+                  <div class="col-span-2">
+                    <label class="p-field-label">OC del Cliente <span v-if="ocClienteEsArchivo" class="text-red-500">*</span></label>
+                    <!-- Con el campo disponible (patch v0_2_56) la OC del cliente es el
+                         ARCHIVO y es obligatoria; en un sitio que todavía no lo corrió se
+                         sigue capturando el número, para no dejar el paso sin el dato. -->
+                    <OcClienteAdjunto
+                      v-if="ocClienteEsArchivo"
+                      v-model="soForm.oc_cliente_archivo"
+                      :solo-lectura="so.docstatus !== 0" :subiendo="ocClienteSubiendo"
+                      @archivo="(ev) => subirOcCliente(ev, 'Sales Order', so.name)"
+                      @quitar="quitarOcCliente('Sales Order', so.name)"
+                    />
+                    <input v-else v-model="soForm.po_no" type="text" class="p-field" :disabled="so.docstatus !== 0" placeholder="Número de orden de compra" />
+                  </div>
+                  <div><label class="p-field-label">Moneda</label>
+                    <select v-model="soForm.currency" class="p-field" :disabled="so.docstatus !== 0">
+                      <option v-for="c in cotDefaults.currencies" :key="c.name" :value="c.name">{{ c.name }}</option>
+                    </select>
+                  </div>
+                  <div><label class="p-field-label">Lista de Precios</label>
+                    <select v-model="soForm.selling_price_list" class="p-field" :disabled="so.docstatus !== 0">
+                      <option value="">— Sin lista —</option>
+                      <option v-for="pl in cotDefaults.price_lists" :key="pl.name" :value="pl.name">{{ pl.name }}</option>
+                    </select>
+                  </div>
+                  <div class="col-span-2"><label class="p-field-label">Impuestos y Cargos</label>
+                    <select v-model="soForm.taxes_and_charges" class="p-field" :disabled="so.docstatus !== 0">
+                      <option value="">— Sin plantilla —</option>
+                      <option v-for="t in cotDefaults.tax_templates" :key="t.name" :value="t.name">{{ t.name }}</option>
+                    </select>
+                  </div>
+                  <div class="col-span-2"><label class="p-field-label">Email de contacto</label><input v-model="soForm.contact_email" type="email" class="p-field" :disabled="so.docstatus !== 0" placeholder="correo@cliente.com" /></div>
+                  <div class="col-span-2"><label class="p-field-label">WhatsApp / Móvil</label><input v-model="soForm.contact_mobile" type="tel" class="p-field" :disabled="so.docstatus !== 0" placeholder="+52 55 1234 5678" /></div>
+                </div>
+              </div>
+
+              <div class="space-y-2">
+                <template v-if="so.docstatus === 0">
+                  <FranjaAprobacion
+                    doctype="Sales Order" :name="so.name" :guardar="guardarCambiosOrdenVenta"
+                    @estado="(s) => (aprobPanel[so.name] = s)" @cambio="trasAprobacionVenta"
+                  />
+                  <button v-if="validaDirecto(so.name) && !enAprobacion(so.name)" type="button" :disabled="advancing" class="p-btn-primary w-full" @click="validarDoc('Sales Order', so.name)">
+                    <Icono nombre="check-circulo" class="w-4 h-4" />Validar orden
+                  </button>
+                  <button type="button" :disabled="advancing" class="p-btn-secondary w-full" @click="guardarCambiosOrdenVenta">Guardar cambios</button>
+                </template>
+                <div class="flex flex-wrap gap-1.5 pt-1">
+                  <button v-if="so.docstatus === 1" type="button" class="doc-action" @click="openSend('Sales Order', so.name, so.contact_email, so.contact_mobile)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
+                  <button v-if="so.docstatus !== 2" type="button" class="doc-action" @click="downloadPdf('Sales Order', so.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>Descargar</button>
+                  <button v-if="so.docstatus !== 2" type="button" class="doc-action" @click="printDocView('Sales Order', so.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>Imprimir</button>
+                  <button type="button" class="doc-action" @click="openAssign('Sales Order', so.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Asignar</button>
+                  <a class="doc-action" :href="`/app/sales-order/${so.name}`" target="_blank"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>Abrir en ERPNext</a>
+                </div>
+              </div>
+
+              <!-- Cancelar: solo quien valida documentos. Pide motivo; la OV se queda como historial. -->
+              <div v-if="so.docstatus === 1 && permisosAprob.puede_aprobar" class="pt-4 border-t border-surface-border">
+                <button type="button" class="p-btn w-full h-8 text-[12.5px] font-medium text-red-600 border border-red-200 hover:bg-red-50" @click="abrirCancelarOV(so)">Cancelar orden de venta</button>
+              </div>
+
+              <div class="pt-4 border-t border-surface-border">
+                <AttachmentsPanel doctype="Sales Order" :docname="so.name" />
+              </div>
+            </div>
+
+            <!-- Derecha: vista previa del PDF -->
+            <div class="min-w-0 border-t lg:border-t-0 border-surface-border flex flex-col">
+              <div class="flex items-center justify-between px-4 py-2 border-b border-surface-border">
+                <p class="p-eyebrow">Vista previa</p>
+                <button v-if="so.docstatus !== 2" type="button" class="doc-action" @click="openPdf('Sales Order', so.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5h-4m4 0v-4m0 4l-5-5"/></svg>Ampliar</button>
+              </div>
+              <!-- Crece hasta el final del formulario de la izquierda (nunca menos de 70vh):
+                   el iframe va absoluto y escalado a 0.7, así llena el contenedor sin
+                   depender de una altura fija. -->
+              <div class="relative flex-1 bg-zinc-50 rounded-br-xl overflow-hidden" style="min-height: 70vh;">
+                <!-- ERPNext no imprime documentos cancelados: en su lugar, un aviso. -->
+                <div v-if="so.docstatus === 2" class="absolute inset-0 flex items-center justify-center p-6 text-center">
+                  <p class="p-meta">Orden de venta cancelada: sin vista previa.</p>
+                </div>
+                <iframe v-else :key="previewKey" :src="printUrl('Sales Order', so.name)" class="absolute top-0 left-0" style="width: 143%; height: 143%; transform: scale(0.7); transform-origin: top left; border: 0;" title="Vista previa de la orden de venta"></iframe>
+              </div>
+            </div>
+          </div>
           </div>
         </div>
 
-        <p v-if="!related.sales_orders.length" class="text-center text-ink-light text-sm py-10">Todavía no hay órdenes de venta para este costeo.</p>
-
-        <!-- Crear la primera orden de venta -->
-        <div v-if="!related.sales_orders.length" class="w-80 bg-white rounded-xl border border-surface-border p-5">
-          <p class="text-sm font-semibold text-ink mb-1">Nueva orden de venta</p>
-          <p class="text-[12px] text-ink-muted mb-4">Completa lo que no viene del costeo. Productos y totales son automáticos.</p>
-
-          <label class="field-label">Tiempo de entrega (semanas)</label>
-          <input v-model.number="soForm.delivery_weeks" type="number" min="1" step="1" placeholder="Ej: 3" class="field-input mb-1" @input="onDeliveryWeeksChange" />
-          <p class="text-[10.5px] text-ink-light mb-3">{{ soForm.delivery_date ? `Vigencia: ${soForm.delivery_date}` : 'Captura las semanas para calcular la fecha' }}</p>
-
-          <label class="field-label">Condiciones de pago</label>
-          <select v-model="soForm.payment_terms_template" class="field-input mb-3">
-            <option value="">— Sin plantilla —</option>
-            <option v-for="p in cotDefaults.payment_terms_templates" :key="p.name" :value="p.name">{{ p.name }}</option>
-          </select>
-
-          <label class="field-label">Términos y condiciones</label>
-          <select v-model="soForm.tc_name" class="field-input mb-3">
-            <option value="">— Sin términos —</option>
-            <option v-for="t in cotDefaults.terms" :key="t.name" :value="t.name">{{ t.name }}</option>
-          </select>
-
-          <label class="field-label">OC del Cliente <span v-if="ocClienteEsArchivo" class="text-red-500">*</span></label>
-          <OcClienteAdjunto
-            v-if="ocClienteEsArchivo"
-            v-model="soForm.oc_cliente_archivo" class="mb-3"
-            :subiendo="ocClienteSubiendo"
-            @archivo="(ev) => subirOcCliente(ev, 'Costeo', docName)"
-            @quitar="quitarOcCliente('Costeo', docName)"
-          />
-          <input v-else v-model="soForm.po_no" type="text" class="field-input mb-3" placeholder="Número de orden de compra" />
-
-          <label class="field-label">Moneda</label>
-          <select v-model="soForm.currency" class="field-input mb-3">
-            <option v-for="c in cotDefaults.currencies" :key="c.name" :value="c.name">{{ c.name }}</option>
-          </select>
-
-          <label class="field-label">Lista de Precios</label>
-          <select v-model="soForm.selling_price_list" class="field-input mb-3">
-            <option value="">— Sin lista —</option>
-            <option v-for="pl in cotDefaults.price_lists" :key="pl.name" :value="pl.name">{{ pl.name }}</option>
-          </select>
-
-          <label class="field-label">Impuestos y Cargos</label>
-          <select v-model="soForm.taxes_and_charges" class="field-input mb-3">
-            <option value="">— Sin plantilla —</option>
-            <option v-for="t in cotDefaults.tax_templates" :key="t.name" :value="t.name">{{ t.name }}</option>
-          </select>
-
-          <label class="field-label">Email de contacto</label>
-          <input v-model="soForm.contact_email" type="email" class="field-input mb-3" placeholder="correo@cliente.com" />
-
-          <label class="field-label">WhatsApp / Móvil</label>
-          <input v-model="soForm.contact_mobile" type="tel" class="field-input mb-4" placeholder="+52 55 1234 5678" />
-
-          <div class="border-t border-surface-border pt-3 mb-4 space-y-1">
-            <div class="flex justify-between text-[13px]"><span class="text-ink-muted">Productos</span><span>{{ productos.length }}</span></div>
-            <div class="flex justify-between text-[13px]"><span class="text-ink-muted">Total venta</span><span class="font-medium">{{ fmtC(totalVenta) }}</span></div>
+        <!-- Crear la orden de venta: la primera, o una nueva si todas las anteriores
+             están canceladas (esas se quedan arriba como historial). -->
+        <div v-if="!soVivas.length" class="p-panel max-w-[560px] mx-auto mt-4">
+          <div class="px-5 pt-5">
+            <p class="p-eyebrow">Nueva orden de venta</p>
+            <p class="p-h1 mt-1">{{ related.sales_orders.length ? "Todas las órdenes de venta de este costeo están canceladas." : "Todavía no hay órdenes de venta para este costeo." }}</p>
+            <p class="p-meta mt-1">Completa lo que no viene del costeo. Productos y totales son automáticos.</p>
           </div>
-
-          <button :disabled="advancing || related.quotation?.docstatus !== 1" class="w-full h-9 text-sm font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-40 flex items-center justify-center gap-2" @click="guardarBorradorOrdenVenta">
-            <svg v-if="advancing" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-            Guardar como borrador
-          </button>
-          <p v-if="related.quotation?.docstatus !== 1" class="text-[11px] text-ink-light mt-2 text-center">Primero valida la cotización.</p>
+          <div class="px-5 pt-4 pb-5 grid grid-cols-2 gap-x-3 gap-y-3">
+            <div class="col-span-2">
+              <label class="p-field-label">Tiempo de entrega (semanas)</label>
+              <div class="flex items-center gap-3">
+                <input v-model.number="soForm.delivery_weeks" type="number" min="1" step="1" placeholder="Ej: 3" class="p-field w-28 tabular-nums" @input="onDeliveryWeeksChange" />
+                <p class="text-[11.5px] text-ink-light">{{ soForm.delivery_date ? `Vigencia: ${soForm.delivery_date}` : 'Captura las semanas para calcular la fecha' }}</p>
+              </div>
+            </div>
+            <div><label class="p-field-label">Condiciones de pago</label>
+              <select v-model="soForm.payment_terms_template" class="p-field">
+                <option value="">— Sin plantilla —</option>
+                <option v-for="p in cotDefaults.payment_terms_templates" :key="p.name" :value="p.name">{{ p.name }}</option>
+              </select>
+            </div>
+            <div><label class="p-field-label">Términos y condiciones</label>
+              <select v-model="soForm.tc_name" class="p-field">
+                <option value="">— Sin términos —</option>
+                <option v-for="t in cotDefaults.terms" :key="t.name" :value="t.name">{{ t.name }}</option>
+              </select>
+            </div>
+            <div class="col-span-2">
+              <label class="p-field-label">OC del Cliente <span v-if="ocClienteEsArchivo" class="text-red-500">*</span></label>
+              <OcClienteAdjunto
+                v-if="ocClienteEsArchivo"
+                v-model="soForm.oc_cliente_archivo"
+                :subiendo="ocClienteSubiendo"
+                @archivo="(ev) => subirOcCliente(ev, 'Costeo', docName)"
+                @quitar="quitarOcCliente('Costeo', docName)"
+              />
+              <input v-else v-model="soForm.po_no" type="text" class="p-field" placeholder="Número de orden de compra" />
+            </div>
+            <div><label class="p-field-label">Moneda</label>
+              <select v-model="soForm.currency" class="p-field">
+                <option v-for="c in cotDefaults.currencies" :key="c.name" :value="c.name">{{ c.name }}</option>
+              </select>
+            </div>
+            <div><label class="p-field-label">Lista de Precios</label>
+              <select v-model="soForm.selling_price_list" class="p-field">
+                <option value="">— Sin lista —</option>
+                <option v-for="pl in cotDefaults.price_lists" :key="pl.name" :value="pl.name">{{ pl.name }}</option>
+              </select>
+            </div>
+            <div class="col-span-2"><label class="p-field-label">Impuestos y Cargos</label>
+              <select v-model="soForm.taxes_and_charges" class="p-field">
+                <option value="">— Sin plantilla —</option>
+                <option v-for="t in cotDefaults.tax_templates" :key="t.name" :value="t.name">{{ t.name }}</option>
+              </select>
+            </div>
+            <div><label class="p-field-label">Email de contacto</label><input v-model="soForm.contact_email" type="email" class="p-field" placeholder="correo@cliente.com" /></div>
+            <div><label class="p-field-label">WhatsApp / Móvil</label><input v-model="soForm.contact_mobile" type="tel" class="p-field" placeholder="+52 55 1234 5678" /></div>
+          </div>
+          <div class="px-5 py-4 border-t border-surface-border flex items-center justify-between gap-4 bg-zinc-50/60 rounded-b-xl">
+            <div class="flex items-center gap-6">
+              <div><p class="text-[10.5px] text-ink-light">Productos</p><p class="text-[14px] font-semibold tabular-nums">{{ productos.length }}</p></div>
+              <div><p class="text-[10.5px] text-ink-light">Total venta</p><p class="text-[14px] font-semibold tabular-nums">{{ fmtC(totalVenta) }}</p></div>
+            </div>
+            <div class="text-right">
+              <button type="button" :disabled="advancing || !quotValidated" class="p-btn-primary" @click="guardarBorradorOrdenVenta">
+                <svg v-if="advancing" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                Guardar como borrador
+              </button>
+              <p v-if="!quotValidated" class="text-[11px] text-ink-light mt-1.5">Primero valida la cotización.</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1191,49 +1382,50 @@
     <!-- Modal: Generar nueva Orden de Venta (a partir de una ya validada, mismo precio acordado) -->
     <div v-if="nuevaOvModal.open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" @click.self="nuevaOvModal.open = false">
       <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-5">
-        <p class="text-sm font-semibold text-ink mb-1">Generar nueva OV</p>
-        <p class="text-[12px] text-ink-muted mb-3">Crea otra Orden de Venta con los mismos artículos y el precio ya acordado -- ajusta la cantidad de cada uno, sin volver a cotizar.</p>
+        <p class="text-[16px] font-semibold text-ink">Generar nueva OV</p>
+        <p class="p-meta mt-0.5 mb-4">Crea otra Orden de Venta con los mismos artículos -- ajusta la cantidad de cada uno, sin volver a cotizar. Cada precio es el acordado o, si no hay, el último con que se le vendió al cliente.</p>
 
         <div v-if="sosValidadas.length > 1" class="mb-4">
-          <label class="field-label">Basado en</label>
-          <select class="field-input" :value="nuevaOvModal.so?.name" @change="cambiarBaseNuevaOv($event.target.value)">
+          <label class="p-field-label">Basado en</label>
+          <select class="p-field" :value="nuevaOvModal.so?.name" @change="cambiarBaseNuevaOv($event.target.value)">
             <option v-for="so in sosValidadas" :key="so.name" :value="so.name">{{ so.name }} · {{ fmtC(so.grand_total) }}</option>
           </select>
         </div>
 
-        <div v-if="nuevaOvModal.loading" class="py-6 text-center text-ink-light text-sm">Cargando…</div>
+        <div v-if="nuevaOvModal.loading" class="py-6 text-center p-meta">Cargando…</div>
         <template v-else>
-          <div v-if="nuevaOvModal.status && !nuevaOvModal.status.puede_generar" class="rounded-lg px-3 py-2.5 mb-4" :class="nuevaOvModal.status.es_ceo ? 'bg-amber-50 border border-amber-100' : 'bg-red-50 border border-red-100'">
-            <p class="text-[11.5px] font-semibold mb-0.5" :class="nuevaOvModal.status.es_ceo ? 'text-amber-700' : 'text-red-700'">
+          <div v-if="nuevaOvModal.status && !nuevaOvModal.status.puede_generar" class="rounded-xl px-3.5 py-3 mb-4" :class="nuevaOvModal.status.es_ceo ? 'bg-amber-50 border border-amber-100' : 'bg-red-50 border border-red-100'">
+            <p class="text-[12.5px] font-semibold" :class="nuevaOvModal.status.es_ceo ? 'text-amber-800' : 'text-red-700'">
               {{ nuevaOvModal.status.vencido ? 'El precio acordado ya venció' : 'Falta fijar el precio de algún artículo' }}
             </p>
-            <p class="text-[11.5px]" :class="nuevaOvModal.status.es_ceo ? 'text-amber-600' : 'text-red-600'">
-              <template v-if="nuevaOvModal.status.es_ceo">Tienes permiso de CEO para generarla de todos modos.</template>
-              <template v-else-if="nuevaOvModal.status.vencido">Un usuario con rol CEO debe generar esta OV para desbloquearlo, o vuelve a "Fijar Precio" desde la cotización.</template>
+            <p class="text-[12px] mt-0.5" :class="nuevaOvModal.status.es_ceo ? 'text-amber-700' : 'text-red-600'">
+              <template v-if="nuevaOvModal.status.es_ceo">Tienes permiso para aprobar precios: puedes generarla de todos modos.</template>
+              <template v-else-if="nuevaOvModal.status.vencido">Alguien que apruebe precios debe generar esta OV, o vuelve a "Fijar Precio" desde la cotización.</template>
               <template v-else>Usa "Fijar Precio" desde la cotización para los artículos que falten.</template>
             </p>
           </div>
 
-          <div class="space-y-2 mb-4 max-h-64 overflow-y-auto">
-            <div v-for="row in nuevaOvModal.items" :key="row.item_code" class="flex items-center gap-2 border border-surface-border rounded-lg px-3 py-2">
+          <div class="mb-5 max-h-64 overflow-y-auto rounded-xl border border-surface-border divide-y divide-surface-border">
+            <div v-for="row in nuevaOvModal.items" :key="row.item_code" class="flex items-center gap-3 px-3.5 py-2.5">
               <div class="flex-1 min-w-0">
                 <p class="text-[13px] font-medium text-ink truncate">{{ row.item_name || row.item_code }}</p>
-                <p class="text-[11px] text-ink-light">
+                <p class="text-[11.5px] text-ink-light tabular-nums">
                   {{ fmtC(row.rate) }} c/u
-                  <template v-if="!row.tiene_precio_acordado"> · sin precio acordado</template>
-                  <template v-else-if="!row.vigente"> · vencido {{ row.valid_upto }}</template>
+                  <template v-if="!row.tiene_precio_acordado"> · último precio vendido</template>
+                  <template v-else-if="!row.vigente"> · <span class="text-amber-700">precio acordado vencido {{ row.valid_upto }}</span></template>
+                  <template v-else> · <span class="text-emerald-700">precio acordado</span></template>
                 </p>
               </div>
               <div>
-                <label class="text-[10px] text-ink-light block text-right mb-0.5">Cantidad a generar</label>
-                <input v-model.number="row.qty" type="number" min="1" step="1" class="field-input text-right" style="width: 100px;" />
+                <label class="text-[10.5px] text-ink-light block text-right mb-0.5">Cantidad a generar</label>
+                <input v-model.number="row.qty" type="number" min="1" step="1" class="p-field text-right tabular-nums" style="width: 100px;" />
               </div>
             </div>
           </div>
 
           <div class="flex justify-end gap-2">
-            <button class="px-3 py-1.5 text-[13px] text-ink-muted hover:bg-surface-raised rounded-lg" @click="nuevaOvModal.open = false">Cancelar</button>
-            <button :disabled="nuevaOvModal.generating || (nuevaOvModal.status && !nuevaOvModal.status.puede_generar && !nuevaOvModal.status.es_ceo)" class="px-4 py-1.5 text-[13px] font-medium text-white bg-brand-500 hover:bg-brand-600 disabled:opacity-50 rounded-lg" @click="confirmarNuevaOv">
+            <button type="button" class="p-btn-ghost" @click="nuevaOvModal.open = false">Cancelar</button>
+            <button type="button" :disabled="nuevaOvModal.generating || (nuevaOvModal.status && !nuevaOvModal.status.puede_generar && !nuevaOvModal.status.es_ceo)" class="p-btn-primary" @click="confirmarNuevaOv">
               {{ nuevaOvModal.generating ? "Generando…" : "Generar nueva OV" }}
             </button>
           </div>
@@ -1329,16 +1521,24 @@
         Ya viene armado desde el costeo. Arrastra un paso para reordenarlo y ajusta <span class="text-ink-muted">"recibe de"</span> solo si el material sale de otro paso.
       </p>
 
-      <div v-if="ORDER.indexOf(docStatus) >= 3" class="mt-3 text-[11.5px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 flex items-start gap-2">
-        <svg class="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
-        <span>Ya se generaron documentos de producción con esta configuración. Si cambias "recibe de" aquí, revisa que el sub-ensamblaje resultante siga coincidiendo con lo que ya se creó.</span>
+      <!-- Flujo ya confirmado: solo lectura. Para corregirlo hay que revertirlo
+           (revertir_flujo_produccion), lo que borra BOMs/Subcontracting BOMs/plan y lo
+           vuelve editable. -->
+      <div v-if="flujoBloqueado" class="mt-3 rounded-lg bg-amber-50 border border-amber-200 px-3.5 py-2.5 flex items-center gap-3">
+        <svg class="w-4 h-4 text-amber-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
+        <p class="flex-1 text-[12px] text-amber-900">
+          <span class="font-semibold">El flujo ya está confirmado</span> y sus documentos de producción (BOMs, Subcontracting BOMs y plan) ya se crearon, así que no se puede editar.
+          Si hay que corregir algo, revierte el flujo: se borran esos documentos y esta pantalla se vuelve a poder editar.
+        </p>
+        <button v-if="docStatus === 'En Producción'" type="button" class="flex-shrink-0 px-3 py-1.5 text-[12.5px] font-medium text-red-700 bg-white border border-red-200 rounded-lg hover:bg-red-50" @click="confirmRevertir.open = true">Revertir flujo</button>
       </div>
 
       <div v-if="flujoLoading" class="flex justify-center py-16 text-ink-xlight">
         <svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
       </div>
 
-      <div v-for="prod in flujoOps" v-else :key="prod.finished_item" class="mt-7 first:mt-6">
+      <fieldset v-else :disabled="flujoBloqueado" class="border-0 p-0 m-0 min-w-0">
+      <div v-for="prod in flujoOps" :key="prod.finished_item" class="mt-7 first:mt-6">
         <div class="flex items-baseline justify-between mb-1">
           <span class="text-[12.5px] font-medium text-ink truncate">{{ prod.finished_item }}</span>
           <span class="text-[11.5px] text-ink-light flex-shrink-0 ml-3">{{ (prod.qty || 0).toLocaleString('es-MX') }} pzas</span>
@@ -1499,9 +1699,9 @@
                     <th class="text-left font-medium text-ink-muted px-3 py-2 min-w-[220px]">Servicio</th>
                     <th v-for="(sub, si) in prod.sub_ensamblajes" :key="si" class="px-2 py-1.5 align-top" style="width: 96px">
                       <input
-                        v-model="sub.nombre" type="text" placeholder="Ej. Puños"
+                        v-model="sub.nombre" v-mayus type="text" placeholder="Ej. PUÑOS"
                         class="w-full text-[11.5px] text-center px-1 py-0.5 rounded ring-1 ring-inset ring-surface-border focus:ring-brand-400 focus:outline-none"
-                        @input="flujoDirty = true"
+                        @input="flujoDirty = true; piezasEditando = true"
                       />
                       <div class="flex items-center justify-center gap-1 mt-1">
                         <span class="text-[10px] text-ink-light">×</span>
@@ -1509,7 +1709,7 @@
                           v-model.number="sub.multiplicador" type="number" min="1" step="1"
                           title="Cuántas de esta pieza lleva UNA prenda (2 puños, 1 frente)"
                           class="w-9 text-[10.5px] text-center px-0.5 py-px rounded ring-1 ring-inset ring-surface-border focus:ring-brand-400 focus:outline-none"
-                          @input="flujoDirty = true"
+                          @input="flujoDirty = true; piezasEditando = true"
                         />
                         <button type="button" class="mini-icon-btn" title="Quitar pieza" @click="quitarSubEnsamblaje(prod, si)">
                           <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
@@ -1523,15 +1723,26 @@
                     <td class="px-3 py-1.5">
                       <div class="text-ink truncate" :title="c.titulo">{{ c.titulo }}</div>
                       <div class="text-[10.5px] text-ink-light truncate">{{ c.supplier }}</div>
-                      <div v-if="c.arma" class="text-[10.5px] font-medium text-green-700">Aquí se unen todas las piezas</div>
+                      <div v-if="c.arma" class="text-[10.5px] font-medium text-green-700">Aquí se unen todas las piezas<span v-if="!c.elegida" class="font-normal text-ink-light"> · detectado automáticamente</span></div>
                       <div v-else-if="c.armada" class="text-[10.5px] text-ink-muted">Trabaja la prenda armada</div>
+                      <button
+                        v-if="!c.terminal && c.primero && prod.sub_ensamblajes.length && (c.elegida || !c.conPiezas)"
+                        type="button"
+                        class="mt-0.5 text-[10.5px] font-medium"
+                        :class="c.elegida ? 'text-ink-light hover:text-ink-muted' : 'text-brand-600 hover:text-brand-700'"
+                        :title="c.elegida ? 'Ya no es el paso donde se unen las piezas' : 'En este paso se juntan todas las piezas para armar la prenda; de aquí en adelante se trabaja la prenda armada'"
+                        @click="elegirUnion(prod, c.op_key)"
+                      >{{ c.elegida ? "Quitar unión" : (c.arma ? "Confirmar: aquí se unen" : "Aquí se unen las piezas") }}</button>
                     </td>
                     <td v-for="(sub, si) in prod.sub_ensamblajes" :key="si" class="text-center px-2 py-1.5">
                       <!-- Donde se arma: todas las piezas llegan aquí y salen como UNA prenda.
                            Sigue siendo clic-able: marcar una pieza aquí dice que se trabaja
                            por separado, y entonces la unión se recalcula. -->
+                      <span v-if="c.elegida" class="w-5 h-5 rounded-full flex items-center justify-center mx-auto bg-green-50 text-green-600 ring-1 ring-inset ring-green-300" title="Aquí se unen todas las piezas en una sola prenda">
+                        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.6"><path stroke-linecap="round" stroke-linejoin="round" d="M6 4v5a6 6 0 006 6m6-11v5a6 6 0 01-6 6m0 0v5"/></svg>
+                      </span>
                       <button
-                        v-if="(c.arma || c.armada) && !c.terminal"
+                        v-else-if="(c.arma || c.armada) && !c.terminal"
                         type="button"
                         class="w-5 h-5 rounded-full flex items-center justify-center mx-auto transition-colors"
                         :class="c.arma ? 'bg-green-50 text-green-600 ring-1 ring-inset ring-green-300 hover:ring-green-500' : 'text-ink-light hover:text-ink-muted'"
@@ -1539,7 +1750,7 @@
                         @click="toggleSubEnsamblajeStage(sub, c.stage_id)"
                       >
                         <svg v-if="c.arma" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.6"><path stroke-linecap="round" stroke-linejoin="round" d="M6 4v5a6 6 0 006 6m6-11v5a6 6 0 01-6 6m0 0v5"/></svg>
-                        <svg v-else class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                        <span v-else class="text-[12px] leading-none text-ink-xlight">—</span>
                       </button>
                       <button
                         v-else-if="!c.terminal"
@@ -1559,16 +1770,19 @@
                 </tbody>
               </table>
             </div>
+            <p v-if="prod.sub_ensamblajes.length && !prod.union_op_key" class="mt-2 text-[11px] text-ink-light">Marca por qué servicios pasa cada pieza y, en el paso donde se juntan para armar la prenda, presiona "Aquí se unen las piezas".</p>
           </div>
         </div>
       </div>
 
-      <div class="flex justify-end items-center gap-3 mt-8">
+      </fieldset>
+
+      <div v-if="!flujoBloqueado" class="flex justify-end items-center gap-3 mt-8">
         <span v-if="flujoDirty" class="text-[11.5px] text-ink-light">Cambios sin guardar</span>
         <button :disabled="advancing || flujoLoading || guardandoFlujo" class="px-4 py-2 text-[13px] font-medium text-ink bg-white border border-surface-border rounded-lg hover:bg-surface-raised disabled:opacity-50 transition-colors" @click="guardarCambiosFlujo">
           {{ guardandoFlujo ? "Guardando…" : "Guardar cambios" }}
         </button>
-        <button :disabled="advancing || flujoLoading || guardandoFlujo" class="px-4 py-2 text-[13px] font-medium text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex items-center gap-1.5 transition-colors" @click="confirmarFlujo">
+        <button :disabled="advancing || flujoLoading || guardandoFlujo" class="px-4 py-2 text-[13px] font-medium text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50 flex items-center gap-1.5 transition-colors" @click="pedirConfirmarFlujo(confirmarFlujo)">
           {{ advancing ? "Preparando…" : "Confirmar y pasar a producción" }}
           <svg v-if="!advancing" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5-5 5M6 12h12"/></svg>
         </button>
@@ -1842,7 +2056,7 @@
               <div class="flex items-center justify-between mb-1.5">
                 <div>
                   <p class="section-title">Lotes de entrega (opcional)</p>
-                  <p class="text-[11px] text-ink-light">Si la producción se va a escalonar en varias tandas, indica aquí cuántas PRENDAS lleva cada lote — la materia prima que le corresponde se calcula sola. Al validar se crean todas las órdenes de compra de un jalón, ya con su cantidad y fecha.<template v-if="hayTallasEnLotes"> Los productos con tallas capturadas en la orden de venta se reparten TALLA POR TALLA: cada talla debe sumar exacto lo que pide la orden de venta, y las prendas del lote salen de esa suma.</template></p>
+                  <p class="text-[11px] text-ink-light">Si la producción se va a escalonar en varias tandas, indica aquí cuántas PRENDAS lleva cada lote — la materia prima que le corresponde se calcula sola. Al validar se crean todas las órdenes de compra de un jalón, ya con su cantidad y fecha. Si no la divides, toda la solicitud queda como un solo lote.<template v-if="hayTallasEnLotes"> Los productos con tallas capturadas en la orden de venta se reparten TALLA POR TALLA: cada talla debe sumar exacto lo que pide la orden de venta, y las prendas del lote salen de esa suma.</template></p>
                 </div>
                 <button class="add-link shrink-0" @click="addMrLote(); actualizarPreviewLotes()"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Lote</button>
               </div>
@@ -1972,8 +2186,8 @@
           />
           <template v-else>
             <div v-if="!omCompleta" class="p-note">
-              Todavía falta capturar la ficha de manufactura ({{ omCapturadas.capturadas }} de {{ omCapturadas.total }}).
-              Las órdenes se pueden mandar igual: la ficha se arma al imprimirlas, así que lo que captures después también les llega.
+              Todavía falta capturar la orden de manufactura ({{ omCapturadas.capturadas }} de {{ omCapturadas.total }}).
+              Hasta tenerla no se pueden validar estas órdenes: cada una le lleva su ficha al taller.
             </div>
             <div class="p-panel">
               <FilaLista
@@ -1984,7 +2198,7 @@
               >
                 <template #derecha>
                   <span class="p-num text-[13px] w-28 text-right">{{ fmtC(oc.grand_total ?? oc.base_net_total) }}</span>
-                  <Pill :estado="oc.docstatus === 1 ? 'ok' : 'wait'" :texto="oc.docstatus === 1 ? 'Validada' : 'Borrador'" ancho="w-24" />
+                  <Pill :estado="oc.docstatus === 1 ? 'ok' : 'wait'" :texto="oc.docstatus === 1 ? (oc.enviado_el ? 'Enviada' : 'Validada') : 'Borrador'" ancho="w-24" />
                 </template>
               </FilaLista>
             </div>
@@ -2994,7 +3208,7 @@
         @cerrar="panelOcTaller.abierto = false"
       >
         <template #pill>
-          <Pill :estado="subValidated ? 'ok' : 'wait'" :texto="subValidated ? 'Validada' : 'Borrador'" />
+          <Pill :estado="subValidated ? 'ok' : 'wait'" :texto="subValidated ? (subPo?.enviado_el ? 'Enviada' : 'Validada') : 'Borrador'" />
         </template>
         <template #enlaces>
           <!-- Dos PDF distintos del MISMO documento: la orden de compra a ese taller
@@ -3005,7 +3219,7 @@
                   @click="downloadPdfFmt('Purchase Order', subPo.name, 'Orden de Maquila')">Orden ⤓</button>
           <button v-if="subPo" class="p-btn-ghost h-8 text-[12.5px] px-2" title="PDF de la ficha de manufactura de este taller, con sus PDF anexos unidos al final"
                   @click="descargarFicha(subPo.name)">Ficha ⤓</button>
-          <button v-if="subPo" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="openPdf('Purchase Order', subPo.name)">Vista previa</button>
+          <button v-if="subPo" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="panelOcTaller.abierto = false; openPdf('Purchase Order', subPo.name)">Vista previa</button>
           <a v-if="subPo" class="p-btn-ghost h-8 text-[12.5px] px-2" :href="`/app/purchase-order/${subPo.name}`" target="_blank">ERPNext ↗</a>
         </template>
         <VacioEstado v-if="panelOcTaller.error" icono="alerta" titulo="No se pudo abrir la orden" :detalle="panelOcTaller.error" />
@@ -3015,8 +3229,22 @@
             v-if="!subValidated" class="mb-4" doctype="Purchase Order" :name="subPo.name" :guardar="guardarSub"
             @estado="(s) => (aprobPanel[subPo.name] = s)" @cambio="trasAprobacionSub"
           />
+          <!-- Datos fiscales del taller: sin alta en el SAT no emite factura, así que la
+               orden (y su factura interna) van sin IVA. Es dato del proveedor: vale para
+               todas sus órdenes nuevas (costeo_api.marcar_proveedor_sin_alta_sat). -->
+          <div class="rounded-xl border border-surface-border px-4 py-3 mb-4">
+            <p class="p-eyebrow mb-2">Datos fiscales del taller</p>
+            <label class="flex items-start gap-2.5" :class="subValidated ? 'opacity-70' : 'cursor-pointer'">
+              <input type="checkbox" class="mt-0.5 accent-brand-500" :checked="!!subPo.sin_alta_sat" :disabled="subValidated || advancing" @change="cambiarAltaSat($event.target.checked)" />
+              <span>
+                <span class="block text-[13px] font-medium text-ink">Sin alta en el SAT</span>
+                <span class="block text-[11.5px] text-ink-muted">No emite factura: la orden va sin IVA y el pago se respalda con un recibo interno.</span>
+              </span>
+            </label>
+          </div>
+          <EntregasTaller :po="subPo.name" />
           <PurchaseDocPanel
-            sin-acciones
+            sin-acciones con-importes
             :doc="subPo" :items="subItems" :form="subForm" desk-route="purchase-order"
             :payment-terms-options="cotDefaults.payment_terms_templates" :terms-options="cotDefaults.terms"
             :advancing="advancing"
@@ -3075,6 +3303,7 @@
       >
         <template #enlaces>
           <button v-if="pinvDoc" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="downloadPdf('Purchase Invoice', pinvDoc.name)">Descargar</button>
+          <button v-if="pinvDoc" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="panelFactura.abierto = false; openPdf('Purchase Invoice', pinvDoc.name)">Vista previa</button>
           <button v-if="pinvDoc" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="printDocView('Purchase Invoice', pinvDoc.name)">Imprimir</button>
           <a v-if="pinvDoc" class="p-btn-ghost h-8 text-[12.5px] px-2" :href="`/app/purchase-invoice/${pinvDoc.name}`" target="_blank">ERPNext ↗</a>
         </template>
@@ -3138,7 +3367,7 @@
     <div v-else-if="activeStep === 7" class="p-5 pb-20">
       <!-- Solo la factura de VENTA: las de compra viven como último paso de cada flujo (Producción). -->
       <div class="max-w-6xl mx-auto mb-4">
-        <ActiveSOSelector :sales-orders="related.sales_orders" :active-name="activeSOName" @update:active-name="setActiveSO" class="mb-3" />
+        <ActiveSOSelector :sales-orders="soVivas" :active-name="activeSOName" @update:active-name="setActiveSO" class="mb-3" />
         <div class="flex items-center gap-1.5 bg-green-50 text-green-700 text-[12px] font-medium px-3 py-2 rounded-lg mb-3 w-max"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>{{ related.delivery_notes.length > 1 ? `${related.delivery_notes.length} remisiones validadas` : `Remisión ${related.delivery_notes[0]?.name} validada` }} · mercancía entregada</div>
       </div>
 
@@ -3233,7 +3462,7 @@
 
     <div v-else-if="activeStep === 8" class="p-5 pb-20">
       <div class="max-w-5xl mx-auto mb-4">
-        <ActiveSOSelector :sales-orders="related.sales_orders" :active-name="activeSOName" @update:active-name="setActiveSO" />
+        <ActiveSOSelector :sales-orders="soVivas" :active-name="activeSOName" @update:active-name="setActiveSO" />
       </div>
       <ReporteFinalPanel :r="reporte" :loading="reporteLoading" />
     </div>
@@ -3260,23 +3489,38 @@
 
     <HistorialModal :open="showHistorialModal" :costeo="docName" @close="showHistorialModal = false" />
 
-    <!-- Crear revisión modal -->
+    <!-- Editar costeo (lo regresa a borrador, ver costeo_api.reabrir_costeo) -->
     <div v-if="showRevisionModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" @click.self="showRevisionModal = false">
       <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
-        <p class="text-sm font-semibold text-ink mb-2">Crear revisión</p>
-        <p class="text-[12.5px] text-ink-muted mb-4">Se creará una nueva revisión de {{ docName }} para poder editarla. Este costeo queda guardado como historial.</p>
-        <label class="field-label">Motivo de la revisión (opcional)</label>
+        <p class="text-sm font-semibold text-ink mb-2">Editar costeo</p>
+        <p class="text-[12.5px] text-ink-muted mb-4">{{ docName }} vuelve a borrador para corregirlo. La cotización rechazada se queda en el historial de este mismo costeo. Al terminar, valídalo de nuevo y crea la nueva cotización.</p>
+        <label class="field-label">Qué se va a corregir (opcional)</label>
         <textarea v-model="revisionMotivo" rows="3" class="field-input mb-4" placeholder="Ej: cliente pidió ajustar el precio…"></textarea>
         <div class="flex justify-end gap-2">
           <button class="px-3 py-1.5 text-[13px] text-ink-muted hover:bg-surface-raised rounded-lg" @click="showRevisionModal = false">Cancelar</button>
           <button :disabled="revisionCreating" class="px-4 py-1.5 text-[13px] font-medium text-white bg-brand-500 hover:bg-brand-600 disabled:opacity-50 rounded-lg" @click="confirmarRevision">
-            {{ revisionCreating ? "Creando…" : "Crear revisión" }}
+            {{ revisionCreating ? "Abriendo…" : "Editar costeo" }}
           </button>
         </div>
       </div>
     </div>
 
     <!-- Rechazar cotización modal -->
+    <div v-if="cancelarOV.name" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" @click.self="cancelarOV.name = ''">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
+        <p class="text-sm font-semibold text-ink mb-1">Cancelar {{ cancelarOV.name }}</p>
+        <p class="text-[12px] text-ink-muted mb-3">La orden se queda en el costeo como historial.</p>
+        <label class="field-label">Motivo <span class="text-red-500">*</span></label>
+        <textarea v-model="cancelarOV.motivo" rows="3" class="field-input mb-4" placeholder="Ej: el cliente canceló el pedido…"></textarea>
+        <div class="flex justify-end gap-2">
+          <button class="px-3 py-1.5 text-[13px] text-ink-muted hover:bg-surface-raised rounded-lg" @click="cancelarOV.name = ''">Volver</button>
+          <button :disabled="advancing || cancelarOV.motivo.trim().length < 5" class="px-4 py-1.5 text-[13px] font-medium text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 rounded-lg" @click="confirmarCancelarOV">
+            {{ advancing ? "Cancelando…" : "Cancelar orden" }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div v-if="showRechazarModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" @click.self="showRechazarModal = false">
       <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
         <p class="text-sm font-semibold text-ink mb-2">Marcar como rechazada</p>
@@ -3352,8 +3596,11 @@ import TiraRecibos from "@/components/TiraRecibos.vue";
 import OrdenManufacturaForm from "@/components/OrdenManufacturaForm.vue";
 import OmGeneralEditor from "@/components/OmGeneralEditor.vue";
 import OmTallerView from "@/components/OmTallerView.vue";
+import EntregasTaller from "@/components/EntregasTaller.vue";
 import ActiveSOSelector from "@/components/ActiveSOSelector.vue";
 import DialogoPrecio from "@/components/DialogoPrecio.vue";
+import Icono from "@/components/Icono.vue";
+import DialogoImagen from "@/components/DialogoImagen.vue";
 import FranjaAprobacion from "@/components/aprobacion/FranjaAprobacion.vue";
 import BotonActividad from "@/components/aprobacion/BotonActividad.vue";
 import ActividadPlegable from "@/components/aprobacion/ActividadPlegable.vue";
@@ -3392,7 +3639,7 @@ const ORDER = ["Borrador", "Cotizado", "Orden de Venta", "En Producción", "Entr
 // Producción" son dos vistas de la misma preparación bajo "Orden de Venta", ninguna
 // dispara su propio costeo_status.
 const STEP_ORDER_IDX = [0, 1, 2, null, null, 3, null, 4, null];
-function statusToStep(status, hasPlanAlready, etapasCount = 0, pendientesCount = 0) {
+function statusToStep(status, hasPlanAlready, etapasCount = 0, pendientesCount = 0, ovValidada = false) {
   const statusIdx = Math.max(ORDER.indexOf(status), 0);
   if (statusIdx >= 5) return 8; // Completado -- ya no queda nada más que ver salvo Reportar
   let target = 0;
@@ -3405,16 +3652,19 @@ function statusToStep(status, hasPlanAlready, etapasCount = 0, pendientesCount =
   // YA existe para adivinar dónde se quedó exactamente:
   //   - ya hay Plan de producción -> el flujo ya se guardó y se pasó a producción,
   //     de sobra pasado Flujo de Producción.
-  //   - hay artículos de texto libre sin resolver -> todavía falta Alta de
-  //     Productos, aunque ya haya etapas capturadas (pudo dejarlas a medias).
   //   - no hay pendientes pero ya hay etapas capturadas -> Alta de Productos ya
   //     está resuelto, lo que sigue es Flujo de Producción.
-  //   - nada de lo anterior (recién validada, nada capturado) -> se queda en
-  //     Vender, como antes.
+  //   - lo demás (OV recién validada, Alta de Productos sin empezar) -> se queda
+  //     en Vender: después de validar todavía falta ENVIAR la OV al cliente, y
+  //     Alta de Productos ya queda habilitada para abrirla cuando toque.
+  //   - pero nada de eso cuenta mientras la OV activa siga en borrador: el estado
+  //     "Orden de Venta" llega desde que la OV se crea, y sin validarla no se pasa
+  //     de Vender (ni al reabrir el proyecto ni desde la barra de etapas).
   if (statusIdx === 2) {
-    if (hasPlanAlready) target = 4;
-    else if (pendientesCount > 0) target = 3;
-    else if (etapasCount > 0) target = 4;
+    if (!ovValidada) target = 2;
+    else if (hasPlanAlready) target = 4;
+    else if (pendientesCount === 0 && etapasCount > 0) target = 4;
+    else target = 2;
   }
   return target;
 }
@@ -3458,7 +3708,9 @@ async function refreshNuevaOvGate() {
   nuevaOvGate.loading = true;
   try {
     const res = await call("costeo_yelke.api.costeo_api.get_precio_acordado_status", { sales_order: base.name });
-    nuevaOvGate.show = res.puede_generar || res.vencido;
+    // Siempre que haya una OV validada de base: sin precio acordado se usa el último
+    // precio vendido (ver _precio_nueva_ov); solo un acordado vencido pide permiso.
+    nuevaOvGate.show = true;
     nuevaOvGate.vencido = !!res.vencido;
     nuevaOvGate.esCeo = !!res.es_ceo;
   } catch { nuevaOvGate.show = false; nuevaOvGate.vencido = false; }
@@ -3507,7 +3759,55 @@ async function confirmarNuevaOv() {
   finally { nuevaOvModal.generating = false; }
 }
 const confirmCancel = reactive({ open: false, loading: false });
-const materializeModal = reactive({ open: false, saving: false, text: "", suggestedPrice: 0, suggestedDescription: "", suggestedImage: "" });
+// ── Confirmar / revertir el flujo de producción ──
+// Confirmado = el costeo ya está en producción: el flujo es de solo lectura (el
+// servidor también lo exige, ver _exigir_flujo_editable) hasta revertirlo.
+const flujoBloqueado = computed(() => ORDER.indexOf(docStatus.value) >= 3);
+const confirmFlujoDlg = reactive({ open: false, accion: null });
+const confirmRevertir = reactive({ open: false, loading: false });
+// Resumen para revisar antes de confirmar: por producto, pasos, piezas, dónde se
+// unen (elegido o deducido) y los avisos que la pantalla ya marca con ícono.
+const resumenConfirmarFlujo = computed(() => (flujoOps.value || []).map((prod) => {
+  const ops = prod.operaciones || [];
+  const armado = armadoVivo(prod);
+  const union = ops.find((o) => o.op_key === armado.ensamble);
+  const avisos = [...(prod.avisos || [])];
+  ops.forEach((op) => {
+    if (opIncompleta(op)) avisos.push(`"${supplierLabel(prod, op)}" tiene datos incompletos (proveedor o servicio).`);
+    if (esHuerfano(prod, op)) avisos.push(`"${supplierLabel(prod, op)}" no alimenta a ningún otro paso.`);
+    if (recibeRedundantesVivo(prod, op).size) avisos.push(`"${supplierLabel(prod, op)}" recibe de más pasos de los necesarios (${recibeRedundanteTexto(prod, op)}).`);
+  });
+  return {
+    producto: prod.finished_item, pasos: ops.length, piezas: (prod.sub_ensamblajes || []).filter((s) => (s.nombre || "").trim()).length,
+    union: union ? `${supplierLabel(prod, union)}${armado.elegida ? "" : " (deducido por el sistema)"}` : "",
+    avisos,
+  };
+}));
+function pedirConfirmarFlujo(accion) {
+  confirmFlujoDlg.accion = accion;
+  confirmFlujoDlg.open = true;
+}
+async function aceptarConfirmarFlujo() {
+  const accion = confirmFlujoDlg.accion;
+  confirmFlujoDlg.open = false;
+  if (accion) await accion();
+}
+async function revertirFlujo() {
+  confirmRevertir.loading = true;
+  try {
+    const r = await call("costeo_yelke.api.costeo_api.revertir_flujo_produccion", { costeo: docName.value });
+    confirmRevertir.open = false;
+    await loadCosteoData();
+    activeStep.value = 4;
+    await loadFlujoOps();
+    showToast(`Flujo revertido: se borraron ${r.boms.length} BOM y ${r.subcontracting_boms.length} Subcontracting BOM. Ya puedes corregirlo.`);
+  } catch (e) {
+    showToast(e.message || "No se pudo revertir el flujo", "error");
+  } finally {
+    confirmRevertir.loading = false;
+  }
+}
+const materializeModal = reactive({ open: false, saving: false, text: "", suggestedPrice: 0, suggestedDescription: "", suggestedImage: "", suggestedCode: "", esVariante: false, tallasExtra: [], soloTallas: false });
 const pendientesArticulos = ref([]);
 const pendientesContext = reactive({ company: "", almacen_materias_primas: "", almacen_trabajo_en_proceso: "" });
 const pendientesAdvertencias = ref([]);
@@ -3694,7 +3994,7 @@ async function scrollToStable(id, maxMs = 3000) {
 }
 const docState = ref(0); // docstatus del Costeo: 0 borrador, 1 validado
 const activeStep = ref(0);
-const related = reactive({ quotation: null, quotations: [], sales_order: null, sales_orders: [], delivery_notes: [], delivery_per_delivered: 0, sales_invoice: null });
+const related = reactive({ quotation: null, quotations: [], quotations_historial: [], sales_order: null, sales_orders: [], delivery_notes: [], delivery_per_delivered: 0, sales_invoice: null });
 const cotForm = reactive({
   valid_till: "", payment_terms_template: "", tc_name: "", custom_tipo_formato: "Normal",
   currency: "MXN", selling_price_list: "", taxes_and_charges: "", contact_email: "", contact_mobile: "",
@@ -3885,30 +4185,38 @@ function toggleSalesOrder(so) {
 // Las variantes de talla de este Costeo ya están cargadas en `productos` --
 // no hace falta pedirlas aparte al servidor.
 const variantesDelCosteo = computed(() => productos.value.filter(p => p.variante_talla_de));
-
-// La descripción guardada trae líneas "- <talla> × <qty> pza(s)" (ver
-// costeo_api._build_variante_description) -- se usan para RECUPERAR el
-// desglose que el usuario ya había guardado, en vez de perderlo cada vez que
-// se recarga el formulario. Devuelve null si no encuentra nada reconocible
-// (variante recién agregada, todavía sin desglose guardado).
-function parseDesgloseDeDescripcion(description, tallas) {
-  // `tallas` = [{code, label}, ...] -- la descripción imprime el LABEL
-  // (_talla_label(code), ej. "XXL"), no el code real del doctype Talla (ej.
-  // "XXL - CAB-LETRA") -- hay que buscar por label, pero el resultado se
-  // devuelve con el code como llave (es lo que espera `desglose` al mandarlo
-  // de vuelta al guardar).
-  if (!description) return null;
-  const encontrado = {};
-  let algo = false;
-  for (const t of tallas) {
-    const escapado = t.label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const m = description.match(new RegExp(`-\\s*${escapado}\\s*×\\s*([\\d.]+)\\s*pza`));
-    if (m) { encontrado[t.code] = Number(m[1]); algo = true; }
+// Las tallas extra de la OV agrupadas bajo su producto: "Caballero XXL" a secas no dice
+// si es del pantalón o de la camisola.
+const soVariantesGrupos = computed(() => {
+  const grupos = [];
+  for (const v of soVariantesForm.value) {
+    let g = grupos.find(x => x.base === v.base);
+    if (!g) grupos.push(g = { base: v.base, nombre: v.base_nombre, variantes: [] });
+    g.variantes.push(v);
   }
-  if (!algo) return null;
-  for (const t of tallas) if (!(t.code in encontrado)) encontrado[t.code] = 0;
-  return encontrado;
+  return grupos;
+});
+// ¿La OV abierta tiene algo de tallas que mostrar (capturable o ya validado)?
+function hayTallasOV(so) {
+  if (so.docstatus === 0) return !!(soDesgloseForm.value.length || variantesDelCosteo.value.length);
+  if (so.docstatus === 1) return soDesgloseForm.value.some((d) => (d.filas || []).length) || !!soVariantesForm.value.length;
+  return false;
 }
+// Orden de la lista de Costear: cada variante de talla justo debajo de su producto base
+// (en el orden en que se crearon), no al final de todos los productos. Solo cambia
+// cómo se dibuja: `productos` conserva su orden (es el que se guarda).
+const productosApilados = computed(() => {
+  const lista = productos.value;
+  const bases = new Set(lista.filter(p => !p.variante_talla_de).map(p => p.finished_item));
+  const out = [];
+  for (const p of lista) {
+    if (p.variante_talla_de && bases.has(p.variante_talla_de)) continue;
+    out.push(p);
+    if (!p.variante_talla_de && p.finished_item) out.push(...lista.filter(v => v.variante_talla_de === p.finished_item));
+  }
+  return out;
+});
+
 // ── Desglose por talla del producto principal (api/tallas_ov.py) ──
 const soDesgloseForm = ref([]);
 const soDesgloseSaving = ref(false);
@@ -3930,9 +4238,13 @@ async function loadSoDesgloseForm(so, forzar = false) {
     soDesgloseForm.value = (filas || []).map((f) => {
       const valores = {};
       for (const x of f.filas || []) valores[x.talla] = x.qty;
-      const primera = allTallas.value.find((t) => t.name === (f.filas || [])[0]?.talla);
-      return { ...f, valores, verTodas: false,
-               genero: primera?.genero || "", grupo: primera?.parent_talla || "" };
+      // Un bloque por cada tipo de talla que ya trae piezas (Caballero y Dama pueden ir juntos).
+      const bloques = [];
+      for (const x of f.filas || []) {
+        const t = allTallas.value.find((y) => y.name === x.talla);
+        if (t && !bloques.some((b) => b.grupo === t.parent_talla)) bloques.push({ genero: t.genero || "", grupo: t.parent_talla || "" });
+      }
+      return { ...f, valores, bloques: bloques.length ? bloques : [{ genero: "", grupo: "" }] };
     });
   } catch { soDesgloseForm.value = []; soDesgloseDe.value = null; }
 }
@@ -3947,6 +4259,7 @@ async function guardarDesgloseOV(so) {
   soDesgloseSaving.value = true;
   try {
     for (const d of soDesgloseForm.value) {
+      limpiarDesglose(d);
       const filas = Object.entries(d.valores).filter(([, q]) => Number(q) > 0).map(([talla, qty]) => ({ talla, qty: Number(qty) }));
       await call("costeo_yelke.api.tallas_ov.guardar_desglose_tallas_ov", { sales_order: so.name, row: d.row, filas: JSON.stringify(filas) });
     }
@@ -3969,9 +4282,41 @@ const soVariantesDe = ref(null);
 // Las tallas de una variante que de verdad llevan piezas -- para enseñarlas
 // cuando la OV ya está validada y el desglose ya no se puede editar.
 function tallasConPiezas(v) {
-  return (v.tallas || [])
+  return (v.codigos || [])
     .map((t) => ({ ...t, qty: Number(v.desglose?.[t.code]) || 0 }))
     .filter((t) => t.qty > 0);
+}
+function totalVariante(v) {
+  return Object.values(v.desglose || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+}
+// Tallas que se le pueden agregar a una variante: las NO regulares (sin uso común) del
+// mismo tipo de talla que ya cubre -- las regulares van en el desglose del producto base.
+function tallasExtraDisponibles(v) {
+  const grupos = new Set(v.codigos.map(t => allTallas.value.find(x => x.name === t.code)?.parent_talla).filter(Boolean));
+  if (!grupos.size) for (const g of gruposDeGenero(v.genero)) grupos.add(g.name);
+  const ya = new Set(v.codigos.map(t => t.code));
+  return allTallas.value.filter(t => !t.is_group && grupos.has(t.parent_talla) && !t.uso_comun && !ya.has(t.name));
+}
+function agregarTallaVariante(v, code) {
+  const t = allTallas.value.find(x => x.name === code);
+  if (!t || v.codigos.some(c => c.code === code)) return;
+  v.codigos.push({ code, label: t.talla });
+  v.desglose[code] = 0;
+}
+// Recupera el reparto guardado de la descripción de la línea ("- 5XL × 3 pza(s)"),
+// incluidas tallas que se agregaron en la OV y que la variante no traía de origen.
+function desgloseGuardadoVariante(description, v) {
+  const out = {};
+  for (const m of (description || "").replace(/<[^>]+>/g, "\n").matchAll(/-\s*(.+?)\s*×\s*([\d.,]+)\s*pza/g)) {
+    const label = m[1].trim();
+    const propia = v.tallas.find(t => t.label === label);
+    // Una misma etiqueta ("46") existe en varios tipos de talla: primero el de la variante.
+    const grupos = new Set(v.tallas.map(c => allTallas.value.find(x => x.name === c.code)?.parent_talla));
+    const candidatas = allTallas.value.filter(x => !x.is_group && x.talla === label && (!v.genero || x.genero === v.genero));
+    const t = propia ? { name: propia.code } : (candidatas.find(x => grupos.has(x.parent_talla)) || candidatas[0]);
+    if (t) out[t.name] = Number(m[2].replace(/,/g, ""));
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 async function loadSoVariantesForm(so, forzar = false) {
@@ -3987,6 +4332,7 @@ async function loadSoVariantesForm(so, forzar = false) {
   const soloLectura = so.docstatus !== 0;
   soVariantesLoading.value = true;
   try {
+    await loadAllTallas();
     const [data, variantes] = await Promise.all([
       call("costeo_yelke.api.sales_order_api.get_sales_order", { name: so.name }),
       call("costeo_yelke.api.costeo_api.listar_variantes_de_costeo", { costeo: docName.value }),
@@ -4003,23 +4349,31 @@ async function loadSoVariantesForm(so, forzar = false) {
       // Solo si no hay nada que recuperar (variante nueva, sin guardar
       // todavía) se arranca con un reparto parejo de punto de partida.
       const desglose = {};
-      if (tallas.length > 1) {
-        const recuperado = parseDesgloseDeDescripcion(linea?.description, tallas);
-        if (recuperado) {
-          Object.assign(desglose, recuperado);
-        } else if (!soloLectura) {
-          const base = Math.floor(qty / tallas.length);
-          let resto = Math.round(qty) - base * tallas.length;
-          for (const t of tallas) {
-            desglose[t.code] = base + (resto > 0 ? 1 : 0);
-            if (resto > 0) resto--;
-          }
+      const recuperado = desgloseGuardadoVariante(linea?.description, { tallas, genero: v.genero });
+      if (recuperado) {
+        Object.assign(desglose, recuperado);
+      } else if (tallas.length) {
+        // Sin reparto guardado: parejo entre sus tallas como punto de partida.
+        const base = Math.floor(qty / tallas.length);
+        let resto = Math.round(qty) - base * tallas.length;
+        for (const t of tallas) {
+          desglose[t.code] = base + (resto > 0 ? 1 : 0);
+          if (resto > 0) resto--;
         }
+      }
+      // Sus tallas de origen, más las que se le agregaron en la OV.
+      const codigos = [...tallas];
+      for (const code of Object.keys(desglose)) {
+        if (!codigos.some(t => t.code === code)) codigos.push({ code, label: allTallas.value.find(x => x.name === code)?.talla || code });
       }
       return {
         item_code: v.finished_item,
         talla_grupo_label: v.talla_grupo_label || v.finished_item,
+        base: v.variante_talla_de,
+        base_nombre: v.producto_base_nombre || v.variante_talla_de,
+        genero: v.genero || "",
         tallas,
+        codigos,
         qty,
         rate: linea ? linea.rate : (productos.value.find(p => p.finished_item === v.finished_item)?.unit_sales_price || 0),
         desglose,
@@ -4039,15 +4393,8 @@ async function guardarVariantesOV(so) {
   // La suma del desglose debe coincidir EXACTO con la cantidad total de esa
   // línea -- ni de más (piezas que no se están vendiendo) ni de menos
   // (piezas sin talla asignada).
-  for (const v of soVariantesForm.value) {
-    if (v.tallas.length <= 1) continue;
-    const suma = Object.values(v.desglose).reduce((a, b) => a + (Number(b) || 0), 0);
-    if (suma !== Number(v.qty)) {
-      const relacion = suma > Number(v.qty) ? "más" : "menos";
-      showToast(`El desglose de "${v.talla_grupo_label}" suma ${suma}, ${relacion} que la cantidad total (${v.qty})`, "error");
-      return;
-    }
-  }
+  // El total de cada variante es la suma de sus tallas.
+  for (const v of soVariantesForm.value) v.qty = totalVariante(v);
   soVariantesSaving.value = true;
   try {
     const data = await call("costeo_yelke.api.sales_order_api.get_sales_order", { name: so.name });
@@ -4073,20 +4420,22 @@ async function guardarVariantesOV(so) {
     // y UOM correctos, armados del lado del servidor con la misma lógica que
     // ya usa crear_cotizacion/crear_orden_venta -- reconstruirlos a mano aquí
     // ya se le olvidó el UOM una vez.
-    const desglose = {};
+    const desglose = {}, cantidades = {};
     for (const v of incluidas) {
-      if (v.tallas.length > 1) desglose[v.item_code] = v.desglose;
+      desglose[v.item_code] = Object.fromEntries(Object.entries(v.desglose).filter(([, q]) => Number(q) > 0));
+      cantidades[v.item_code] = v.qty;
     }
+    // Precio de cada variante: su tabla por volumen para esa cantidad, o su precio de venta.
     const lineas = incluidas.length
       ? await call("costeo_yelke.api.costeo_api.lineas_venta_variantes", {
           costeo: docName.value, finished_items: JSON.stringify(incluidas.map(v => v.item_code)),
-          desglose: JSON.stringify(desglose),
+          desglose: JSON.stringify(desglose), cantidades: JSON.stringify(cantidades),
         })
       : {};
     for (const v of incluidas) {
       const linea = lineas[v.item_code] || {};
       items.push({
-        item_code: v.item_code, qty: v.qty, rate: v.rate,
+        item_code: v.item_code, qty: v.qty, rate: linea.rate || v.rate,
         description: linea.description || "", uom: linea.uom || "",
         warehouse: almacenRef, delivery_date: data.delivery_date,
       });
@@ -4108,7 +4457,9 @@ async function guardarVariantesOV(so) {
 // la expandida en Vender, pero se puede fijar aparte (selector en esos pasos) sin
 // perder cuál está expandida en el acordeón de Vender.
 const activeSOName = ref(null);
-watch(expandedSOName, (name) => { if (name) activeSOName.value = name; });
+// Las OV que pueden ser "activa": una cancelada se queda solo como historial.
+const soVivas = computed(() => related.sales_orders.filter(s => s.docstatus !== 2));
+watch(expandedSOName, (name) => { if (name && soVivas.value.some(s => s.name === name)) activeSOName.value = name; });
 const siForm = reactive({ posting_date: "", due_date: "", payment_terms_template: "", tc_name: "" });
 const dnDoc = ref(null);
 const dnSel = ref("");
@@ -4118,7 +4469,7 @@ const reporteLoading = ref(false);
 const compras = reactive({ materiales: [], maquila: [], fletes: [] });
 const pinvSel = ref(null);
 const pinvDoc = ref(null);
-const pinvForm = reactive({ posting_date: "", due_date: "", bill_no: "", bill_date: "", payment_terms_template: "", tc_name: "", conversion_rate: 1 });
+const pinvForm = reactive({ posting_date: "", due_date: "", bill_no: "", bill_date: "", payment_terms_template: "", tc_name: "", conversion_rate: 1, flete_cobra_iva: 0 });
 const cotDefaults = reactive({ payment_terms_templates: [], terms: [], users: [], price_lists: [], currencies: [], tax_templates: [],
   // Lo rellena get_cotizacion_defaults; en falso la OC del cliente se captura como
   // número (sitio sin el patch v0_2_56).
@@ -4184,7 +4535,7 @@ const puedeValidarCosteo = ref(true);
 // (lo emite FranjaAprobacion). Decide si se ofrece "Validar" o si los botones
 // viven en la franja (Enviar / Revisar / Aprobar / Regresar).
 const aprobPanel = reactive({});
-usePermisosAprobacion();
+const permisosAprob = usePermisosAprobacion();
 function validaDirecto(name) { return puedeValidarDirecto(aprobPanel[name]); }
 function enAprobacion(name) { return ["Pendiente", "Revisado"].includes(aprobPanel[name]?.estado); }
 async function guardarCosteoParaAprobacion() {
@@ -4242,8 +4593,8 @@ const {
   permisosValidacion, loadPermisosValidacion,
   reciboPr, reciboItems, reciboForm,
   selectReciboLote, nuevoReciboLote, loadRecibo, guardarRecibo, validarRecibo,
-  subOcs, subPo, subItems, subForm, subValidated, validarOcsTallerPendientes,
-  loadSubcontratos, crearSubcontratos, selectSub, guardarSub, validarSub, revisarSub,
+  subOcs, subPo, subItems, subForm, subValidated,
+  loadSubcontratos, crearSubcontratos, selectSub, loadSub, guardarSub, validarSub, revisarSub,
   flujo, scoActivo, scoSel, scoValidated, materialesSco, piezasSco, serviciosSco, importeSco, scoForm, scoCostos, selectSco,
   guardarSco, validarSco, addCosto, removeCosto,
   transDoc, transForm, transCostos, transValidated, transferDone, transferirMaterial, guardarTrans, validarTransferencia, enviarMaterialTaller,
@@ -4948,6 +5299,22 @@ const facTipoOpciones = [
 
 // ── Panel "Orden a un taller" (Preparación · paso 3) ──────────────────────────
 const panelOcTaller = reactive({ abierto: false, titulo: "", meta: "", cargando: false, error: "" });
+// Validar la orden a un taller exige la ficha completa: la orden se le manda con ella.
+async function validarSubConFicha() {
+  if (!omCompleta.value) { showToast("Primero captura la orden de manufactura (Preparación · paso 3).", "error"); return; }
+  await validarSub();
+}
+async function cambiarAltaSat(sinAlta) {
+  if (!subPo.value) return;
+  advancing.value = true;
+  try {
+    await call("costeo_yelke.api.costeo_api.marcar_proveedor_sin_alta_sat", { po: subPo.value.name, sin_alta: sinAlta ? 1 : 0 });
+    await loadSub(subPo.value.name);
+    await loadSubcontratos();
+    showToast(sinAlta ? "Taller sin alta en el SAT: la orden queda sin IVA" : "Taller con alta en el SAT: la orden lleva IVA");
+  } catch (e) { showToast(e.message || "No se pudo cambiar el dato fiscal del taller", "error"); }
+  finally { advancing.value = false; }
+}
 async function abrirOcTaller(oc) {
   cerrarPaneles();
   // Igual que en el panel del proveedor: `subPo` es de una orden a la vez, así que
@@ -4987,13 +5354,14 @@ function descargarFicha(po) {
 
 function enviarOrdenAlTaller() {
   if (!subPo.value) return;
-  if (!contactoTaller.email) {
-    showToast(`${panelOcTaller.titulo} no tiene contacto con correo dado de alta — captúralo en el envío o en el proveedor.`, "error");
-  }
+  // Sin correo o sin teléfono no es un error: la ventana de envío dice qué tiene
+  // registrado el taller y lo que falte se escribe al enviar.
   openSend("Purchase Order", subPo.value.name, contactoTaller.email, contactoTaller.telefono, {
     printFormats: ["Orden de Maquila", "Orden de Manufactura"],
     asunto: `Orden de maquila ${subPo.value.name} · ${panelOcTaller.titulo}`,
     mensaje: `Estimado ${contactoTaller.nombre || panelOcTaller.titulo}, adjunto la orden de maquila y su ficha de manufactura. Quedamos atentos.`,
+    // Enviada: el panel y la lista lo muestran (y el botón pasa a "Reenviar").
+    alEnviar: async () => { await loadSub(subPo.value.name); await loadSubcontratos(); },
   });
 }
 
@@ -5002,7 +5370,7 @@ function enviarOrdenAlTaller() {
 const accionesOcTaller = computed(() => {
   if (!subPo.value) return [];
   if (subValidated.value) {
-    return [sec(subPo.value.enviado_el ? "Reenviar al taller" : "Enviar al taller", enviarOrdenAlTaller)];
+    return [pri(subPo.value.enviado_el ? "Reenviar al taller" : "Enviar al taller", enviarOrdenAlTaller)];
   }
   const out = [sec("Guardar", guardarSub)];
   // En aprobación, o para quien no puede validarla: los botones van en la franja.
@@ -5013,9 +5381,9 @@ const accionesOcTaller = computed(() => {
       motivo: "Necesitas el rol 'Revisor de Documentos Yelke' para revisar.",
     }));
   } else {
-    out.push(pri("Validar", validarSub, {
-      deshabilitado: !permisosValidacion.puede_aprobar,
-      motivo: "Necesitas el rol 'Aprobador de Documentos Yelke' para validar.",
+    out.push(pri("Validar", validarSubConFicha, {
+      deshabilitado: !permisosValidacion.puede_aprobar || !omCompleta.value,
+      motivo: !omCompleta.value ? "Primero captura la orden de manufactura." : "Necesitas el rol 'Aprobador de Documentos Yelke' para validar.",
     }));
   }
   return out;
@@ -5076,11 +5444,22 @@ const accionesPanelFactura = computed(() => {
 async function abrirNuevoLotePanel() {
   cerrarPaneles();
   activeStep.value = 5;
+  // Mismo orden que la barra: ficha completa → órdenes a talleres validadas → lote.
+  if (!omCompleta.value) {
+    showToast("Primero captura la orden de manufactura.", "error");
+    prodRuta.irPreparacion(3);
+    return;
+  }
+  if (!subOcs.value.length || subOcs.value.some((o) => o.docstatus === 0)) {
+    showToast(subOcs.value.length ? "Primero revisa y valida todas las órdenes a talleres." : "Primero crea las órdenes a talleres.", "error");
+    irProduccion({ vista: "ordenes" });
+    return;
+  }
   await abrirNuevoLote();
   if (!nuevoLoteForm.porProducto.length) {
     cerrarNuevoLote();
     showToast("Primero valida las órdenes a talleres.", "error");
-    prodRuta.irPreparacion(3);
+    irProduccion({ vista: "ordenes" });
   }
 }
 /** Al abrir el costeo en Producción: la vista de la URL manda (enlaces que se
@@ -5827,7 +6206,7 @@ function barraPreparacion() {
           ? { color: "bad", texto: "Revisa las cantidades de los lotes de entrega" }
           : { color: "wait", texto: "Solicitud en borrador" },
         acciones: [sec("Guardar", guardarSolicitud),
-                   pri(mrLotes.value.length ? `Validar y dividir en ${mrLotes.value.length} lote(s)` : "Validar solicitud",
+                   pri(mrLotes.value.length ? `Validar y dividir en ${mrLotes.value.length} lote(s)` : `Validar solicitud (todo en ${siguienteLoteRef()})`,
                        validarSolicitud, { deshabilitado: mrLotesInvalidos.value,
                          motivo: "Alguna cantidad por lote no cuadra con el pendiente." })] };
     }
@@ -5837,9 +6216,16 @@ function barraPreparacion() {
   // Paso 3 · Orden de manufactura. Se captura aquí para que las órdenes del paso
   // siguiente salgan con la ficha de cada taller ya heredada.
   const atras3 = { texto: "Materia prima", ir: () => prodRuta.set({ prep: 2 }) };
+  // No se pasa a Órdenes a talleres sin la ficha completa: cada orden la lleva.
+  const siguienteOm = pri("Siguiente: Órdenes a talleres →", () => irProduccion({ vista: "ordenes" }), {
+    deshabilitado: !omCompleta.value,
+    motivo: "Primero captura la orden de manufactura de todos los productos.",
+  });
   if (!puedeVer("om")) {
-    return { atras: atras3, estado: { color: "off", texto: "La captura la hace Orden de manufactura" },
-      acciones: [pri("Siguiente: Órdenes a talleres →", () => irProduccion({ vista: "ordenes" }))] };
+    return { atras: atras3, estado: omCompleta.value
+        ? { color: "ok", texto: "Ficha capturada" }
+        : { color: "wait", texto: "Falta que Orden de manufactura capture la ficha" },
+      acciones: [siguienteOm] };
   }
   // "Guardar" vive dentro del editor (es por producto, no de la pantalla completa),
   // igual que "+ Agregar" de cada sección.
@@ -5847,21 +6233,28 @@ function barraPreparacion() {
     estado: omCompleta.value
       ? { color: "ok", texto: `Ficha capturada (${omCapturadas.value.capturadas} de ${omCapturadas.value.total})` }
       : { color: "wait", texto: `Falta capturar la ficha (${omCapturadas.value.capturadas} de ${omCapturadas.value.total})` },
-    acciones: [pri("Siguiente: Órdenes a talleres →", () => irProduccion({ vista: "ordenes" }))] };
+    acciones: [siguienteOm] };
 }
 
 /** Barra de la vista "Órdenes a talleres" (antes era el paso 3 de Preparación). */
 function barraOrdenesTalleres() {
   const atras = { texto: "Preparación", ir: () => prodRuta.irPreparacion(3) };
-  const ocs = productosCosteo.value || [];
-  if (!ocs.some((x) => x.root_po)) {
-    return { atras, estado: { color: "wait", texto: "Todavía no hay órdenes a talleres" },
-      acciones: [pri("Crear órdenes a talleres", crearSubcontratosDesdeLote)] };
+  // Se cuenta sobre las órdenes reales (subOcs, borradores incluidos): las paradas de
+  // productosCosteo solo ven órdenes ya validadas, y ahora se validan a mano.
+  const vivas = (subOcs.value || []).filter((o) => o.docstatus !== 2);
+  if (!vivas.length) {
+    return { atras, estado: omCompleta.value
+        ? { color: "wait", texto: "Todavía no hay órdenes a talleres" }
+        : { color: "wait", texto: "Falta la orden de manufactura" },
+      acciones: [pri("Crear órdenes a talleres", crearSubcontratosDesdeLote, {
+        deshabilitado: !omCompleta.value,
+        motivo: "Primero captura la orden de manufactura (Preparación · paso 3).",
+      })] };
   }
-  const faltan = ocs.filter((x) => x.root_po && x.root_po_docstatus !== 1).length;
-  if (faltan) {
-    return { atras, estado: { color: "wait", texto: `Faltan ${faltan} por validar` },
-      acciones: [pri("Crear órdenes a talleres", crearSubcontratosDesdeLote)] };
+  const pendientes = vivas.filter((o) => o.docstatus === 0);
+  if (pendientes.length) {
+    return { atras, estado: { color: "wait", texto: `${pendientes.length} por revisar y validar` },
+      acciones: [pri("Revisar y validar →", () => abrirOcTaller(pendientes[0]))] };
   }
   if (!lotesProduccion.value.length) {
     return { atras, estado: { color: "ok", texto: "Todo listo para abrir el primer lote" },
@@ -6629,12 +7022,11 @@ watch(() => `${loteActivoRef.value}::${loteParadaActiva.value}`, async () => {
 // todavía; se ofrece crearla sin salir de la pantalla del lote.
 async function crearSubcontratosDesdeLote() {
   await crearSubcontratos();
-  // crearSubcontratos() las deja en Borrador (docstatus 0) -- sin revisarlas y
-  // validarlas aquí, get_lotes_produccion sigue sin ver ninguna parada (filtra
-  // por docstatus=1) y la pantalla se hubiera quedado tan "vacía" como antes de
-  // darle al botón. Mismo auto-encadenado que abrirNuevoLote.
-  await validarOcsTallerPendientes();
+  // Se quedan en Borrador a propósito: cada orden se revisa (proveedor, IVA, fechas)
+  // y se valida a mano desde su panel. Se abre la primera para empezar.
   await loadLotesProduccion();
+  const primera = subOcs.value.find((o) => o.docstatus === 0);
+  if (primera) await abrirOcTaller(primera);
   // Antes de crear las OC de subcontrato el lote no tenía ninguna parada, así
   // que loteParadaActiva seguía vacío -- sin este fallback, tras crearlas la
   // pantalla se habría quedado igual de "en blanco" (paradaActiva nunca se
@@ -6711,7 +7103,7 @@ const cta = computed(() => {
   return ({
     "Borrador":       { label: "Pasar a cotización",        action: "cotizar" },
     "Cotizado":       { label: "Generar orden de venta",    action: "vender" },
-    "Orden de Venta": { label: "Preparar manufactura",      action: "ir_preparar_manufactura" },
+    "Orden de Venta": { label: "Alta de productos",         action: "ir_preparar_manufactura" },
     "En Producción":  { label: "Registrar entrega",         action: "enviar" },
     "Entregado":      { label: "Ir a facturar",             action: "facturar" },
     "Completado":     null,
@@ -6736,7 +7128,7 @@ const checklist = computed(() => {
 // No se puede avanzar sin validar el documento de la fase actual.
 const phaseReady = computed(() => {
   if (docStatus.value === "Borrador") return docState.value === 1;              // costeo validado
-  if (docStatus.value === "Cotizado") return related.quotation?.docstatus === 1; // cotización validada
+  if (docStatus.value === "Cotizado") return quotValidated.value; // cotización validada y no rechazada
   // Ahora que Producción es por OV (no por costeo completo), lo que debe estar
   // validado es la OV ACTIVA -- puede haber varias OV bajo el mismo costeo y no
   // necesariamente la más reciente es la que se va a producir.
@@ -6760,7 +7152,8 @@ const canAdvance = computed(() => checklist.value.every(i => i.ok) && phaseReady
 // ese flujo de entregas parciales a propósito soportado en "Enviar".
 const canAdvanceCta = computed(() => {
   const action = cta.value?.action;
-  if (action === "ir_preparar_manufactura") return true;
+  // Preparar manufactura solo con la OV activa validada: sin eso se saltaba Vender.
+  if (action === "ir_preparar_manufactura") return soValidated.value;
   if (action === "enviar") return (prodComplete.lotes_recibidos || 0) > 0;
   // En "Flujo de Producción" (paso 4) el botón "Confirmar" se persiste solo -- no
   // exige un guardado previo. En "Alta de Productos" (paso 3) sí, porque el flujo
@@ -6768,7 +7161,9 @@ const canAdvanceCta = computed(() => {
   if (action === "pasar_produccion") return activeStep.value === 4 || manufacturaGuardada.value;
   return canAdvance.value;
 });
-const quotValidated = computed(() => related.quotation?.docstatus === 1);
+// Validada y NO rechazada: una cotización rechazada se queda en el historial del
+// costeo y no puede pasar a orden de venta.
+const quotValidated = computed(() => related.quotation?.docstatus === 1 && related.quotation?.status !== "Lost");
 // La OV "activa" (elegida en el acordeón de Vender) es la que filtra Producir,
 // Enviar, Facturar y Reportar -- por default es la más reciente (activeSOName se
 // inicializa así en loadRelated), pero se puede cambiar sin perder cuál está
@@ -6792,7 +7187,7 @@ watch(activeSOName, async (name, oldName) => {
   ]);
   if (activeStep.value === 8) await loadReporte();
 });
-function setActiveSO(name) { activeSOName.value = name; }
+function setActiveSO(name) { if (soVivas.value.some(s => s.name === name)) activeSOName.value = name; }
 const siValidated = computed(() => related.sales_invoice?.docstatus === 1);
 const dnValidated = computed(() => dnDoc.value?.docstatus === 1);
 // Se puede crear otra remisión (a otra dirección) si la OV no está 100% entregada y no
@@ -6911,6 +7306,26 @@ function addServicioAPunto(punto, prod) {
 // fusionados como un solo punto).
 function setPuntoProveedor(punto, valor) {
   punto.servicios.forEach(e => { e.proveedor = valor; });
+  cargarServiciosProveedor(valor);
+}
+// Servicios registrados a cada taller (costeo_api.servicios_de_proveedor): con el taller
+// ya elegido, el buscador de servicios del paso muestra solo los suyos. Si no tiene
+// ninguno registrado se ofrecen todos, y el texto libre se puede usar siempre.
+const serviciosPorProveedor = reactive({});
+async function cargarServiciosProveedor(proveedor) {
+  if (!proveedor || serviciosPorProveedor[proveedor]) return;
+  serviciosPorProveedor[proveedor] = [];
+  try {
+    serviciosPorProveedor[proveedor] = await call("costeo_yelke.api.costeo_api.servicios_de_proveedor", { supplier: proveedor }) || [];
+  } catch { /* sin filtro: se ofrecen todos */ }
+}
+function serviciosDelPunto(punto) { return serviciosPorProveedor[punto.servicios[0]?.proveedor] || []; }
+function filtrosServicio(punto) {
+  const suyos = serviciosDelPunto(punto);
+  return suyos.length ? [...ITEM_FILTERS.servicio, ["name", "in", suyos]] : ITEM_FILTERS.servicio;
+}
+function placeholderServicio(punto) {
+  return serviciosDelPunto(punto).length ? "Servicio de este taller…" : "Servicio…";
 }
 function removeServicioDePunto(e, punto, prod) {
   // Si se borra el ANCLA de un punto con más de un servicio, primero hay que
@@ -7006,6 +7421,17 @@ function telasCost(prod) { return materialesDe(prod.finished_item).filter(d => d
 // el Tipo sin seleccionar todavía -- no se pierde ese costo del desglose.
 function aviosCost(prod) { return (prod.material_cost || 0) - telasCost(prod); }
 function serviciosCost(prod) { return (prod.services_cost || 0) + (prod.shipping_cost || 0) + (prod.labeling_cost || 0) + (prod.packaging_cost || 0); }
+// Telas / Avíos / Servicios y otros por pieza, con su parte del todo para la barra de
+// "Composición por pieza" (paleta validada del tablero, components/tablero).
+function composicionCosto(prod) {
+  const partes = [
+    { etiqueta: "Telas", monto: telasCost(prod), color: "#2a78d6" },
+    { etiqueta: "Avíos", monto: aviosCost(prod), color: "#eb6834" },
+    { etiqueta: "Servicios y otros", monto: serviciosCost(prod), color: "#1baf7a" },
+  ];
+  const total = partes.reduce((s, c) => s + Math.max(0, c.monto), 0);
+  return partes.map((c) => ({ ...c, pct: total ? (Math.max(0, c.monto) / total) * 100 : 0 }));
+}
 // Totales de las dos tablas del costeo, por PIEZA (el x cantidad se muestra aparte).
 // Se calculan sobre las mismas filas que se ven en pantalla, así que siempre cuadran
 // con lo listado aunque haya renglones a medio capturar.
@@ -7041,22 +7467,17 @@ async function onProductoItemChange(prod) {
   const fetched = await fetchItemImage(prod.finished_item);
   if (fetched) prod.image = fetched;
 }
-// La imagen se sube desde aquí (aunque el producto todavía sea texto libre) para que
-// ya esté lista cuando se materialice el Item real al pasar a cotización.
+// La imagen se elige desde aquí (aunque el producto todavía sea texto libre) para que
+// ya esté lista cuando se materialice el Item real al pasar a cotización. DialogoImagen
+// acepta archivo, imagen pegada o enlace (que el servidor descarga).
+const imagenEnEdicion = ref(null);
 function pickImage(prod) {
   if (!canEditCosteo.value) return;
-  const input = document.createElement("input");
-  input.type = "file";
-  input.accept = "image/*";
-  input.onchange = async (ev) => {
-    const f = ev.target.files?.[0];
-    if (!f) return;
-    try {
-      const res = await uploadFile(f, docName.value ? { doctype: "Costeo", docname: docName.value } : {});
-      if (res?.file_url) prod.image = res.file_url;
-    } catch (e) { showToast(e.message || "No se pudo subir la imagen", "error"); }
-  };
-  input.click();
+  imagenEnEdicion.value = prod;
+}
+function aplicarImagen(url) {
+  if (imagenEnEdicion.value) imagenEnEdicion.value.image = url || "";
+  imagenEnEdicion.value = null;
 }
 function addDetalle(prod, type) { detalles.value.push({ _tid: uid(), material_id: genStageId(), finished_item: prod.finished_item, concept_type: type, item: "", supplier: "", tipo_material: "", internal_uom: "", rendimiento: 0, internal_qty: 0, supplier_qty: 0, unit_price: 0, precio_compra: 0, supplier_uom: "", conversion_factor: 1, total: 0, etapa: "", _supplierOptions: [], _qtyMode: "rendimiento" }); }
 // ── Tipo de materia prima (Tela/Avío) ──
@@ -7122,16 +7543,17 @@ function piezasPorUdm(d) { return PIEZAS_POR_UDM[d.internal_uom] || 0; }
 // campo nuevo en el backend: se deriva de internal_uom (que sí se guarda), así que al
 // recargar el costeo queda seleccionada la misma pestaña sola. Kilogramo -> rendimiento
 // ("1 kilo rinde X piezas"), Metro -> consumo ("cada pieza usa X metros"), Mazo/Gruesa
-// -> piezas (cuántas piezas de la prenda salen de ahí). Solo cuando la UDM no cae en
-// ninguna de esas reglas (ej. Avío por Pieza, o aún sin UDM) queda libre para elegir
-// entre rendimiento/consumo, y ahí sí se respeta lo último que el usuario clickeó.
+// -> piezas (cuántas piezas de la prenda salen de ahí), Pieza -> consumo ("cada prenda
+// lleva X piezas": botones, etiquetas... aunque se compren por Mazo). Solo cuando la UDM
+// no cae en ninguna de esas reglas (o aún sin UDM) queda libre para elegir entre
+// rendimiento/consumo, y ahí sí se respeta lo último que el usuario clickeó.
 const QTY_MODE_LABEL = { rendimiento: "Rendimiento", consumo: "Consumo", piezas: "Piezas" };
 function qtyModeLocked(d) {
-  return d.internal_uom === "KGM - Kilogramo" || d.internal_uom === "MTR - Metro" || esUdmPorPiezas(d);
+  return d.internal_uom === "KGM - Kilogramo" || d.internal_uom === "MTR - Metro" || d.internal_uom === "H87 - Pieza" || esUdmPorPiezas(d);
 }
 function qtyModeFor(d) {
   if (d.internal_uom === "KGM - Kilogramo") return "rendimiento";
-  if (d.internal_uom === "MTR - Metro") return "consumo";
+  if (d.internal_uom === "MTR - Metro" || d.internal_uom === "H87 - Pieza") return "consumo";
   if (esUdmPorPiezas(d)) return "piezas";
   return d._qtyMode || "rendimiento";
 }
@@ -7244,16 +7666,6 @@ function tallaLabel(tallaField) {
   const codes = (tallaField || "").split(",").filter(Boolean);
   return codes.map(code => allTallas.value.find(x => x.name === code)?.talla || code).join("/");
 }
-// Arma un bloque de texto con las tallas atípicas del producto (si las tiene) para
-// anexarlo a la descripción al materializar -- así el maquilero/almacén ve de un
-// vistazo qué piezas llevan tela/talla especial, sin perder la descripción que ya
-// se había escrito a mano.
-function buildTallaDescriptionSuffix(prod) {
-  const rows = tallasDe(prod.finished_item).filter(t => t.genero && t.talla && (t.qty || 0) > 0);
-  if (!rows.length) return "";
-  const lines = rows.map(t => `- Talla ${tallaLabel(t.talla)}: ${t.qty} pza(s)`);
-  return `\n\nTallas especiales:\n${lines.join("\n")}`;
-}
 // "Variante de talla": una talla que necesita más/distinto material se costea
 // como su propio producto (Costeo Producto nuevo, con su propio artículo,
 // materiales, etapas y precio), enlazado solo para mostrarlo agrupado en
@@ -7268,7 +7680,9 @@ function buildTallaDescriptionSuffix(prod) {
 const varianteWizard = reactive({
   finished_item: "", step: 1, loading: false,
   genero: "", grupo_talla: "", talla: "", qty: 0, pendiente: false,
-  item_code: "", materiales: [], nuevoMaterial: "", nuevoConsumo: null,
+  // Consumo de esta talla por material del base (material_id -> lo que se escribió, en
+  // la unidad de captura de ese material, ver unidadDeFila).
+  consumos: {},
 });
 const varianteWizardTallas = computed(() => (varianteWizard.talla || "").split(",").filter(Boolean));
 function toggleVarianteWizardTalla(code) {
@@ -7277,11 +7691,38 @@ function toggleVarianteWizardTalla(code) {
   if (idx === -1) actuales.push(code); else actuales.splice(idx, 1);
   varianteWizard.talla = actuales.join(",");
 }
+// Unidad en la que se captura el consumo de un material en la variante: la misma que
+// en Costear -- lo que se compra por Mazo/Gruesa en PIEZAS por prenda (se convierte
+// solo, ver PIEZAS_POR_UDM), todo lo demás en su UDM por prenda. El servidor siempre
+// recibe internal_qty en la UDM del renglón; antes se mandaba el número tal cual y
+// "4 botones" se guardaba como 4 mazos.
+function nombreUdm(u) { return (u || "").includes(" - ") ? u.split(" - ").slice(1).join(" - ") : (u || "UDM"); }
+function unidadDeFila(d) {
+  if (esUdmPorPiezas(d)) {
+    const f = piezasPorUdm(d);
+    return { etiqueta: "piezas por prenda", ayuda: `se compra por ${nombreUdm(d.internal_uom)} de ${f.toLocaleString("es-MX")} piezas`,
+             aBase: (v) => round8((Number(v) || 0) / f), deBase: (q) => round4((Number(q) || 0) * f) };
+  }
+  return { etiqueta: `${nombreUdm(d.internal_uom || udmBaseDe(d))} por prenda`, ayuda: "",
+           aBase: (v) => Number(v) || 0, deBase: (q) => round4(Number(q) || 0) };
+}
+function materialesBaseVariante(prod) { return materialesDe(prod.finished_item).filter((d) => d.item && d.material_id); }
+function consumoBase(d) { return unidadDeFila(d).deBase(d.internal_qty); }
+function valorTalla(d) {
+  const v = varianteWizard.consumos[d.material_id];
+  return v === undefined ? consumoBase(d) : v;
+}
+function cambiaEnTalla(d) {
+  const v = varianteWizard.consumos[d.material_id];
+  return v !== undefined && v !== "" && Number(v) !== consumoBase(d);
+}
+function diferenciaTalla(d) { return round4(Number(valorTalla(d)) - consumoBase(d)); }
+function cambiosVariante(prod) { return materialesBaseVariante(prod).filter(cambiaEnTalla).length; }
 function abrirVarianteWizard(prod) {
   Object.assign(varianteWizard, {
     finished_item: prod.finished_item, step: 1, loading: false,
     genero: "", grupo_talla: "", talla: "", qty: 0, pendiente: false,
-    item_code: "", materiales: [], nuevoMaterial: "", nuevoConsumo: null,
+    consumos: {},
   });
 }
 function cerrarVarianteWizard() { varianteWizard.finished_item = ""; }
@@ -7301,39 +7742,15 @@ async function crearVarianteTalla(prod) {
       talla: varianteWizard.talla,
       qty: varianteWizard.qty,
       pendiente: varianteWizard.pendiente,
+      materiales: JSON.stringify(materialesBaseVariante(prod).filter(cambiaEnTalla).map((d) => ({
+        material_id: d.material_id, internal_qty: unidadDeFila(d).aBase(varianteWizard.consumos[d.material_id]),
+      }))),
     });
-    varianteWizard.item_code = r.item_code;
-    varianteWizard.step = 2;
-    showToast("Variante creada -- ya puedes ajustar el consumo de materiales que cambien");
+    cerrarVarianteWizard();
+    showToast(`Variante ${r.item_code} creada`);
     await recargarConservandoExpandido(prod.finished_item);
   } catch (e) {
     showToast(e.message || "No se pudo crear la variante", "error");
-  } finally {
-    varianteWizard.loading = false;
-  }
-}
-async function agregarMaterialVariante(prod) {
-  if (!varianteWizard.nuevoMaterial) return;
-  varianteWizard.loading = true;
-  try {
-    // Mismo motivo que en crearVarianteTalla: se guarda lo que haya en
-    // pantalla antes de que el backend edite el documento directamente y la
-    // recarga de abajo traiga esa versión de vuelta.
-    if (!(await saveDoc())) return;
-    const r = await call("costeo_yelke.api.costeo_api.ajustar_material_variante_talla", {
-      costeo: docName.value,
-      finished_item: varianteWizard.item_code,
-      item_code: varianteWizard.nuevoMaterial,
-      internal_qty: varianteWizard.nuevoConsumo || 0,
-    });
-    const existente = varianteWizard.materiales.find((m) => m.item === varianteWizard.nuevoMaterial);
-    if (existente) existente.internal_qty = r.internal_qty;
-    else varianteWizard.materiales.push({ item: varianteWizard.nuevoMaterial, internal_qty: r.internal_qty });
-    varianteWizard.nuevoMaterial = "";
-    varianteWizard.nuevoConsumo = null;
-    await recargarConservandoExpandido(prod.finished_item);
-  } catch (e) {
-    showToast(e.message || "No se pudo ajustar el material", "error");
   } finally {
     varianteWizard.loading = false;
   }
@@ -7348,38 +7765,12 @@ async function recargarConservandoExpandido(finished_item) {
     productos.value.filter((p) => expandedTids.has(p._tid)).map((p) => p.finished_item)
   );
   abiertos.add(finished_item);
-  await loadCosteoData();
+  await loadCosteoData({ silencioso: true });
   expandedTids.clear();
   for (const p of productos.value) {
     if (abiertos.has(p.finished_item)) expandedTids.add(p._tid);
   }
 }
-// Precio de UNA talla: el sobrecosto (fijo o %) se suma sobre el PRECIO DE VENTA
-// plano del producto (el mismo que se ve en la cotización sin tallas), no sobre
-// el costo -- una talla extra no cambia el costo de producción registrado, solo
-// lo que se le cobra al cliente por esa pieza. costoFlat/pvFlat son el costo y
-// precio de venta "sin sobrecosto" (idénticos para todas las tallas de un mismo
-// producto), calculados una sola vez en recalcProducto.
-function computeTallaCost(t, costoFlat, pvFlat) {
-  // Una talla que necesita material distinto ya no se resuelve aquí -- se
-  // costea como su propia "Variante de talla" (otro Costeo Producto). Este
-  // ajuste es solo de precio, sobre el mismo material/costo del producto.
-  const sobrecosto = t.sobrecosto_tipo === "Fijo" ? (t.sobrecosto_valor || 0)
-    : t.sobrecosto_tipo === "Porcentaje" ? pvFlat * ((t.sobrecosto_valor || 0) / 100)
-    : 0;
-  t.precio_venta = round2(pvFlat + sobrecosto);
-  t.costo_unitario = round2(costoFlat);
-  t.costo_total = round2(t.costo_unitario * (t.qty || 0));
-}
-// "Pendiente por cliente": todavía no se sabe cuántas piezas de esta talla se
-// van a producir -- qty se bloquea en 0 y se avisa en la cotización como línea
-// aparte (ver costeo_api._venta_items_para_producto) para que el cliente diga
-// cuántas quiere. "Actualizar cantidades por talla" es donde se confirma.
-// "Talla" agrupa una o varias tallas del mismo Tipo de prenda que comparten
-// cantidad y sobrecosto (ej. "2XL,3XL" con el mismo sobrecosto de material) --
-// se guarda como texto separado por coma (ver doctype Costeo Producto Talla).
-function tallasSeleccionadasDe(t) { return (t.talla || "").split(",").filter(Boolean); }
-function esTallaPendiente(t) { return t.estado_cantidad === "Pendiente por cliente"; }
 async function onEtapaServicioChange(e, prod) {
   if (e.servicio && !e.precio_servicio) {
     try {
@@ -7389,11 +7780,6 @@ async function onEtapaServicioChange(e, prod) {
   }
   recalcProducto(prod);
 }
-// Cuando el producto tiene desglose por talla, el costo/precio "por pieza" y los
-// totales dejan de ser un solo número plano (costo × cantidad) y pasan a ser el
-// promedio ponderado real de la mezcla de tallas (cada una con su propio sobrecosto) --
-// así el desglose por talla sí afecta todos los cálculos del costeo, no solo su
-// propia tabla. Sin renglones de talla, el cálculo es exactamente el de antes.
 function recalcProducto(prod) {
   const fi = prod.finished_item;
   prod.material_cost = detalles.value.filter(d => d.finished_item === fi && d.concept_type === "Materia Prima").reduce((s, d) => s + (d.total || 0), 0);
@@ -7405,71 +7791,26 @@ function recalcProducto(prod) {
   const overheadFlat = base * ((prod.overhead_pct || 0) / 100);
   const costoFlat = round2(base + overheadFlat);
   const pvFlat = round2((m > 0 && m < 1) ? costoFlat / (1 - m) : costoFlat);
-  // Con precio fijo, la base "sin sobrecosto" para tallas y remanente debe ser
-  // el precio EXACTO que se tecleó (prod.unit_sales_price) -- no pvFlat, que es
-  // solo una aproximación derivada de margin_pct (y margin_pct a su vez se
-  // redondeó a partir del precio fijo). Usar pvFlat aquí arrastraba un
-  // pequeño desfase de redondeo a las 7493 piezas del remanente, mayor que el
-  // propio sobrecosto de la talla, y el total podía terminar moviéndose para
-  // el lado contrario del esperado.
-  const pvBase = prod.precio_manual ? (prod.unit_sales_price || 0) : pvFlat;
-
-  const tRows = tallasDe(fi);
-  const totalTallaQty = tRows.reduce((s, t) => s + (t.qty || 0), 0);
-
-  if (tRows.length && totalTallaQty > 0) {
-    // Si las tallas no cubren toda la cantidad a producir, las piezas restantes
-    // (sin talla asignada aún) se valúan al precio/costo plano (sin sobrecosto) para
-    // que el promedio ponderado represente SIEMPRE las prod.qty piezas totales, no
-    // solo las ya asignadas -- si no, los totales se extrapolaban mal cuando la
-    // asignación era parcial.
-    const totalQty = prod.qty || 0;
-    const remainder = Math.max(0, totalQty - totalTallaQty);
-    let sumCosto = 0, sumOverheadQty = 0, sumVenta = 0;
-    tRows.forEach(t => {
-      computeTallaCost(t, costoFlat, pvBase);
-      sumCosto += t.costo_total;
-      sumOverheadQty += overheadFlat * (t.qty || 0);
-      sumVenta += t.precio_venta * (t.qty || 0);
-    });
-    if (remainder > 0) {
-      sumCosto += costoFlat * remainder;
-      sumOverheadQty += overheadFlat * remainder;
-      sumVenta += pvBase * remainder;
-    }
-    const divisor = totalQty > 0 ? totalQty : totalTallaQty;
-    prod.overhead_amt = round2(sumOverheadQty / divisor);
-    prod.total_unit_cost = round2(sumCosto / divisor);
-    if (prod.precio_manual) {
-      // Precio fijo: la BASE (unit_sales_price) no se pisa aunque cambien los
-      // costos -- pero el sobrecosto de cada talla (ya sumado dentro de
-      // t.precio_venta, con esa base fija de piso) sí debe reflejarse en el
-      // total: antes se recalculaba como unit_sales_price * qty a secas,
-      // ignorando por completo cualquier sobrecosto por talla (Fijo,
-      // Porcentaje o Material) -- el total nunca se movía sin importar lo que
-      // se capturara ahí. El margen sigue siendo solo informativo.
-      prod.total_sales_price = round2(sumVenta);
-      const priceM = prod.unit_sales_price || 0;
-      prod.margin_pct = round2(Math.max(0, priceM > 0 ? ((priceM - prod.total_unit_cost) / priceM) * 100 : 0));
-    } else {
-      prod.unit_sales_price = round2(sumVenta / divisor);
-      prod.total_sales_price = round2(sumVenta);
-    }
+  prod.overhead_amt = round2(overheadFlat);
+  prod.total_unit_cost = costoFlat;
+  if (prod.precio_manual) {
+    // Precio fijado a mano (onPriceChange): NO se deriva de margin_pct como de
+    // costumbre -- es al revés, el margen se recalcula contra el costo nuevo
+    // manteniendo ESE precio exacto fijo, para que cotización/documentos
+    // posteriores siempre reciban el número que se tecleó, sin que el
+    // redondeo del % (ni un cambio posterior en materiales/etapas) lo mueva.
+    const priceM = prod.unit_sales_price || 0;
+    prod.margin_pct = round2(Math.max(0, priceM > 0 ? ((priceM - prod.total_unit_cost) / priceM) * 100 : 0));
   } else {
-    prod.overhead_amt = round2(overheadFlat);
-    prod.total_unit_cost = costoFlat;
-    if (prod.precio_manual) {
-      // Precio fijado a mano (onPriceChange): NO se deriva de margin_pct como de
-      // costumbre -- es al revés, el margen se recalcula contra el costo nuevo
-      // manteniendo ESE precio exacto fijo, para que cotización/documentos
-      // posteriores siempre reciban el número que se tecleó, sin que el
-      // redondeo del % (ni un cambio posterior en materiales/etapas) lo mueva.
-      const priceM = prod.unit_sales_price || 0;
-      prod.margin_pct = round2(Math.max(0, priceM > 0 ? ((priceM - prod.total_unit_cost) / priceM) * 100 : 0));
-    } else {
-      prod.unit_sales_price = pvFlat;
-    }
-    prod.total_sales_price = round2(prod.unit_sales_price * (prod.qty || 0));
+    prod.unit_sales_price = pvFlat;
+  }
+  prod.total_sales_price = round2(prod.unit_sales_price * (prod.qty || 0));
+  // El renglón de talla de una variante (crear_variante_talla) lleva el costo y precio
+  // de su producto, al día con cualquier cambio de materiales/etapas.
+  for (const t of tallasDe(fi)) {
+    t.costo_unitario = prod.total_unit_cost;
+    t.precio_venta = prod.unit_sales_price;
+    t.costo_total = round2(t.costo_unitario * (t.qty || 0));
   }
 }
 // Editar el precio unitario → recalcula el margen (sentido inverso, sin sobrescribir el
@@ -7640,21 +7981,25 @@ function tallasDeGrupo(grupoName) {
   if (!grupoName) return [];
   return allTallas.value.filter(t => !t.is_group && t.parent_talla === grupoName);
 }
-// Las tallas que se ofrecen al capturar el desglose de un producto BASE: las
-// marcadas como de uso común en el catálogo (XS a XL en letras, y su
-// equivalente en cada sistema) más cualquiera que ya traiga piezas -- para no
-// esconder lo que alguien ya capturó. El resto se alcanza con "Ver todas".
-// En las tallas EXTRA no aplica: ahí se elige a propósito qué tallas cubre la
-// variante, y se ofrecen todas.
-function tallasParaDesglose(d) {
-  const todas = tallasDeGrupo(d.grupo);
-  if (d.verTodas) return todas;
-  const usadas = todas.filter(t => t.uso_comun || Number(d.valores?.[t.name]) > 0);
-  // Un grupo sin ninguna marca todavía se comporta como antes.
-  return usadas.length ? usadas : todas;
+// Tallas REGULARES de un producto base: solo las de uso común del catálogo (XS a XL
+// en letras, y su equivalente en cada sistema). Las demás son tallas extra: se venden
+// con su propio precio en "Tallas extra", nunca aquí. Una talla no común que ya traiga
+// piezas (capturada antes de esta regla) se sigue mostrando para no perderla.
+function tallasRegulares(d, b) {
+  const todas = tallasDeGrupo(b.grupo);
+  const comunes = todas.filter(t => t.uso_comun || Number(d.valores?.[t.name]) > 0);
+  // Un tipo de talla sin ninguna marcada como común se comporta como antes.
+  return comunes.length ? comunes : todas;
 }
-function tallasOcultas(d) {
-  return tallasDeGrupo(d.grupo).length - tallasParaDesglose(d).length;
+// Géneros que todavía no tienen bloque (b = el bloque que se está editando).
+function generosLibres(d, b = null) {
+  return ["Caballero", "Dama"].filter(g => (b && b.genero === g) || !d.bloques.some(x => x !== b && x.genero === g));
+}
+// Quita las piezas de tallas que ya no pertenecen a ningún bloque (cambió el género o
+// el tipo de talla, o se quitó el bloque): si no, seguirían sumando sin verse.
+function limpiarDesglose(d) {
+  const validas = new Set(d.bloques.flatMap(b => tallasRegulares(d, b).map(t => t.name)));
+  for (const code of Object.keys(d.valores)) if (!validas.has(code)) delete d.valores[code];
 }
 async function hydrateSupplierOptions() {
   for (const d of detalles.value) {
@@ -7703,6 +8048,8 @@ function buildPayload() {
     tabla_tallas_costeo: tallas.value.map(stripLocal),
   };
 }
+// De qué costeo son los productos que hay en pantalla (ver fillFromDoc).
+let costeoEnPantalla = "";
 async function fillFromDoc(data) {
   // Se marca la carga para que el watcher de compañía no autodetecte almacenes
   // encima de los que trae el documento guardado (ver applyCompanyDefaults).
@@ -7716,7 +8063,18 @@ async function fillFromDoc(data) {
   form.guardar_como_plantilla = (data.guardar_como_plantilla === undefined || data.guardar_como_plantilla === null)
     ? false : !!Number(data.guardar_como_plantilla);
   form.centro_de_costos = data.centro_de_costos || ""; form.almacen_materias_primas = data.almacen_materias_primas || ""; form.almacen_trabajo_en_proceso = data.almacen_trabajo_en_proceso || "";
+  // Cada recarga crea renglones nuevos (_tid nuevo): las tarjetas que estaban abiertas
+  // se vuelven a abrir por su producto, o al guardar se cerrarían todas solas.
+  const abiertosAntes = data.name === costeoEnPantalla
+    ? new Set(productos.value.filter((p) => expandedTids.has(p._tid)).map((p) => p.finished_item))
+    : new Set();
+  costeoEnPantalla = data.name;
+  [...new Set((data.tabla_etapas_costeo || []).map((e) => e.proveedor).filter(Boolean))].forEach(cargarServiciosProveedor);
   productos.value = (data.costeo_producto || []).map(r => ({ _tid: uid(), image: "", description: "", precio_manual: 0, ...r, _lastFinishedItem: r.finished_item || "" }));
+  if (abiertosAntes.size) {
+    expandedTids.clear();
+    for (const p of productos.value) if (abiertosAntes.has(p.finished_item)) expandedTids.add(p._tid);
+  }
   // Los renglones anteriores a la captura por UDM de compra no traen precio_compra
   // ni factor: su precio ya estaba en la UDM base, asi que se copia tal cual.
   detalles.value = (data.costeo_producto_detalle || []).map(r => ({
@@ -7747,7 +8105,7 @@ async function fillFromDoc(data) {
   asignarGruposEtapas();
   materialesEtapa.value = (data.tabla_materiales_etapa || []).map(r => ({ _tid: uid(), ...r }));
   migrarMaterialesEtapaLegado();
-  tallas.value = (data.tabla_tallas_costeo || []).map(r => ({ _tid: uid(), sobrecosto_tipo: "Ninguno", estado_cantidad: "Definida", ...r }));
+  tallas.value = (data.tabla_tallas_costeo || []).map(r => ({ _tid: uid(), estado_cantidad: "Definida", ...r }));
   for (const p of productos.value) { if (p.finished_item) { const fetched = await fetchItemImage(p.finished_item); if (fetched) p.image = fetched; } }
   // Recalcular siempre al cargar (no confiar en la foto guardada la última vez) --
   // así los KPIs reflejan la fórmula actual (con tallas) aunque el costeo se haya
@@ -7764,7 +8122,7 @@ async function loadRelated() {
   if (!docName.value) return;
   try {
     const r = await call("costeo_yelke.api.costeo_api.get_costeo_related", { costeo: docName.value, sales_order: activeSOName.value || null });
-    related.quotation = r.quotation; related.quotations = r.quotations || []; related.sales_order = r.sales_order;
+    related.quotation = r.quotation; related.quotations = r.quotations || []; related.quotations_historial = r.quotations_historial || []; related.sales_order = r.sales_order;
     related.sales_orders = r.sales_orders || [];
     related.delivery_notes = r.delivery_notes || []; related.delivery_per_delivered = r.delivery_per_delivered || 0;
     related.sales_invoice = r.sales_invoice;
@@ -7786,8 +8144,9 @@ async function loadRelated() {
         soDesgloseForm.value = []; soDesgloseDe.value = null;
         soVariantesForm.value = []; soVariantesDe.value = null;
       }
-      if (!activeSOName.value || !related.sales_orders.some(s => s.name === activeSOName.value)) {
-        activeSOName.value = expandedSOName.value || related.sales_orders[0].name;
+      const vivas = related.sales_orders.filter(s => s.docstatus !== 2);
+      if (!activeSOName.value || !vivas.some(s => s.name === activeSOName.value)) {
+        activeSOName.value = (vivas.find(s => s.name === expandedSOName.value) || vivas[0])?.name || null;
       }
     } else {
       activeSOName.value = null;
@@ -8024,6 +8383,7 @@ async function loadPinv(name) {
     pinvForm.bill_no = r.bill_no || ""; pinvForm.bill_date = r.bill_date || "";
     pinvForm.payment_terms_template = r.payment_terms_template || ""; pinvForm.tc_name = r.tc_name || "";
     pinvForm.conversion_rate = r.conversion_rate || 1;
+    pinvForm.flete_cobra_iva = r.flete_cobra_iva ? 1 : 0;
     ensurePrintFmt("Purchase Invoice"); previewKey.value++;
   } catch { /* ignore */ }
 }
@@ -8036,6 +8396,7 @@ async function guardarPinv() {
       bill_no: pinvForm.bill_no || "", bill_date: pinvForm.bill_date || null,
       payment_terms_template: pinvForm.payment_terms_template || null, tc_name: pinvForm.tc_name || null,
       conversion_rate: Number(pinvForm.conversion_rate) || null,
+      ...(pinvDoc.value.flete_importe > 0 ? { flete_cobra_iva: pinvForm.flete_cobra_iva ? 1 : 0 } : {}),
     });
     await loadPinv(pinvDoc.value.name);
     showToast("Factura de compra guardada");
@@ -8099,6 +8460,7 @@ const treeOpen = reactive({});
 // nada); "Servicios" y "Entrega" arrancan contraídos. Solo importa mientras el
 // usuario no lo haya tocado a mano -- ahí manda lo que haya elegido.
 function isTreeOpen(op, section) {
+  if (flujoBloqueado.value) return true;
   const k = `${op.op_key}::${section}`;
   if (!(k in treeOpen)) return section === "recibe" || section === "materiales";
   return !!treeOpen[k];
@@ -8119,6 +8481,7 @@ async function loadFlujoOps() {
   if (!docName.value) return;
   flujoLoading.value = true;
   flujoDirty.value = false;
+  piezasEditando.value = false;
   Object.keys(flujoEdit).forEach(k => delete flujoEdit[k]);
   Object.keys(matEdit).forEach(k => delete matEdit[k]);
   Object.keys(treeOpen).forEach(k => delete treeOpen[k]);
@@ -8130,7 +8493,8 @@ async function loadFlujoOps() {
       // reordenar debe respetar; el resto se reengancha solo.
       ops.forEach((o, i) => { o.recibe_custom = !esRecibeLineal(ops, i); });
       const subs = (p.sub_ensamblajes || []).map(s => ({ ...s, stage_ids: [...(s.stage_ids || [])] }));
-      return { ...p, operaciones: ops, sub_ensamblajes: subs };
+      // Paso elegido a mano como "Aquí se unen las piezas" (Etapas Costeo.une_piezas).
+      return { ...p, operaciones: ops, sub_ensamblajes: subs, union_op_key: (ops.find(o => o.une_piezas) || {}).op_key || "" };
     });
   } catch (e) { showToast(e.message || "No se pudo cargar el flujo", "error"); }
   finally { flujoLoading.value = false; }
@@ -8313,14 +8677,7 @@ function armadoVivo(prod) {
   const terminales = new Set(terminalKeysVivo(prod));
   const noFinales = ops.filter((o) => !terminales.has(o.op_key));
   const piezas = (prod.sub_ensamblajes || []).filter((s) => (s.nombre || "").trim());
-  const piezasDe = {};
-  for (const o of noFinales) {
-    const st = new Set(o.stage_ids || (o.servicios || []).map((sv) => sv.stage_id));
-    piezasDe[o.op_key] = piezas.filter((s) => s.stage_ids.some((x) => st.has(x))).map((s) => s.nombre);
-  }
-  const vacio = { ensamble: null, despues: new Set(), hayPiezas: piezas.length > 0 };
-  const marcadas = new Set(noFinales.filter((o) => piezasDe[o.op_key].length).map((o) => o.op_key));
-  if (!marcadas.size) return vacio;
+  const vacio = { ensamble: null, despues: new Set(), hayPiezas: false };
   const hijos = {};
   ops.forEach((o) => { hijos[o.op_key] = new Set(); });
   ops.forEach((o) => (o.recibe_de || []).forEach((u) => hijos[u] && hijos[u].add(o.op_key)));
@@ -8331,10 +8688,25 @@ function armadoVivo(prod) {
     for (const h of hijos[k] || []) { memo[k].add(h); abajo(h).forEach((x) => memo[k].add(x)); }
     return memo[k];
   };
+  // Elegido a mano ("Aquí se unen las piezas"): es una decisión, no una suposición,
+  // así que se muestra en vivo aunque se estén capturando piezas.
+  if (prod.union_op_key && noFinales.some((o) => o.op_key === prod.union_op_key)) {
+    if (!piezas.length) return vacio;
+    const e = prod.union_op_key;
+    return { ensamble: e, despues: new Set(ops.filter((o) => abajo(e).has(o.op_key)).map((o) => o.op_key)), hayPiezas: true, elegida: true };
+  }
+  if (piezasEditando.value) return vacio;
+  const piezasDe = {};
+  for (const o of noFinales) {
+    const st = new Set(o.stage_ids || (o.servicios || []).map((sv) => sv.stage_id));
+    piezasDe[o.op_key] = piezas.filter((s) => s.stage_ids.some((x) => st.has(x))).map((s) => s.nombre);
+  }
+  const marcadas = new Set(noFinales.filter((o) => piezasDe[o.op_key].length).map((o) => o.op_key));
+  if (!marcadas.size) return { ...vacio, hayPiezas: piezas.length > 0 };
   const ultima = {};
   for (const o of noFinales) for (const n of piezasDe[o.op_key]) ultima[n] = o.op_key;
   const e = noFinales.find((o) => !piezasDe[o.op_key].length && ![...abajo(o.op_key)].some((k) => marcadas.has(k)));
-  if (!e || Object.values(ultima).some((u) => !abajo(u).has(e.op_key))) return vacio;
+  if (!e || Object.values(ultima).some((u) => !abajo(u).has(e.op_key))) return { ...vacio, hayPiezas: true };
   return { ensamble: e.op_key, despues: new Set(ops.filter((o) => abajo(e.op_key).has(o.op_key)).map((o) => o.op_key)), hayPiezas: true };
 }
 // "arma" (aquí se unen todas las piezas), "armada" (recibe la prenda ya armada) o null.
@@ -8357,21 +8729,50 @@ function columnasMatriz(prod) {
       terminal: terminales.includes(op.op_key),
       arma: armado.ensamble === op.op_key,
       armada: armado.despues.has(op.op_key),
+      op_key: op.op_key,
+      elegida: !!armado.elegida && armado.ensamble === op.op_key,
+      // El botón "Aquí se unen las piezas" va una vez por paso, en su primer servicio,
+      // y solo si ninguna pieza tiene palomita en ese paso: si alguna se trabaja ahí
+      // por separado, ahí no se pueden unir.
+      primero: op.servicios[0] === sv,
+      conPiezas: (prod.sub_ensamblajes || []).some((s) =>
+        s.stage_ids.some((x) => (op.stage_ids || (op.servicios || []).map((v) => v.stage_id)).includes(x))),
     })),
   );
+}
+// Mientras se capturan las piezas no se muestra dónde se unen: la regla (ver
+// armadoVivo) se cumple a medias con cada palomita -- con solo Corte marcado ya
+// "cumple" el paso siguiente -- y el símbolo de unión brincaba de renglón en renglón.
+// Se vuelve a mostrar al guardar (loadFlujoOps), ya con todo capturado.
+const piezasEditando = ref(false);
+// "Aquí se unen las piezas": la persona dice en qué paso se juntan para armar la
+// prenda (antes solo se deducía de las casillas vacías, y eso no lo sabe nadie).
+// En ese paso ya no se trabaja ninguna pieza por separado: se le quitan sus marcas.
+function elegirUnion(prod, opKey) {
+  const nueva = prod.union_op_key === opKey ? "" : opKey;
+  prod.union_op_key = nueva;
+  if (nueva) {
+    const op = prod.operaciones.find((o) => o.op_key === nueva);
+    const st = new Set(op?.stage_ids || (op?.servicios || []).map((sv) => sv.stage_id));
+    prod.sub_ensamblajes.forEach((s) => { s.stage_ids = s.stage_ids.filter((x) => !st.has(x)); });
+  }
+  flujoDirty.value = true;
 }
 function agregarSubEnsamblaje(prod) {
   prod.sub_ensamblajes.push({ nombre: "", stage_ids: [], multiplicador: 1 });
   flujoDirty.value = true;
+  piezasEditando.value = true;
 }
 function quitarSubEnsamblaje(prod, idx) {
   prod.sub_ensamblajes.splice(idx, 1);
   flujoDirty.value = true;
+  piezasEditando.value = true;
 }
 function toggleSubEnsamblajeStage(s, stageId) {
   const i = s.stage_ids.indexOf(stageId);
   if (i === -1) s.stage_ids.push(stageId); else s.stage_ids.splice(i, 1);
   flujoDirty.value = true;
+  piezasEditando.value = true;
 }
 // Guarda el flujo tal como está en pantalla (orden, "recibe de", materia prima por
 // paso y piezas) SIN preparar producción -- para poder avanzar por partes. Lo usan
@@ -8398,8 +8799,10 @@ async function guardarFlujo() {
       const filas = (prod.sub_ensamblajes || [])
         .filter(s => (s.nombre || "").trim())
         .map(s => ({ nombre: s.nombre.trim(), stage_ids: s.stage_ids, multiplicador: s.multiplicador || 1 }));
+      const opUnion = prod.operaciones.find((o) => o.op_key === prod.union_op_key);
       await call("costeo_yelke.api.costeo_api.guardar_subensamblajes", {
         costeo: docName.value, producto: prod.finished_item, filas: JSON.stringify(filas),
+        union_stage_id: opUnion?.servicios?.[0]?.stage_id || (opUnion?.stage_ids || [])[0] || "",
       });
     }
     flujoDirty.value = false;
@@ -8541,8 +8944,8 @@ async function advance() {
   // lote recibido, así que llegar aquí ya implica que hay algo que entregar;
   // no espera el 100% porque las remisiones son por lote (parciales).
   if (c.action === "enviar") { await irAEntregar(); return; }
-  if (c.action === "ir_preparar_manufactura") { activeStep.value = 3; return; }
-  if (c.action === "pasar_produccion") { await (activeStep.value === 4 ? confirmarFlujo() : prepararProduccion()); return; }
+  if (c.action === "ir_preparar_manufactura") { if (soValidated.value) activeStep.value = 3; return; }
+  if (c.action === "pasar_produccion") { pedirConfirmarFlujo(activeStep.value === 4 ? confirmarFlujo : prepararProduccion); return; }
   if (!canAdvance.value) { showToast("Completa los pendientes antes de avanzar", "error"); return; }
   advancing.value = true;
   try {
@@ -8566,7 +8969,7 @@ async function advance() {
 // ── Acciones específicas de cada paso ──
 async function guardarBorradorOrdenVenta() {
   if (isNew.value) { showToast("Guarda el costeo primero", "error"); return; }
-  if (related.quotation?.docstatus !== 1) { showToast("Primero valida la cotización", "error"); return; }
+  if (!quotValidated.value) { showToast("Primero valida la cotización", "error"); return; }
   advancing.value = true;
   try {
     const res = await call("costeo_yelke.api.costeo_api.crear_orden_venta", {
@@ -8656,6 +9059,20 @@ async function guardarBorradorCotizacion() {
   } catch (e) { showToast(e.message || "No se pudo guardar la cotización", "error"); }
   finally { advancing.value = false; }
 }
+// Cancelar una OV validada (solo quien valida documentos, ver costeo_api.cancelar_orden_venta).
+const cancelarOV = reactive({ name: "", motivo: "" });
+function abrirCancelarOV(so) { cancelarOV.name = so.name; cancelarOV.motivo = ""; }
+async function confirmarCancelarOV() {
+  advancing.value = true;
+  try {
+    await call("costeo_yelke.api.costeo_api.cancelar_orden_venta", { name: cancelarOV.name, motivo: cancelarOV.motivo });
+    if (activeSOName.value === cancelarOV.name) activeSOName.value = null;
+    showToast(`${cancelarOV.name} cancelada`);
+    cancelarOV.name = "";
+    await loadCosteoData({ silencioso: true });
+  } catch (e) { showToast(e.message || "No se pudo cancelar la orden de venta", "error"); }
+  finally { advancing.value = false; }
+}
 function openRechazarModal() { rechazarMotivo.value = ""; showRechazarModal.value = true; }
 async function confirmarCotizacionRechazada() {
   const name = expandedQuotName.value;
@@ -8720,21 +9137,6 @@ async function validarPrecioAcordado() {
   finally { advancing.value = false; }
 }
 
-async function onTipoFormatoChange() {
-  const name = expandedQuotName.value;
-  if (!name) return;
-  const q = related.quotations.find(x => x.name === name);
-  if (!q || q.docstatus === 1) return;
-  try {
-    await call("costeo_yelke.api.costeo_api.set_tipo_formato_cotizacion", {
-      name,
-      custom_tipo_formato: cotForm.custom_tipo_formato,
-    });
-    q.custom_tipo_formato = cotForm.custom_tipo_formato;
-    if (related.quotation?.name === name) related.quotation.custom_tipo_formato = cotForm.custom_tipo_formato;
-    previewKey.value++;
-  } catch (e) { showToast(e.message || "No se pudo actualizar la vista de impresión", "error"); }
-}
 async function guardarCambiosCotizacion() {
   const name = expandedQuotName.value;
   if (!name) return;
@@ -8752,7 +9154,7 @@ async function guardarCambiosCotizacion() {
       taxes_and_charges: cotForm.taxes_and_charges || null,
       contact_email: cotForm.contact_email || null,
       contact_mobile: cotForm.contact_mobile || null,
-      items: cotItems.value.filter(r => r.item_code).map(r => ({ item_code: r.item_code, item_name: r.item_name, qty: r.qty, rate: r.rate })),
+      items: cotItems.value.filter(r => r.item_code).map(r => ({ name: r.name, item_code: r.item_code, item_name: r.item_name, description: r.description, qty: r.qty, rate: r.rate })),
     });
     await loadRelated();
     previewKey.value++;
@@ -8768,7 +9170,7 @@ async function validarDoc(doctype, name, after) {
     // sincronizar_qty_variantes_a_costeo) -- se guarda cualquier edición local
     // pendiente ANTES de validar, para que ese guardado no pise después el
     // valor recién sincronizado al recargar (mismo cuidado que en
-    // crearVarianteTalla/agregarMaterialVariante).
+    // crearVarianteTalla).
     if (doctype === "Quotation" || doctype === "Sales Order") {
       if (!(await saveDoc())) return;
     }
@@ -8814,8 +9216,13 @@ async function itemExists(itemCode) {
 // Recorre los productos del costeo; por cada finished_item que todavía no exista
 // como Item real, pide al usuario materializarlo (modal) antes de seguir. Devuelve
 // una promesa que resuelve `true` si todos quedaron listos, `false` si se canceló.
+// Las variantes de talla entran aunque su cantidad siga pendiente (0): la cotización
+// les pone una línea de referencia y para eso necesitan su artículo. Van DESPUÉS de
+// todos los productos base, para que su código salga del artículo ya dado de alta.
 async function materializeFinishedProductsIfNeeded() {
-  materializeQueue = productos.value.filter(p => p.finished_item && (p.qty || 0) > 0);
+  materializeQueue = productos.value
+    .filter(p => p.finished_item && ((p.qty || 0) > 0 || p.variante_talla_de))
+    .sort((a, b) => (a.variante_talla_de ? 1 : 0) - (b.variante_talla_de ? 1 : 0));
   return new Promise((resolve) => {
     materializeDone = resolve;
     processNextMaterialize();
@@ -8826,13 +9233,50 @@ async function processNextMaterialize() {
   if (!materializeQueue.length) { materializeDone && materializeDone(true); return; }
   const prod = materializeQueue[0];
   if (await itemExists(prod.finished_item)) { materializeQueue.shift(); return processNextMaterialize(); }
+  // Variante cuyo producto base ya es artículo (se dio de alta antes): el modal abre
+  // en modo "solo tallas" con TODAS las tallas pendientes de ese base, para capturar
+  // su escala de precios por volumen antes de crearlas.
+  materializeModal.soloTallas = !!(prod.variante_talla_de && await itemExists(prod.variante_talla_de));
+  const baseDeTallas = materializeModal.soloTallas ? prod.variante_talla_de : prod.finished_item;
+  materializeModal.tallasExtra = prod.variante_talla_de && !materializeModal.soloTallas ? [] : productos.value
+    .filter(p => p.variante_talla_de === baseDeTallas)
+    .map(p => ({ text: p.finished_item, label: p.talla_grupo_label || p.finished_item, precio: p.unit_sales_price || 0 }));
   materializeCurrentProd = prod;
+  if (materializeModal.soloTallas) {
+    materializeModal.text = prod.variante_talla_de;
+    materializeModal.saving = false;
+    materializeModal.open = true;
+    return;
+  }
   materializeModal.text = prod.finished_item;
   materializeModal.suggestedPrice = prod.unit_sales_price || 0;
-  materializeModal.suggestedDescription = (prod.description || "") + buildTallaDescriptionSuffix(prod);
+  materializeModal.suggestedDescription = prod.description || "";
   materializeModal.suggestedImage = prod.image || "";
+  materializeModal.esVariante = !!prod.variante_talla_de;
+  materializeModal.suggestedCode = prod.variante_talla_de && await itemExists(prod.variante_talla_de)
+    ? codigoVarianteTalla(prod.variante_talla_de, prod.talla_grupo_label) : "";
   materializeModal.saving = false;
   materializeModal.open = true;
+}
+// Mismo código que arma el servidor para una variante cuyo producto base ya era
+// artículo (costeo_api._slug_item_code): "<artículo base>-<CABALLERO-XXL-3XL>".
+function codigoVarianteTalla(base, etiqueta) {
+  const slug = (etiqueta || "").replace(/[^\p{L}\p{N}_-]/gu, "-").replace(/^-+|-+$/g, "").toUpperCase();
+  return slug ? `${base}-${slug}` : `${base}-VAR`;
+}
+
+// El servidor ya renombró el texto libre por el código del artículo en todas las tablas
+// del costeo; aquí se hace lo mismo en la copia de la pantalla, o el siguiente guardado
+// regresaría los nombres viejos (y cleanup_orphan_children borraría filas).
+function renombrarProductoLocal(oldText, code) {
+  if (!oldText || oldText === code) return;
+  productos.value.forEach(p => {
+    if (p.finished_item === oldText) { p.finished_item = code; p._lastFinishedItem = code; }
+    if (p.variante_talla_de === oldText) p.variante_talla_de = code;
+  });
+  detalles.value.forEach(d => { if (d.finished_item === oldText) d.finished_item = code; });
+  etapas.value.forEach(e => { if (e.producto_terminado === oldText) e.producto_terminado = code; });
+  tallas.value.forEach(t => { if (t.finished_item === oldText) t.finished_item = code; });
 }
 
 function cancelMaterialize() {
@@ -8844,6 +9288,20 @@ function cancelMaterialize() {
 async function confirmMaterialize(payload) {
   const prod = materializeCurrentProd;
   materializeModal.saving = true;
+  if (payload.solo_tallas) {
+    try {
+      const r = await call("costeo_yelke.api.costeo_api.materializar_variantes_talla", {
+        costeo: docName.value, producto_base: prod.variante_talla_de,
+        precios_variantes: JSON.stringify(payload.tallas_precios || {}),
+      });
+      (r?.variantes || []).forEach(v => renombrarProductoLocal(v.old, v.item_code));
+      materializeModal.open = false;
+      materializeQueue.shift();
+      await processNextMaterialize();
+    } catch (e) { showToast(e.message || "No se pudieron dar de alta las tallas extra", "error"); }
+    finally { materializeModal.saving = false; }
+    return;
+  }
   try {
     const oldText = prod.finished_item;
     const r = await call("costeo_yelke.api.costeo_api.materializar_producto_terminado", {
@@ -8856,12 +9314,11 @@ async function confirmMaterialize(payload) {
       pricing_rules: JSON.stringify(payload.pricing_rules || []),
       description: payload.description || null,
       image: payload.image || null,
+      precios_variantes: JSON.stringify(payload.tallas_precios || {}),
     });
-    prod.finished_item = r.item_code;
-    prod._lastFinishedItem = r.item_code;
-    detalles.value.forEach(d => { if (d.finished_item === oldText) d.finished_item = r.item_code; });
-    etapas.value.forEach(e => { if (e.producto_terminado === oldText) e.producto_terminado = r.item_code; });
-    tallas.value.forEach(t => { if (t.finished_item === oldText) t.finished_item = r.item_code; });
+    renombrarProductoLocal(oldText, r.item_code);
+    // Sus variantes de talla se dieron de alta solas en el servidor (r.variantes).
+    (r.variantes || []).forEach(v => renombrarProductoLocal(v.old, v.item_code));
     materializeModal.open = false;
     materializeQueue.shift();
     await processNextMaterialize();
@@ -9067,11 +9524,12 @@ function openRevisionModal() { actionsOpen.value = false; revisionMotivo.value =
 async function confirmarRevision() {
   revisionCreating.value = true;
   try {
-    const res = await call("costeo_yelke.api.costeo_api.crear_revision_costeo", { costeo: docName.value, motivo: revisionMotivo.value || "" });
+    await call("costeo_yelke.api.costeo_api.reabrir_costeo", { costeo: docName.value, motivo: revisionMotivo.value || "" });
     showRevisionModal.value = false;
-    showToast(`Revisión creada: ${res.name}`);
-    router.push({ name: "CosteoDetail", params: { name: res.name } });
-  } catch (e) { showToast(e.message || "Error al crear la revisión", "error"); }
+    await loadCosteoData({ silencioso: true });
+    activeStep.value = 0;
+    showToast("El costeo está en borrador: corrígelo y vuelve a validarlo");
+  } catch (e) { showToast(e.message || "No se pudo abrir el costeo para editar", "error"); }
   finally { revisionCreating.value = false; }
 }
 function printDoc() { actionsOpen.value = false; if (headerDoc.value) openPdf(headerDoc.value.doctype, headerDoc.value.name); }
@@ -9083,8 +9541,14 @@ function openInDesk() { actionsOpen.value = false; if (headerDoc.value) deskOpen
 // reusa la instancia del componente cuando solo cambia el :name de la misma ruta, así
 // que sin esto onMounted nunca se vuelve a disparar y la pantalla se queda mostrando
 // el documento anterior con la URL ya apuntando al nuevo.
-async function loadCosteoData() {
-  loading.value = true;
+// De qué costeo ya se eligió el paso inicial (ver statusToStep en loadCosteoData).
+let pasoAbiertoDe = null;
+// `silencioso`: recarga del MISMO costeo después de una acción (crear variante,
+// ajustar un material...) -- sin el spinner de pantalla completa, que desmonta el paso
+// y regresa el scroll hasta arriba.
+async function loadCosteoData(opciones = {}) {
+  const silencioso = !!opciones?.silencioso;
+  if (!silencioso) loading.value = true;
   if (isNew.value) {
     if (!form.compania && companyState.selected) form.compania = companyState.selected;
     pruneDraftSiSeVencio();
@@ -9104,8 +9568,14 @@ async function loadCosteoData() {
     await loadPlan(route.params.name, activeSOName.value);
     await loadPendientesArticulos();
     // Abre directo en el último paso alcanzado (no en el primero) -- para que
-    // cualquiera que reabra el proyecto siga exactamente donde se quedó.
-    activeStep.value = statusToStep(docStatus.value, hasPlan.value, etapas.value.length, pendientesArticulos.value.length);
+    // cualquiera que reabra el proyecto siga exactamente donde se quedó. Solo al
+    // ABRIR el proyecto: las recargas de este mismo costeo (al validar la OV, al
+    // sincronizar tallas, tras una aprobación...) dejan a la persona donde está --
+    // validar la OV no debe brincar a Alta de Productos, todavía falta enviarla.
+    if (pasoAbiertoDe !== route.params.name) {
+      activeStep.value = statusToStep(docStatus.value, hasPlan.value, etapas.value.length, pendientesArticulos.value.length, soValidated.value);
+      pasoAbiertoDe = route.params.name;
+    }
     await loadRevisionInfo();
     // Llegada desde una lista de documentos (ej. /ordenes-compra): forzar el paso y
     // resaltar el documento exacto -- se consume una sola vez, luego se limpia la URL
@@ -9138,7 +9608,7 @@ async function loadCosteoData() {
     // trae nada, el último guardado en este navegador.
     if (activeStep.value === 5) await restaurarVistaProduccion();
   } catch { showToast("No se pudo cargar el costeo", "error"); }
-  finally { loading.value = false; }
+  finally { if (!silencioso) loading.value = false; }
 }
 
 onMounted(async () => {
@@ -9177,6 +9647,10 @@ onUnmounted(() => {
    posición en vez de saltar de golpe -- así se ve claramente que solo se
    intercambiaron esas dos, nada más. */
 .flujo-card-move { transition: transform 0.25s ease; }
+/* Flujo confirmado (fieldset deshabilitado): los enlaces de edición -- "editar",
+   "separar/unir", "+ agregar pieza", "Aquí se unen las piezas" -- se ocultan en vez
+   de verse naranjas y activos sin hacer nada. */
+fieldset:disabled button.text-brand-600 { display: none; }
 
 /* "Flujo de Producción" (lista de pasos) -- botones e interruptor chicos a propósito,
    para que no compitan con los campos del paso (servicio/proveedor/precio). */

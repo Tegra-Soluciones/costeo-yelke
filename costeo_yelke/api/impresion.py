@@ -297,6 +297,34 @@ def fecha_hora(valor):
     return f"{fecha_corta(dt)} · {dt:%H:%M}"
 
 
+def tallas_atipicas(doc):
+    """Tallas extra "sobre pedido" de una cotización: variantes de talla del costeo cuya
+    cantidad aún no da el cliente. No son líneas de la cotización (no suman al total,
+    ver costeo_api._variante_pendiente); el formato las muestra aparte, como precio de
+    referencia por pieza."""
+    from costeo_yelke.api.costeo_api import _variante_pendiente
+
+    costeo = doc.get("costeo")
+    if not costeo or not frappe.db.exists("Costeo", costeo):
+        return []
+    c = frappe.get_cached_doc("Costeo", costeo)
+    en_lineas = {r.item_code for r in doc.get("items") or []}
+    out = []
+    for p in c.costeo_producto:
+        if not _variante_pendiente(c, p) or p.finished_item in en_lineas:
+            continue
+        item = frappe.db.get_value("Item", p.finished_item, ["item_name", "stock_uom", "image"], as_dict=True) or {}
+        out.append(frappe._dict({
+            "item_code": p.finished_item,
+            "item_name": item.get("item_name") or p.finished_item,
+            "talla": p.get("talla_grupo_label") or "",
+            "rate": p.unit_sales_price or 0,
+            "uom": item.get("stock_uom") or "",
+            "image": p.get("image") or item.get("image"),
+        }))
+    return out
+
+
 def rfc_tercero(doctype, nombre):
     return (frappe.db.get_value(doctype, nombre, "tax_id") or "") if nombre else ""
 

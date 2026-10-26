@@ -30,6 +30,45 @@ UPPER_FIELDS = {
 }
 
 
+# Costeo: todo lo que se escribe a mano -- título, productos / materiales / servicios
+# en texto libre, descripciones y nombres de piezas -- para un catálogo ordenado de
+# productos y servicios (pedido de Yelke, oct 2026). Nunca identificadores internos
+# (material_id, stage_id, etapa, recibe_de, stage_ids, lote_ref) ni ligas a otros
+# doctypes (proveedor, UDM, talla).
+UPPER_COSTEO = {
+    "Costeo":                  ("titulo", "familia_prenda"),
+    "Costeo Producto":         ("finished_item", "variante_talla_de", "talla_grupo_label", "description"),
+    "Costeo Producto Detalle": ("finished_item", "item", "servicio", "subensamblaje"),
+    "Etapas Costeo":           ("servicio", "subensamblaje", "producto_terminado"),
+    "Costeo Sub Ensamblaje":   ("producto_terminado", "nombre"),
+    "Costeo Producto Talla":   ("finished_item",),
+}
+
+
+def upper_costeo(doc, method=None):
+    """before_insert / before_validate / before_update_after_submit del Costeo: el
+    documento y todas sus tablas en una sola pasada, para que las referencias por
+    nombre entre tablas (finished_item, producto_terminado...) sigan coincidiendo."""
+    for d in [doc, *doc.get_all_children()]:
+        for fieldname in UPPER_COSTEO.get(d.doctype, ()):
+            value = d.get(fieldname)
+            if isinstance(value, str) and value and value != value.upper():
+                d.set(fieldname, value.upper())
+
+
+def homologar_costeos():
+    """Corrida única: lo mismo que upper_costeo sobre los costeos ya guardados (todas
+    las tablas a la vez, para no romper las referencias por nombre). Idempotente."""
+    for doctype, fields in UPPER_COSTEO.items():
+        for fieldname in fields:
+            if frappe.db.has_column(doctype, fieldname):
+                frappe.db.sql(
+                    f"update `tab{doctype}` set `{fieldname}` = upper(`{fieldname}`) "
+                    f"where binary `{fieldname}` <> binary upper(`{fieldname}`)"
+                )
+    frappe.db.commit()
+
+
 def upper(doc, method=None):
     fields = UPPER_FIELDS.get(doc.doctype)
     if not fields:
@@ -49,10 +88,11 @@ def upper(doc, method=None):
 _SKIP_EXISTENTES = {"Item Group", "Customer Group", "Supplier Group", "Territory", "Warehouse"}
 
 
-def homologar_existentes():
-    """Corrida única: pasa a MAYÚSCULAS los maestros ya cargados. Idempotente."""
+def homologar_existentes(solo=None):
+    """Corrida única: pasa a MAYÚSCULAS los maestros ya cargados. Idempotente.
+    ``solo``: limitarla a esos doctypes (ej. ("Item",))."""
     for doctype, fields in UPPER_FIELDS.items():
-        if doctype in _SKIP_EXISTENTES:
+        if doctype in _SKIP_EXISTENTES or (solo and doctype not in solo):
             continue
 
         autoname = frappe.get_meta(doctype).autoname

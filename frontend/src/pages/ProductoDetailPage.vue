@@ -121,7 +121,7 @@
               <!-- Nombre -->
               <div>
                 <label class="text-xs font-medium text-gray-500 block mb-1">Nombre</label>
-                <input v-model="itemForm.item_name" type="text" class="field-input" />
+                <input v-model="itemForm.item_name" v-mayus type="text" class="field-input" />
               </div>
 
               <!-- Grupo -->

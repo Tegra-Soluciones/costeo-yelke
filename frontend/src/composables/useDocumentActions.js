@@ -10,7 +10,7 @@ export function useDocumentActions(showToast) {
 
   const pdfModal = reactive({ open: false, doctype: "", name: "" });
   const sendChooser = reactive({ open: false, doctype: "", name: "", email: "", phone: "", printFormats: [], asunto: "", mensaje: "" });
-  const waModal = reactive({ open: false, doctype: "", name: "", phone: "", message: "" });
+  const waModal = reactive({ open: false, doctype: "", name: "", phone: "", message: "", printFormats: [] });
   const sendModal = reactive({ open: false, doctype: "", name: "", recipients: "", subject: "", message: "", sending: false, printFormats: [] });
   const assignModal = reactive({ open: false, doctype: "", name: "", selected: [], sending: false });
 
@@ -68,7 +68,10 @@ export function useDocumentActions(showToast) {
 
   /** `opciones.printFormats`: los PDF que se adjuntan (varios del mismo documento).
    *  `opciones.asunto` / `opciones.mensaje`: textos propios de ese envío. */
+  // Qué hacer después de enviar (la pantalla que abrió el envío refresca su estado).
+  let alEnviar = null;
   async function openSend(doctype, name, email, phone, opciones = {}) {
+    alEnviar = opciones.alEnviar || null;
     // Solo se envía un documento validado (el servidor lo vuelve a revisar al enviar).
     try {
       await call("costeo_yelke.api.costeo_api.validar_envio_documento", { doctype, name });
@@ -96,21 +99,39 @@ export function useDocumentActions(showToast) {
     sendChooser.open = false;
     waModal.doctype = sendChooser.doctype; waModal.name = sendChooser.name;
     waModal.phone = sendChooser.phone;
-    waModal.message = `Hola, le comparto el documento *${sendChooser.name}*. Adjunto el PDF con el detalle. Quedamos atentos.`;
+    waModal.printFormats = sendChooser.printFormats || [];
+    // Varios PDF del mismo documento (la orden a un taller va con su ficha de
+    // manufactura): el mensaje los nombra a todos, igual que el correo.
+    waModal.message = waModal.printFormats.length > 1
+      ? `Hola, le comparto los documentos de *${sendChooser.name}*: ${waModal.printFormats.join(" y ")}. Adjunto los PDF. Quedamos atentos.`
+      : `Hola, le comparto el documento *${sendChooser.name}*. Adjunto el PDF con el detalle. Quedamos atentos.`;
     waModal.open = true;
   }
   function sendWhatsAppGeneric() {
     const phone = (waModal.phone || "").replace(/[^0-9]/g, "");
     if (!phone) { showToast("Ingresa un número de WhatsApp", "error"); return; }
-    const printFormat = printFmtMap[fmtKey(waModal.doctype, waModal.name)] || "Standard";
-    const pdfUrl = `/api/method/frappe.utils.print_format.download_pdf?doctype=${encodeURIComponent(waModal.doctype)}&name=${encodeURIComponent(waModal.name)}&format=${encodeURIComponent(printFormat)}&no_letterhead=0`;
-    const a = document.createElement("a");
-    a.href = pdfUrl; a.download = `${waModal.name}.pdf`; a.click();
+    // Los mismos PDF que el correo (enviar_por_correo): la ficha de manufactura sale
+    // con sus anexos unidos al final (impresion.descargar_om).
+    const formatos = waModal.printFormats.length
+      ? waModal.printFormats : [printFmtMap[fmtKey(waModal.doctype, waModal.name)] || "Standard"];
+    const pdfs = formatos.map((f) => (f === "Orden de Manufactura" && waModal.doctype === "Purchase Order"
+      ? { url: `/api/method/costeo_yelke.api.impresion.descargar_om?po=${encodeURIComponent(waModal.name)}`, nombre: `Ficha de manufactura - ${waModal.name}.pdf` }
+      : { url: `/api/method/frappe.utils.print_format.download_pdf?doctype=${encodeURIComponent(waModal.doctype)}&name=${encodeURIComponent(waModal.name)}&format=${encodeURIComponent(f)}&no_letterhead=0`,
+          nombre: formatos.length > 1 ? `${f} - ${waModal.name}.pdf` : `${waModal.name}.pdf` }));
+    // Uno tras otro: dos descargas en el mismo instante, el navegador suele bloquear la segunda.
+    pdfs.forEach((pdf, i) => setTimeout(() => {
+      const a = document.createElement("a");
+      a.href = pdf.url; a.download = pdf.nombre; a.click();
+    }, i * 900));
     setTimeout(() => {
       window.open(`https://wa.me/${phone}?text=${encodeURIComponent(waModal.message)}`, "_blank");
-    }, 500);
+    }, pdfs.length * 900);
     waModal.open = false;
-    showToast("PDF descargado — adjúntalo en WhatsApp");
+    showToast(pdfs.length > 1 ? `${pdfs.length} PDF descargados — adjúntalos en WhatsApp` : "PDF descargado — adjúntalo en WhatsApp");
+    // El chat se manda fuera del sistema: se deja constancia de que se envió.
+    call("costeo_yelke.api.costeo_api.marcar_enviado_whatsapp", { doctype: waModal.doctype, name: waModal.name, telefono: phone })
+      .then(() => (alEnviar ? alEnviar() : null))
+      .catch(() => { /* el envío ya salió; solo no quedó la marca */ });
   }
   async function doSend() {
     sendModal.sending = true;
@@ -122,6 +143,7 @@ export function useDocumentActions(showToast) {
       });
       sendModal.open = false;
       showToast("Correo enviado");
+      if (alEnviar) await alEnviar();
     } catch (e) { showToast(e.message || "No se pudo enviar", "error"); }
     finally { sendModal.sending = false; }
   }

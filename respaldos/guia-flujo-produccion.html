@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Guía · Flujo de Producción</title>
+<style>
+  @page { size: A4; margin: 18mm 20mm 16mm; }
+  * { box-sizing: border-box; }
+  html { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; color: #1a1a1a; font-size: 10pt; line-height: 1.55; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { margin: 0; }
+  p { margin: 0 0 6pt; }
+  ul { margin: 0 0 6pt; padding-left: 13pt; }
+  li { margin: 0 0 3pt; }
+  b { font-weight: 600; }
+  .gris { color: #6b6b6b; }
+
+  header { padding-bottom: 14pt; border-bottom: 0.6pt solid #d4d4d4; margin-bottom: 18pt; }
+  header h1 { font-size: 20pt; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 4pt; }
+  header p { color: #6b6b6b; margin: 0; }
+
+  section { break-inside: avoid; margin: 0 0 22pt; }
+  .num { font-size: 8pt; letter-spacing: 0.12em; color: #8a8a8a; margin-bottom: 2pt; }
+  h2 { font-size: 13pt; font-weight: 600; margin: 0 0 8pt; letter-spacing: -0.005em; }
+
+  figure { margin: 10pt 0 10pt; break-inside: avoid; }
+  .img { position: relative; border: 0.6pt solid #dcdcdc; border-radius: 4pt; overflow: hidden; }
+  .img img { display: block; width: 100%; }
+  figcaption { font-size: 8pt; color: #8a8a8a; margin-top: 4pt; }
+  .w60 { width: 60%; } .w50 { width: 50%; } .w42 { width: 42%; }
+
+  .pin { position: absolute; transform: translate(-50%, -50%); width: 12pt; height: 12pt; border-radius: 50%; background: #1a1a1a; color: #fff; font-size: 7pt; font-weight: 600; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 1.5pt #fff; }
+  .leyenda { display: grid; grid-template-columns: 1fr 1fr; gap: 3pt 18pt; }
+  .ley { display: flex; gap: 6pt; align-items: baseline; }
+  .ley i { font-style: normal; flex-shrink: 0; width: 12pt; height: 12pt; border-radius: 50%; background: #1a1a1a; color: #fff; font-size: 7pt; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; position: relative; top: 1pt; }
+
+  .dos { display: grid; grid-template-columns: 1fr 1fr; gap: 18pt; }
+  h3 { font-size: 10pt; font-weight: 600; margin: 0 0 4pt; }
+
+  table { width: 100%; border-collapse: collapse; margin: 4pt 0 6pt; }
+  th { text-align: left; font-weight: 500; font-size: 8.5pt; color: #8a8a8a; padding: 4pt 0; border-bottom: 0.6pt solid #d4d4d4; }
+  td { padding: 5pt 10pt 5pt 0; border-bottom: 0.6pt solid #ececec; vertical-align: top; }
+  td:first-child { width: 32%; font-weight: 600; }
+
+  .check { list-style: none; padding: 0; }
+  .check li { position: relative; padding-left: 16pt; margin-bottom: 5pt; }
+  .check li::before { content: ""; position: absolute; left: 0; top: 2.5pt; width: 8pt; height: 8pt; border: 0.8pt solid #1a1a1a; border-radius: 1.5pt; }
+
+  .regla { border-left: 1.5pt solid #1a1a1a; padding: 1pt 0 1pt 9pt; margin: 8pt 0 4pt; }
+
+  footer { margin-top: 10pt; padding-top: 6pt; border-top: 0.6pt solid #d4d4d4; font-size: 8pt; color: #8a8a8a; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Flujo de Producción</h1>
+  <p>Guía rápida para dejar listo el recorrido de cada prenda antes de pasar a producción.</p>
+</header>
+
+<section>
+  <p>En esta pantalla se define <b>por qué talleres pasa la prenda</b>, en qué orden, qué recibe cada uno y qué piezas trabaja.</p>
+  <p class="gris">Lo que diga esta pantalla es exactamente lo que se le encargará a cada taller.</p>
+</section>
+
+<section>
+  <div class="num">01</div>
+  <h2>Cada tarjeta es un taller</h2>
+  <figure class="w60">
+    <div class="img">
+      <img src="capturas-guia-flujo/01c-tarjeta.png" alt="">
+      <span class="pin" style="left:2.6%;top:27.4%">1</span>
+      <span class="pin" style="left:2.6%;top:12%">2</span>
+      <span class="pin" style="left:57%;top:13.3%">3</span>
+      <span class="pin" style="left:29.8%;top:27%">4</span>
+      <span class="pin" style="left:30.6%;top:49%">5</span>
+      <span class="pin" style="left:42.6%;top:72%">6</span>
+    </div>
+    <figcaption>Primer paso de una camisola: el taller de corte, que arranca desde materia prima.</figcaption>
+  </figure>
+  <div class="leyenda">
+    <div class="ley"><i>1</i><span><b>Número de paso.</b> En verde, el paso final.</span></div>
+    <div class="ley"><i>4</i><span><b>Servicios</b> que hace y su precio por prenda.</span></div>
+    <div class="ley"><i>2</i><span><b>▲ ▼</b> sube o baja el paso.</span></div>
+    <div class="ley"><i>5</i><span><b>Recibe de:</b> de dónde le llega el trabajo.</span></div>
+    <div class="ley"><i>3</i><span><b>Taller</b> que hace el trabajo.</span></div>
+    <div class="ley"><i>6</i><span><b>Materia prima</b> que se le entrega.</span></div>
+  </div>
+</section>
+
+<section>
+  <div class="num">02</div>
+  <h2>Ordena los pasos</h2>
+  <ul>
+    <li>Con <b>▲ ▼</b>, en el orden real: arriba lo primero, abajo el paso final.</li>
+    <li>Si subes un paso sobre el que lo alimenta, esa conexión se borra. Revisa su <b>Recibe de</b>.</li>
+    <li>Dos talleres que trabajan a la vez: el orden entre ellos no importa.</li>
+  </ul>
+</section>
+
+<section>
+  <div class="num">03</div>
+  <h2>Servicios del mismo taller</h2>
+  <figure>
+    <div class="img"><img src="capturas-guia-flujo/02-servicios-separar.png" alt=""></div>
+    <figcaption>Un taller con tres bordados. El sistema los junta en una sola tarjeta: un solo encargo.</figcaption>
+  </figure>
+  <ul>
+    <li><b>Déjalos juntos</b> si el taller los hace en el mismo momento.</li>
+    <li>Presiona <b>separar</b> si la pieza sale a otro taller y regresa entre un servicio y otro.</li>
+    <li><b>unir</b> lo regresa al bloque.</li>
+  </ul>
+</section>
+
+<section>
+  <div class="num">04</div>
+  <h2>Recibe de</h2>
+  <figure class="w60">
+    <div class="img"><img src="capturas-guia-flujo/04-recibe-de.png" alt=""></div>
+    <figcaption>Botón “editar” junto a Recibe de. Aquí, confección recibe de tres talleres.</figcaption>
+  </figure>
+  <table>
+    <tr><th>Marca</th><th>Cuándo</th></tr>
+    <tr><td>Materia prima</td><td>El taller arranca de cero, normalmente el corte. Puede haber varios a la vez.</td></tr>
+    <tr><td>Un paso</td><td>Recibe lo que ese taller ya trabajó. Viene así por defecto.</td></tr>
+    <tr><td>Varios pasos</td><td>Ahí se juntan caminos. Ejemplo: confección recibe de bordado, reflejante y corte.</td></tr>
+  </table>
+  <div class="regla">Marca todos los pasos de los que de verdad le llega algo, y ninguno más.</div>
+</section>
+
+<section>
+  <div class="num">05</div>
+  <h2>Materia prima</h2>
+  <figure class="w42">
+    <div class="img"><img src="capturas-guia-flujo/05-materia-prima.png" alt=""></div>
+    <figcaption>Botón “editar” junto a Materia prima.</figcaption>
+  </figure>
+  <ul>
+    <li>Cada material va al taller que lo <b>usa</b>, y solo a uno.</li>
+    <li>Tela → corte. Cinta → reflejante. Hilo, botones, cierres → confección. Etiquetas y bolsas → acabado.</li>
+    <li>“Ninguno” es normal si el taller solo trabaja lo que recibe.</li>
+  </ul>
+  <div class="regla">Un material en el taller equivocado se le manda y se le cobra a ese taller.</div>
+</section>
+
+<section>
+  <div class="num">06</div>
+  <h2>¿Necesito piezas?</h2>
+  <div class="dos">
+    <div>
+      <h3>Sí, cuando</h3>
+      <ul>
+        <li>Una parte pasa por un taller y las demás no.</li>
+        <li>Un taller trabaja partes sueltas antes de coser.</li>
+        <li>Una parte llega de otro taller (forro cortado aparte).</li>
+      </ul>
+    </div>
+    <div>
+      <h3>No, cuando</h3>
+      <ul>
+        <li>La prenda pasa completa por cada taller.</li>
+        <li>Todas las partes siguen el mismo camino.</li>
+        <li>Lo que cambia es la talla (eso son tallas extra).</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="num">07</div>
+  <h2>Llenar la tabla de piezas</h2>
+  <figure>
+    <div class="img">
+      <img src="capturas-guia-flujo/06-tabla-piezas.png" alt="">
+      <span class="pin" style="left:90%;top:4.2%">A</span>
+      <span class="pin" style="left:89.7%;top:14.3%">B</span>
+      <span class="pin" style="left:41%;top:22.6%">C</span>
+      <span class="pin" style="left:41%;top:73.5%">D</span>
+      <span class="pin" style="left:58%;top:94.8%">E</span>
+    </div>
+    <figcaption>Camisola de 6 piezas. El frente pasa por corte, reflejante y bordado; cada manga por su bordado; todas se unen en confección.</figcaption>
+  </figure>
+  <div class="leyenda" style="grid-template-columns:1fr">
+    <div class="ley"><i>A</i><span><b>agregar pieza:</b> una columna por pieza, con nombre corto.</span></div>
+    <div class="ley"><i>B</i><span><b>×</b> cuántas lleva una prenda. Puños ×2 → 1,000 camisolas = 2,000 puños.</span></div>
+    <div class="ley"><i>C</i><span>Marca <b>cada servicio por el que pasa la pieza</b>, incluido el corte.</span></div>
+    <div class="ley"><i>D</i><span>El paso donde se juntan todas, y los que siguen, <b>no se marcan</b>.</span></div>
+    <div class="ley"><i>E</i><span><b>Guardar cambios</b> y revisar.</span></div>
+  </div>
+  <div class="regla">Para revisar, lee cada columna de arriba abajo: es el camino real de esa pieza.</div>
+</section>
+
+<section>
+  <h3>Si las piezas se unen antes del último paso</h3>
+  <figure class="w50">
+    <div class="img"><img src="capturas-guia-flujo/08b-boton-union.png" alt=""></div>
+    <figcaption>En ese paso no marques nada y presiona “Aquí se unen las piezas”.</figcaption>
+  </figure>
+  <ul>
+    <li>Los pasos siguientes quedan como “Trabaja la prenda armada”.</li>
+    <li>Si el paso tiene alguna palomita, el botón no aparece.</li>
+  </ul>
+</section>
+
+<section>
+  <div class="num">08</div>
+  <h2>Antes de confirmar</h2>
+  <ul class="check">
+    <li>Los pasos van en el orden real.</li>
+    <li>Cada <b>Recibe de</b> es de donde de verdad llega el trabajo.</li>
+    <li>Cada material está en el taller que lo usa.</li>
+    <li>Cada columna de piezas describe su camino real.</li>
+    <li>La unión de piezas está en el paso correcto.</li>
+    <li>No queda ningún aviso ⚠ sin revisar.</li>
+    <li>Las tallas extra se ven igual que el producto base.</li>
+  </ul>
+  <figure class="w42">
+    <div class="img"><img src="capturas-guia-flujo/07-confirmar.png" alt=""></div>
+    <figcaption>Al presionar “Confirmar y pasar a producción” aparece este resumen. Léelo; si algo no cuadra, Cancelar.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="num">09</div>
+  <h2>Ya confirmado</h2>
+  <figure>
+    <div class="img"><img src="capturas-guia-flujo/09-bloqueado.png" alt=""></div>
+    <figcaption>Después de confirmar la pantalla queda en solo lectura.</figcaption>
+  </figure>
+  <ul>
+    <li>Para corregir, presiona <b>Revertir flujo</b>, corrige y vuelve a confirmar.</li>
+    <li>Solo se puede si todavía no hay solicitudes de material, órdenes de compra, órdenes de trabajo ni remisiones.</li>
+  </ul>
+</section>
+
+<section>
+  <div class="num">10</div>
+  <h2>Avisos</h2>
+  <p class="gris">Haz clic en el ⚠ para leer el aviso completo.</p>
+  <table>
+    <tr><th>Aviso</th><th>Qué hacer</th></tr>
+    <tr><td>Faltan datos en este paso</td><td>Completa el taller o el servicio en Costear.</td></tr>
+    <tr><td>No alimenta a ningún otro</td><td>Al paso siguiente le falta marcarlo en Recibe de.</td></tr>
+    <tr><td>⚠ junto a Recibe de</td><td>Si una pieza sí llega directo de ese paso, déjalo. Si no, quítalo.</td></tr>
+    <tr><td>“ahí está marcada …”</td><td>En el paso de unión quedó una palomita. Quítala.</td></tr>
+    <tr><td>“todavía hay trabajo por pieza”</td><td>La unión está antes de tiempo. Muévela.</td></tr>
+    <tr><td>“no le llega …”</td><td>Revisa la columna de esa pieza y el Recibe de.</td></tr>
+    <tr><td>“se asume que pasan todas”</td><td>Falta una palomita en ese paso.</td></tr>
+  </table>
+</section>
+
+<footer>Costeo Yelke · Flujo de Producción · ¿Dudas? Revísalo con el administrador antes de confirmar.</footer>
+</body>
+</html>

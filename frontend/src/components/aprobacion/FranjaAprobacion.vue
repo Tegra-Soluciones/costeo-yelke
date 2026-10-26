@@ -12,7 +12,7 @@
   Validar a quien no puede usarlo, y `cambio` después de cada acción.
 -->
 <template>
-  <div v-if="e && e.aplica && e.docstatus === 0 && visible" class="rounded-xl border px-4 py-3" :class="caja">
+  <div v-if="e && e.aplica && e.docstatus === 0 && visible && conContenido" class="rounded-xl border px-4 py-3" :class="caja">
     <!-- Regresado -->
     <template v-if="e.estado === 'Devuelto'">
       <div class="flex items-start gap-3">
@@ -116,6 +116,11 @@ const dialogo = ref("");
 const ocupado = ref(false);
 const error = ref("");
 
+// Solo se dibuja si alguna rama tiene algo que decir: para quien valida directo, un
+// borrador no lleva franja (antes quedaba una caja gris vacía arriba del documento).
+const conContenido = computed(() => !!e.value && (
+  ["Devuelto", "Pendiente", "Revisado"].includes(e.value.estado)
+  || (e.value.puede_enviar && !e.value.puede_validar_directo)));
 const caja = computed(() => {
   if (!e.value) return "";
   if (e.value.estado === "Devuelto") return "bg-amber-50 border-amber-300";
