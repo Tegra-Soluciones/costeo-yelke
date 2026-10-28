@@ -142,6 +142,11 @@ def validar_archivos_factura(doc, method=None):
     Sin el campo (sitio sin el patch v0_2_58) no bloquea: la regla aparece con él."""
     if not frappe.db.has_column(doc.doctype, "factura_pdf") or doc.get("is_return"):
         return
+    # Taller sin alta en el SAT (patch v0_2_65): no emite factura. Su nota o recibo
+    # se puede adjuntar, pero no se exige.
+    if doc.doctype == "Purchase Invoice" and doc.get("supplier") and frappe.db.has_column("Supplier", "sin_alta_sat") \
+            and frappe.db.get_value("Supplier", doc.supplier, "sin_alta_sat"):
+        return
     pdf = (doc.get("factura_pdf") or "").strip()
     if not pdf:
         frappe.throw(_("Adjunta el PDF de la factura (campo 'Factura (PDF)') antes de validarla."),

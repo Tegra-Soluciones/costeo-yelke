@@ -97,7 +97,7 @@
             <template v-if="form.flete_modo === 'Paquetería externa' && (Number(form.shipping_cost) > 0 || isValidated)">
               <div>
                 <label class="field-label">Proveedor de paquetería <span class="text-red-400">*</span></label>
-                <LinkInput v-if="!isValidated" v-model="form.flete_proveedor" doctype="Supplier" placeholder="Paquetería / transportista…" :error="!form.flete_proveedor" />
+                <LinkInput v-if="!isValidated" v-model="form.flete_proveedor" doctype="Supplier" :filters="FILTRO_TRANSPORTISTA" placeholder="Paquetería / transportista…" :error="!form.flete_proveedor" />
                 <div v-else class="field-input bg-surface-raised/60 truncate">{{ form.flete_proveedor || "—" }}</div>
               </div>
               <div class="flex flex-col justify-end">
@@ -218,7 +218,7 @@ import { computed, reactive, watch } from "vue";
 import DocStatusPill from "./DocStatusPill.vue";
 import LinkInput from "./LinkInput.vue";
 import MultiploCompraModal from "./MultiploCompraModal.vue";
-import { call } from "@/utils/frappe.js";
+import { call, FILTRO_TRANSPORTISTA } from "@/utils/frappe.js";
 
 // Panel genérico para ver/editar CUALQUIER documento de compra-producción (OC, RFQ,
 // Presupuesto de proveedor, Recibo de compra, OC de subcontratación...) -- todos

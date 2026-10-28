@@ -23,10 +23,21 @@
           <span class="text-sm font-semibold text-ink">{{ doc.name }} <span class="font-normal text-ink-muted">· {{ doc.supplier_name || doc.supplier }}</span></span>
           <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full" :class="validated ? 'bg-indigo-50 text-indigo-700' : 'bg-amber-50 text-amber-700'">{{ validated ? 'Validada' : 'Borrador' }}</span>
         </div>
+        <!-- Taller sin alta en el SAT: no factura ni cobra IVA (ya va sin IVA desde su
+             orden); se registra igual para la cuenta por pagar. -->
+        <p v-if="doc.sin_alta_sat" class="text-[12px] text-ink-muted bg-surface-raised/60 rounded-lg px-3 py-2 mb-3">
+          Proveedor <b class="text-ink">sin alta en el SAT</b>: no emite factura y no lleva IVA. El folio y la nota son opcionales; esto solo registra lo que se le debe.
+        </p>
         <div class="grid sm:grid-cols-2 gap-x-4">
-          <div><label class="field-label">Folio del proveedor (factura)</label><input v-model="form.bill_no" :disabled="validated" class="field-input mb-3" placeholder="Nº de factura del proveedor" /></div>
+          <div><label class="field-label">{{ doc.sin_alta_sat ? "Folio de su nota (opcional)" : "Folio del proveedor (factura)" }}</label><input v-model="form.bill_no" :disabled="validated" class="field-input mb-3" :placeholder="doc.sin_alta_sat ? 'Si te dio nota o recibo' : 'Nº de factura del proveedor'" /></div>
           <div><label class="field-label">Fecha de factura</label><input v-model="form.posting_date" type="date" :disabled="validated" class="field-input mb-3" /></div>
-          <div><label class="field-label">Vencimiento</label><input v-model="form.due_date" type="date" :disabled="validated" class="field-input mb-3" /></div>
+          <div><label class="field-label">Condiciones de pago</label><select v-model="form.payment_terms_template" :disabled="validated" class="field-input mb-3"><option value="">— Sin plantilla —</option><option v-for="p in paymentTermsOptions" :key="p.name" :value="p.name">{{ p.name }}</option></select></div>
+          <!-- Con condición de pago el vencimiento sale de ella y de la fecha de factura. -->
+          <div>
+            <label class="field-label">Vencimiento</label>
+            <input v-model="form.due_date" type="date" :disabled="validated || !!form.payment_terms_template" class="field-input" :class="form.payment_terms_template && !validated ? 'mb-1' : 'mb-3'" />
+            <p v-if="form.payment_terms_template && !validated" class="text-[11px] text-ink-light mb-3">Según las condiciones de pago y la fecha de factura.</p>
+          </div>
           <!-- Factura en moneda extranjera: el tipo de cambio de la FACTURA (el del DOF
                de su fecha) es el que vale para la contabilidad; se captura a mano. -->
           <template v-if="extranjera">
@@ -40,7 +51,6 @@
               <p v-if="tc.aviso" class="text-[11px] text-red-600 mb-3">{{ tc.aviso }}</p>
             </div>
           </template>
-          <div><label class="field-label">Condiciones de pago</label><select v-model="form.payment_terms_template" :disabled="validated" class="field-input mb-3"><option value="">— Sin plantilla —</option><option v-for="p in paymentTermsOptions" :key="p.name" :value="p.name">{{ p.name }}</option></select></div>
         </div>
         <!-- Flete que cobra el mismo proveedor (viene del recibo): igualarlo a su CFDI. -->
         <label v-if="doc.flete_importe > 0 && !doc.es_factura_flete && !doc.sin_alta_sat" class="flex items-center gap-1.5 text-[12.5px] text-ink-muted mb-3">
@@ -53,9 +63,10 @@
           <span v-if="doc.grand_total !== undefined" class="text-ink-muted">Total con impuestos <span class="font-medium text-ink tabular-nums">{{ money(doc.grand_total, extranjera ? doc.currency : undefined) }}</span></span>
           <span v-if="extranjera" class="text-ink-muted">En {{ doc.company_currency }} <span class="font-medium text-ink tabular-nums">{{ money(doc.base_grand_total, doc.company_currency) }}</span></span>
         </div>
-        <!-- La factura del proveedor: PDF obligatorio para validar, XML opcional. -->
+        <!-- La factura del proveedor: PDF obligatorio para validar, XML opcional. Sin
+             alta en el SAT no hay factura: su nota, si la hay, es opcional. -->
         <div v-if="doc.archivos_factura" class="border-t border-surface-border pt-2.5 mb-3">
-          <FacturaArchivos doctype="Purchase Invoice" :docname="doc.name" v-model:pdf="doc.factura_pdf" v-model:xml="doc.factura_xml" :solo-lectura="validated" />
+          <FacturaArchivos doctype="Purchase Invoice" :docname="doc.name" v-model:pdf="doc.factura_pdf" v-model:xml="doc.factura_xml" :solo-lectura="validated" :opcional="!!doc.sin_alta_sat" />
         </div>
         <!-- Otros respaldos: en fletes, la carta porte. -->
         <div class="border-t border-surface-border pt-2.5 mb-3">
@@ -78,7 +89,7 @@
 </template>
 
 <script setup>
-import { computed, reactive } from "vue";
+import { computed, reactive, watch } from "vue";
 import AttachmentsPanel from "./AttachmentsPanel.vue";
 import FacturaArchivos from "./FacturaArchivos.vue";
 import { call } from "@/utils/frappe.js";
@@ -114,5 +125,14 @@ async function usarTipoCambioSistema() {
     if (r.tipo_cambio) props.form.conversion_rate = r.tipo_cambio;
   } finally { tc.buscando = false; }
 }
+// El vencimiento sigue a la condición de pago y a la fecha de factura (el mismo
+// cálculo que hace el servidor al guardar).
+watch(() => [props.form.payment_terms_template, props.form.posting_date], async ([plantilla, fecha]) => {
+  if (!plantilla || props.validated || !props.doc) return;
+  try {
+    const v = await call("costeo_yelke.api.costeo_api.vencimiento_por_condicion", { plantilla, fecha: fecha || null });
+    if (v && props.form.payment_terms_template === plantilla) props.form.due_date = v;
+  } catch { /* el servidor lo recalcula al guardar */ }
+});
 const extranjera = computed(() => !!props.doc?.currency && !!props.doc?.company_currency && props.doc.currency !== props.doc.company_currency);
 </script>

@@ -130,6 +130,10 @@ export function openDesk(doctype, name) {
  *  - respects permissions and link filters
  *  - returns [{value, description}] where value = doc name, description = title label
  */
+/** Solo transportistas: proveedores con «Proveedor de paquetería / transporte»
+ *  (Supplier.es_paqueteria) y activos. Para los campos de flete. */
+export const FILTRO_TRANSPORTISTA = [["es_paqueteria", "=", 1], ["disabled", "=", 0]];
+
 export async function searchLink(doctype, query, filters = []) {
   try {
     const res = await call("frappe.desk.search.search_link", {

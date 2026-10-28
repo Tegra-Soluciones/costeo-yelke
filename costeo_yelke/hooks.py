@@ -119,7 +119,9 @@ jinja = {
 		"costeo_yelke.api.impresion.imagen_articulo",
 		"costeo_yelke.api.impresion.tallas_atipicas",
 		# "Al terminar, entregar a" en la Orden de Maquila.
-		"costeo_yelke.api.entregas_taller.entregas_impresion"],
+		"costeo_yelke.api.entregas_taller.entregas_impresion",
+		# Reporte final del costeo en PDF (formato "Reporte Final Yelke").
+		"costeo_yelke.api.reporte_impresion.reporte_final_impresion"],
 }
 
 # Installation
@@ -320,6 +322,24 @@ for _dt in ("Customer", "Supplier"):
 	_lista = [] if not _actual else ([_actual] if isinstance(_actual, str) else list(_actual))
 	doc_events[_dt]["validate"] = [*_lista, "costeo_yelke.api.confirmaciones.validar_rfc"]
 
+# IVA separado (api/cuentas_mx.py): la cuenta genérica "IVA" se cambia por IVA
+# acreditable en compras y por IVA trasladado en ventas. Al final de la lista, para
+# corregir también los renglones que agregan los hooks de arriba (IVA del flete).
+for _dt in ("Supplier Quotation", "Purchase Order", "Purchase Receipt", "Purchase Invoice",
+            "Quotation", "Sales Order", "Delivery Note", "Sales Invoice"):
+	_actual = doc_events.setdefault(_dt, {}).get("validate")
+	_lista = [] if not _actual else ([_actual] if isinstance(_actual, str) else list(_actual))
+	doc_events[_dt]["validate"] = [*_lista, "costeo_yelke.api.cuentas_mx.corregir_cuenta_iva"]
+
+# IVA en base a flujo de efectivo: al pagar/cobrar (o cancelar el pago) la parte del IVA
+# de cada factura pasa de pendiente a pagado/cobrado (api/cuentas_mx.py).
+for _dt, _fn in (("Payment Entry", "al_mover_pago"), ("Journal Entry", "al_mover_pago"),
+                 ("Purchase Invoice", "al_mover_factura"), ("Sales Invoice", "al_mover_factura")):
+	for _evento in ("on_submit", "on_cancel"):
+		_actual = doc_events.setdefault(_dt, {}).get(_evento)
+		_lista = [] if not _actual else ([_actual] if isinstance(_actual, str) else list(_actual))
+		doc_events[_dt][_evento] = [*_lista, f"costeo_yelke.api.cuentas_mx.{_fn}"]
+
 # Scheduled Tasks
 # ---------------
 
@@ -332,6 +352,8 @@ scheduler_events = {
 	# Préstamo de permisos: aplica los que empiezan y retira los vencidos.
 	"hourly": [
 		"costeo_yelke.api.permisos_temporales.procesar_permisos_temporales",
+		# Pagos conciliados con la herramienta de conciliación (no disparan eventos).
+		"costeo_yelke.api.cuentas_mx.revisar_iva_pendiente",
 	],
 }
 

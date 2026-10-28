@@ -11,14 +11,15 @@
 <template>
   <div class="grid gap-x-4 gap-y-2" :class="apilado ? 'grid-cols-1' : 'sm:grid-cols-2'">
     <div>
-      <p class="field-label">Factura (PDF) <span v-if="!soloLectura && !pdf" class="text-red-600 font-normal">· obligatoria para validar</span></p>
+      <p v-if="opcional" class="field-label">Nota o recibo (PDF) <span class="text-ink-light font-normal">· opcional</span></p>
+      <p v-else class="field-label">Factura (PDF) <span v-if="!soloLectura && !pdf" class="text-red-600 font-normal">· obligatoria para validar</span></p>
       <OcClienteAdjunto
         :model-value="pdf" :solo-lectura="soloLectura" :subiendo="subiendo === 'factura_pdf'"
         texto="Adjuntar el PDF" accept=".pdf,application/pdf"
         @archivo="subir($event, 'factura_pdf')" @quitar="guardar('factura_pdf', '')"
       />
     </div>
-    <div>
+    <div v-if="!opcional">
       <p class="field-label">Factura (XML) <span class="text-ink-light font-normal">· opcional</span></p>
       <OcClienteAdjunto
         :model-value="xml" :solo-lectura="soloLectura" :subiendo="subiendo === 'factura_xml'"
@@ -42,6 +43,8 @@ const props = defineProps({
   xml: { type: String, default: "" },
   soloLectura: { type: Boolean, default: false },
   apilado: { type: Boolean, default: false },   // columna angosta: uno debajo del otro
+  // Proveedor sin alta en el SAT: no hay CFDI; su nota se adjunta si se quiere.
+  opcional: { type: Boolean, default: false },
 });
 const emit = defineEmits(["update:pdf", "update:xml"]);
 const subiendo = ref("");

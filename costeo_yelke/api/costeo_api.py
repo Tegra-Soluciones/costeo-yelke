@@ -1098,13 +1098,15 @@ def get_articulos_pendientes(costeo: str) -> dict:
     grupos = {}
 
     def add(row_type, texto, item_group_sugerido, supplier, producto_terminado,
-            unit_price=None, supplier_uom=None, internal_uom=None, conversion_factor=None):
+            unit_price=None, supplier_uom=None, internal_uom=None, conversion_factor=None,
+            precio_compra=None):
         if not texto or texto in existentes:
             return
         g = grupos.setdefault((row_type, texto), {
             "row_type": row_type, "texto": texto, "item_group_sugerido": item_group_sugerido,
             "supplier": None, "productos": [], "unit_price": None,
             "supplier_uom": None, "internal_uom": None, "conversion_factor": None,
+            "precio_compra": None,
         })
         if supplier and not g["supplier"]:
             g["supplier"] = supplier
@@ -1118,12 +1120,16 @@ def get_articulos_pendientes(costeo: str) -> dict:
             g["internal_uom"] = internal_uom
         if conversion_factor and not g["conversion_factor"]:
             g["conversion_factor"] = flt(conversion_factor)
+        # Precio en la UDM del proveedor (el del mazo, no el de la pieza).
+        if precio_compra and not g["precio_compra"]:
+            g["precio_compra"] = flt(precio_compra)
 
     for d in doc.costeo_producto_detalle:
         if d.concept_type == "Materia Prima":
             add("material", d.item, "Materia prima", d.supplier, d.finished_item,
                 unit_price=d.unit_price, supplier_uom=d.supplier_uom,
-                internal_uom=d.internal_uom, conversion_factor=d.conversion_factor)
+                internal_uom=d.internal_uom, conversion_factor=d.conversion_factor,
+                precio_compra=d.get("precio_compra"))
 
     # Servicios: cada fila de etapa aporta un servicio que debe existir como Item,
     # sin importar cómo se agrupen después las etapas en operaciones.
@@ -1232,6 +1238,14 @@ def materializar_articulo(costeo: str, row_type: str, texto: str, item_code: str
             prefill["item_prices"] = [price_row]
         if precio and not prefill.get("standard_rate"):
             prefill["standard_rate"] = precio
+        # Precio de cada múltiplo de compra (mazo, rollo...) en SU UDM, ligado al
+        # proveedor: _precio_para_oc lo toma tal cual al hacer la orden en esa UDM.
+        for conv in prefill.get("uom_conversions") or []:
+            if conv.get("uom") and flt(conv.get("precio")) > 0:
+                fila = {"price_list": "Compra estandar", "price_list_rate": flt(conv["precio"]), "uom": conv["uom"]}
+                if supplier:
+                    fila["supplier"] = supplier
+                prefill.setdefault("item_prices", []).append(fila)
 
         # Si el artículo se compra en una unidad distinta a la interna (rollos, cajas, etc.),
         # casi nunca la cantidad exacta necesaria cae en un múltiplo entero de esa unidad --
@@ -2415,7 +2429,8 @@ def produccion_completa(costeo: str, sales_order: str = None) -> dict:
     cuanto la ÚLTIMA etapa recibe si las anteriores representan la mayor parte del
     costo, y el avance sube suave lote a lote conforme se reciben (escalonado),
     igual que `materiaPrimaPct` en el frontend."""
-    out = {"complete": False, "total": 0, "recibidas": 0, "lotes_total": 0, "lotes_recibidos": 0, "pct_recibido": 0}
+    out = {"complete": False, "total": 0, "recibidas": 0, "lotes_total": 0, "lotes_recibidos": 0, "pct_recibido": 0,
+           "lotes_terminados": 0}
     if not frappe.db.has_column("Purchase Order", "costeo"):
         return out
     po_filters = {"costeo": costeo, "is_subcontracted": 1, "docstatus": ["<", 2]}
@@ -2542,6 +2557,10 @@ def produccion_completa(costeo: str, sales_order: str = None) -> dict:
                 default=0.0)
             if recibido_de_este_sco > 0:
                 out["lotes_recibidos"] += 1
+                # De la ÚLTIMA etapa (entrega el producto terminado, no una pieza ni un
+                # sub-ensamblaje): solo esto deja prendas para entregar al cliente.
+                if any(fg == producto_de_fg_po.get(fg) for fg in suyas):
+                    out["lotes_terminados"] += 1
             else:
                 todas_recibidas = False
 
@@ -2602,10 +2621,15 @@ def crear_factura_venta(costeo: str, posting_date=None, payment_terms_template=N
     if posting_date:
         si.set_posting_time = 1
         si.posting_date = posting_date
-    if due_date:
+    # Con condiciones de pago el vencimiento lo pone ERPNext desde el calendario (el
+    # último plazo); la fecha a mano solo cuenta sin plantilla. El calendario que
+    # viene copiado de la OV se rearma si la condición cambió.
+    if payment_terms_template is not None:
+        _poner_plantilla_pago(si, payment_terms_template)
+    if si.payment_terms_template:
+        si.due_date = vencimiento_por_condicion(si.payment_terms_template, si.posting_date) or si.due_date
+    elif due_date:
         si.due_date = due_date
-    if payment_terms_template:
-        si.payment_terms_template = payment_terms_template
     if tc_name:
         si.tc_name = tc_name
         si.terms = resolver_terminos(tc_name)
@@ -2627,14 +2651,31 @@ def actualizar_factura_venta(name: str, posting_date=None, payment_terms_templat
     if posting_date:
         doc.set_posting_time = 1
         doc.posting_date = posting_date
-    if due_date:
-        doc.due_date = due_date
     _poner_plantilla_pago(doc, payment_terms_template)
+    if doc.payment_terms_template:
+        # En borrador el calendario se rearma siempre: si solo cambió la fecha de
+        # factura, el viejo seguía mandando sobre el vencimiento.
+        doc.payment_schedule = []
+        doc.due_date = vencimiento_por_condicion(doc.payment_terms_template, doc.posting_date) or doc.due_date
+    elif due_date:
+        doc.due_date = due_date
     doc.tc_name = tc_name or None
     doc.terms = resolver_terminos(tc_name)
     doc.flags.ignore_permissions = True
     doc.save()
     return {"name": doc.name}
+
+
+@frappe.whitelist()
+def vencimiento_por_condicion(plantilla: str, fecha: str = None) -> str | None:
+    """Vencimiento que tendrá una factura con esa condición de pago y esa fecha: el
+    último plazo del calendario, igual que lo calcula ERPNext al guardar."""
+    if not plantilla or not frappe.db.exists("Payment Terms Template", plantilla):
+        return None
+    from erpnext.controllers.accounts_controller import get_payment_terms
+    plazos = get_payment_terms(plantilla, fecha or frappe.utils.nowdate(), 1, 1) or []
+    fechas = [getdate(p.due_date) for p in plazos if p.get("due_date")]
+    return str(max(fechas)) if fechas else None
 
 
 # =============================================================================
@@ -2680,13 +2721,21 @@ def _entrega_de_lote(costeo, lote_ref):
     if frappe.db.has_column("Delivery Note", "lote_ref") and lote_ref:
         remisiones = frappe.get_all(
             "Delivery Note", filters={"costeo": costeo, "lote_ref": lote_ref, "docstatus": ["<", 2]},
-            fields=["name", "docstatus"], order_by="creation asc")
+            fields=["name", "docstatus", "shipping_address_name"], order_by="creation asc")
         if remisiones:
+            por_dn = {}
             for r in frappe.get_all("Delivery Note Item",
                                     filters={"parent": ["in", [x.name for x in remisiones]]},
-                                    fields=["item_code", "qty"]):
+                                    fields=["parent", "item_code", "qty"]):
                 d = out.setdefault(r.item_code, {"producido": 0.0, "entregado": 0.0, "almacen": None})
                 d["entregado"] += flt(r.qty)
+                por_dn[r.parent] = por_dn.get(r.parent, 0.0) + flt(r.qty)
+            # A dónde va cada una y cuántas prendas lleva: un lote se puede repartir
+            # entre varias direcciones del cliente (crear_remisiones_lote).
+            for x in remisiones:
+                x["prendas"] = round(por_dn.get(x.name, 0.0), 6)
+                x["direccion"] = (frappe.db.get_value("Address", x.shipping_address_name, "address_title")
+                                  if x.shipping_address_name else "") or ""
     for d in out.values():
         d["pendiente"] = max(round(d["producido"] - d["entregado"], 6), 0.0)
     return {"productos": out, "remisiones": remisiones}
@@ -2715,12 +2764,22 @@ def crear_remision(costeo: str, posting_date=None, shipping_address_name=None, i
     if lote_ref:
         requiere_vista("entrega")
     almacen_lote = {}
-    if lote_ref and not items:
+    if lote_ref:
         entrega = _entrega_de_lote(costeo, lote_ref)
-        items = [{"item_code": it, "qty": d["pendiente"]}
-                 for it, d in entrega["productos"].items() if d["pendiente"] > 0]
         if not items:
-            frappe.throw(_("{0} no tiene prendas terminadas pendientes de remisionar.").format(lote_ref))
+            items = [{"item_code": it, "qty": d["pendiente"]}
+                     for it, d in entrega["productos"].items() if d["pendiente"] > 0]
+            if not items:
+                frappe.throw(_("{0} no tiene prendas terminadas pendientes de remisionar.").format(lote_ref))
+        else:
+            # Una porción del lote (una de varias direcciones): nunca más de lo que el
+            # lote produjo y todavía no está en otra remisión.
+            filas = json.loads(items) if isinstance(items, str) else items
+            for r in filas:
+                pend = flt((entrega["productos"].get(r.get("item_code")) or {}).get("pendiente"))
+                if flt(r.get("qty")) > pend + 0.001:
+                    frappe.throw(_("{0}: {1} piezas superan lo que {2} tiene por entregar ({3}).").format(
+                        r.get("item_code"), flt(r.get("qty")), lote_ref, pend))
         almacen_lote = {it: d["almacen"] for it, d in entrega["productos"].items() if d.get("almacen")}
     so_name = None
     if sales_order and frappe.db.get_value("Sales Order", sales_order, "docstatus") == 1 and frappe.db.get_value("Sales Order", sales_order, "costeo") == costeo:
@@ -2789,6 +2848,113 @@ def crear_remision(costeo: str, posting_date=None, shipping_address_name=None, i
     dn.flags.ignore_mandatory = True
     dn.insert()
     return {"name": dn.name, "docstatus": dn.docstatus}
+
+
+def _so_del_costeo(costeo, sales_order=None):
+    if sales_order and frappe.db.get_value("Sales Order", sales_order, "costeo") == costeo:
+        return sales_order
+    return frappe.db.get_value("Sales Order", {"costeo": costeo, "docstatus": 1}, "name")
+
+
+def _direcciones_de_cliente(customer):
+    out = []
+    for a in _party_links("Address", customer, link_doctype="Customer"):
+        d = frappe.db.get_value("Address", a["value"], ["address_title", "address_type", "address_line1",
+                                                         "city", "state", "pincode", "disabled"], as_dict=True)
+        if not d or d.disabled:
+            continue
+        lugar = ", ".join(x for x in (d.city, d.state) if x)
+        out.append({"value": a["value"], "titulo": d.address_title or a["value"], "tipo": d.address_type or "",
+                    "detalle": " · ".join(x for x in (d.address_line1, lugar, f"C.P. {d.pincode}" if d.pincode else "") if x)})
+    # Primero las de envío, luego el resto.
+    out.sort(key=lambda x: (x["tipo"] != "Shipping", x["titulo"]))
+    return out
+
+
+@frappe.whitelist()
+def get_direcciones_entrega(costeo: str, sales_order: str = None) -> dict:
+    """Direcciones del cliente para repartir la entrega de un lote, y la de envío que
+    trae la orden de venta (la que se propone por default)."""
+    so = _so_del_costeo(costeo, sales_order)
+    if not so:
+        return {"customer": None, "direcciones": [], "default": None}
+    customer, envio = frappe.db.get_value("Sales Order", so, ["customer", "shipping_address_name"])
+    return {"customer": customer, "direcciones": _direcciones_de_cliente(customer), "default": envio or None}
+
+
+# Campos de Address que se capturan desde la app (todo lo que pide ERPNext, menos la
+# liga, que se pone sola con el cliente del pedido).
+_CAMPOS_DIRECCION = ("address_title", "address_type", "address_line1", "address_line2", "city", "state",
+                     "pincode", "country", "email_id", "phone", "fax", "tax_category",
+                     "is_primary_address", "is_shipping_address")
+
+
+@frappe.whitelist()
+def crear_direccion_cliente(costeo: str, datos, sales_order: str = None) -> dict:
+    """Da de alta una dirección del cliente del pedido, completa, sin salir de la
+    entrega. ``datos`` = campos de Address (ver _CAMPOS_DIRECCION); la liga
+    (Dynamic Link al Customer) la pone el sistema. Si se marca como preferida de
+    envío o de facturación, ERPNext desmarca sola la anterior del cliente."""
+    requiere_vista("entrega")
+    so = _so_del_costeo(costeo, sales_order)
+    if not so:
+        frappe.throw(_("No hay orden de venta para saber de qué cliente es la dirección."))
+    customer = frappe.db.get_value("Sales Order", so, "customer")
+    datos = json.loads(datos) if isinstance(datos, str) else (datos or {})
+    valores = {k: (datos.get(k).strip() if isinstance(datos.get(k), str) else datos.get(k))
+               for k in _CAMPOS_DIRECCION if datos.get(k) not in (None, "")}
+    valores.setdefault("address_type", "Shipping")
+    valores.setdefault("country", "Mexico")
+    for campo, etiqueta in (("address_line1", _("Calle y número")), ("city", _("Ciudad")),
+                            ("country", _("País")), ("address_type", _("Tipo de dirección"))):
+        if not valores.get(campo):
+            frappe.throw(_("Falta: {0}.").format(etiqueta))
+    valores.setdefault("address_title", valores["city"])
+    for k in ("is_primary_address", "is_shipping_address"):
+        valores[k] = 1 if cint(valores.get(k)) else 0
+    a = frappe.get_doc({"doctype": "Address", **valores,
+                        "links": [{"link_doctype": "Customer", "link_name": customer}]})
+    a.flags.ignore_permissions = True
+    a.insert()
+    return {"name": a.name, "direcciones": _direcciones_de_cliente(customer)}
+
+
+@frappe.whitelist()
+def crear_remisiones_lote(costeo: str, lote_ref: str, repartos, sales_order: str = None) -> dict:
+    """Reparte lo que un lote tiene por entregar entre VARIAS direcciones del cliente:
+    una remisión en borrador por dirección, con las cantidades de cada producto.
+
+    ``repartos`` = ``[{"shipping_address_name": ..., "items": [{"item_code", "qty"}]}]``.
+    Todas o ninguna: si una falla (dirección inválida, cantidad de más), no se crea
+    ninguna. Lo asignado no puede pasar de lo pendiente del lote, sumando todos los
+    destinos."""
+    requiere_vista("entrega")
+    repartos = json.loads(repartos) if isinstance(repartos, str) else (repartos or [])
+    repartos = [r for r in repartos if any(flt(i.get("qty")) > 0 for i in (r.get("items") or []))]
+    if not repartos:
+        frappe.throw(_("Indica al menos una dirección con cantidades."))
+    entrega = _entrega_de_lote(costeo, lote_ref)
+    total = {}
+    for r in repartos:
+        if not r.get("shipping_address_name"):
+            frappe.throw(_("Falta elegir la dirección de uno de los envíos."))
+        for i in r.get("items") or []:
+            total[i.get("item_code")] = total.get(i.get("item_code"), 0.0) + flt(i.get("qty"))
+    for item, qty in total.items():
+        pend = flt((entrega["productos"].get(item) or {}).get("pendiente"))
+        if qty > pend + 0.001:
+            frappe.throw(_("{0}: repartiste {1} y el lote solo tiene {2} por entregar.").format(item, qty, pend))
+    creadas = []
+    try:
+        for r in repartos:
+            items = [{"item_code": i["item_code"], "qty": flt(i["qty"])} for i in r["items"] if flt(i.get("qty")) > 0]
+            res = crear_remision(costeo, shipping_address_name=r["shipping_address_name"], items=items,
+                                 sales_order=sales_order, lote_ref=lote_ref)
+            creadas.append(res["name"])
+    except Exception:
+        frappe.db.rollback()
+        raise
+    return {"remisiones": creadas}
 
 
 @frappe.whitelist()
@@ -2942,17 +3108,24 @@ def _crear_poliza_flete_remision(doc):
     return je.name
 
 
-def _overhead_pct_promedio(doc):
+def _overhead_pct_promedio(doc, qty_por_producto=None):
     """% de overhead FIJO promedio (ponderado por costo) capturado en el paso Costear --
-    misma fórmula que usa get_reporte_final para el estimado; si se toca una, tocar la otra."""
-    est_costo_total = 0.0
-    est_overhead_total = 0.0
+    lo usan la póliza de overhead y get_reporte_final, para que den lo mismo.
+
+    Se promedia el % capturado (overhead_pct), no se reconstruye del monto por prenda:
+    ese viene redondeado a centavos ($10.15 de $202.93) y daba 5.0017% en vez de 5%.
+    Solo si un renglón no trae el % se deduce de su monto."""
+    base_total = 0.0
+    overhead_total = 0.0
     for p in doc.costeo_producto:
-        qty = flt(p.qty)
-        est_costo_total += flt(p.total_unit_cost) * qty
-        est_overhead_total += flt(p.overhead_amt) * qty
-    base_sin_overhead = est_costo_total - est_overhead_total
-    return (est_overhead_total / base_sin_overhead * 100) if base_sin_overhead > 0 else 0
+        if qty_por_producto is not None and p.finished_item not in qty_por_producto:
+            continue
+        qty = flt(qty_por_producto.get(p.finished_item, p.qty)) if qty_por_producto is not None else flt(p.qty)
+        base = (flt(p.total_unit_cost) - flt(p.overhead_amt)) * qty
+        pct = flt(p.overhead_pct) or ((flt(p.overhead_amt) / (base / qty) * 100) if base > 0 and qty else 0)
+        base_total += base
+        overhead_total += base * pct / 100
+    return (overhead_total / base_total * 100) if base_total > 0 else 0
 
 
 def _pinvs_validadas_de_oc(po):
@@ -3306,6 +3479,91 @@ def _pinv_for(field, value):
     )
 
 
+def _pos_del_costeo(costeo, sales_order=None):
+    """OC del costeo (de la OV activa si hay varias), con su lote."""
+    if not frappe.db.has_column("Purchase Order", "costeo"):
+        return []
+    campos = ["name", "is_subcontracted", "supplier", "supplier_name"]
+    if frappe.db.has_column("Purchase Order", "lote_ref"):
+        campos.append("lote_ref")
+    pos = frappe.get_all("Purchase Order", filters={"costeo": costeo, "docstatus": ["<", 2]}, fields=campos)
+    alcance = _alcance_ov(costeo, sales_order=sales_order)
+    if alcance:
+        pos = [p for p in pos if p.name in alcance["purchase_orders"]]
+    return pos
+
+
+def _scos_de_pos(pos_maquila):
+    if not pos_maquila:
+        return {}
+    campos = ["name", "purchase_order", "supplier", "supplier_name"]
+    if frappe.db.has_column("Subcontracting Order", "lote_ref"):
+        campos.append("lote_ref")
+    return {s.name: s for s in frappe.get_all(
+        "Subcontracting Order", filters={"purchase_order": ["in", pos_maquila], "docstatus": ["<", 2]}, fields=campos)}
+
+
+def _lote_de_documento(doctype, name):
+    """Lote de producción de un documento (para ubicar las facturas de flete)."""
+    if doctype == "Delivery Note":
+        return frappe.db.get_value("Delivery Note", name, "lote_ref") if frappe.db.has_column("Delivery Note", "lote_ref") else ""
+    if doctype == "Purchase Receipt":
+        po = frappe.db.get_value("Purchase Receipt Item", {"parent": name}, "purchase_order")
+        return (frappe.db.get_value("Purchase Order", po, "lote_ref") or "") if po and frappe.db.has_column("Purchase Order", "lote_ref") else ""
+    sco = None
+    if doctype == "Stock Entry":
+        sco = frappe.db.get_value("Stock Entry", name, "subcontracting_order")
+    elif doctype == "Subcontracting Receipt":
+        sco = frappe.db.get_value("Subcontracting Receipt Item", {"parent": name}, "subcontracting_order")
+    if sco and frappe.db.has_column("Subcontracting Order", "lote_ref"):
+        return frappe.db.get_value("Subcontracting Order", sco, "lote_ref") or ""
+    return ""
+
+
+@frappe.whitelist()
+def get_movimientos_produccion(costeo: str, sales_order: str = None) -> list:
+    """TODOS los movimientos físicos de la producción del costeo, para la bandeja de
+    Envíos: entradas de material (recibos de compra), envíos al taller, recibos del
+    taller y devoluciones de sobrante -- en borrador o validados, cada uno con su
+    lote. Las remisiones al cliente ya llegan en get_costeo_related."""
+    pos = _pos_del_costeo(costeo, sales_order)
+    out = []
+    mat = {p.name: p for p in pos if not p.is_subcontracted}
+    if mat:
+        po_de = {}
+        for r in frappe.get_all("Purchase Receipt Item", filters={"purchase_order": ["in", list(mat)]},
+                                fields=["parent", "purchase_order"]):
+            po_de.setdefault(r.parent, r.purchase_order)
+        for pr in frappe.get_all("Purchase Receipt", filters={"name": ["in", list(po_de) or [""]], "docstatus": ["<", 2]},
+                                 fields=["name", "docstatus", "posting_date", "supplier", "supplier_name", "is_return"]):
+            po = mat[po_de[pr.name]]
+            out.append({"tipo": "devolucion_proveedor" if pr.is_return else "entrada", "doctype": "Purchase Receipt",
+                        "name": pr.name, "docstatus": pr.docstatus, "fecha": pr.posting_date,
+                        "tercero": pr.supplier_name or pr.supplier, "lote_ref": po.get("lote_ref") or "",
+                        "referencia": po.name})
+    scos = _scos_de_pos([p.name for p in pos if p.is_subcontracted])
+    if scos:
+        for se in frappe.get_all("Stock Entry", filters={"subcontracting_order": ["in", list(scos)], "docstatus": ["<", 2]},
+                                 fields=["name", "docstatus", "posting_date", "purpose", "subcontracting_order"]):
+            sco = scos[se.subcontracting_order]
+            out.append({"tipo": "envio" if se.purpose == "Send to Subcontractor" else "devolucion",
+                        "doctype": "Stock Entry", "name": se.name, "docstatus": se.docstatus, "fecha": se.posting_date,
+                        "tercero": sco.supplier_name or sco.supplier, "lote_ref": sco.get("lote_ref") or "",
+                        "referencia": sco.name})
+        sco_de = {}
+        for r in frappe.get_all("Subcontracting Receipt Item", filters={"subcontracting_order": ["in", list(scos)]},
+                                fields=["parent", "subcontracting_order"]):
+            sco_de.setdefault(r.parent, r.subcontracting_order)
+        for scr in frappe.get_all("Subcontracting Receipt", filters={"name": ["in", list(sco_de) or [""]], "docstatus": ["<", 2]},
+                                  fields=["name", "docstatus", "posting_date", "supplier", "supplier_name", "is_return"]):
+            sco = scos[sco_de[scr.name]]
+            out.append({"tipo": "devolucion" if scr.is_return else "recibo_taller", "doctype": "Subcontracting Receipt",
+                        "name": scr.name, "docstatus": scr.docstatus, "fecha": scr.posting_date,
+                        "tercero": scr.supplier_name or scr.supplier, "lote_ref": sco.get("lote_ref") or "",
+                        "referencia": sco.name})
+    return out
+
+
 @frappe.whitelist()
 def get_facturas_compra(costeo: str, sales_order: str = None) -> dict:
     """Fuentes facturables de compra del costeo, con su factura si ya existe.
@@ -3433,6 +3691,8 @@ def get_facturas_compra(costeo: str, sales_order: str = None) -> dict:
             fields=["name", "supplier", "supplier_name", "base_net_total", "grand_total", "docstatus", "status",
                     "flete_origen_doctype", "flete_origen", "bill_no", "posting_date"],
             order_by="creation desc")
+        for f in fletes:
+            f["lote_ref"] = _lote_de_documento(f.flete_origen_doctype, f.flete_origen) if f.flete_origen else ""
     return {"materiales": materiales, "maquila": maquila, "fletes": fletes}
 
 
@@ -3665,13 +3925,20 @@ def actualizar_factura_compra(name: str, posting_date=None, due_date=None, bill_
     if posting_date:
         doc.set_posting_time = 1
         doc.posting_date = posting_date
-    if due_date:
-        doc.due_date = due_date
     if bill_no is not None:
         doc.bill_no = bill_no or None
     if bill_date:
         doc.bill_date = bill_date
     _poner_plantilla_pago(doc, payment_terms_template)
+    # Con condiciones de pago el vencimiento sale de ellas y de la fecha de factura;
+    # a mano solo sin plantilla (igual que en la factura de venta).
+    if doc.payment_terms_template:
+        # En borrador el calendario se rearma siempre: si solo cambió la fecha de
+        # factura, el viejo seguía mandando sobre el vencimiento.
+        doc.payment_schedule = []
+        doc.due_date = vencimiento_por_condicion(doc.payment_terms_template, doc.posting_date) or doc.due_date
+    elif due_date:
+        doc.due_date = due_date
     doc.tc_name = tc_name or None
     doc.terms = resolver_terminos(tc_name)
     # Factura en moneda extranjera: el tipo de cambio que vale es el de la factura
@@ -4993,7 +5260,8 @@ def get_costeo_related(costeo: str, sales_order: str = None) -> dict:
         out["delivery_notes"] = sorted([
             frappe.db.get_value(
                 "Delivery Note", p,
-                ["name", "status", "docstatus", "posting_date", "grand_total", "shipping_address_name"],
+                ["name", "status", "docstatus", "posting_date", "grand_total", "shipping_address_name", "customer_name"]
+                + (["lote_ref"] if frappe.db.has_column("Delivery Note", "lote_ref") else []),
                 as_dict=True,
             )
             for p in dn_parents
@@ -5012,7 +5280,7 @@ def get_costeo_related(costeo: str, sales_order: str = None) -> dict:
         if si_parent:
             out["sales_invoice"] = frappe.db.get_value(
                 "Sales Invoice", si_parent,
-                ["name", "status", "docstatus", "grand_total", "currency", "posting_date",
+                ["name", "status", "docstatus", "grand_total", "base_net_total", "customer_name", "currency", "posting_date",
                  "due_date", "payment_terms_template", "tc_name", "contact_email", "contact_mobile"]
                 + (["factura_pdf", "factura_xml"] if frappe.db.has_column("Sales Invoice", "factura_pdf") else []),
                 as_dict=True,
@@ -5532,6 +5800,15 @@ def plan_crear_solicitud_material(plan: str) -> dict:
         for mr_name in mrs:
             frappe.db.set_value("Material Request", mr_name, "costeo", pp.get("costeo"))
     _asignar_proveedores_a_mrs(pp.get("costeo"), mrs)
+    # Cada material en la UDM en que se compra (la del costeo o la de compra del
+    # artículo), no en la de almacén: de aquí la toma la orden de compra.
+    if pp.get("costeo") and mrs:
+        costeo_doc = frappe.get_doc("Costeo", pp.get("costeo"))
+        for mr_name in mrs:
+            mr_doc = frappe.get_doc("Material Request", mr_name)
+            if mr_doc.docstatus == 0 and _pasar_a_uom_compra(mr_doc, costeo_doc):
+                mr_doc.flags.ignore_permissions = True
+                mr_doc.save()
     # Guarda la cantidad EXACTA calculada (antes de que alguien la edite) -- es la
     # base contra la que se valida el margen de "hasta 5% más" al guardar la solicitud.
     if mrs and frappe.db.has_column("Material Request Item", "qty_original"):
@@ -5658,6 +5935,65 @@ def _convertir_uom_compra(item_code, qty_actual, conversion_factor_actual, nuevo
     return qty_nueva, factor_nuevo, stock_uom_real
 
 
+def _uom_compra_por_defecto(item_code, supplier=None, costeo_doc=None):
+    """UDM en la que se COMPRA un material por defecto: la que se capturó en el costeo
+    para ese material (supplier_uom, preferente la del mismo proveedor) y, si no, la
+    UDM de compra del artículo (Item.purchase_uom, la que se elige al darlo de alta).
+    Solo vale si el artículo tiene esa conversión dada de alta. Regresa
+    (uom, factor) o (None, None) cuando la de compra es la misma de almacén."""
+    stock_uom, purchase_uom = frappe.db.get_value("Item", item_code, ["stock_uom", "purchase_uom"]) or (None, None)
+    candidatas = []
+    if costeo_doc:
+        filas = [d for d in costeo_doc.get("costeo_producto_detalle") or []
+                 if d.item == item_code and d.get("supplier_uom")]
+        filas.sort(key=lambda d: 0 if supplier and d.supplier == supplier else 1)
+        candidatas += [d.supplier_uom for d in filas]
+    candidatas.append(purchase_uom)
+    for uom in candidatas:
+        if not uom or uom == stock_uom:
+            continue
+        factor = _uom_conversion_factor(item_code, uom, stock_uom=stock_uom)
+        if factor:
+            return uom, factor
+    return None, None
+
+
+def _pasar_a_uom_compra(doc, costeo_doc=None, redondear_paquete=False):
+    """Pasa los renglones de una Solicitud de Material u Orden de Compra que vienen en
+    la UDM de almacén (botones en Pieza) a la UDM de compra por defecto
+    (_uom_compra_por_defecto: el Mazo del costeo). Conserva la cantidad REAL de
+    material; en la orden, una UDM de paquete completo se redondea hacia arriba (en la
+    solicitud no: ahí se guardan fracciones a propósito, ver mr_crear_oc). Un renglón
+    que ya trae otra UDM (alguien la eligió) no se toca. Regresa cuántos cambió."""
+    cambiados = 0
+    for it in doc.get("items") or []:
+        stock_uom = it.get("stock_uom") or frappe.db.get_value("Item", it.item_code, "stock_uom")
+        if not it.item_code:
+            continue
+        if it.uom and it.uom != stock_uom:
+            # Ya viene en la de compra (la solicitud guarda 13.04 Mazo): en la orden,
+            # un paquete completo no se pide en fracción.
+            if redondear_paquete and _es_compra_por_paquete(it.item_code, it.uom) \
+                    and abs(flt(it.qty) - round(flt(it.qty))) > 1e-6:
+                it.qty = math.ceil(flt(it.qty) - 1e-6)
+                it.stock_qty = flt(it.qty) * (flt(it.conversion_factor) or 1.0)
+                cambiados += 1
+            continue
+        uom, factor = _uom_compra_por_defecto(it.item_code, it.get("supplier") or doc.get("supplier"), costeo_doc)
+        if not uom:
+            continue
+        stock_qty = flt(it.get("stock_qty")) or flt(it.qty) * (flt(it.conversion_factor) or 1.0)
+        qty = stock_qty / factor
+        if redondear_paquete and _es_compra_por_paquete(it.item_code, uom):
+            qty = math.ceil(qty - 1e-6)
+        it.uom = uom
+        it.conversion_factor = factor
+        it.qty = round(qty, 6)
+        it.stock_qty = flt(it.qty) * factor
+        cambiados += 1
+    return cambiados
+
+
 def _es_compra_por_paquete(item_code, uom=None):
     """True si, en ESA UDM puntual, este artículo se compra en paquetes completos --
     no se puede pedir una fracción a un proveedor (ej. Mazo/Gruesa/Pieza para
@@ -5756,48 +6092,85 @@ def _precio_costeo_material(costeo, item_code):
     return None, None
 
 
+def _ultimo_precio_proveedor(item_code, supplier, uom=None):
+    """El precio MÁS RECIENTE que se tiene de este artículo con este proveedor, de
+    cualquiera de las fuentes donde nace un precio real:
+
+    - Presupuesto de Proveedor (Supplier Quotation) validado: la respuesta a una
+      solicitud de cotización.
+    - Item Price de compra con ese `supplier`: el que se captura al dar de alta el
+      artículo (un precio por cada múltiplo de compra), el que se refresca solo al
+      validar cada OC (overrides/purchase_order.registrar_precios_oficiales) o uno
+      capturado a mano en ERPNext. Los vencidos (valid_upto pasado) no cuentan.
+
+    Gana el más nuevo (fecha de su última modificación), no una fuente fija: una OC
+    validada después de un presupuesto viejo trae el precio vigente. Un precio en otra
+    UDM se convierte con los factores reales del artículo (pieza -> mazo); si alguna
+    de las dos UDM no tiene conversión dada de alta, ese precio no se usa."""
+    if not item_code or not supplier:
+        return None
+    stock_uom = frappe.db.get_value("Item", item_code, "stock_uom")
+    factor_destino = _uom_conversion_factor(item_code, uom, stock_uom=stock_uom) if uom else 1.0
+    if not factor_destino:
+        return None
+
+    destino = uom or stock_uom
+    candidatos = []   # (fecha, ¿ya venía en la UDM pedida?, precio en la UDM pedida)
+    sq = frappe.qb.DocType("Supplier Quotation")
+    sqi = frappe.qb.DocType("Supplier Quotation Item")
+    filas_sq = (
+        frappe.qb.from_(sqi).join(sq).on(sqi.parent == sq.name)
+        .select(sqi.rate, sqi.uom, sqi.conversion_factor, sq.modified)
+        .where((sqi.item_code == item_code) & (sq.supplier == supplier) & (sq.docstatus == 1))
+    ).run(as_dict=True)
+    for r in filas_sq:
+        if not flt(r.rate):
+            continue
+        factor = flt(r.conversion_factor) or _uom_conversion_factor(item_code, r.uom, stock_uom=stock_uom)
+        if factor:
+            candidatos.append((r.modified, (r.uom or stock_uom) == destino, flt(r.rate) / factor * factor_destino))
+
+    hoy = frappe.utils.getdate()
+    for r in frappe.get_all(
+        "Item Price", filters={"item_code": item_code, "buying": 1, "supplier": supplier},
+        fields=["price_list_rate", "uom", "valid_upto", "modified"],
+    ):
+        if not flt(r.price_list_rate) or (r.valid_upto and frappe.utils.getdate(r.valid_upto) < hoy):
+            continue
+        factor = _uom_conversion_factor(item_code, r.uom or stock_uom, stock_uom=stock_uom)
+        if factor:
+            candidatos.append((r.modified, (r.uom or stock_uom) == destino,
+                               flt(r.price_list_rate) / factor * factor_destino))
+
+    if not candidatos:
+        return None
+    # El más nuevo; empatados (el alta crea el de la pieza y el del mazo a la vez), el
+    # que ya está en la UDM pedida, sin conversión de por medio.
+    return round(max(candidatos, key=lambda c: (c[0], c[1]))[2], 6)
+
+
 def _precio_para_oc(item_code, supplier, company=None, costeo=None, uom=None):
     """Precio para la OC, en orden de preferencia:
 
-    1. Presupuesto de Proveedor (Supplier Quotation) VALIDADO del MISMO proveedor --
-       es el flujo normal opcional del ERP (Solicitud de cotización -> Presupuesto ->
-       OC), una cotización real y más reciente que cualquier otra fuente, así que
-       siempre gana si existe.
-    2. Precio "oficial" ya registrado con ESE proveedor puntual (Item Price de
-       compra con ese `supplier`) -- se vuelve oficial al validar una primera OC con
-       ese proveedor (se registra solo, ver overrides/purchase_order.py) o al
-       capturarlo a mano en ERPNext. Solo si la UDM coincide (ver
-       item_price_oficial_proveedor); si no hay uno para esta UDM, no aplica.
-    3. El precio con el que se costeó este material -- SOLO mientras ese proveedor no
-       tenga todavía un precio oficial (paso 2). Si la UDM de esta línea de la OC ya
-       no es la misma con la que se costeó, el precio se CONVIERTE proporcional al
-       factor de conversión real del artículo (ver _uom_conversion_factor) -- ej. se
-       costeó a $65/Metro, el artículo tiene registrado 1 Rollo = 100 Metro, la línea
-       está en Rollo -> $6,500/Rollo. Si no hay un factor de conversión real para
-       alguna de las dos UDM, no se adivina -- se pasa a la regla 4.
-    4. Precio de lista / última compra (comportamiento nativo), como último recurso --
-       típicamente cuando no hay nada de lo anterior. Igual que la regla 3, si se pidió
-       una UDM puntual y el precio encontrado es de OTRA UDM, no se usa tal cual (ver
-       _get_buying_rate) -- un precio de lista en Metro no es el mismo número en
-       Rollo."""
+    1. El precio más reciente con ESE proveedor (_ultimo_precio_proveedor): su
+       presupuesto validado, el que se capturó al dar de alta el artículo, el de su
+       última OC validada o uno capturado a mano -- gana el más nuevo, convertido a
+       la UDM de la línea.
+    2. El precio con el que se costeó este material -- mientras ese proveedor no
+       tenga ninguno de los anteriores. Si la UDM de esta línea de la OC ya no es la
+       misma con la que se costeó, el precio se CONVIERTE proporcional al factor de
+       conversión real del artículo (ver _uom_conversion_factor) -- ej. se costeó a
+       $65/Metro, el artículo tiene registrado 1 Rollo = 100 Metro, la línea está en
+       Rollo -> $6,500/Rollo. Si no hay un factor de conversión real para alguna de
+       las dos UDM, no se adivina -- se pasa a la regla 3.
+    3. Precio de lista / última compra (comportamiento nativo), como último recurso.
+       Si se pidió una UDM puntual y el precio encontrado es de OTRA UDM, no se usa
+       tal cual (ver _get_buying_rate) -- un precio de lista en Metro no es el mismo
+       número en Rollo."""
     if supplier:
-        # Solo presupuestos de proveedor VALIDADOS (docstatus 1) sobrescriben el precio de
-        # lista; los borradores son tentativos y no deben afectar la OC.
-        sq_rows = frappe.get_all(
-            "Supplier Quotation Item",
-            filters={"item_code": item_code, "docstatus": 1},
-            fields=["rate", "parent"],
-            order_by="creation desc",
-        )
-        for r in sq_rows:
-            if not r.rate:
-                continue
-            if frappe.db.get_value("Supplier Quotation", r.parent, "supplier") == supplier:
-                return flt(r.rate)
-        from costeo_yelke.api.costeo_template_api import item_price_oficial_proveedor
-        precio_oficial, _uom_oficial = item_price_oficial_proveedor(item_code, supplier, uom=uom)
-        if precio_oficial:
-            return precio_oficial
+        ultimo = _ultimo_precio_proveedor(item_code, supplier, uom=uom)
+        if ultimo:
+            return ultimo
     precio_costeo, uom_costeo = _precio_costeo_material(costeo, item_code)
     if precio_costeo:
         if not uom or not uom_costeo or uom == uom_costeo:
@@ -6033,6 +6406,15 @@ def mr_crear_oc(mr: str, items=None, schedule_date=None, lote_ref: str = None) -
     if lote_ref and frappe.db.has_column("Purchase Order", "lote_ref"):
         for po in pos:
             frappe.db.set_value("Purchase Order", po, "lote_ref", lote_ref, update_modified=False)
+
+    # Solicitudes viejas (o un material sin UDM de compra al crearla) traen la UDM de
+    # almacén: la orden sale en la de compra del costeo/artículo, con su precio.
+    costeo_doc = frappe.get_doc("Costeo", costeo) if costeo else None
+    for po_name in pos:
+        po = frappe.get_doc("Purchase Order", po_name)
+        if po.docstatus == 0 and _pasar_a_uom_compra(po, costeo_doc, redondear_paquete=True):
+            po.flags.ignore_permissions = True
+            po.save()
 
     _aplicar_precios_oc(pos)
 
@@ -7568,7 +7950,7 @@ def get_lotes_produccion(plan: str) -> dict:
             entregas = [{
                 "sco": s["name"],
                 "referencia_entrega": s.get("referencia_entrega") or "",
-                "cantidad": round(sum(flt(it["qty"]) for it in s["items"] if it["item_code"] in fgset)),
+                "cantidad": _prendas_de_encargo(s["items"], fgset, por_prenda_fg),
                 "schedule_date": s.get("schedule_date"),
                 "sco_docstatus": s["docstatus"],
                 "transfer_done": s["transfer_done"],
@@ -8126,6 +8508,20 @@ def sub_qty_disponible(po: str, producto: str = None) -> dict:
     de cantidad que muestra el formulario de "Nuevo lote". ``producto`` restringe la
     sugerencia a ese producto terminado (OC compartida entre varios productos)."""
     return _sub_qty_disponible_info(po, producto=producto)
+
+
+def _prendas_de_encargo(items, fgset, por_prenda_fg):
+    """PRENDAS de un encargo, no piezas: el corte de las 6 piezas de 7,505 camisolas
+    son 52,535 piezas (los puños van 2) pero 7,505 prendas. Por producto se toma la
+    pieza que más prendas cubre (qty / piezas por prenda) y se suman los productos."""
+    por_producto = {}
+    for it in items:
+        if it["item_code"] not in fgset:
+            continue
+        producto = it["item_code"].split(" · ")[0]
+        prendas = flt(it["qty"]) / (flt(por_prenda_fg.get(it["item_code"])) or 1.0)
+        por_producto[producto] = max(por_producto.get(producto, 0.0), prendas)
+    return round(sum(por_producto.values()))
 
 
 def _piezas_por_prenda_de_po(po_doc):
@@ -9895,6 +10291,9 @@ def _ramas_por_pieza(doc, paradas, paradas_out, scos_lote, por_prenda_fg):
                 if sc["purchase_order"] == parada.po
                 and any(it["item_code"] in suyos for it in sc["items"])
             ]
+            # Un encargo en borrador cuenta como encargado, pero falta revisarlo y
+            # validarlo (la celda dice "Por revisar" y abre en el paso Encargo).
+            borrador = any(sc.get("docstatus") == 0 for sc in scos_pieza)
             if scos_pieza:
                 if all(sc["receipt_validated"] for sc in scos_pieza):
                     estado = "recibido"
@@ -9924,6 +10323,7 @@ def _ramas_por_pieza(doc, paradas, paradas_out, scos_lote, por_prenda_fg):
                 "estado": estado,
                 "prendas": prendas,
                 "scos": [sc["name"] for sc in scos_pieza],
+                "borrador": borrador,
                 "facturado": bool(scos_pieza) and all(sc.get("facturado") for sc in scos_pieza),
                 "po_docstatus": po_out.get("po_docstatus"),
                 # Servicio real de ESTA pieza, no el de la orden del proveedor.
@@ -10022,6 +10422,60 @@ def _parada_stage_ids(doc, parada):
             if op.op_key in parada.op_keys:
                 out |= op.member_stage_keys
     return out
+
+
+@frappe.whitelist()
+def deshacer_encargo(sco: str) -> dict:
+    """Deshace un encargo a taller (Subcontracting Order) hecho por error -- p. ej. se
+    encargó el corte de una sola pieza cuando convenía encargarlas todas juntas. Sus
+    piezas vuelven a quedar "Por encargar" en el tablero (get_lotes_produccion solo
+    cuenta los encargos no cancelados).
+
+    Solo mientras NO se haya enviado material (ni, por lo tanto, recibido nada): con el
+    envío validado la mercancía ya está con el taller y no se regresa con un clic.
+    Lo demás se revierte en orden inverso: recibos y envíos en borrador se borran; al
+    final el encargo se cancela -- queda en el historial,
+    como todo documento validado (no se borra para no reutilizar su folio, ver
+    contabilidad.bloquear_borrado_cancelado) -- o se borra si nunca se validó."""
+    requiere_vista("talleres")
+    doc = frappe.get_doc("Subcontracting Order", sco)
+    if doc.docstatus == 2:
+        frappe.throw(_("Este encargo ya está cancelado."))
+
+    # Con material ya en el taller no se deshace desde aquí: sería regresar mercancía
+    # que ya salió del almacén con un solo clic. Se cancela el envío a propósito, aparte.
+    if frappe.db.exists("Stock Entry", {"subcontracting_order": sco, "docstatus": 1}):
+        frappe.throw(_("Ya se le envió material al taller con este encargo; ya no se puede deshacer desde "
+                       "Producción. Si de verdad hay que revertirlo, primero cancela el envío."))
+    recibos = frappe.get_all(
+        "Subcontracting Receipt Item", filters={"subcontracting_order": sco, "docstatus": ["<", 2]},
+        fields=["parent", "docstatus"])
+    if any(r.docstatus == 1 for r in recibos):
+        frappe.throw(_("El taller ya entregó parte de este encargo (hay un recibo validado). "
+                       "Para deshacerlo, primero cancela su recibo."))
+    for parent in {r.parent for r in recibos}:
+        frappe.delete_doc("Subcontracting Receipt", parent, force=True, ignore_permissions=True)
+
+    envios = frappe.get_all("Stock Entry", filters={"subcontracting_order": sco, "docstatus": ["<", 2]},
+                            fields=["name", "docstatus"], order_by="creation desc")
+    for e in envios:
+        se = frappe.get_doc("Stock Entry", e.name)
+        if se.docstatus == 1:
+            se.flags.ignore_permissions = True
+            se.cancel()
+        else:
+            frappe.delete_doc("Stock Entry", e.name, force=True, ignore_permissions=True)
+
+    doc.reload()
+    if doc.docstatus == 1:
+        doc.flags.ignore_permissions = True
+        doc.cancel()
+        doc.add_comment("Info", _("Encargo deshecho desde Producción por {0}.").format(
+            frappe.utils.get_fullname(frappe.session.user)))
+    else:
+        frappe.delete_doc("Subcontracting Order", sco, force=True, ignore_permissions=True)
+    frappe.db.commit()
+    return {"ok": True, "envios_revertidos": len(envios), "recibos_borrados": len({r.parent for r in recibos})}
 
 
 @frappe.whitelist()
@@ -10219,7 +10673,8 @@ def parada_registrar_entrega(plan: str, lote_ref: str, parada_id: str, cantidad:
         parada.po, cantidades=cantidades, fg_items=fg_items_entrega,
         schedule_date=schedule_date, lote_ref=lote_ref, validar_stock=False,
     )
-    sub_validar_sco(r["sco"])
+    # Nace en BORRADOR: se revisa en el paso "Encargo" del taller y se valida ahí
+    # ("Validar encargo"); antes se validaba sola y el paso 1 se daba por hecho.
     if referencia:
         frappe.db.set_value("Subcontracting Order", r["sco"], "referencia_entrega", referencia, update_modified=False)
 
@@ -11058,6 +11513,115 @@ def plan_crear_subcontratacion(plan: str) -> dict:
     return {"ok": True, "purchase_orders": po_names}
 
 
+def _operacion_reporte(costeo, so_name, dn_names, si, po_names):
+    """Tiempos y dinero pendiente del pedido, para los indicadores del reporte:
+    entrega contra la fecha comprometida en la OV, lo que falta cobrarle al cliente y
+    lo que falta pagarles a proveedores, talleres y transportistas de este costeo."""
+    so = frappe.db.get_value("Sales Order", so_name, ["transaction_date", "delivery_date"], as_dict=True) \
+        if so_name else None
+    fechas = [getdate(f) for f in frappe.get_all("Delivery Note", filters={"name": ["in", dn_names or [""]],
+                                                                          "docstatus": 1}, pluck="posting_date")]
+    ultima = max(fechas) if fechas else None
+    dias = (ultima - getdate(so.transaction_date)).days if (so and ultima) else None
+    atraso = (ultima - getdate(so.delivery_date)).days if (so and so.delivery_date and ultima) else None
+    cobro = frappe.db.get_value("Sales Invoice", si.name, ["outstanding_amount", "due_date", "posting_date"],
+                                as_dict=True) if si else None
+    pinvs = set(frappe.db.sql_list(
+        """select distinct pii.parent from `tabPurchase Invoice Item` pii join `tabPurchase Invoice` pi
+           on pi.name = pii.parent where pi.docstatus = 1 and pii.purchase_order in %(pos)s""",
+        {"pos": po_names or [""]})) if po_names else set()
+    if frappe.db.has_column("Purchase Invoice", "flete_costeo"):
+        pinvs |= set(frappe.get_all("Purchase Invoice", filters={"flete_costeo": costeo, "docstatus": 1}, pluck="name"))
+    por_pagar = flt(sum(flt(x) for x in frappe.get_all("Purchase Invoice", filters={"name": ["in", list(pinvs) or [""]]},
+                                                       pluck="outstanding_amount")))
+    return {
+        "fecha_ov": so.transaction_date if so else None, "fecha_compromiso": so.delivery_date if so else None,
+        "ultima_remision": ultima, "dias_entrega": dias, "dias_atraso": atraso, "remisiones": len(fechas),
+        "fecha_factura": cobro.posting_date if cobro else None,
+        "por_cobrar": flt(cobro.outstanding_amount) if cobro else 0.0, "vence_cobro": cobro.due_date if cobro else None,
+        "por_pagar": round(por_pagar, 2), "facturas_compra": len(pinvs),
+    }
+
+
+def _resumen_reporte(mat_est, mat_real, serv_est, serv_real, mat_pos, sub_pos):
+    """Comparativo por material y por servicio para el reporte final, en unidades que
+    se puedan comparar.
+
+    Material, todo en la unidad de inventario (metro, pieza): lo planeado (consumo
+    del costeo x prendas), lo comprado (recibos) con su precio real (lo facturado
+    entre lo recibido), lo consumido por los talleres y lo que sobró. La diferencia
+    contra el plan se parte en dos: por PRECIO (pagamos distinto por unidad) y por
+    CONSUMO (se usó más o menos de lo planeado, a precio del plan).
+
+    Servicio, por servicio y taller: lo estimado contra lo facturado o recibido."""
+    materiales = {}
+    for m in mat_est:
+        r = materiales.setdefault(m["item"], {"item_code": m["item"], "plan_qty": 0.0, "plan_importe": 0.0,
+                                              "proveedores_plan": set()})
+        # Consumo por prenda x prendas, a su precio: exacto (el total por prenda del
+        # costeo viene redondeado a centavos y no sirve para sacar cantidades).
+        q = flt(m["cantidad"]) * flt(m.get("qty_producto") or 0)
+        r["plan_qty"] += q
+        r["plan_importe"] += q * flt(m["precio_unitario"])
+        if m.get("proveedor"):
+            r["proveedores_plan"].add(m["proveedor"])
+    comprado_importe, proveedores_real = {}, {}
+    for m in mat_real:
+        comprado_importe[m["item_code"]] = comprado_importe.get(m["item_code"], 0.0) + flt(m["amount"])
+        proveedores_real.setdefault(m["item_code"], set()).add(m.get("proveedor") or "")
+    comprado_qty = {}
+    if mat_pos:
+        for r in frappe.get_all("Purchase Receipt Item", filters={"purchase_order": ["in", mat_pos], "docstatus": 1},
+                                fields=["item_code", "stock_qty"]):
+            comprado_qty[r.item_code] = comprado_qty.get(r.item_code, 0.0) + flt(r.stock_qty)
+    consumido = {}
+    if sub_pos:
+        scrs = list(dict.fromkeys(frappe.get_all("Subcontracting Receipt Item",
+                                                 filters={"purchase_order": ["in", sub_pos], "docstatus": 1},
+                                                 pluck="parent")))
+        for r in frappe.get_all("Subcontracting Receipt Supplied Item", filters={"parent": ["in", scrs or [""]],
+                                                                                "docstatus": 1},
+                                fields=["rm_item_code", "consumed_qty"]):
+            consumido[r.rm_item_code] = consumido.get(r.rm_item_code, 0.0) + flt(r.consumed_qty)
+    salida = []
+    for code in list(materiales) + [c for c in comprado_importe if c not in materiales]:
+        r = materiales.get(code) or {"item_code": code, "plan_qty": 0.0, "plan_importe": 0.0, "proveedores_plan": set()}
+        qty_c, imp_c, cons = comprado_qty.get(code, 0.0), comprado_importe.get(code, 0.0), consumido.get(code, 0.0)
+        precio_plan = (r["plan_importe"] / r["plan_qty"]) if r["plan_qty"] else 0.0
+        precio_real = (imp_c / qty_c) if qty_c else 0.0
+        info = frappe.db.get_value("Item", code, ["item_name", "stock_uom"], as_dict=True) or {}
+        salida.append({
+            "item_code": code, "item_name": info.get("item_name") or code, "uom": info.get("stock_uom") or "",
+            "proveedor_plan": ", ".join(sorted(frappe.db.get_value("Supplier", x, "supplier_name") or x
+                                               for x in r["proveedores_plan"])),
+            "proveedor_real": ", ".join(sorted(x for x in proveedores_real.get(code, set()) if x)),
+            "plan_qty": round(r["plan_qty"], 4), "precio_plan": precio_plan, "plan_importe": round(r["plan_importe"], 2),
+            "comprado_qty": round(qty_c, 4), "precio_real": precio_real, "comprado_importe": round(imp_c, 2),
+            "consumido_qty": round(cons, 4), "sobrante_qty": round(max(qty_c - cons, 0.0), 4),
+            "efecto_precio": round((precio_real - precio_plan) * cons, 2) if qty_c and precio_plan else 0.0,
+            "efecto_consumo": round((cons - r["plan_qty"]) * precio_plan, 2) if precio_plan else 0.0,
+        })
+
+    servicios = {}
+    for e in serv_est:
+        k = (e["servicio"], e.get("proveedor") or "")
+        r = servicios.setdefault(k, {"servicio": e["servicio"], "supplier": k[1], "estimado": 0.0, "real": 0.0, "qty": 0.0})
+        r["estimado"] += flt(e["total_proyecto"])
+    for e in serv_real:
+        k = (e["item_code"], e.get("supplier") or "")
+        r = servicios.setdefault(k, {"servicio": e["item_code"], "supplier": k[1], "estimado": 0.0, "real": 0.0, "qty": 0.0})
+        r["real"] += flt(e["amount"])
+        # Las piezas que no cargan el precio (ver precio-pieza-portadora) van en $0: no
+        # cuentan como prendas.
+        if flt(e["amount"]):
+            r["qty"] += flt(e["qty"])
+    for r in servicios.values():
+        r["servicio_nombre"] = frappe.db.get_value("Item", r["servicio"], "item_name") or r["servicio"]
+        r["proveedor"] = (frappe.db.get_value("Supplier", r["supplier"], "supplier_name") or r["supplier"]) if r["supplier"] else ""
+        r["estimado"], r["real"] = round(r["estimado"], 2), round(r["real"], 2)
+    return {"materiales": salida, "servicios": sorted(servicios.values(), key=lambda x: -max(x["estimado"], x["real"]))}
+
+
 @frappe.whitelist()
 def get_reporte_final(costeo: str, sales_order: str = None) -> dict:
     """Reporte final del costeo: compara lo ESTIMADO (capturado en el paso 'Costear',
@@ -11125,8 +11689,7 @@ def get_reporte_final(costeo: str, sales_order: str = None) -> dict:
             "total_unit_cost": costo_u, "unit_sales_price": venta_u, "margin_pct": flt(p.margin_pct),
             "costo_total": costo_total_row, "venta_total": venta_total_row,
         })
-    base_sin_overhead = est_costo_total - est_overhead_total
-    overhead_pct_prom = (est_overhead_total / base_sin_overhead * 100) if base_sin_overhead > 0 else 0
+    overhead_pct_prom = _overhead_pct_promedio(doc, qty_por_producto if sales_order else None)
 
     # ── MATERIALES: estimado vs real ────────────────────────────────────────────
     # d.total/e.precio_servicio son costo POR UNIDAD del producto terminado -- para
@@ -11144,7 +11707,7 @@ def get_reporte_final(costeo: str, sales_order: str = None) -> dict:
         materiales_estimado_total += total_proyecto
         materiales_estimado.append({
             "item": d.item, "finished_item": d.finished_item, "proveedor": d.supplier,
-            "precio_unitario": flt(d.unit_price), "cantidad": flt(d.internal_qty),
+            "precio_unitario": flt(d.unit_price), "cantidad": flt(d.internal_qty), "qty_producto": qty_producto,
             "total": flt(d.total), "total_proyecto": total_proyecto,
         })
 
@@ -11185,7 +11748,7 @@ def get_reporte_final(costeo: str, sales_order: str = None) -> dict:
         for r in renglones:
             material_directo_real += flt(r["amount"])
             materiales_real.append({
-                "po": po.name, "proveedor": po.supplier_name or po.supplier, "base": base, **r,
+                "po": po.name, "proveedor": po.supplier_name or po.supplier, "supplier": po.supplier, "base": base, **r,
             })
 
     # ── SERVICIOS DE SUBCONTRATACIÓN: estimado vs real (+ fletes ida/regreso) ──
@@ -11225,7 +11788,7 @@ def get_reporte_final(costeo: str, sales_order: str = None) -> dict:
         for r in renglones:
             servicio_directo_real += flt(r["amount"])
             servicios_real.append({
-                "po": po.name, "proveedor": po.supplier_name or po.supplier, "base": base, **r,
+                "po": po.name, "proveedor": po.supplier_name or po.supplier, "supplier": po.supplier, "base": base, **r,
             })
 
         scos = frappe.get_all("Subcontracting Order", filters={"purchase_order": po.name}, fields=["name", "docstatus"])
@@ -11389,6 +11952,10 @@ def get_reporte_final(costeo: str, sales_order: str = None) -> dict:
         "factura_venta_borrador": bool(si_borrador),
     }
     completo = bool(si) and not any(pendientes.values())
+    resumen = _resumen_reporte(materiales_estimado, materiales_real, servicios_estimado, servicios_real,
+                               [p.name for p in mat_pos], [p.name for p in sub_pos])
+    operacion = _operacion_reporte(costeo, so_name, [d.name for d in dns], si,
+                                   [p.name for p in mat_pos] + [p.name for p in sub_pos])
 
     return {
         "costeo": costeo, "cliente": doc.cliente, "compania": company, "completo": completo,
@@ -11420,6 +11987,8 @@ def get_reporte_final(costeo: str, sales_order: str = None) -> dict:
             "ingreso": ingreso_real, "sales_invoice": si.name if si else None,
             "rentabilidad_pct": rentabilidad_real_pct, "rentabilidad_monto": rentabilidad_real_monto,
         },
+        "resumen": resumen,
+        "operacion": operacion,
         "variacion": {
             "costo_monto": costo_total_real - est_costo_total,
             "costo_pct": ((costo_total_real - est_costo_total) / est_costo_total * 100) if est_costo_total else 0,

@@ -62,14 +62,15 @@
 
       <div class="flex-1 overflow-y-auto px-6 py-5"><slot /></div>
 
-      <div v-if="$slots.enlaces || acciones.length || soloLectura" class="h-16 border-t border-surface-border px-6 flex items-center gap-2 flex-shrink-0">
-        <div class="flex gap-1 min-w-0"><slot name="enlaces" /></div>
-        <div class="flex-1"></div>
+      <!-- Una fila de 64 px; si los enlaces y los botones no caben, los botones bajan a
+           una segunda fila (a la derecha) en vez de salirse del panel. -->
+      <div v-if="$slots.enlaces || acciones.length || soloLectura" class="min-h-[64px] py-3 border-t border-surface-border px-6 flex flex-wrap items-center gap-x-2 gap-y-2 flex-shrink-0">
+        <div class="flex flex-wrap gap-1 min-w-0"><slot name="enlaces" /></div>
         <!-- Un paso que pertenece a otra vista se ve, pero no se captura desde aquí. -->
-        <p v-if="soloLectura" class="text-[12.5px] text-ink-muted truncate">{{ soloLectura }}</p>
-        <div v-else class="flex gap-2 flex-shrink-0">
+        <p v-if="soloLectura" class="ml-auto text-[12.5px] text-ink-muted truncate">{{ soloLectura }}</p>
+        <div v-else class="ml-auto flex gap-2 flex-shrink-0">
           <button
-            v-for="(a, i) in acciones" :key="i" type="button"
+            v-for="(a, i) in acciones" :key="i" type="button" class="whitespace-nowrap"
             :class="a.tipo === 'primaria' ? 'p-btn-primary' : 'p-btn-secondary'"
             :disabled="a.deshabilitado || ocupado"
             :title="a.deshabilitado ? (a.motivo || undefined) : undefined"

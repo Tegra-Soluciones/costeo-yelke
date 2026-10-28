@@ -778,11 +778,16 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     for (const m of scoSel.value?.supplied_items || []) {
       const k = m.rm_item_code;
       const prev = g.get(k);
-      if (prev) { prev.required_qty += Number(m.required_qty) || 0; prev.piezas += 1; }
-      else g.set(k, { ...m, required_qty: Number(m.required_qty) || 0, piezas: 1 });
+      // Lo requerido Y lo enviado se suman: la misma tela viene en un renglón por
+      // pieza, y "Enviado" mostraba solo el del primer renglón (3,106 de 10,892 m).
+      if (prev) {
+        prev.required_qty += Number(m.required_qty) || 0;
+        prev.supplied_qty += Number(m.supplied_qty) || 0;
+        prev.piezas += 1;
+      } else g.set(k, { ...m, required_qty: Number(m.required_qty) || 0, supplied_qty: Number(m.supplied_qty) || 0, piezas: 1 });
     }
     return [...g.values()].map((m) => ({
-      ...m, required_qty: Math.round(m.required_qty * 1e6) / 1e6,
+      ...m, required_qty: Math.round(m.required_qty * 1e6) / 1e6, supplied_qty: Math.round(m.supplied_qty * 1e6) / 1e6,
       // Disponible es por almacén (no por renglón): el mismo material sale de un solo lugar.
       falta: m.disponible !== null && m.disponible !== undefined && Number(m.disponible) < Math.round(m.required_qty * 1e6) / 1e6 - 1e-6,
     }));
@@ -1750,7 +1755,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     } catch { /* se queda en 0 */ }
     finally { primeraEtapaLoading.value = false; }
   }
-  // Crea y valida la SCO de UNA parada que aún no la tiene -- con la cantidad de
+  // Crea (en BORRADOR) la SCO de UNA parada que aún no la tiene -- con la cantidad de
   // cada producto de la parada (o la del lote, o `qtyOverride` si el lote nació de
   // materia prima y no trae cantidad).
   async function abrirParada(qtyOverride) {
@@ -1774,11 +1779,12 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
         po: parada.po, cantidades, fg_items: parada.fg_items, validar_stock: false,
         schedule_date: lote.schedule_date || null, lote_ref: lote.lote_ref,
       });
-      await call("costeo_yelke.api.costeo_api.sub_validar_sco", { sco: r.sco });
+      // Nace en borrador, igual que los encargos de piezas: se revisa en el paso
+      // Encargo y se valida ahí ("Validar encargo").
       await loadLotesProduccion();
       const p2 = loteActivo.value?.paradas.find((x) => x.parada_id === parada.parada_id);
       if (p2) await seleccionarParada(p2);
-      showToast(`${parada.titulo} encargado a ${parada.supplier}`);
+      showToast(`Encargo a ${parada.supplier} en borrador · revísalo y valídalo`);
     } catch (e) { showToast(e.message || "No se pudo crear el encargo", "error"); }
     finally { advancing.value = false; }
   }
@@ -1940,8 +1946,8 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
       await loadLotesProduccion();
       if (subPo.value?.name) await loadFlujo(subPo.value.name);
       showToast(hechas.length > 1
-        ? `Se generaron ${hechas.length} órdenes, una por taller · sigue enviar material`
-        : "Orden de subcontratación generada · sigue enviar material");
+        ? `Se generaron ${hechas.length} encargos en borrador, uno por taller · revísalos y valídalos`
+        : "Encargo generado en borrador · tócalo para revisarlo y validarlo");
     } catch (e) {
       await loadLotesProduccion();
       // Las que sí salieron ya no están listas: se sueltan para que un segundo
@@ -2012,7 +2018,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   }
 
   // ── Progreso general ──
-  const prodComplete = reactive({ complete: false, total: 0, recibidas: 0, lotes_total: 0, lotes_recibidos: 0, pct_recibido: 0 });
+  const prodComplete = reactive({ complete: false, total: 0, recibidas: 0, lotes_total: 0, lotes_recibidos: 0, lotes_terminados: 0, pct_recibido: 0 });
   async function loadProdComplete(costeoName, salesOrder = null) {
     if (!costeoName) return;
     try {
@@ -2020,6 +2026,8 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
       Object.assign(prodComplete, {
         complete: !!r.complete, total: r.total || 0, recibidas: r.recibidas || 0,
         lotes_total: r.lotes_total || 0, lotes_recibidos: r.lotes_recibidos || 0,
+        // Lotes con prendas TERMINADAS recibidas (última etapa): habilitan la entrega.
+        lotes_terminados: r.lotes_terminados || 0,
         pct_recibido: r.pct_recibido || 0,
       });
     } catch { /* ignore */ }

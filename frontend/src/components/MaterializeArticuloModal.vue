@@ -68,7 +68,7 @@
           <label class="field-label mb-0">Múltiplos de compra <span class="text-ink-light font-normal">(opcional)</span></label>
           <button v-if="!form.uomConversions.length" class="text-[11px] font-medium text-brand-600 hover:text-brand-700" @click="addConversion">+ Agregar</button>
         </div>
-        <p class="text-[11px] text-ink-light mb-2">Si el proveedor surte en una unidad distinta a "{{ form.stock_uom || 'UOM base' }}" (ej. rollos, cajas).</p>
+        <p class="text-[11px] text-ink-light mb-2">Si el proveedor surte en una unidad distinta a "{{ form.stock_uom || 'UOM base' }}" (ej. rollos, cajas). Su precio queda registrado con el proveedor, y la que marques como "por defecto" es la que trae la orden de compra.</p>
         <div v-for="(row, idx) in form.uomConversions" :key="idx" class="mb-2">
           <div class="grid grid-cols-[1fr_1fr_28px] gap-2 items-center mb-1">
             <LinkInput v-model="row.uom" doctype="UOM" placeholder="UOM proveedor…" />
@@ -80,11 +80,25 @@
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
             </button>
           </div>
+          <div v-if="tipoInfo.hasSupplier" class="grid grid-cols-[1fr_1fr_28px] gap-2 items-center mb-1">
+            <div class="flex items-center border border-surface-border rounded-lg bg-white min-w-0">
+              <span class="pl-2 text-[11px] text-ink-light select-none whitespace-nowrap">$ por {{ row.uom || '?' }}</span>
+              <input v-model.number="row.precio" type="number" min="0" step="0.01" :placeholder="precioSugerido(row)" class="flex-1 min-w-0 py-2 pr-2 pl-1 text-sm focus:outline-none bg-transparent" />
+            </div>
+            <label class="flex items-center gap-1.5 text-[11px] text-ink-muted">
+              <input type="radio" name="uom-compra" :checked="form.uomCompra === row.uom && !!row.uom" :disabled="!row.uom" @change="form.uomCompra = row.uom" />
+              Se compra así por defecto
+            </label>
+          </div>
           <label class="flex items-center gap-1.5 text-[11px] text-ink-light pl-0.5">
             <input v-model="row.compra_por_paquete_completo" type="checkbox" class="rounded" />
             Paquete completo (no se puede pedir una fracción -- se redondea hacia arriba)
           </label>
         </div>
+        <label v-if="tipoInfo.hasSupplier && form.uomConversions.length" class="flex items-center gap-1.5 text-[11px] text-ink-muted mb-1.5">
+          <input type="radio" name="uom-compra" :checked="!form.uomCompra" @change="form.uomCompra = ''" />
+          Se compra por defecto en {{ form.stock_uom || "la UOM base" }}
+        </label>
         <button v-if="form.uomConversions.length" class="text-[11px] font-medium text-brand-600 hover:text-brand-700" @click="addConversion">+ Otra conversión</button>
       </div>
 
@@ -119,6 +133,8 @@ const props = defineProps({
   suggestedSupplierUom: { type: String, default: "" },
   suggestedConversionFactor: { type: Number, default: 0 },
   suggestedStockUom: { type: String, default: "" },
+  // Precio en la UDM del proveedor capturado en el costeo (el del mazo, no el de la pieza).
+  suggestedPrecioCompra: { type: Number, default: 0 },
   company: { type: String, default: "" },
   defaultWarehouse: { type: String, default: "" },
   saving: { type: Boolean, default: false },
@@ -148,7 +164,13 @@ const tipoInfo = computed(() => TIPOS[props.rowType] || TIPOS.material);
 const form = reactive({
   item_code: "", item_name: "", stock_uom: "", description: "", supplier: "", precio: 0,
   uomConversions: [],
+  uomCompra: "",
 });
+// Referencia: precio base × factor (lo que costaría el paquete al precio unitario).
+const precioSugerido = (row) => {
+  const v = (Number(form.precio) || 0) * (Number(row.conversion_factor) || 0);
+  return v ? v.toFixed(2) : "0.00";
+};
 const errors = reactive({ item_code: false, item_name: false, stock_uom: false });
 const supplierPrefilled = computed(() => !!props.suggestedSupplier);
 
@@ -162,7 +184,7 @@ function suggestCode(text) {
 }
 
 function addConversion() {
-  form.uomConversions.push({ uom: "", conversion_factor: 1, compra_por_paquete_completo: false });
+  form.uomConversions.push({ uom: "", conversion_factor: 1, compra_por_paquete_completo: false, precio: null });
 }
 
 // Mismo conversor $/kg -> $/m que ya existe en Costear (telaConvertModal en
@@ -194,9 +216,14 @@ watch(() => props.open, (isOpen) => {
   form.supplier = props.suggestedSupplier || "";
   form.precio = props.suggestedPrice || 0;
   form.description = "";
-  form.uomConversions = (props.suggestedSupplierUom && props.suggestedConversionFactor)
-    ? [{ uom: props.suggestedSupplierUom, conversion_factor: props.suggestedConversionFactor }]
+  const conCosteo = props.suggestedSupplierUom && props.suggestedConversionFactor
+    && props.suggestedSupplierUom !== props.suggestedStockUom;
+  form.uomConversions = conCosteo
+    ? [{ uom: props.suggestedSupplierUom, conversion_factor: props.suggestedConversionFactor,
+         compra_por_paquete_completo: false, precio: props.suggestedPrecioCompra || null }]
     : [];
+  // La UDM con la que se costeó la compra es la de la orden, salvo que la cambies.
+  form.uomCompra = conCosteo ? props.suggestedSupplierUom : "";
   errors.item_code = false; errors.item_name = false; errors.stock_uom = false;
 });
 
@@ -216,6 +243,7 @@ function onConfirm() {
   if (form.description) prefill.description = form.description;
   const uomConversions = form.uomConversions.filter(r => r.uom && r.conversion_factor > 0);
   if (uomConversions.length) prefill.uom_conversions = uomConversions;
+  if (info.hasSupplier && form.uomCompra && uomConversions.some((r) => r.uom === form.uomCompra)) prefill.purchase_uom = form.uomCompra;
 
   emit("confirm", {
     item_code: form.item_code.trim(),

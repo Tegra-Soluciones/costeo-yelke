@@ -4,11 +4,8 @@
        pestaña del encargo y la de transferencia (antes de enviar), en todas las
        etapas -- datos de sub_get_flujo. -->
   <div class="bg-white rounded-xl border border-surface-border p-4 space-y-4">
-    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted">
-      <span><span class="text-ink font-medium">{{ sco.name }}</span> · {{ sco.supplier }}</span>
-      <span v-if="sco.schedule_date">Fecha requerida: <span class="text-ink">{{ fecha(sco.schedule_date) }}</span></span>
-      <span>Estado: <span class="text-ink">{{ estado }}</span></span>
-    </div>
+    <!-- Folio, taller y estado ya están en el encabezado del paso; aquí solo la fecha. -->
+    <p v-if="sco.schedule_date" class="text-[12px] text-ink-muted">Fecha requerida: <span class="text-ink">{{ fecha(sco.schedule_date) }}</span></p>
 
     <!-- Lo que sale de tus almacenes hacia el taller -->
     <div>
@@ -30,10 +27,11 @@
                 <div class="text-ink">{{ nombre(m.item_name || m.rm_item_code).titulo }}</div>
                 <div v-if="nombre(m.item_name || m.rm_item_code).sub" class="text-[10.5px] text-ink-light">{{ nombre(m.item_name || m.rm_item_code).sub }}</div>
               </td>
-              <td class="py-1.5 pr-2 text-right tabular-nums">{{ num(m.required_qty) }}</td>
+              <!-- Materiales en unidades cerradas: las fracciones son del reparto interno por pieza. -->
+              <td class="py-1.5 pr-2 text-right tabular-nums">{{ entero(m.required_qty) }}</td>
               <td class="py-1.5 pl-2 text-ink-muted text-[11px]">{{ m.stock_uom }}</td>
               <td class="py-1.5 pr-2 text-ink-muted text-[11.5px]">{{ m.sale_de || '—' }}</td>
-              <td v-if="enviado" class="py-1.5 text-right tabular-nums text-ink-muted">{{ num(m.supplied_qty) }}</td>
+              <td v-if="enviado" class="py-1.5 text-right tabular-nums text-ink-muted">{{ entero(m.supplied_qty) }}</td>
               <td v-else class="py-1.5 text-right tabular-nums" :class="m.falta ? 'text-red-600 font-semibold' : 'text-ink-muted'">{{ m.disponible === null || m.disponible === undefined ? '—' : num(m.disponible) }}</td>
             </tr>
           </tbody>
@@ -119,24 +117,22 @@ const props = defineProps({
   piezas: { type: Array, default: () => [] },
   servicios: { type: Array, default: () => [] },
   importe: { type: Number, default: 0 },
+  // {código de pieza: nombre real} -- «PUNOS» -> «PUÑOS» (el código pierde la ñ).
+  nombresPieza: { type: Object, default: () => ({}) },
 });
 
 const enviado = computed(() => !!props.sco?.transfer?.done);
-const estado = computed(() => {
-  const s = props.sco || {};
-  if (s.docstatus === 0) return "borrador";
-  if ((s.receipts || []).some((r) => r.docstatus === 1)) return Number(s.per_received) >= 100 ? "recibido completo" : "recibido parcial";
-  if (enviado.value) return "material enviado, falta recibir";
-  return "por enviar el material";
-});
 
 // "CHAMARRA-INDUSTRIAL-PRUEBA-XXL · FRENTE-IZQUIERDO-AB" -> pieza arriba, producto abajo.
 function nombre(texto) {
   const t = String(texto || "");
   const i = t.indexOf(" · ");
   if (i < 0) return { titulo: t, sub: "" };
-  return { titulo: t.slice(i + 3), sub: t.slice(0, i) };
+  // Sin el sufijo de estado interno de la pieza (-C, -CR…): «BOLSA-C» -> «BOLSA».
+  const slug = t.slice(i + 3).replace(/-[A-Z]{1,4}$/, "");
+  return { titulo: props.nombresPieza[slug] || slug.replace(/-/g, " "), sub: t.slice(0, i) };
 }
+const entero = (v) => Math.ceil((Number(v) || 0) - 1e-6).toLocaleString("es-MX");
 const num = (v) => (Number(v) || 0).toLocaleString("es-MX", { maximumFractionDigits: 3 });
 const money = (v) => (Number(v) || 0).toLocaleString("es-MX", { style: "currency", currency: "MXN" });
 function fecha(d) {

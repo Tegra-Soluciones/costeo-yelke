@@ -206,6 +206,13 @@ async function doSearch(txt) {
   try {
     const res = await searchLink(props.doctype, txt, props.filters);
     if (req !== currentReq) return; // stale response
+    // Lista completa al entrar: la opción actual va primero y resaltada.
+    if (!txt && props.modelValue) {
+      const i = res.findIndex((r) => r.value === props.modelValue);
+      if (i > 0) res.unshift(res.splice(i, 1)[0]);
+      else if (i < 0) res.unshift({ value: props.modelValue, description: "" });
+      highlighted.value = 0;
+    }
     results.value = res;
   } catch {
     if (req !== currentReq) return;
@@ -227,9 +234,16 @@ function onInput(e) {
 
 function onFocus() {
   focused.value = true;
-  // Always show dropdown on focus, even if field is empty
+  // Solo lectura (documento validado): no se ofrece lista -- con la lista completa
+  // se podría cambiar el valor de un campo que ya no se edita.
+  if (props.readonly) return;
   if (showDrop.value) return; // already open
-  doSearch(props.modelValue ?? "");
+  // Al entrar se ve la lista COMPLETA, no filtrada por el valor que ya tiene: buscar
+  // con ese valor dejaba solo esa opción y había que borrarla (✕) para ver las demás.
+  // El texto queda seleccionado: escribir lo reemplaza y filtra; salir sin elegir
+  // conserva el valor de antes.
+  doSearch("");
+  requestAnimationFrame(() => inputEl.value?.select());
 }
 
 function onBlur() {

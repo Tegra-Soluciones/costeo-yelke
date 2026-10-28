@@ -90,3 +90,4 @@ costeo_yelke.patches.v0_2_64.motivo_cancelacion_ov
 costeo_yelke.patches.v0_2_65.proveedor_sin_alta_sat
 costeo_yelke.patches.v0_2_66.entrega_de_taller
 costeo_yelke.patches.v0_2_67.flete_cobra_iva
+costeo_yelke.patches.v0_2_68.contabilidad_mx
