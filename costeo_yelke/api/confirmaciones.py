@@ -43,7 +43,8 @@ def _nuevo_o_cambiado(doc, campo):
 
 
 def _rfc(valor):
-    return re.sub(r"\s", "", valor or "").upper()
+    # Sin espacios, guiones ni puntos: «MOR-100802-RT9» es el mismo RFC.
+    return re.sub(r"[\s\-.]", "", valor or "").upper()
 
 
 def _cuenta(valor):

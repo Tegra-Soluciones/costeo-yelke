@@ -322,6 +322,24 @@ for _dt in ("Customer", "Supplier"):
 	_lista = [] if not _actual else ([_actual] if isinstance(_actual, str) else list(_actual))
 	doc_events[_dt]["validate"] = [*_lista, "costeo_yelke.api.confirmaciones.validar_rfc"]
 
+# Reglas de captura (overrides/captura.py): datos maestros y folios escritos de una sola
+# forma, en la app y en el Escritorio. Después de los bloques de arriba y como listas.
+_CAPTURA = {
+	"Customer": {"before_validate": ["parte"], "validate": ["rfc_unico"]},
+	"Supplier": {"before_validate": ["parte"], "validate": ["rfc_unico"]},
+	"Address": {"before_validate": ["direccion"], "validate": ["direccion_ligada"]},
+	"Contact": {"before_validate": ["contacto"], "validate": ["contacto_ligado"]},
+	"Bank Account": {"validate": ["cuenta_bancaria"]},
+	"Sales Order": {"before_validate": ["folio_oc_cliente"]},
+	"Purchase Invoice": {"before_validate": ["folio_proveedor"]},
+	"Item": {"before_validate": ["articulo"]},
+}
+for _dt, _eventos in _CAPTURA.items():
+	for _evento, _fns in _eventos.items():
+		_actual = doc_events.setdefault(_dt, {}).get(_evento)
+		_lista = [] if not _actual else ([_actual] if isinstance(_actual, str) else list(_actual))
+		doc_events[_dt][_evento] = [*_lista, *[f"costeo_yelke.overrides.captura.{f}" for f in _fns]]
+
 # IVA separado (api/cuentas_mx.py): la cuenta genérica "IVA" se cambia por IVA
 # acreditable en compras y por IVA trasladado en ventas. Al final de la lista, para
 # corregir también los renglones que agregan los hooks de arriba (IVA del flete).

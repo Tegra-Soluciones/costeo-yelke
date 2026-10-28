@@ -34,10 +34,17 @@
                 <input v-model="f.address_line2" v-mayus class="p-field" /></label>
               <label class="col-span-6 sm:col-span-2"><span class="p-field-label">Ciudad o municipio <span class="text-red-400">*</span></span>
                 <input v-model="f.city" v-mayus class="p-field" :class="err.city ? 'border-red-400' : ''" /></label>
-              <label class="col-span-3 sm:col-span-2"><span class="p-field-label">Estado</span>
-                <input v-model="f.state" v-mayus class="p-field" /></label>
+              <!-- En México, una de las 32 entidades (reglas de captura: el servidor también
+                   la exige); otro país, texto libre. -->
+              <label class="col-span-3 sm:col-span-2"><span class="p-field-label">Estado <span v-if="esMexico" class="text-red-400">*</span></span>
+                <select v-if="esMexico" v-model="f.state" class="p-field" :class="err.state ? 'border-red-400' : ''">
+                  <option value="">— Elige —</option>
+                  <option v-for="e in ESTADOS" :key="e" :value="e">{{ e }}</option>
+                </select>
+                <input v-else v-model="f.state" v-mayus class="p-field" /></label>
               <label class="col-span-3 sm:col-span-2"><span class="p-field-label">Código postal</span>
-                <input v-model="f.pincode" class="p-field" inputmode="numeric" maxlength="10" /></label>
+                <input v-model="f.pincode" class="p-field" :class="err.pincode ? 'border-red-400' : ''" inputmode="numeric"
+                       :maxlength="esMexico ? 5 : 10" @input="esMexico && (f.pincode = f.pincode.replace(/\D/g, ''))" /></label>
               <label class="col-span-6 sm:col-span-3"><span class="p-field-label">País <span class="text-red-400">*</span></span>
                 <LinkInput v-model="f.country" doctype="Country" placeholder="País…" :error="!!err.country" /></label>
             </div>
@@ -80,7 +87,8 @@
 </template>
 
 <script setup>
-import { reactive, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
+import { call } from "@/utils/frappe.js";
 import LinkInput from "@/components/LinkInput.vue";
 
 const props = defineProps({
@@ -103,14 +111,24 @@ const VACIO = () => ({
   is_shipping_address: 0, is_primary_address: 0,
 });
 const f = reactive(VACIO());
-const err = reactive({ address_line1: false, city: false, country: false });
-watch(() => props.abierto, (v) => { if (v) { Object.assign(f, VACIO()); Object.assign(err, { address_line1: false, city: false, country: false }); } });
+const SIN_ERRORES = () => ({ address_line1: false, city: false, country: false, state: false, pincode: false });
+const err = reactive(SIN_ERRORES());
+const esMexico = computed(() => !f.country || f.country === "Mexico");
+// Las 32 entidades salen del servidor (overrides/captura.py), una sola lista para todos.
+const ESTADOS = ref([]);
+watch(() => props.abierto, async (v) => {
+  if (!v) return;
+  Object.assign(f, VACIO()); Object.assign(err, SIN_ERRORES());
+  if (!ESTADOS.value.length) ESTADOS.value = await call("costeo_yelke.overrides.captura.catalogo_estados").catch(() => []);
+});
 
 function guardar() {
   err.address_line1 = !f.address_line1.trim();
   err.city = !f.city.trim();
   err.country = !f.country;
-  if (err.address_line1 || err.city || err.country) return;
+  err.state = esMexico.value && !f.state;
+  err.pincode = esMexico.value && !!f.pincode && !/^\d{5}$/.test(f.pincode);
+  if (Object.values(err).some(Boolean)) return;
   emit("guardar", { ...f });
 }
 </script>

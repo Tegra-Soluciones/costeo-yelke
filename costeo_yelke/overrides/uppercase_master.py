@@ -10,6 +10,8 @@ sale de un campo (Item = item_code, grupos = *_name) el folio también queda en
 mayúsculas. `before_validate` cubre las ediciones posteriores.
 """
 
+import re
+
 import frappe
 
 UPPER_FIELDS = {
@@ -70,13 +72,15 @@ def homologar_costeos():
 
 
 def upper(doc, method=None):
+    """MAYÚSCULAS y, además, sin espacios al inicio, al final ni dobles («JESUS » ->
+    «JESUS»): reglas de captura, ver overrides/captura.py."""
     fields = UPPER_FIELDS.get(doc.doctype)
     if not fields:
         return
     for fieldname in fields:
         value = doc.get(fieldname)
         if isinstance(value, str) and value:
-            upper_value = value.upper()
+            upper_value = re.sub(r"\s+", " ", value).strip().upper()
             if upper_value != value:
                 doc.set(fieldname, upper_value)
 
