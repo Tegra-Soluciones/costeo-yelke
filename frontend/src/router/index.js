@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { cargarPermisosAprobacion } from "@/composables/useAprobacion.js";
 import { asegurarCompania } from "@/composables/useCompany.js";
+import { cargarAccesos, rutaPermitida, vistasDeRuta, etiquetaVista } from "@/composables/useAccesos.js";
 
 const routes = [
   // El Director aterriza en su panel; los demás, en Inicio.
@@ -45,6 +46,14 @@ const router = createRouter({
 // abrir la pantalla, para que una lista o un documento de otra compañía no salga vacío.
 router.beforeEach(async (to) => {
   if (to.query.compania) await asegurarCompania(String(to.query.compania));
+  // Accesos por vista (composables/useAccesos.js): una pantalla de una vista que el
+  // usuario no tiene lo regresa a Inicio con el aviso. Crear ("…Nueva/Nuevo") pide editar.
+  await cargarAccesos();
+  const nivel = /Nuev[ao]$/.test(String(to.name || "")) ? "editar" : "ver";
+  if (to.name && !rutaPermitida(String(to.name), nivel)) {
+    const v = vistasDeRuta(String(to.name))[0];
+    return { name: "Dashboard", query: { sin_acceso: etiquetaVista(v) } };
+  }
 });
 
 export default router;

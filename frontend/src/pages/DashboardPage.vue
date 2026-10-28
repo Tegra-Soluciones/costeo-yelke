@@ -12,6 +12,10 @@
   <div class="flex flex-col min-h-0 bg-surface">
     <div class="flex-1 overflow-y-auto">
       <div class="max-w-[1180px] mx-auto px-5 lg:px-8 py-6 space-y-5">
+        <!-- Llegó aquí desde una pantalla que no tiene asignada (router/index.js). -->
+        <p v-if="$route.query.sin_acceso" class="text-[12.5px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          No tienes acceso a <b>{{ $route.query.sin_acceso }}</b>. Pídele a quien administra los accesos que te la asigne.
+        </p>
         <div class="flex items-end justify-between gap-4 flex-wrap">
           <div>
             <p class="p-eyebrow">Inicio · {{ companyState.selected || "Todas las compañías" }}</p>

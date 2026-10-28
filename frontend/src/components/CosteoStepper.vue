@@ -59,6 +59,9 @@ const props = defineProps({
   // Hay órdenes de venta (aunque sean canceladas): Vender se puede abrir para verlas
   // como historial aunque el costeo haya regresado a "Cotizado".
   conOrdenesVenta: { type: Boolean, default: false },
+  // Claves de los pasos que el usuario puede ver (accesos por vista); null = todos.
+  // Los demás no se pintan, pero los índices no cambian (?step=, STEP_ORDER_IDX).
+  permitidos: { type: Array, default: null },
 });
 defineEmits(["select"]);
 
@@ -77,7 +80,8 @@ const STEPS = [
   { key: "reportar", label: "Reportar", icon: "M9 19V6a1 1 0 011-1h1a1 1 0 011 1v13m-3 0h3m-3 0H6a1 1 0 01-1-1v-7a1 1 0 011-1h1a1 1 0 011 1v8m3 0h3v-16a1 1 0 011-1h1a1 1 0 011 1v16m-3 0h3" },
 ];
 /** Los pasos que se PINTAN, cada uno con su índice original en STEPS. */
-const VISIBLES = computed(() => STEPS.map((p, idx) => ({ ...p, idx })).filter((p) => !p.oculto));
+const VISIBLES = computed(() => STEPS.map((p, idx) => ({ ...p, idx }))
+  .filter((p) => !p.oculto && (!props.permitidos || props.permitidos.includes(p.key))));
 const ORDER = ["Borrador", "Cotizado", "Orden de Venta", "En Producción", "Entregado", "Completado"];
 const statusIdx = computed(() => Math.max(ORDER.indexOf(props.modelValue), 0));
 // Índice de STEPS -> índice comparable en ORDER. null = paso sin costeo_status propio

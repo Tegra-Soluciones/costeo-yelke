@@ -26,7 +26,7 @@
           </button>
         </div>
 
-        <button
+        <button v-if="rutaPermitida('ProductoNuevo', 'editar')"
           class="px-3 py-1.5 bg-brand-500 text-white text-sm font-medium rounded-md hover:bg-brand-600 transition-colors flex items-center gap-1.5"
           @click="$router.push('/productos/nuevo')"
         >
@@ -71,7 +71,7 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10" />
         </svg>
         <p class="text-sm font-medium">Sin productos encontrados</p>
-        <button class="mt-3 text-sm text-brand-600 font-medium hover:text-brand-700" @click="$router.push('/productos/nuevo')">
+        <button v-if="rutaPermitida('ProductoNuevo', 'editar')" class="mt-3 text-sm text-brand-600 font-medium hover:text-brand-700" @click="$router.push('/productos/nuevo')">
           Crear nuevo producto →
         </button>
       </div>
@@ -191,6 +191,7 @@
 </template>
 
 <script setup>
+import { rutaPermitida } from "@/composables/useAccesos.js";
 import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import PageHeader from "@/components/PageHeader.vue";

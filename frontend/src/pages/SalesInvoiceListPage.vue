@@ -14,7 +14,7 @@
     @row-click="openRow"
   >
     <template #actions>
-      <button
+      <button v-if="rutaPermitida('SalesInvoiceNueva', 'editar')"
         class="px-3 py-1.5 bg-brand-500 text-white text-sm font-semibold rounded-md hover:bg-brand-600 flex items-center gap-1.5 transition-colors"
         @click="router.push('/facturas/nueva')"
       >
@@ -65,6 +65,7 @@
 </template>
 
 <script setup>
+import { rutaPermitida } from "@/composables/useAccesos.js";
 import { ref, computed, onMounted, watch, defineComponent, h } from "vue";
 import { useRouter } from "vue-router";
 import DocumentListPage from "@/components/DocumentListPage.vue";

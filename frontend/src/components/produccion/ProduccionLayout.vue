@@ -41,10 +41,12 @@
           />
         </div>
 
-        <slot />
+        <!-- Solo lectura (accesos por vista): todo el contenido se consulta pero no se
+             captura; el menú y los pasos de arriba siguen navegando. -->
+        <div v-solo-lectura="!!soloLectura"><slot /></div>
       </div>
 
-      <BarraAcciones :barra="barra" :ocupado="ocupado" />
+      <BarraAcciones :barra="barra" :ocupado="ocupado" :solo-lectura="soloLectura" />
     </main>
   </div>
 </template>
@@ -64,6 +66,7 @@ defineProps({
   barra: { type: Object, default: () => ({}) },
   ocupado: { type: Boolean, default: false },
   puedeVer: { type: Function, default: () => true },
+  soloLectura: { type: String, default: "" },
 });
 const emit = defineEmits(["ir", "ir-paso", "nuevo-lote", "cambiar-ov"]);
 </script>

@@ -78,8 +78,8 @@
             <button :disabled="advancing" class="h-8 px-3 text-[13px] font-medium text-ink border border-surface-border rounded-lg hover:bg-surface-raised disabled:opacity-50" @click="$emit('guardar')">Guardar cambios</button>
             <button :disabled="advancing" class="h-8 px-4 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="$emit('validar')">Validar factura</button>
           </template>
-          <button class="doc-action" @click="$emit('descargar')">Descargar</button>
-          <button class="doc-action" @click="$emit('imprimir')">Imprimir</button>
+          <button data-libre class="doc-action" @click="$emit('descargar')">Descargar</button>
+          <button data-libre class="doc-action" @click="$emit('imprimir')">Imprimir</button>
           <a class="doc-action" :href="`/app/purchase-invoice/${doc.name}`" target="_blank">Abrir en ERPNext</a>
         </div>
       </div>

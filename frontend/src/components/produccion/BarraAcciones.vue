@@ -31,7 +31,9 @@
       </div>
       <div v-else class="flex-1"></div>
 
-      <div class="flex items-center gap-2 ml-auto flex-shrink-0">
+      <!-- Vista en solo lectura (accesos por vista): sin acciones, con el aviso. -->
+      <p v-if="soloLectura" class="ml-auto flex-shrink-0 text-[12.5px] text-ink-muted">{{ soloLectura }}</p>
+      <div v-else class="flex items-center gap-2 ml-auto flex-shrink-0">
         <button
           v-for="(a, i) in (barra.acciones || [])" :key="i" type="button"
           :class="a.tipo === 'primaria' ? 'p-btn-primary' : 'p-btn-secondary'"
@@ -54,5 +56,6 @@ defineProps({
   barra: { type: Object, default: () => ({}) },
   // Una acción en curso deshabilita toda la barra, para no disparar dos veces.
   ocupado: { type: Boolean, default: false },
+  soloLectura: { type: String, default: "" },
 });
 </script>

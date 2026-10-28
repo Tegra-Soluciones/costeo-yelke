@@ -1,5 +1,6 @@
 <template>
-  <div class="flex flex-col min-h-0">
+  <!-- Solo lectura sin "editar" de su vista (accesos por vista). -->
+  <div class="flex flex-col min-h-0" v-solo-lectura="soloLecturaDoc">
 
     <!-- Header -->
     <PageHeader
@@ -865,6 +866,7 @@
 </template>
 
 <script setup>
+import { puedeEditar as _puedeEditarVista, useAccesos as _useAccesos } from "@/composables/useAccesos.js";
 import { ref, reactive, computed, onMounted, watch, defineComponent, h } from "vue";
 import { RouterLink, useRouter, useRoute } from "vue-router";
 import Icono from "@/components/Icono.vue";
@@ -1467,6 +1469,10 @@ watch(showEmailModal, (v) => { if (v) prepareEmailForm(); });
 watch(() => form.items, (items) => {
   items.forEach(r => recalcRow(r));
 }, { deep: true });
+
+// Accesos por vista: sin "editar" de su vista, la página se consulta pero no se captura.
+const { estado: _accesos } = _useAccesos();
+const soloLecturaDoc = computed(() => _accesos.cargado && !['cotizar'].some((v) => _puedeEditarVista(v)));
 </script>
 
 <style scoped>

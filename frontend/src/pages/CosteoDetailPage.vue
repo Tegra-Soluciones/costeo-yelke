@@ -136,7 +136,7 @@
 
       <!-- La del documento del paso (cotización, OV, remisión, factura) o, si el paso
            no tiene uno propio (Producción, Flujo…), la del costeo. -->
-      <BotonActividad
+      <BotonActividad data-libre
         v-if="!isNew && docName"
         :doctype="headerDoc?.name ? headerDoc.doctype : 'Costeo'" :name="headerDoc?.name || docName"
       />
@@ -150,13 +150,13 @@
         Cancelado
       </span>
 
-      <button v-if="docState === 0" :disabled="saving" class="h-8 px-3.5 text-[13px] font-medium text-ink border border-surface-border rounded-lg hover:bg-surface-raised transition-colors disabled:opacity-50 flex items-center gap-2" @click="saveDoc">
+      <button v-if="docState === 0 && (isNew || puedeEditar('costear'))" :disabled="saving" class="h-8 px-3.5 text-[13px] font-medium text-ink border border-surface-border rounded-lg hover:bg-surface-raised transition-colors disabled:opacity-50 flex items-center gap-2" @click="saveDoc">
         <svg v-if="saving" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
         {{ saving ? "Guardando…" : (isNew ? "Guardar Costeo" : "Guardar") }}
       </button>
 
       <button
-        v-if="!isNew && docState === 0 && validaDirecto(docName)"
+        v-if="!isNew && docState === 0 && validaDirecto(docName) && puedeEditar('costear')"
         :disabled="advancing || !puedeValidarCosteo"
         class="h-8 px-3.5 text-[13px] font-semibold text-brand-700 bg-brand-50 rounded-lg hover:bg-brand-100 transition-colors disabled:opacity-50 flex items-center gap-1.5"
         @click="validarCosteo"
@@ -179,8 +179,14 @@
       :con-ordenes-venta="related.sales_orders.length > 0"
       :alta-productos-listo="pendientesArticulos.length === 0"
       :flujo-produccion-listo="manufacturaGuardada || hasPlan"
+      :permitidos="accesosListos ? pasosPermitidos : null"
       @select="goStep"
     />
+    <!-- Sin ninguna etapa asignada en este proyecto (accesos por vista). -->
+    <div v-if="!isNew && docName && accesosListos && !pasosPermitidos.length" class="max-w-xl mx-auto mt-16 p-panel p-6 text-center">
+      <p class="text-[14px] font-semibold text-ink">No tienes etapas asignadas en este proyecto</p>
+      <p class="p-meta mt-1">Pídele a quien administra los accesos que te asigne la etapa en la que trabajas.</p>
+    </div>
 
     <!-- Aprobación del Costeo (api/aprobaciones.py): quien no puede validarlo lo envía. -->
     <div v-if="!isNew && docName && docState === 0" class="mx-5 mt-4">
@@ -219,7 +225,13 @@
          datos generales en una franja, y cada producto en dos columnas -- a la
          izquierda qué es y cómo se hace (pasos, servicios, materias primas), a la
          derecha cuánto cuesta y en cuánto se vende, fija mientras se baja. -->
-    <div v-else-if="activeStep === 0" class="px-5 lg:px-8 py-6 pb-40">
+    <!-- Sin etapas asignadas: no se pinta ningún paso (el aviso va bajo el stepper). -->
+    <div v-else-if="!isNew && docName && accesosListos && !pasosPermitidos.length"></div>
+    <div v-else-if="activeStep === 0" class="px-5 lg:px-8 py-6 pb-40" v-solo-lectura="soloLecturaPaso">
+      <!-- Solo lectura: el usuario tiene esta etapa en "ver" (accesos por vista). -->
+      <p v-if="soloLecturaPaso" class="max-w-5xl mx-auto mb-4 text-[12.5px] text-ink-muted bg-surface-raised rounded-lg px-3 py-2">
+        <b class="text-ink">Solo lectura.</b> Puedes consultar esta etapa; la captura la hace quien la tiene asignada.
+      </p>
       <fieldset :disabled="!canEditCosteo" class="border-0 p-0 m-0 min-w-0" :class="!canEditCosteo ? 'opacity-70' : ''">
       <div class="max-w-[1320px] mx-auto space-y-6">
         <section class="p-panel">
@@ -768,7 +780,11 @@
     <!-- Lenguaje de Producción/Dirección (p-*), igual que Costear: cada cotización es
          una tarjeta; al abrirla, a la izquierda sus datos y acciones, a la derecha la
          vista previa del PDF. -->
-    <div v-else-if="activeStep === 1" class="px-5 lg:px-8 py-6 pb-20">
+    <div v-else-if="activeStep === 1" class="px-5 lg:px-8 py-6 pb-20" v-solo-lectura="soloLecturaPaso">
+      <!-- Solo lectura: el usuario tiene esta etapa en "ver" (accesos por vista). -->
+      <p v-if="soloLecturaPaso" class="max-w-5xl mx-auto mb-4 text-[12.5px] text-ink-muted bg-surface-raised rounded-lg px-3 py-2">
+        <b class="text-ink">Solo lectura.</b> Puedes consultar esta etapa; la captura la hace quien la tiene asignada.
+      </p>
       <div class="max-w-[1320px] mx-auto space-y-3">
         <div v-if="related.quotations.length" class="flex items-end justify-between gap-3 mb-1">
           <div>
@@ -871,8 +887,8 @@
                 </template>
                 <div class="flex flex-wrap gap-1.5 pt-1">
                   <button v-if="q.docstatus === 1" type="button" class="doc-action" @click="openSend('Quotation', q.name, q.contact_email, q.contact_mobile)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
-                  <button type="button" class="doc-action" @click="downloadPdf('Quotation', q.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>Descargar</button>
-                  <button type="button" class="doc-action" @click="printDocView('Quotation', q.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>Imprimir</button>
+                  <button data-libre type="button" class="doc-action" @click="downloadPdf('Quotation', q.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>Descargar</button>
+                  <button data-libre type="button" class="doc-action" @click="printDocView('Quotation', q.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>Imprimir</button>
                   <button type="button" class="doc-action" @click="openAssign('Quotation', q.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Asignar</button>
                   <a class="doc-action" :href="`/app/quotation/${q.name}`" target="_blank"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>Abrir en ERPNext</a>
                 </div>
@@ -905,7 +921,7 @@
             <div class="min-w-0 border-t lg:border-t-0 border-surface-border flex flex-col">
               <div class="flex items-center justify-between px-4 py-2 border-b border-surface-border">
                 <p class="p-eyebrow">Vista previa</p>
-                <button type="button" class="doc-action" @click="openPdf('Quotation', q.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5h-4m4 0v-4m0 4l-5-5"/></svg>Ampliar</button>
+                <button data-libre type="button" class="doc-action" @click="openPdf('Quotation', q.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5h-4m4 0v-4m0 4l-5-5"/></svg>Ampliar</button>
               </div>
               <!-- Crece hasta el final del formulario de la izquierda (nunca menos de 70vh):
                    el iframe va absoluto y escalado a 0.7, así llena el contenedor sin
@@ -986,7 +1002,7 @@
               </div>
               <span class="flex-shrink-0" :class="q.status === 'Lost' ? 'p-pill-bad' : (q.docstatus === 2 ? 'p-pill-off' : (q.docstatus === 1 ? 'p-pill-ok' : 'p-pill-wait'))">{{ q.status === 'Lost' ? 'Rechazada' : (q.docstatus === 2 ? 'Cancelada' : (q.docstatus === 1 ? 'Validada' : 'Borrador')) }}</span>
               <p class="ml-auto text-[13.5px] font-semibold text-ink-muted tabular-nums flex-shrink-0">{{ fmtC(q.grand_total) }}</p>
-              <button type="button" class="doc-action flex-shrink-0" @click="openPdf('Quotation', q.name)"><Icono nombre="documento" class="w-3.5 h-3.5" />Ver PDF</button>
+              <button data-libre type="button" class="doc-action flex-shrink-0" @click="openPdf('Quotation', q.name)"><Icono nombre="documento" class="w-3.5 h-3.5" />Ver PDF</button>
             </div>
           </div>
         </div>
@@ -994,7 +1010,11 @@
     </div>
 
     <!-- ══════════ STEP 2 · VENDER ══════════ -->
-    <div v-else-if="activeStep === 2" class="px-5 lg:px-8 py-6 pb-20">
+    <div v-else-if="activeStep === 2" class="px-5 lg:px-8 py-6 pb-20" v-solo-lectura="soloLecturaPaso">
+      <!-- Solo lectura: el usuario tiene esta etapa en "ver" (accesos por vista). -->
+      <p v-if="soloLecturaPaso" class="max-w-5xl mx-auto mb-4 text-[12.5px] text-ink-muted bg-surface-raised rounded-lg px-3 py-2">
+        <b class="text-ink">Solo lectura.</b> Puedes consultar esta etapa; la captura la hace quien la tiene asignada.
+      </p>
       <div class="max-w-[1320px] mx-auto space-y-3">
         <div v-if="related.sales_orders.length" class="flex items-end justify-between gap-3 mb-1">
           <div>
@@ -1273,8 +1293,8 @@
                 </template>
                 <div class="flex flex-wrap gap-1.5 pt-1">
                   <button v-if="so.docstatus === 1" type="button" class="doc-action" @click="openSend('Sales Order', so.name, so.contact_email, so.contact_mobile)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
-                  <button v-if="so.docstatus !== 2" type="button" class="doc-action" @click="downloadPdf('Sales Order', so.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>Descargar</button>
-                  <button v-if="so.docstatus !== 2" type="button" class="doc-action" @click="printDocView('Sales Order', so.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>Imprimir</button>
+                  <button data-libre v-if="so.docstatus !== 2" type="button" class="doc-action" @click="downloadPdf('Sales Order', so.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>Descargar</button>
+                  <button data-libre v-if="so.docstatus !== 2" type="button" class="doc-action" @click="printDocView('Sales Order', so.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>Imprimir</button>
                   <button type="button" class="doc-action" @click="openAssign('Sales Order', so.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Asignar</button>
                   <a class="doc-action" :href="`/app/sales-order/${so.name}`" target="_blank"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>Abrir en ERPNext</a>
                 </div>
@@ -1294,7 +1314,7 @@
             <div class="min-w-0 border-t lg:border-t-0 border-surface-border flex flex-col">
               <div class="flex items-center justify-between px-4 py-2 border-b border-surface-border">
                 <p class="p-eyebrow">Vista previa</p>
-                <button v-if="so.docstatus !== 2" type="button" class="doc-action" @click="openPdf('Sales Order', so.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5h-4m4 0v-4m0 4l-5-5"/></svg>Ampliar</button>
+                <button data-libre v-if="so.docstatus !== 2" type="button" class="doc-action" @click="openPdf('Sales Order', so.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5h-4m4 0v-4m0 4l-5-5"/></svg>Ampliar</button>
               </div>
               <!-- Crece hasta el final del formulario de la izquierda (nunca menos de 70vh):
                    el iframe va absoluto y escalado a 0.7, así llena el contenedor sin
@@ -1445,7 +1465,11 @@
     <!-- Fijo a nivel Costeo -- NO se filtra por OV activa (a diferencia de Producir/
          Enviar/Facturar/Reportar): cómo se fabrica una prenda no cambia entre réplicas
          de pedido, solo la cantidad -- por eso no lleva ActiveSOSelector. -->
-    <div v-else-if="activeStep === 3" class="p-5 pb-20 max-w-5xl mx-auto w-full space-y-4">
+    <div v-else-if="activeStep === 3" class="p-5 pb-20 max-w-5xl mx-auto w-full space-y-4" v-solo-lectura="soloLecturaPaso">
+      <!-- Solo lectura: el usuario tiene esta etapa en "ver" (accesos por vista). -->
+      <p v-if="soloLecturaPaso" class="max-w-5xl mx-auto mb-4 text-[12.5px] text-ink-muted bg-surface-raised rounded-lg px-3 py-2">
+        <b class="text-ink">Solo lectura.</b> Puedes consultar esta etapa; la captura la hace quien la tiene asignada.
+      </p>
       <div class="bg-white rounded-xl border border-surface-border p-4">
         <p class="text-sm font-semibold text-ink mb-1">Alta de Productos</p>
         <p class="text-[12.5px] text-ink-muted">Ya con la Orden de Venta confirmada: registra los materiales/servicios que quedaron como texto libre -- esto ya no se captura en Costear, para no perder tiempo en un pedido que todavía podría no concretarse. El siguiente paso, "Flujo de Producción", es donde se arma el proceso completo.</p>
@@ -1523,7 +1547,11 @@
          El usuario solo puede: reordenar los pasos (arrastrando la tarjeta) y decir
          de qué paso recibe el material cada uno. El nombre de la pieza es automático.
          Nada de servicio/proveedor/precio aquí -- eso vive en Costear. -->
-    <div v-else-if="activeStep === 4" class="px-5 py-7 pb-24 max-w-6xl mx-auto w-full">
+    <div v-else-if="activeStep === 4" class="px-5 py-7 pb-24 max-w-6xl mx-auto w-full" v-solo-lectura="soloLecturaPaso">
+      <!-- Solo lectura: el usuario tiene esta etapa en "ver" (accesos por vista). -->
+      <p v-if="soloLecturaPaso" class="max-w-5xl mx-auto mb-4 text-[12.5px] text-ink-muted bg-surface-raised rounded-lg px-3 py-2">
+        <b class="text-ink">Solo lectura.</b> Puedes consultar esta etapa; la captura la hace quien la tiene asignada.
+      </p>
       <h2 class="text-[15px] font-semibold text-ink">Flujo de Producción</h2>
       <p class="text-[12.5px] text-ink-muted mt-1 leading-relaxed max-w-3xl">
         Ya viene armado desde el costeo. Arrastra un paso para reordenarlo y ajusta <span class="text-ink-muted">"recibe de"</span> solo si el material sale de otro paso.
@@ -1598,7 +1626,7 @@
                 <div class="mt-1.5 text-[12px]">
                   <!-- Servicios (solo lectura) -->
                   <div v-if="op.servicios.length" class="flex items-center gap-1">
-                    <button type="button" class="w-3.5 h-3.5 flex-shrink-0 flex items-center justify-center rounded text-ink-xlight hover:text-ink-muted hover:bg-surface-raised leading-none" @click="toggleTree(op, 'servicios')">{{ isTreeOpen(op, 'servicios') ? '−' : '+' }}</button>
+                    <button data-nav type="button" class="w-3.5 h-3.5 flex-shrink-0 flex items-center justify-center rounded text-ink-xlight hover:text-ink-muted hover:bg-surface-raised leading-none" @click="toggleTree(op, 'servicios')">{{ isTreeOpen(op, 'servicios') ? '−' : '+' }}</button>
                     <span class="text-ink-muted">Servicios</span>
                   </div>
                   <ul v-if="op.servicios.length && isTreeOpen(op, 'servicios')" class="ml-[18px] mt-0.5 mb-1 space-y-px border-l border-surface-border pl-2.5">
@@ -1618,7 +1646,7 @@
 
                   <!-- Recibe de (editable) -->
                   <div class="group/recibe flex items-center gap-1 mt-0.5">
-                    <button type="button" class="w-3.5 h-3.5 flex-shrink-0 flex items-center justify-center rounded text-ink-xlight hover:text-ink-muted hover:bg-surface-raised leading-none" @click="toggleTree(op, 'recibe')">{{ isTreeOpen(op, 'recibe') || flujoEdit[op.op_key] ? '−' : '+' }}</button>
+                    <button data-nav type="button" class="w-3.5 h-3.5 flex-shrink-0 flex items-center justify-center rounded text-ink-xlight hover:text-ink-muted hover:bg-surface-raised leading-none" @click="toggleTree(op, 'recibe')">{{ isTreeOpen(op, 'recibe') || flujoEdit[op.op_key] ? '−' : '+' }}</button>
                     <span class="text-ink-muted">Recibe de</span>
                     <button v-if="idx > 0" type="button" class="text-[11px] text-brand-600 hover:text-brand-700 ml-0.5" :class="flujoEdit[op.op_key] ? 'font-medium' : ''" @click="flujoEdit[op.op_key] = !flujoEdit[op.op_key]">{{ flujoEdit[op.op_key] ? 'listo' : 'editar' }}</button>
                     <span v-if="recibeRedundantesVivo(prod, op).size" class="relative flex-shrink-0">
@@ -1656,7 +1684,7 @@
 
                   <!-- Materia Prima (editable) -->
                   <div v-if="prod.materiales && prod.materiales.length" class="group/mat flex items-center gap-1 mt-0.5">
-                    <button type="button" class="w-3.5 h-3.5 flex-shrink-0 flex items-center justify-center rounded text-ink-xlight hover:text-ink-muted hover:bg-surface-raised leading-none" @click="toggleTree(op, 'materiales')">{{ isTreeOpen(op, 'materiales') || matEdit[op.op_key] ? '−' : '+' }}</button>
+                    <button data-nav type="button" class="w-3.5 h-3.5 flex-shrink-0 flex items-center justify-center rounded text-ink-xlight hover:text-ink-muted hover:bg-surface-raised leading-none" @click="toggleTree(op, 'materiales')">{{ isTreeOpen(op, 'materiales') || matEdit[op.op_key] ? '−' : '+' }}</button>
                     <span class="text-ink-muted">Materia Prima</span>
                     <button type="button" class="text-[11px] text-brand-600 hover:text-brand-700 ml-0.5" :class="matEdit[op.op_key] ? 'font-medium' : ''" @click="matEdit[op.op_key] = !matEdit[op.op_key]">{{ matEdit[op.op_key] ? 'listo' : 'editar' }}</button>
                   </div>
@@ -1807,15 +1835,15 @@
       <ProduccionLayout
         :menu="menuProduccion" :vista="pVista" :lote-ref="loteActivoRef"
         :encabezado="pEncabezado" :pasos="pPasos" :paso-actual="pPasoSel"
-        :barra="pBarra" :ocupado="advancing" :puede-ver="puedeVer"
+        :barra="pBarra" :ocupado="advancing" :puede-ver="puedeVer" :solo-lectura="pSoloLectura"
         @ir="irProduccion" @ir-paso="onIrPaso" @nuevo-lote="abrirNuevoLotePanel" @cambiar-ov="setActiveSO"
       >
         <template #encabezado-derecha>
           <!-- Dentro de un taller: su orden de compra y su ficha de manufactura
                (cada una en un panel), no el filtro de producto del lote. -->
           <div v-if="pVista === 'lote' && pTallerAbierto" class="flex gap-2">
-            <button type="button" class="p-btn-secondary h-8" @click="abrirOcDelTaller">Orden de compra</button>
-            <button type="button" class="p-btn-secondary h-8" @click="abrirOmDelTaller">Orden de manufactura</button>
+            <button data-nav type="button" class="p-btn-secondary h-8" @click="abrirOcDelTaller">Orden de compra</button>
+            <button data-nav type="button" class="p-btn-secondary h-8" @click="abrirOmDelTaller">Orden de manufactura</button>
           </div>
           <!-- Filtro de producto: solo si el lote trae más de uno con cantidad. -->
           <Segmentado
@@ -2026,7 +2054,7 @@
                   <DocStatusPill :docstatus="mrDetail.docstatus" />
                 </div>
                 <div class="flex items-center gap-2">
-                  <button class="doc-action" @click="openPdf('Material Request', mrDetail.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>Vista previa</button>
+                  <button data-libre class="doc-action" @click="openPdf('Material Request', mrDetail.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>Vista previa</button>
                   <a class="doc-action" :href="`/app/material-request/${mrDetail.name}`" target="_blank"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>ERPNext</a>
                 </div>
               </div>
@@ -2175,7 +2203,7 @@
         <template v-else>
           <OmGeneralEditor
             :costeo="docName" :sales-order="activeSOName || ''"
-            :medidas-templates="medidasTemplates" :disabled="!puedeVer('om')"
+            :medidas-templates="medidasTemplates" :disabled="!puedeEditar('om')"
             :tablas-de-plantilla="tablasDePlantilla" :show-toast="showToast"
             @saved="onOmGuardada" @cargado="(c) => (omCapturadas = c)"
           />
@@ -2318,7 +2346,7 @@
                             <span class="block pl-7 mt-0.5 text-[11.5px] text-ink-muted truncate" :title="e.supplier">{{ e.supplier }}</span>
                             <span class="block pl-7 text-[11px] text-ink-light tabular-nums">${{ e.precio_prenda.toLocaleString('es-MX', { minimumFractionDigits: 2 }) }} por prenda</span>
                           </div>
-                          <button v-if="e.listas" type="button" class="mt-1 ml-7 text-[11.5px] font-medium text-brand-600 hover:text-brand-700" @click="toggleColumna(e)">
+                          <button data-nav v-if="e.listas" type="button" class="mt-1 ml-7 text-[11.5px] font-medium text-brand-600 hover:text-brand-700" @click="toggleColumna(e)">
                             {{ columnaTodaSel(e) ? 'Quitar selección' : `Elegir las ${e.listas} listas` }}
                           </button>
                         </div>
@@ -2336,7 +2364,7 @@
                             <span class="min-w-0"><span class="block">En espera</span><span v-if="variosServicios(e)" class="block text-[10.5px] truncate">{{ celdaDe(r, e.parada_id).servicio }}</span></span>
                           </div>
                           <div v-else class="relative group/celda">
-                          <button
+                          <button data-nav
                             type="button"
                             :aria-pressed="celdaSeleccionada(r.pieza, e.parada_id)"
                             class="w-full h-12 rounded-xl px-3 flex items-center gap-2.5 text-left transition-colors"
@@ -2364,7 +2392,7 @@
                           <!-- Deshacer el encargo, discreto: solo al pasar el mouse por una
                                pieza encargada que el taller todavía no entrega. -->
                           <button
-                            v-if="celdaDe(r, e.parada_id).estado === 'encargado' && (celdaDe(r, e.parada_id).scos || []).length && puedeVer('talleres')"
+                            v-if="celdaDe(r, e.parada_id).estado === 'encargado' && (celdaDe(r, e.parada_id).scos || []).length && puedeEditar('talleres')"
                             type="button" title="Deshacer este encargo"
                             class="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-white ring-1 ring-surface-border text-ink-light hover:text-red-600 hover:ring-red-200 flex items-center justify-center opacity-0 group-hover/celda:opacity-100 focus:opacity-100 transition-opacity"
                             @click.stop="pedirDeshacerCelda(celdaDe(r, e.parada_id), e)"
@@ -2426,7 +2454,7 @@
                       <div class="flex items-stretch gap-2 w-max">
                         <template v-for="(pa, i) in track.paradas" :key="pa.parada_id">
                           <svg v-if="i > 0" class="w-4 h-4 text-ink-xlight self-center flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-                          <button
+                          <button data-nav
                             class="text-left w-48 rounded-lg border px-2.5 py-2 transition-colors flex-shrink-0"
                             :class="paradaBtnClass(pa)"
                             @click="irAParada(pa)"
@@ -2600,14 +2628,14 @@
                         Elige las piezas en la matriz de arriba y pulsa <strong class="text-ink">Crear orden</strong>.
                       </p>
                     </template>
-                    <button v-else :disabled="advancing" class="px-4 py-2 text-sm font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="abrirParada()">Encargar a {{ paradaActiva.supplier }}</button>
+                    <button data-nav v-else :disabled="advancing" class="px-4 py-2 text-sm font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="abrirParada()">Encargar a {{ paradaActiva.supplier }}</button>
                   </template>
                   <template v-else>
                     <p class="text-[12.5px] text-ink-muted mb-3">Este lote todavía no tiene cantidad definida (nació de materia prima) — indícala aquí.</p>
                     <p v-if="primeraEtapaLoading" class="text-[11px] text-ink-light mb-2">Revisando materia prima disponible…</p>
                     <div class="flex items-center justify-center gap-2 mb-2">
                       <input v-model.number="primeraEtapaQty" type="number" min="0" step="1" placeholder="Cantidad" :disabled="primeraEtapaLoading" class="field-input w-32 text-center" />
-                      <button :disabled="advancing || primeraEtapaLoading" class="px-4 py-2 text-sm font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="abrirParada(primeraEtapaQty)">Encargar a {{ paradaActiva.supplier }}</button>
+                      <button data-nav :disabled="advancing || primeraEtapaLoading" class="px-4 py-2 text-sm font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="abrirParada(primeraEtapaQty)">Encargar a {{ paradaActiva.supplier }}</button>
                     </div>
                     <p v-if="!primeraEtapaLoading && primeraEtapaLimitado" class="text-[11.5px] text-amber-700 flex items-center justify-center gap-1.5">
                       <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.71-3l-6.93-12a2 2 0 00-3.42 0l-6.93 12a2 2 0 001.71 3z"/></svg>
@@ -2655,7 +2683,7 @@
 
                   <!-- Guardar / Validar están en la barra de abajo. -->
                   <div class="flex items-center gap-2 flex-wrap">
-                    <button class="doc-action" @click="openPdf('Subcontracting Order', scoSel.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>Vista previa</button>
+                    <button data-libre class="doc-action" @click="openPdf('Subcontracting Order', scoSel.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>Vista previa</button>
                     <span v-if="scoValidated" class="text-[13px] text-green-700 font-medium flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Validada · continúa con la transferencia</span>
                   </div>
                 </div>
@@ -2756,7 +2784,7 @@
                     <!-- Guardar / Validar viven en la barra de abajo; aquí solo
                          queda la vista previa, que no avanza el flujo. -->
                     <div class="flex items-center gap-2 flex-wrap mt-3">
-                      <button class="doc-action" @click="openPdf('Stock Entry', transDoc.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>Vista previa</button>
+                      <button data-libre class="doc-action" @click="openPdf('Stock Entry', transDoc.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>Vista previa</button>
                       <span v-if="transValidated" class="text-[13px] text-green-700 font-medium flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Material transferido · continúa con el recibo</span>
                     </div>
                     </div>
@@ -2834,7 +2862,7 @@
                     </div>
 
                     <div class="flex items-center gap-2 flex-wrap bg-white rounded-xl border border-surface-border p-3 mt-3">
-                      <button class="doc-action" @click="openPdf('Subcontracting Receipt', scr.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>Vista previa</button>
+                      <button data-libre class="doc-action" @click="openPdf('Subcontracting Receipt', scr.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>Vista previa</button>
                       <div class="flex-1"></div>
                       <span v-if="scrValidated" class="text-[13px] text-green-700 font-medium flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Recibido · producto en inventario</span>
                     </div>
@@ -2938,11 +2966,11 @@
                devoluciones y remisiones. Solo se filtra por lote. -->
           <div class="flex items-center gap-x-4 gap-y-2 flex-wrap">
             <label class="flex items-center gap-2"><span class="p-meta">Lote</span>
-              <select v-model="bandejaLote" class="p-field h-8 py-0 w-auto min-w-[9rem] text-[12.5px]">
+              <select data-nav v-model="bandejaLote" class="p-field h-8 py-0 w-auto min-w-[9rem] text-[12.5px]">
                 <option v-for="o in filtroLoteOpciones" :key="o.valor" :value="o.valor">{{ o.texto }}</option>
               </select></label>
             <label class="flex items-center gap-2"><span class="p-meta">Tipo</span>
-              <select v-model="bandejaTipo" class="p-field h-8 py-0 w-auto min-w-[11rem] text-[12.5px]">
+              <select data-nav v-model="bandejaTipo" class="p-field h-8 py-0 w-auto min-w-[11rem] text-[12.5px]">
                 <option v-for="o in envTipoOpciones" :key="o.valor" :value="o.valor">{{ o.texto }} ({{ o.conteo }})</option>
               </select></label>
           </div>
@@ -3006,11 +3034,11 @@
           </div>
           <div class="flex items-center gap-x-4 gap-y-2 flex-wrap">
             <label class="flex items-center gap-2"><span class="p-meta">Lote</span>
-              <select v-model="bandejaLote" class="p-field h-8 py-0 w-auto min-w-[9rem] text-[12.5px]">
+              <select data-nav v-model="bandejaLote" class="p-field h-8 py-0 w-auto min-w-[9rem] text-[12.5px]">
                 <option v-for="o in filtroLoteOpciones" :key="o.valor" :value="o.valor">{{ o.texto }}</option>
               </select></label>
             <label class="flex items-center gap-2"><span class="p-meta">Tipo</span>
-              <select v-model="bandejaTipo" class="p-field h-8 py-0 w-auto min-w-[11rem] text-[12.5px]">
+              <select data-nav v-model="bandejaTipo" class="p-field h-8 py-0 w-auto min-w-[11rem] text-[12.5px]">
                 <option v-for="o in facTipoOpciones" :key="o.valor" :value="o.valor">{{ o.texto }} ({{ o.conteo }})</option>
               </select></label>
           </div>
@@ -3052,9 +3080,9 @@
           <Pill v-if="dnDoc" :estado="dnValidated ? 'ok' : 'wait'" :texto="dnValidated ? 'Validada' : 'Borrador'" />
         </template>
         <template #enlaces>
-          <button v-if="dnDoc" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="openPdf('Delivery Note', dnDoc.name)">Vista previa</button>
+          <button data-libre v-if="dnDoc" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="openPdf('Delivery Note', dnDoc.name)">Vista previa</button>
           <button v-if="dnDoc && dnDoc.docstatus === 1" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="openSend('Delivery Note', dnDoc.name, dnDoc.contact_email || activeSO?.contact_email, dnDoc.contact_mobile || activeSO?.contact_mobile)">Enviar</button>
-          <button v-if="dnDoc" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="downloadPdf('Delivery Note', dnDoc.name)">Descargar</button>
+          <button data-libre v-if="dnDoc" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="downloadPdf('Delivery Note', dnDoc.name)">Descargar</button>
           <a v-if="dnDoc" class="p-btn-ghost h-8 text-[12.5px] px-2" :href="`/app/delivery-note/${dnDoc.name}`" target="_blank">ERPNext ↗</a>
         </template>
 
@@ -3151,10 +3179,10 @@
         <template #mas>
           <!-- Un solo botón: cotizar es UN proceso de dos pasos (se pide y el
                proveedor contesta), no dos cosas sueltas que haya que recordar. -->
-          <button class="p-rail-item" @click="abrirDocProveedor('rfq')">Solicitar cotización al proveedor</button>
+          <button data-nav class="p-rail-item" @click="abrirDocProveedor('rfq')">Solicitar cotización al proveedor</button>
         </template>
         <template #enlaces>
-          <button v-if="docPanelProv" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="openPdf(docPanelProv.doctype, docPanelProv.name)">Vista previa</button>
+          <button data-libre v-if="docPanelProv" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="openPdf(docPanelProv.doctype, docPanelProv.name)">Vista previa</button>
           <a v-if="docPanelProv" class="p-btn-ghost h-8 text-[12.5px] px-2" :href="`/app/${deskDelPaso}/${docPanelProv.name}`" target="_blank">ERPNext ↗</a>
         </template>
 
@@ -3230,7 +3258,7 @@
           :advancing="advancing" :payment-terms-options="cotDefaults.payment_terms_templates"
           :preview-url="pinvDoc ? printUrl('Purchase Invoice', pinvDoc.name) : ''" :preview-key="previewKey"
         />
-        <ActividadPlegable v-if="docPanelProv && !panelProv.cargando" :doctype="docPanelProv.doctype" :name="docPanelProv.name" />
+        <ActividadPlegable data-libre v-if="docPanelProv && !panelProv.cargando" :doctype="docPanelProv.doctype" :name="docPanelProv.name" />
       </PanelLateral>
 
       <!-- ═══ Panel lateral · Orden a un taller (Preparación · paso 3) ═══
@@ -3251,11 +3279,11 @@
                (reagrupada por servicio y precio por prenda) y su ficha de manufactura.
                Se descargan por separado porque no siempre se mandan juntas: si cambia
                la ficha se reenvía sola, sin volver a mandar la orden. -->
-          <button v-if="subPo" class="p-btn-ghost h-8 text-[12.5px] px-2" title="PDF de la orden de compra a este taller"
+          <button data-libre v-if="subPo" class="p-btn-ghost h-8 text-[12.5px] px-2" title="PDF de la orden de compra a este taller"
                   @click="downloadPdfFmt('Purchase Order', subPo.name, 'Orden de Maquila')">Orden ⤓</button>
           <button v-if="subPo" class="p-btn-ghost h-8 text-[12.5px] px-2" title="PDF de la ficha de manufactura de este taller, con sus PDF anexos unidos al final"
                   @click="descargarFicha(subPo.name)">Ficha ⤓</button>
-          <button v-if="subPo" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="panelOcTaller.abierto = false; openPdf('Purchase Order', subPo.name)">Vista previa</button>
+          <button data-libre v-if="subPo" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="panelOcTaller.abierto = false; openPdf('Purchase Order', subPo.name)">Vista previa</button>
           <a v-if="subPo" class="p-btn-ghost h-8 text-[12.5px] px-2" :href="`/app/purchase-order/${subPo.name}`" target="_blank">ERPNext ↗</a>
         </template>
         <VacioEstado v-if="panelOcTaller.error" icono="alerta" titulo="No se pudo abrir la orden" :detalle="panelOcTaller.error" />
@@ -3308,7 +3336,7 @@
             @file="onOmFile" @remove-archivo="removeArchivo"
           />
           </template>
-          <ActividadPlegable doctype="Purchase Order" :name="subPo.name" />
+          <ActividadPlegable data-libre doctype="Purchase Order" :name="subPo.name" />
         </template>
       </PanelLateral>
 
@@ -3334,13 +3362,13 @@
       <PanelLateral
         :abierto="panelFactura.abierto" :eyebrow="panelFactura.eyebrow" :titulo="panelFactura.titulo"
         :meta="panelFactura.meta" :acciones="accionesPanelFactura" :ocupado="advancing"
-        :solo-lectura="puedeVer('facturas') ? '' : 'La captura la hace Facturas'"
+        :solo-lectura="puedeEditar('facturas') ? '' : 'La captura la hace Facturas'"
         @cerrar="cerrarPanelFactura"
       >
         <template #enlaces>
-          <button v-if="pinvDoc" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="downloadPdf('Purchase Invoice', pinvDoc.name)">Descargar</button>
-          <button v-if="pinvDoc" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="panelFactura.abierto = false; openPdf('Purchase Invoice', pinvDoc.name)">Vista previa</button>
-          <button v-if="pinvDoc" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="printDocView('Purchase Invoice', pinvDoc.name)">Imprimir</button>
+          <button data-libre v-if="pinvDoc" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="downloadPdf('Purchase Invoice', pinvDoc.name)">Descargar</button>
+          <button data-libre v-if="pinvDoc" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="panelFactura.abierto = false; openPdf('Purchase Invoice', pinvDoc.name)">Vista previa</button>
+          <button data-libre v-if="pinvDoc" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="printDocView('Purchase Invoice', pinvDoc.name)">Imprimir</button>
           <a v-if="pinvDoc" class="p-btn-ghost h-8 text-[12.5px] px-2" :href="`/app/purchase-invoice/${pinvDoc.name}`" target="_blank">ERPNext ↗</a>
         </template>
         <VacioEstado v-if="panelFactura.error" icono="alerta" titulo="No se pudo abrir la factura" :detalle="panelFactura.error" />
@@ -3367,7 +3395,7 @@
           @descargar="downloadPdf('Purchase Invoice', pinvDoc.name)" @imprimir="printDocView('Purchase Invoice', pinvDoc.name)"
           @ampliar="openPdf('Purchase Invoice', pinvDoc.name)"
         />
-        <ActividadPlegable v-if="pinvDoc && !panelFactura.cargando" doctype="Purchase Invoice" :name="pinvDoc.name" />
+        <ActividadPlegable data-libre v-if="pinvDoc && !panelFactura.cargando" doctype="Purchase Invoice" :name="pinvDoc.name" />
       </PanelLateral>
 
       <!-- ═══ Panel lateral · Nuevo lote (antes G9-d, dentro de la pantalla) ═══ -->
@@ -3400,10 +3428,14 @@
          bandeja de Envíos. `?step=6` cae en Producción. -->
 
     <!-- ══════════ STEP 7 · FACTURAR ══════════ -->
-    <div v-else-if="activeStep === 7" class="p-5 pb-20">
+    <div v-else-if="activeStep === 7" class="p-5 pb-20" v-solo-lectura="soloLecturaPaso">
+      <!-- Solo lectura: el usuario tiene esta etapa en "ver" (accesos por vista). -->
+      <p v-if="soloLecturaPaso" class="max-w-5xl mx-auto mb-4 text-[12.5px] text-ink-muted bg-surface-raised rounded-lg px-3 py-2">
+        <b class="text-ink">Solo lectura.</b> Puedes consultar esta etapa; la captura la hace quien la tiene asignada.
+      </p>
       <!-- Solo la factura de VENTA: las de compra viven como último paso de cada flujo (Producción). -->
       <div class="max-w-6xl mx-auto mb-4">
-        <ActiveSOSelector :sales-orders="soVivas" :active-name="activeSOName" @update:active-name="setActiveSO" class="mb-3" />
+        <ActiveSOSelector data-libre :sales-orders="soVivas" :active-name="activeSOName" @update:active-name="setActiveSO" class="mb-3" />
         <div class="flex items-center gap-1.5 bg-green-50 text-green-700 text-[12px] font-medium px-3 py-2 rounded-lg mb-3 w-max"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>{{ related.delivery_notes.length > 1 ? `${related.delivery_notes.length} remisiones validadas` : `Remisión ${related.delivery_notes[0]?.name} validada` }} · mercancía entregada</div>
       </div>
 
@@ -3468,8 +3500,8 @@
             </template>
             <div class="grid grid-cols-2 gap-2 pt-1">
               <button v-if="siValidated" class="doc-action justify-center" @click="openSend('Sales Invoice', related.sales_invoice.name, related.sales_invoice.contact_email, related.sales_invoice.contact_mobile)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Enviar</button>
-              <button class="doc-action justify-center" @click="downloadPdf('Sales Invoice', related.sales_invoice.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>Descargar</button>
-              <button class="doc-action justify-center" @click="printDocView('Sales Invoice', related.sales_invoice.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>Imprimir</button>
+              <button data-libre class="doc-action justify-center" @click="downloadPdf('Sales Invoice', related.sales_invoice.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>Descargar</button>
+              <button data-libre class="doc-action justify-center" @click="printDocView('Sales Invoice', related.sales_invoice.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>Imprimir</button>
               <button class="doc-action justify-center" @click="openAssign('Sales Invoice', related.sales_invoice.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Asignar</button>
             </div>
             <a class="doc-action justify-center w-full" :href="`/app/sales-invoice/${related.sales_invoice.name}`" target="_blank"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>Abrir en ERPNext</a>
@@ -3488,7 +3520,7 @@
           </div>
           <div v-else>
             <div class="flex items-center justify-end px-2 py-1.5 border-b border-surface-border">
-              <button class="doc-action" @click="openPdf('Sales Invoice', related.sales_invoice.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5h-4m4 0v-4m0 4l-5-5"/></svg>Ampliar</button>
+              <button data-libre class="doc-action" @click="openPdf('Sales Invoice', related.sales_invoice.name)"><svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5h-4m4 0v-4m0 4l-5-5"/></svg>Ampliar</button>
             </div>
             <div style="height: 78vh; overflow: auto;">
               <iframe :key="previewKey" :src="printUrl('Sales Invoice', related.sales_invoice.name)" style="width: 143%; height: 143%; transform: scale(0.7); transform-origin: top left; border: 0;" title="Vista previa de la factura de venta"></iframe>
@@ -3501,7 +3533,7 @@
 
     <div v-else-if="activeStep === 8" class="p-5 pb-20">
       <div class="max-w-5xl mx-auto mb-4">
-        <ActiveSOSelector :sales-orders="soVivas" :active-name="activeSOName" @update:active-name="setActiveSO" />
+        <ActiveSOSelector data-libre :sales-orders="soVivas" :active-name="activeSOName" @update:active-name="setActiveSO" />
       </div>
       <ReporteFinalPanel :r="reporte" :loading="reporteLoading" :costeo="docName" :sales-order="activeSOName || ''" />
     </div>
@@ -3649,6 +3681,7 @@ import BotonActividad from "@/components/aprobacion/BotonActividad.vue";
 import ActividadPlegable from "@/components/aprobacion/ActividadPlegable.vue";
 import { puedeValidarDirecto, usePermisosAprobacion } from "@/composables/useAprobacion.js";
 import { fecha as fmtFecha } from "@/utils/formato.js";
+import { useAccesos } from "@/composables/useAccesos.js";
 import { db, call, openDesk as deskOpen, uploadFile, searchLink, fuzzyQuery, getLinkDisplayLabel, FILTRO_TRANSPORTISTA } from "@/utils/frappe.js";
 import { useToast } from "@/composables/useToast.js";
 import { useDocumentActions } from "@/composables/useDocumentActions.js";
@@ -3863,7 +3896,7 @@ function pedirDeshacerCelda(celda, etapa) {
  *  validado la mercancía ya está con el taller y no se regresa con un botón. */
 const puedeDeshacerEncargo = computed(() => {
   const s = scoSel.value;
-  if (!s || s.docstatus === 2 || !puedeVer("talleres")) return false;
+  if (!s || s.docstatus === 2 || !puedeEditar("talleres")) return false;
   return !s.transfer?.done && !(s.receipts || []).some((r) => r.docstatus === 1);
 });
 async function deshacerEncargo() {
@@ -5007,6 +5040,21 @@ provide("produccion", {
 const ETIQUETA_PREP = { 1: "Plan", 2: "Materia prima", 3: "Orden de manufactura" };
 /** El rol que manda en cada paso de Preparación -- el 3 es de la vista "om". */
 const VISTA_DE_PREP = { 1: "preparacion", 2: "preparacion", 3: "om" };
+/** Vistas del catálogo que cubren lo que se está viendo en Producción. */
+function clavesVistaActual() {
+  const v = pVista.value;
+  if (v === "lote") return [].concat(PASOS_LOTE_VISTA[prodRuta.pasoLote.value] || []);
+  if (v === "preparacion") return [VISTA_DE_PREP[Number(prodRuta.prepPaso.value)] || "preparacion"];
+  if (v === "ordenes") return ["preparacion"];
+  return [v];
+}
+/** Texto de solo lectura de la vista actual de Producción; vacío si se puede capturar. */
+const pSoloLectura = computed(() => {
+  if (!accesosListos.value || pVista.value === "sin-acceso") return "";
+  const cs = clavesVistaActual().filter(Boolean);
+  if (!cs.length || cs.some((c) => puedeEditar(c))) return "";
+  return "Solo lectura";
+});
 /** ¿Están capturadas todas las fichas de manufactura del costeo? */
 const omCompleta = computed(() =>
   omCapturadas.value.total > 0 && omCapturadas.value.capturadas >= omCapturadas.value.total);
@@ -5537,7 +5585,7 @@ const accionesOcTaller = computed(() => {
   return out;
 });
 
-const accionesOmTaller = computed(() => (puedeVer("om")
+const accionesOmTaller = computed(() => (puedeEditar("om")
   ? [sec("Editar la ficha", () => { panelOmTaller.abierto = false; activeStep.value = 5; prodRuta.irPreparacion(3); })]
   : []));
 
@@ -5572,7 +5620,7 @@ function cerrarPanelFactura() {
   pinvDoc.value = null;
 }
 const accionesPanelFactura = computed(() => {
-  if (!puedeVer("facturas")) return [];
+  if (!puedeEditar("facturas")) return [];
   // Maquila con trabajo sin recibir: solo lectura. Ni crear ni validar -- validar es
   // justo donde se mueve el dinero. Un borrador que ya exista se puede mirar y, si
   // sobra, descartar desde ERPNext.
@@ -5982,9 +6030,9 @@ const pillPanelProv = computed(() => {
 });
 /** Un paso que pertenece a otra vista se ve, pero no se captura desde aquí (§6.3). */
 const panelProvSoloLectura = computed(() => {
-  if (panelProv.tab === "factura" && !puedeVer("facturas")) return "La captura la hace Facturas";
-  if (panelProv.tab === "recibo" && !puedeVer("materia") && !puedeVer("envios")) return "La captura la hace Envíos";
-  if (!["recibo", "factura"].includes(panelProv.tab) && !puedeVer("materia")) return "La captura la hace Materia prima";
+  if (panelProv.tab === "factura" && !puedeEditar("facturas")) return "La captura la hace Facturas";
+  if (panelProv.tab === "recibo" && !puedeEditar("materia") && !puedeEditar("envios")) return "La captura la hace Envíos";
+  if (!["recibo", "factura"].includes(panelProv.tab) && !puedeEditar("materia")) return "La captura la hace Materia prima";
   return "";
 });
 /** El paso que sigue en el camino de ESTE proveedor (el camino depende de si
@@ -6164,7 +6212,7 @@ async function abrirTallerDeCadena(t) {
 }
 /** El botón de la tarjeta lista: encarga el trabajo y pasa a su detalle. */
 async function encargarCadena(t) {
-  if (!puedeVer("flujo")) { showToast("Necesitas el rol Producción Flujo Yelke para encargar.", "error"); return; }
+  if (!puedeEditar("flujo")) { showToast("Necesitas el rol Producción Flujo Yelke para encargar.", "error"); return; }
   await abrirConfeccion(t);
 }
 
@@ -6341,7 +6389,7 @@ function barraPreparacion() {
     deshabilitado: !omCompleta.value,
     motivo: "Primero captura la orden de manufactura de todos los productos.",
   });
-  if (!puedeVer("om")) {
+  if (!puedeEditar("om")) {
     return { atras: atras3, estado: omCompleta.value
         ? { color: "ok", texto: "Ficha capturada" }
         : { color: "wait", texto: "Falta que Orden de manufactura capture la ficha" },
@@ -6462,7 +6510,7 @@ function barraLote() {
       return { ...base, estado: { color: "now", texto: `${nSel} pieza(s) en ${nTalleres} taller(es) — ${detalle}` },
         acciones: [sec("Limpiar", limpiarCeldas),
                    pri(nTalleres === 1 ? "Crear orden" : `Crear ${nTalleres} órdenes`, crearOrdenesSeleccion, {
-                     deshabilitado: !puedeVer("flujo"),
+                     deshabilitado: !puedeEditar("flujo"),
                      motivo: "Necesitas el rol Producción Flujo Yelke para encargar piezas.",
                    })] };
     }
@@ -7244,7 +7292,20 @@ const canEditCosteo = computed(() => isNew.value || docState.value === 0);
 // siguiente paso real: crear los documentos de producción. canAdvanceCta sigue
 // exigiendo manufacturaGuardada, así que en "Alta de Productos" el botón se ve pero
 // queda deshabilitado hasta guardar el flujo en el siguiente paso.
+// Qué vista pide cada botón principal: los que CREAN algo piden editar; los que solo
+// llevan a otro paso, verlo (accesos por vista).
+const ACCESO_CTA = {
+  cotizar: [["cotizar"], "editar"], vender: [["vender"], "editar"],
+  ir_preparar_manufactura: [["alta"], "ver"], pasar_produccion: [["flujo_produccion", "preparacion"], "editar"],
+  enviar: [["entrega"], "ver"], facturar: [["facturar"], "ver"],
+};
 const cta = computed(() => {
+  const c = ctaBase.value;
+  if (!c || !ACCESO_CTA[c.action]) return c;
+  const [vistas, nivel] = ACCESO_CTA[c.action];
+  return vistas.some((v) => puedeAcceso(v, nivel)) ? c : null;
+});
+const ctaBase = computed(() => {
   if (docStatus.value === "Orden de Venta" && (activeStep.value === 3 || activeStep.value === 4)) {
     return { label: "Pasar a producción", action: "pasar_produccion" };
   }
@@ -7358,7 +7419,28 @@ let _seq = 0;
 function uid() { return `_${++_seq}_${Date.now()}`; }
 function today() { return new Date().toISOString().slice(0, 10); }
 function fmtC(v) { return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(v || 0); }
+// ── Accesos por vista (composables/useAccesos.js) ──
+// Claves de CosteoStepper, en el mismo orden que activeStep.
+const STEP_KEYS = ["costear", "cotizar", "vender", "preparar_manufactura", "flujo_manufactura", "producir", "enviar", "facturar", "reportar"];
+const { estado: accesosEstado, puede: puedeAcceso, puedeEditar, pasoVisible, pasoEditable } = useAccesos();
+const accesosListos = computed(() => accesosEstado.cargado);
+const pasosPermitidos = computed(() => STEP_KEYS.filter((k) => k !== "enviar" && pasoVisible(k)));
+/** El paso actual solo se consulta: la etapa está en "ver". */
+const soloLecturaPaso = computed(() => accesosListos.value && !isNew.value && !pasoEditable(STEP_KEYS[activeStep.value]));
+/** El paso permitido más cercano: el anterior más próximo o, si no hay, el primero. */
+function pasoPermitidoCercano(idx) {
+  const ok = pasosPermitidos.value.map((k) => STEP_KEYS.indexOf(k));
+  if (!ok.length || ok.includes(idx)) return idx;
+  return [...ok].reverse().find((i) => i <= idx) ?? ok[0];
+}
+// Al abrir el proyecto (o con ?step=) en un paso que no tiene, cae en el más cercano.
+watch([activeStep, accesosListos, () => pasosPermitidos.value.join()], () => {
+  if (!accesosListos.value || isNew.value) return;
+  const destino = pasoPermitidoCercano(activeStep.value);
+  if (destino !== activeStep.value) goStep(destino);
+});
 function goStep(idx) {
+  if (accesosListos.value && !isNew.value && !pasosPermitidos.value.includes(STEP_KEYS[idx])) return;
   activeStep.value = idx;
   if (idx === 8) loadReporte();
   if (idx === 4) loadFlujoOps();

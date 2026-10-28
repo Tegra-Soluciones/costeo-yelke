@@ -30,41 +30,15 @@
         </RouterLink>
       </section>
 
-      <!-- Costeo -->
-      <section>
-        <p class="nav-section-label">Costeo</p>
-        <NavItem to="/costeo"       :icon="IconPipeline" label="Proyectos"      :activeRoutes="['CosteoList', 'CosteoDetail']" />
-        <NavItem to="/plantillas"   :icon="IconTemplate" label="Plantillas"     :activeRoutes="['Plantillas']" />
-      </section>
-
-      <!-- Documentos del proceso: listan TODOS los documentos de ese tipo (de cualquier
-           costeo) y al abrir uno te llevan directo al paso del Costeo donde vive, con
-           un resaltado -- para archivar/revisar sin tener que recordar en qué costeo
-           quedó cada documento. -->
-      <section>
-        <p class="nav-section-label">Documentos</p>
-        <NavItem to="/cotizaciones"        :icon="IconQuote"  label="Cotizaciones"          :activeRoutes="['CotizacionList', 'CotizacionDetail']" />
-        <NavItem to="/ordenes-venta"       :icon="IconCart"   label="Órdenes de Venta"       :activeRoutes="['SalesOrderList', 'SalesOrderDetail', 'SalesOrderNueva']" />
-        <NavItem to="/solicitudes-material" :icon="IconList"  label="Solicitudes de Material" :activeRoutes="['MaterialRequestList']" />
-        <NavItem to="/ordenes-compra"      :icon="IconTruck"  label="Órdenes de Compra"      :activeRoutes="['PurchaseOrderList', 'PurchaseOrderDetail', 'PurchaseOrderNueva']" />
-        <NavItem to="/recibos-compra"      :icon="IconInbox"  label="Recibos de Compra"      :activeRoutes="['PurchaseReceiptList']" />
-        <NavItem to="/remisiones"          :icon="IconShip"   label="Remisiones"             :activeRoutes="['DeliveryNoteList']" />
-        <NavItem to="/facturas"            :icon="IconInvoice" label="Facturas de Venta"     :activeRoutes="['SalesInvoiceList', 'SalesInvoiceDetail', 'SalesInvoiceNueva']" />
-        <NavItem to="/facturas-compra"     :icon="IconInvoiceIn" label="Facturas de Compra"  :activeRoutes="['PurchaseInvoiceList']" />
-      </section>
-
-      <!-- Producción (links a ERPNext) -->
-      <section>
-        <p class="nav-section-label">Producción</p>
-        <ExternalNavItem href="/app/production-plan"      :icon="IconPlan" label="Plan de Producción"/>
-        <ExternalNavItem href="/app/work-order"           :icon="IconGear" label="Órdenes de Trabajo"/>
-        <ExternalNavItem href="/app/subcontracting-order" :icon="IconSub"  label="Subcontratación"/>
-      </section>
-
-      <!-- Ventas -->
-      <section>
-        <p class="nav-section-label">Ventas</p>
-        <NavItem to="/recordatorios" :icon="IconBell" label="Recordatorios de Precio" :activeRoutes="['RecordatoriosList']" />
+      <!-- Secciones del menú: cada entrada solo aparece si el usuario tiene la vista que
+           la habilita (composables/useAccesos.js · roles.VISTAS); una sección sin
+           entradas no muestra su título. Proyectos lo ve todo el equipo. -->
+      <section v-for="sec in secciones" :key="sec.titulo">
+        <p class="nav-section-label">{{ sec.titulo }}</p>
+        <template v-for="it in sec.items" :key="it.label">
+          <ExternalNavItem v-if="it.href" :href="it.href" :icon="it.icon" :label="it.label" />
+          <NavItem v-else :to="it.to" :icon="it.icon" :label="it.label" :activeRoutes="it.rutas" />
+        </template>
       </section>
 
     </nav>
@@ -89,8 +63,41 @@ import { computed, h, defineComponent, onBeforeUnmount, onMounted } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import logoUrl from "@/assets/icon_costeo.svg";
 import { cuentaBandeja, refrescarCuentaBandeja, usePermisosAprobacion } from "@/composables/useAprobacion.js";
+import { useAccesos } from "@/composables/useAccesos.js";
 
 const route = useRoute();
+const { puede, rutaPermitida } = useAccesos();
+
+// Menú: los documentos listan TODOS los de ese tipo (de cualquier costeo) y al abrir
+// uno llevan al paso del Costeo donde vive. `rutas[0]` es la ruta que se revisa.
+// Función: los íconos se declaran más abajo (al construirse ya existen).
+const SECCIONES = () => [
+  { titulo: "Costeo", items: [
+    { to: "/costeo", icon: IconPipeline, label: "Proyectos", rutas: ["CosteoList", "CosteoDetail"] },
+    { to: "/plantillas", icon: IconTemplate, label: "Plantillas", rutas: ["Plantillas"] },
+  ] },
+  { titulo: "Documentos", items: [
+    { to: "/cotizaciones", icon: IconQuote, label: "Cotizaciones", rutas: ["CotizacionList", "CotizacionDetail"] },
+    { to: "/ordenes-venta", icon: IconCart, label: "Órdenes de Venta", rutas: ["SalesOrderList", "SalesOrderDetail", "SalesOrderNueva"] },
+    { to: "/solicitudes-material", icon: IconList, label: "Solicitudes de Material", rutas: ["MaterialRequestList"] },
+    { to: "/ordenes-compra", icon: IconTruck, label: "Órdenes de Compra", rutas: ["PurchaseOrderList", "PurchaseOrderDetail", "PurchaseOrderNueva"] },
+    { to: "/recibos-compra", icon: IconInbox, label: "Recibos de Compra", rutas: ["PurchaseReceiptList"] },
+    { to: "/remisiones", icon: IconShip, label: "Remisiones", rutas: ["DeliveryNoteList"] },
+    { to: "/facturas", icon: IconInvoice, label: "Facturas de Venta", rutas: ["SalesInvoiceList", "SalesInvoiceDetail", "SalesInvoiceNueva"] },
+    { to: "/facturas-compra", icon: IconInvoiceIn, label: "Facturas de Compra", rutas: ["PurchaseInvoiceList"] },
+  ] },
+  { titulo: "Producción", items: [
+    { href: "/app/production-plan", icon: IconPlan, label: "Plan de Producción", vista: "preparacion" },
+    { href: "/app/work-order", icon: IconGear, label: "Órdenes de Trabajo", vista: "preparacion" },
+    { href: "/app/subcontracting-order", icon: IconSub, label: "Subcontratación", vista: "talleres" },
+  ] },
+  { titulo: "Ventas", items: [
+    { to: "/recordatorios", icon: IconBell, label: "Recordatorios de Precio", rutas: ["RecordatoriosList"] },
+  ] },
+];
+const secciones = computed(() => SECCIONES()
+  .map((sec) => ({ ...sec, items: sec.items.filter((it) => (it.vista ? puede(it.vista) : rutaPermitida(it.rutas[0]))) }))
+  .filter((sec) => sec.items.length));
 
 // ── Aprobaciones: el nombre de la entrada depende de lo que la persona hace ──
 const permisosAprobacion = usePermisosAprobacion();

@@ -205,7 +205,7 @@ def puede_ver_panel_direccion(user=None):
     puede_aprobar_documentos."""
     import frappe
 
-    return bool({ROL_DIRECTOR, "System Manager"} & set(frappe.get_roles(user)))
+    return bool({ROL_DIRECTOR, "System Manager"} & set(frappe.get_roles(user))) or puede("direccion", "ver", user)
 
 
 # Quién ve las cifras financieras de la empresa (ventas, márgenes, utilidad, clientes,
@@ -216,7 +216,7 @@ ROLES_FINANZAS = (ROL_DIRECTOR, "Supervisor Yelke", "Analista de Costos Yelke", 
 def puede_ver_finanzas(user=None):
     import frappe
 
-    return bool(set(ROLES_FINANZAS) & set(frappe.get_roles(user)))
+    return bool(set(ROLES_FINANZAS) & set(frappe.get_roles(user))) or puede("indicadores", "ver", user)
 
 
 def puede_aprobar_precios(user=None):

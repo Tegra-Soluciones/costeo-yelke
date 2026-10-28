@@ -1,5 +1,6 @@
 <template>
-  <div class="flex flex-col h-full">
+  <!-- Solo lectura sin "editar" de su vista (accesos por vista). -->
+  <div class="flex flex-col h-full" v-solo-lectura="soloLecturaDoc">
     <PageHeader
       :title="item?.item_name || 'Cargando…'"
       :subtitle="item?.name || ''"
@@ -714,6 +715,7 @@
 </template>
 
 <script setup>
+import { puedeEditar as _puedeEditarVista, useAccesos as _useAccesos } from "@/composables/useAccesos.js";
 import { ref, reactive, computed, onMounted, defineComponent, h } from "vue";
 import PageHeader     from "@/components/PageHeader.vue";
 import Icono from "@/components/Icono.vue";
@@ -966,6 +968,10 @@ onMounted(async () => {
     loading.value = false;
   }
 });
+
+// Accesos por vista: sin "editar" de su vista, la página se consulta pero no se captura.
+const { estado: _accesos } = _useAccesos();
+const soloLecturaDoc = computed(() => _accesos.cargado && !['alta'].some((v) => _puedeEditarVista(v)));
 </script>
 
 <style scoped>
