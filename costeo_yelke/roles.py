@@ -49,56 +49,124 @@ ROLES_FLUJO_DOCUMENTOS = {
     "Aprobador de Documentos Yelke": "Da la aprobación/validación final de un documento.",
 }
 
-# ── Roles por VISTA de Producción ────────────────────────────────────────────
-# El paso "Producción" del costeo es una app completa (ver docs/plan-ui-produccion.md):
-# un menú con un puñado de vistas, cada una el trabajo de una persona distinta. Hay un
-# rol por vista; quien necesita dos vistas recibe los dos roles.
+# ── Vistas: cada pantalla / etapa con su propio rol (docs/plan-accesos-ejecucion.md) ──
+# Una entrada por vista, en dos niveles:
+#   editar  -> "<Grupo> <Vista> Yelke"      (ve y captura)
+#   ver     -> "Ver <Grupo> <Vista> Yelke"  (solo lectura)
+# Editar incluye ver. Quien necesita varias vistas recibe varios roles; lo normal es
+# asignarlos con un Role Profile por puesto (Compras, Almacén...).
 #
-# A diferencia de ROLES_PROCESO (que hoy es documentación y no controla nada), estos
-# SÍ se revisan: el menú solo muestra lo permitido y los endpoints que escriben lo
-# exigen (ver requiere_vista).
-VISTAS_PRODUCCION = {
-    "tablero":     "Producción Tablero Yelke",
-    "preparacion": "Producción Preparación Yelke",
-    "om":          "Producción Orden de Manufactura Yelke",
-    "materia":     "Producción Materia Prima Yelke",
-    "flujo":       "Producción Flujo Yelke",
-    "talleres":    "Producción Talleres Yelke",
-    "envios":      "Producción Envíos Yelke",
-    "facturas":    "Producción Facturas Yelke",
-    "entrega":     "Producción Entrega Yelke",
+# De aquí sale TODO: el menú, los pasos del costeo, las rutas, el modo solo lectura,
+# los candados del servidor (requiere_vista) y los permisos de ERPNext por doctype.
+#   paso    clave del paso del costeo (CosteoStepper.vue) donde vive la vista
+#   rutas   nombres de ruta del SPA (router/index.js) que habilita
+#   doctypes  qué puede hacer en el Escritorio de ERPNext: "editar" o "ver"
+#
+# Las 9 de Producción conservan su clave y el nombre de su rol de editar de siempre
+# (las usan los candados y los perfiles de producción); solo ganan su rol de ver.
+VISTAS = {
+    # ── Comercial ──
+    "costear":   {"etiqueta": "Costear", "grupo": "Comercial", "rol": "Comercial Costear Yelke",
+                  "paso": "costear", "rutas": ["CosteoNuevo", "Plantillas"],
+                  "doctypes": {"Costeo": "editar", "Item": "ver", "Supplier": "ver", "Customer": "editar"},
+                  "descripcion": "Arma el costeo: productos, materiales, etapas, precios y márgenes."},
+    "cotizar":   {"etiqueta": "Cotizar", "grupo": "Comercial", "rol": "Comercial Cotizar Yelke",
+                  "paso": "cotizar", "rutas": ["CotizacionList", "CotizacionDetail"],
+                  "doctypes": {"Quotation": "editar", "Customer": "editar", "Address": "editar", "Contact": "editar"},
+                  "descripcion": "Genera, envía y da seguimiento a la cotización."},
+    "vender":    {"etiqueta": "Vender", "grupo": "Comercial", "rol": "Comercial Vender Yelke",
+                  "paso": "vender", "rutas": ["SalesOrderList", "SalesOrderDetail", "SalesOrderNueva"],
+                  "doctypes": {"Sales Order": "editar", "Customer": "editar", "Address": "editar", "Contact": "editar"},
+                  "descripcion": "Convierte la cotización en orden de venta (OC del cliente, cancelación)."},
+    "precios":   {"etiqueta": "Precios", "grupo": "Comercial", "rol": "Comercial Precios Yelke",
+                  "rutas": ["Precios", "RecordatoriosList"],
+                  "doctypes": {"Item Price": "editar", "Pricing Rule": "editar", "Price List": "ver"},
+                  "descripcion": "Precios acordados con el cliente y tabla de precios por volumen."},
+    # ── Ingeniería ──
+    "alta":      {"etiqueta": "Alta de productos", "grupo": "Ingeniería", "rol": "Ingeniería Alta de Productos Yelke",
+                  "paso": "preparar_manufactura", "rutas": ["ProductoList", "ProductoDetail", "ProductoNuevo"],
+                  "doctypes": {"Item": "editar", "BOM": "editar", "UOM": "ver", "Item Group": "ver"},
+                  "descripcion": "Da de alta los productos terminados, piezas y servicios."},
+    "flujo_produccion": {"etiqueta": "Flujo de producción", "grupo": "Ingeniería",
+                  "rol": "Ingeniería Flujo de Producción Yelke", "paso": "flujo_manufactura", "rutas": [],
+                  "doctypes": {"BOM": "editar", "Subcontracting BOM": "editar"},
+                  "descripcion": "Arma, confirma y revierte el flujo de producción del costeo."},
+    "plantillas": {"etiqueta": "Plantillas", "grupo": "Ingeniería", "rol": "Ingeniería Plantillas Yelke",
+                  "rutas": ["Plantillas"], "doctypes": {},
+                  "descripcion": "Plantillas de costeo reutilizables."},
+    # ── Producción (las 9 de siempre) ──
+    "tablero":     {"etiqueta": "Tablero", "grupo": "Producción", "rol": "Producción Tablero Yelke",
+                    "paso": "producir", "rutas": [], "doctypes": {},
+                    "descripcion": "Ve el tablero de producción de la orden de venta."},
+    "preparacion": {"etiqueta": "Preparación", "grupo": "Producción", "rol": "Producción Preparación Yelke",
+                    "paso": "producir", "rutas": ["MaterialRequestList"],
+                    "doctypes": {"Production Plan": "editar", "Material Request": "editar", "Purchase Order": "editar"},
+                    "descripcion": "Plan, solicitud de material, lotes de entrega, órdenes a talleres y apertura de lotes."},
+    "om":          {"etiqueta": "Orden de manufactura", "grupo": "Producción", "rol": "Producción Orden de Manufactura Yelke",
+                    "paso": "producir", "rutas": [], "doctypes": {},
+                    "descripcion": "Captura la orden de manufactura general por producto."},
+    "materia":     {"etiqueta": "Materia prima", "grupo": "Producción", "rol": "Producción Materia Prima Yelke",
+                    "paso": "producir", "rutas": ["PurchaseOrderList", "PurchaseOrderDetail", "PurchaseOrderNueva", "PurchaseReceiptList"],
+                    "doctypes": {"Purchase Order": "editar", "Supplier Quotation": "editar", "Request for Quotation": "editar",
+                                 "Purchase Receipt": "editar", "Supplier": "editar", "Address": "editar", "Contact": "editar",
+                                 "Bank Account": "editar"},
+                    "descripcion": "Compra la materia prima: cotizaciones a proveedor, orden de compra y recibo."},
+    "flujo":       {"etiqueta": "Flujo del lote", "grupo": "Producción", "rol": "Producción Flujo Yelke",
+                    "paso": "producir", "rutas": [], "doctypes": {"Subcontracting Order": "editar"},
+                    "descripcion": "Ve la matriz del lote y crea los encargos a talleres."},
+    "talleres":    {"etiqueta": "Talleres", "grupo": "Producción", "rol": "Producción Talleres Yelke",
+                    "paso": "producir", "rutas": ["PurchaseOrderList", "PurchaseOrderDetail"],
+                    "doctypes": {"Purchase Order": "editar", "Subcontracting Order": "editar", "Subcontracting Receipt": "editar",
+                                 "Stock Entry": "editar", "Supplier": "editar", "Address": "editar", "Contact": "editar",
+                                 "Bank Account": "editar"},
+                    "descripcion": "Lleva cada taller: encargos, envío de material y recibo del trabajo."},
+    "envios":      {"etiqueta": "Envíos", "grupo": "Producción", "rol": "Producción Envíos Yelke",
+                    "paso": "producir", "rutas": ["PurchaseReceiptList", "DeliveryNoteList"],
+                    "doctypes": {"Purchase Receipt": "editar", "Stock Entry": "editar", "Subcontracting Receipt": "editar",
+                                 "Delivery Note": "ver", "Supplier": "editar"},
+                    "descripcion": "Almacén: recibe material, envía a talleres, recibe de talleres y devoluciones."},
+    "facturas":    {"etiqueta": "Facturas de compra", "grupo": "Producción", "rol": "Producción Facturas Yelke",
+                    "paso": "producir", "rutas": ["PurchaseInvoiceList"],
+                    "doctypes": {"Purchase Invoice": "editar"},
+                    "descripcion": "Captura y valida las facturas de compra: material, maquila y fletes."},
+    "entrega":     {"etiqueta": "Entrega", "grupo": "Producción", "rol": "Producción Entrega Yelke",
+                    "paso": "producir", "rutas": ["DeliveryNoteList"],
+                    "doctypes": {"Delivery Note": "editar", "Address": "editar", "Contact": "editar"},
+                    "descripcion": "Crea y valida las remisiones de cada lote terminado."},
+    # ── Finanzas ──
+    "facturar":  {"etiqueta": "Facturar", "grupo": "Finanzas", "rol": "Finanzas Facturar Yelke",
+                  "paso": "facturar", "rutas": ["SalesInvoiceList", "SalesInvoiceDetail", "SalesInvoiceNueva"],
+                  "doctypes": {"Sales Invoice": "editar", "Payment Entry": "editar", "Journal Entry": "ver"},
+                  "descripcion": "Emite la factura de venta y registra cobros."},
+    "reporte":   {"etiqueta": "Reporte final", "grupo": "Finanzas", "rol": "Finanzas Reporte Final Yelke",
+                  "paso": "reportar", "rutas": [], "doctypes": {},
+                  "descripcion": "Rentabilidad real de cada proyecto y su PDF."},
+    "indicadores": {"etiqueta": "Indicadores financieros", "grupo": "Finanzas", "rol": "Finanzas Indicadores Yelke",
+                  "rutas": [], "doctypes": {},
+                  "descripcion": "Inicio con ventas, márgenes, utilidad y pagos a talleres."},
+    # ── Dirección y administración ──
+    "direccion": {"etiqueta": "Panel de Dirección", "grupo": "Dirección", "rol": "Dirección Panel Yelke",
+                  "rutas": ["Direccion"], "doctypes": {},
+                  "descripcion": "Proyectos y resumen de toda la empresa."},
+    "accesos":   {"etiqueta": "Accesos", "grupo": "Administración", "rol": "Administración Accesos Yelke",
+                  "rutas": ["Accesos"], "doctypes": {},
+                  "descripcion": "Asigna vistas a los puestos y usuarios."},
 }
+for _clave, _v in VISTAS.items():
+    _v["rol_ver"] = f"Ver {_v['rol']}"
 
-# Nombre que ve el usuario en los mensajes de "no tienes acceso a ...".
-ETIQUETAS_VISTA = {
-    "tablero":     "Tablero",
-    "preparacion": "Preparación",
-    "om":          "Orden de manufactura",
-    "materia":     "Materia prima",
-    "flujo":       "Flujo",
-    "talleres":    "Talleres",
-    "envios":      "Envíos",
-    "facturas":    "Facturas",
-    "entrega":     "Entrega",
-}
+# Compatibilidad: lo que ya importaban otros módulos, derivado del catálogo.
+VISTAS_PRODUCCION = {c: v["rol"] for c, v in VISTAS.items() if v["grupo"] == "Producción"}
+ETIQUETAS_VISTA = {c: v["etiqueta"] for c, v in VISTAS.items()}
+ROLES_VISTA = {**{v["rol"]: v["descripcion"] for v in VISTAS.values()},
+               **{v["rol_ver"]: f"Solo lectura: {v['descripcion']}" for v in VISTAS.values()}}
+ROLES_VISTA_PRODUCCION = {v["rol"]: v["descripcion"] for v in VISTAS.values() if v["grupo"] == "Producción"}
 
-ROLES_VISTA_PRODUCCION = {
-    VISTAS_PRODUCCION["tablero"]:     "Ve el tablero de producción de la orden de venta (solo lectura).",
-    VISTAS_PRODUCCION["preparacion"]: "Prepara producción: plan, solicitud de material, lotes de entrega, órdenes a talleres y apertura de lotes.",
-    VISTAS_PRODUCCION["om"]:          "Captura la orden de manufactura general por producto.",
-    VISTAS_PRODUCCION["materia"]:     "Compra la materia prima de cada lote: cotizaciones, orden de compra y recibo.",
-    VISTAS_PRODUCCION["flujo"]:       "Ve la matriz del lote y crea los encargos a talleres.",
-    VISTAS_PRODUCCION["talleres"]:    "Lleva cada taller: encargos, envío de material y recibo del trabajo.",
-    VISTAS_PRODUCCION["envios"]:      "Almacén: recibe material, envía a talleres, recibe de talleres y registra devoluciones.",
-    VISTAS_PRODUCCION["facturas"]:    "Captura y valida las facturas de compra (material y maquila).",
-    VISTAS_PRODUCCION["entrega"]:     "Crea la remisión de cada lote terminado.",
-}
+# Quien ve y hace TODO, sin necesidad de los roles por vista. "CEO" es el rol legado.
+PASE_LIBRE = ("System Manager", "Director Yelke", "Supervisor Yelke", "CEO")
+PASE_LIBRE_PRODUCCION = PASE_LIBRE
 
-# Quien ve y hace TODO en Producción, sin necesidad de los roles por vista.
-PASE_LIBRE_PRODUCCION = ("System Manager", "Director Yelke", "Supervisor Yelke")
-
-ROLES_YELKE = {**ROLES_PROCESO, **ROLES_APROBACION, **ROLES_FLUJO_DOCUMENTOS,
-               **ROLES_VISTA_PRODUCCION}
+ROLES_YELKE = {**ROLES_PROCESO, **ROLES_APROBACION, **ROLES_FLUJO_DOCUMENTOS, **ROLES_VISTA}
 
 # Rol que hoy usa item_api._es_ceo() para aprobar precios. Se mantiene por
 # compatibilidad; el motor nuevo acepta tanto este como "Director Yelke".
@@ -240,39 +308,63 @@ def puede_revisar_documentos(user=None):
 
 
 # ── Permisos por vista de Producción ─────────────────────────────────────────
-def vistas_produccion(user=None):
-    """Claves de vista de Producción que `user` (o el usuario actual) puede abrir.
-    Con pase libre (ver PASE_LIBRE_PRODUCCION), todas."""
+def accesos(user=None):
+    """{clave: "editar" | "ver"} de las vistas que `user` (o el actual) puede abrir.
+    Editar gana sobre ver. Con pase libre, todas en editar. Los préstamos de permisos
+    agregan roles, así que entran solos."""
     import frappe
 
     roles = set(frappe.get_roles(user))
-    if roles & set(PASE_LIBRE_PRODUCCION):
-        return list(VISTAS_PRODUCCION)
-    return [clave for clave, rol in VISTAS_PRODUCCION.items() if rol in roles]
+    if roles & set(PASE_LIBRE):
+        return {c: "editar" for c in VISTAS}
+    out = {}
+    for clave, v in VISTAS.items():
+        if v["rol"] in roles:
+            out[clave] = "editar"
+        elif v["rol_ver"] in roles:
+            out[clave] = "ver"
+    # Roles de antes que ya daban acceso a algo (no quitarlo al estrenar el catálogo).
+    if "indicadores" not in out and set(ROLES_FINANZAS) & roles:
+        out["indicadores"] = "ver"
+    if "direccion" not in out and ROL_DIRECTOR in roles:
+        out["direccion"] = "editar"
+    return out
+
+
+def puede(clave, nivel="ver", user=None):
+    """True si `user` tiene la vista en ese nivel (editar incluye ver)."""
+    n = accesos(user).get(clave)
+    return n == "editar" or (n == "ver" and nivel == "ver")
+
+
+def vistas_produccion(user=None):
+    """Claves de vista de Producción que `user` puede abrir (ver o editar)."""
+    return [c for c in accesos(user) if c in VISTAS_PRODUCCION]
 
 
 def puede_ver(clave, user=None):
-    """True si `user` puede abrir esa vista de Producción."""
-    return clave in vistas_produccion(user)
+    """True si `user` puede abrir esa vista (compatibilidad)."""
+    return puede(clave, "ver", user)
 
 
-def requiere_vista(*claves, user=None):
-    """Exige al menos UNA de las vistas; si no, lanza PermissionError en español.
+def requiere_vista(*claves, nivel="editar", user=None):
+    """Exige al menos UNA de las vistas en ese nivel; si no, PermissionError en español.
 
-    Se pone al inicio de cada endpoint que ESCRIBE (las lecturas no se restringen).
-    Se suma a la doble validación por documento, no la reemplaza."""
+    Por omisión pide EDITAR: es lo que llevan los endpoints que escriben."""
     import frappe
     from frappe import _
 
     if not claves:
         return
-    permitidas = set(vistas_produccion(user))
-    if permitidas & set(claves):
+    if any(puede(c, nivel, user) for c in claves):
         return
-    roles = [VISTAS_PRODUCCION[c] for c in claves if c in VISTAS_PRODUCCION]
+    roles = [VISTAS[c]["rol"] if nivel == "editar" else VISTAS[c]["rol_ver"] for c in claves if c in VISTAS]
     if len(roles) == 1:
-        frappe.throw(_("Necesitas el rol {0} para esto.").format(roles[0]),
-                     frappe.PermissionError)
-    frappe.throw(
-        _("Necesitas alguno de estos roles para esto: {0}.").format(", ".join(roles)),
-        frappe.PermissionError)
+        frappe.throw(_("Necesitas el rol {0} para esto.").format(roles[0]), frappe.PermissionError)
+    frappe.throw(_("Necesitas alguno de estos roles: {0}.").format(", ".join(roles)), frappe.PermissionError)
+
+
+def mapa_vistas():
+    """Lo que la pantalla necesita del catálogo: etiqueta, grupo, paso y rutas."""
+    return {c: {"etiqueta": v["etiqueta"], "grupo": v["grupo"], "paso": v.get("paso"), "rutas": v.get("rutas", [])}
+            for c, v in VISTAS.items()}

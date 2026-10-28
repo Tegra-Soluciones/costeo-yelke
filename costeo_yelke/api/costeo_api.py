@@ -1975,10 +1975,16 @@ def get_permisos_validacion_yelke():
     ``vistas``: claves de las vistas de Producción que puede abrir (ver
     roles.vistas_produccion). El menú de Producción solo muestra esas; el backend
     sigue siendo la autoridad."""
+    from costeo_yelke.roles import accesos, mapa_vistas
+
     return {
         "puede_revisar": puede_revisar_documentos(),
         "puede_aprobar": puede_aprobar_documentos(),
         "vistas": vistas_produccion(),
+        # Accesos por vista ({clave: "editar" | "ver"}) y el catálogo que la pantalla
+        # necesita (paso y rutas de cada vista), ver roles.VISTAS.
+        "accesos": accesos(),
+        "mapa_vistas": mapa_vistas(),
     }
 
 
