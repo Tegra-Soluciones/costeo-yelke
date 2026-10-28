@@ -44,6 +44,9 @@
           <span class="text-[12.5px] text-brand-600 font-medium">Abrir ›</span>
         </RouterLink>
 
+        <!-- Lo que le toca a esta persona en todos los proyectos (api/mi_panel.py). -->
+        <MisPendientes :company="companyState.selected || ''" :recargar="recargas" />
+
         <p v-if="error" class="text-[13px] text-red-700">{{ error }}</p>
         <div class="transition-opacity" :class="cargando ? 'opacity-50' : ''">
           <TableroFinanzas v-if="vista === 'finanzas' && fin" :t="fin" :texto-periodo="textoPeriodo" :previo-texto="previoTexto" />
@@ -60,6 +63,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import Icono from "@/components/Icono.vue";
 import RegresadosAMi from "@/components/aprobacion/RegresadosAMi.vue";
+import MisPendientes from "@/components/MisPendientes.vue";
 import TableroFinanzas from "@/components/tablero/TableroFinanzas.vue";
 import TableroOperativo from "@/components/tablero/TableroOperativo.vue";
 import { cargarPermisosAprobacion, cuentaBandeja, usePermisosAprobacion } from "@/composables/useAprobacion.js";
@@ -94,8 +98,10 @@ const textoPeriodo = computed(() => {
 });
 const previoTexto = computed(() => (fin.value?.previo ? `vs ${fecha(fin.value.previo.desde)} – ${fecha(fin.value.previo.hasta)}` : ""));
 
+const recargas = ref(0);
 async function cargar() {
   cargando.value = true;
+  recargas.value++;
   error.value = "";
   const company = companyState.selected || undefined;
   try {
