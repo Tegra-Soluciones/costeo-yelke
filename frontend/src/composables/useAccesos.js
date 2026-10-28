@@ -94,7 +94,17 @@ export function rutaDeDocumento(doctype, r) {
 /** El documento en el Escritorio de ERPNext (sus permisos deciden si se edita o solo se ve). */
 export const urlEscritorio = (doctype, name) => `/app/${DESKS[doctype] || doctype.toLowerCase().replace(/ /g, "-")}/${encodeURIComponent(name)}`;
 
-export function simular(etiqueta, accesos) { estado.simulado = accesos ? { etiqueta, accesos } : null; }
+// La simulación sobrevive a recargas mientras dure la pestaña (sessionStorage); si el
+// navegador no deja guardar, simplemente se pierde al recargar.
+const CLAVE_SIMULADO = "costeo_yelke.ver_como";
+export function simular(etiqueta, accesos) {
+  estado.simulado = accesos ? { etiqueta, accesos } : null;
+  try {
+    if (estado.simulado) sessionStorage.setItem(CLAVE_SIMULADO, JSON.stringify(estado.simulado));
+    else sessionStorage.removeItem(CLAVE_SIMULADO);
+  } catch { /* opcional */ }
+}
+try { estado.simulado = JSON.parse(sessionStorage.getItem(CLAVE_SIMULADO) || "null"); } catch { /* opcional */ }
 
 export function useAccesos() {
   cargarAccesos();

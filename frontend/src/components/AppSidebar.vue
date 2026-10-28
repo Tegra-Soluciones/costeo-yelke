@@ -94,6 +94,9 @@ const SECCIONES = () => [
   { titulo: "Ventas", items: [
     { to: "/recordatorios", icon: IconBell, label: "Recordatorios de Precio", rutas: ["RecordatoriosList"] },
   ] },
+  { titulo: "Administración", items: [
+    { to: "/accesos", icon: IconList, label: "Accesos", rutas: ["Accesos"] },
+  ] },
 ];
 const secciones = computed(() => SECCIONES()
   .map((sec) => ({ ...sec, items: sec.items.filter((it) => (it.vista ? puede(it.vista) : rutaPermitida(it.rutas[0]))) }))
