@@ -1,4 +1,5 @@
 import frappe
+from costeo_yelke.roles import requiere_vista
 from frappe.utils import nowdate
 
 from costeo_yelke.utils import nombres_comerciales
@@ -203,6 +204,7 @@ def get_quotation(name):
 @frappe.whitelist()
 def save_quotation(data):
     """Create or update a Quotation. Pass name=None/empty to create."""
+    requiere_vista("cotizar")  # accesos por vista
     import json
     if isinstance(data, str):
         data = json.loads(data)
@@ -272,6 +274,7 @@ def save_quotation(data):
 @frappe.whitelist()
 def submit_quotation(name):
     """Submit a draft quotation."""
+    requiere_vista("cotizar")  # accesos por vista
     doc = frappe.get_doc("Quotation", name)
     if doc.docstatus != 0:
         frappe.throw("La cotización ya fue enviada o cancelada.")
@@ -294,6 +297,7 @@ def submit_quotation(name):
 @frappe.whitelist()
 def cancel_quotation(name):
     """Cancel a submitted quotation."""
+    requiere_vista("cotizar")  # accesos por vista
     from costeo_yelke.api.costeo_api import _marcar_costeo_cancelado_si_aplica
 
     doc = frappe.get_doc("Quotation", name)
@@ -309,6 +313,7 @@ def marcar_rechazada(name, motivo=None):
     """Marca la cotización como Rechazada (status nativo 'Lost' de ERPNext) guardando el
     motivo en texto libre. Reusa erpnext.Quotation.declare_enquiry_lost en vez de tocar
     status/order_lost_reason a mano, para no perder ninguna validación nativa."""
+    requiere_vista("cotizar")  # accesos por vista
     doc = frappe.get_doc("Quotation", name)
     doc.flags.ignore_permissions = True
     doc.declare_enquiry_lost(lost_reasons_list=[], competitors=[], detailed_reason=motivo)
@@ -319,6 +324,7 @@ def marcar_rechazada(name, motivo=None):
 @frappe.whitelist()
 def make_sales_order(name):
     """Create a Sales Order from a submitted Quotation."""
+    requiere_vista("vender")  # accesos por vista
     from costeo_yelke.api.sales_order_api import make_sales_order_from_quotation
     return make_sales_order_from_quotation(name)
 
@@ -416,6 +422,7 @@ def get_quotation_print_formats():
 @frappe.whitelist()
 def send_quotation_email(name, recipients, subject, message, print_format=None, attach_pdf=1):
     """Send a quotation via email, optionally attaching the PDF."""
+    requiere_vista("cotizar")  # accesos por vista
     import json
     from costeo_yelke.api.costeo_api import exigir_documento_enviable
     exigir_documento_enviable("Quotation", name)

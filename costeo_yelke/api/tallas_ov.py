@@ -15,6 +15,7 @@ import json
 import re
 
 import frappe
+from costeo_yelke.roles import requiere_vista
 from frappe import _
 from frappe.utils import cint, flt
 
@@ -77,6 +78,7 @@ def get_desglose_tallas_ov(sales_order: str) -> list:
 def guardar_desglose_tallas_ov(sales_order: str, row: str, filas) -> dict:
     """Guarda el desglose por talla de un renglón de producto principal.
     `filas` = [{"talla": <código Talla>, "qty": n}]; la suma debe ser la cantidad del renglón."""
+    requiere_vista("vender")  # accesos por vista
     filas = frappe.parse_json(filas) if isinstance(filas, str) else (filas or [])
     so = frappe.get_doc("Sales Order", sales_order)
     if so.docstatus != 0:

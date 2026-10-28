@@ -1,4 +1,5 @@
 import frappe
+from costeo_yelke.roles import requiere_vista
 from frappe.utils import nowdate, add_days
 
 from costeo_yelke.roles import puede_aprobar_documentos, puede_revisar_documentos
@@ -339,6 +340,7 @@ def cancel_purchase_order(name):
 @frappe.whitelist()
 def make_purchase_order_from_sales_order(sales_order_name, supplier):
     """Create a Purchase Order from a confirmed Sales Order for a given supplier."""
+    requiere_vista("materia", "preparacion")  # accesos por vista
     so = frappe.get_doc("Sales Order", sales_order_name)
     if so.docstatus != 1:
         frappe.throw("La orden de venta debe estar confirmada.")

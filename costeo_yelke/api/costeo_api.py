@@ -699,6 +699,7 @@ def crear_cotizacion(
     currency=None, selling_price_list=None, taxes_and_charges=None, contact_email=None, contact_mobile=None,
 ) -> dict:
     """Crea una Quotation en BORRADOR desde el Costeo con los datos manuales."""
+    requiere_vista("cotizar")  # accesos por vista
     doc = frappe.get_doc("Costeo", costeo)
 
     quot = frappe.new_doc("Quotation")
@@ -766,6 +767,7 @@ def materializar_producto_terminado(
     texto (costeo_producto, costeo_producto_detalle, tabla_etapas_costeo) — deben
     quedar sincronizadas o Costeo.cleanup_orphan_children() borraría en el
     siguiente guardado las filas de materiales/etapas de ese producto."""
+    requiere_vista("costear", "alta")  # accesos por vista
     if isinstance(pricing_rules, str):
         pricing_rules = json.loads(pricing_rules) if pricing_rules else None
     if isinstance(uom_conversions, str):
@@ -950,6 +952,7 @@ def materializar_variantes_talla(costeo: str, producto_base: str, precios_varian
     """Para un producto base que YA es artículo (se dio de alta antes, o se vinculó a uno
     existente): da de alta sus variantes de talla pendientes, con la escala de precios
     por volumen que se haya capturado para cada una."""
+    requiere_vista("costear", "alta")  # accesos por vista
     if isinstance(precios_variantes, str):
         precios_variantes = json.loads(precios_variantes) if precios_variantes else None
     return {"variantes": _materializar_variantes(costeo, producto_base, precios_variantes)}
@@ -966,6 +969,7 @@ def actualizar_cotizacion(
     ``items``, si se manda, reemplaza por completo la tabla de artículos (cantidad,
     precio, o artículos nuevos que no vienen del Costeo) -- si se omite, la tabla de
     artículos no se toca (compatibilidad con llamadas que solo editan encabezado)."""
+    requiere_vista("cotizar")  # accesos por vista
     doc = frappe.get_doc("Quotation", name)
     if doc.docstatus != 0:
         frappe.throw(_("La cotización ya está validada; no se puede editar."))
@@ -1192,6 +1196,7 @@ def materializar_articulo(costeo: str, row_type: str, texto: str, item_code: str
     lo que sea que el usuario llevaba escrito -- antes, buscar "vincular existente"
     podía crear (y de una vez vincular) un artículo real con un código truncado
     apenas tecleado, con solo un par de letras."""
+    requiere_vista("costear", "alta", "flujo_produccion", "preparacion")  # también la llama preparar_produccion  # accesos por vista
     if isinstance(prefill, str):
         prefill = json.loads(prefill) if prefill else {}
     prefill = dict(prefill or {})
@@ -1273,6 +1278,7 @@ def auto_materializar_subensamblajes(costeo: str) -> dict:
     sub-ensamblaje es un artículo interno de proceso que siempre se maneja igual: se
     produce por subcontratación y se cuenta en piezas -- no vale la pena pedir
     confirmación uno por uno. El texto libre se usa tal cual como item_code."""
+    requiere_vista("alta", "flujo_produccion", "preparacion")  # también la llama preparar_produccion  # accesos por vista
     pendientes = get_articulos_pendientes(costeo)["grupos"]
     # Con PIEZAS declaradas cada artículo intermedio lo consume exactamente una
     # operación (la ruta de esa pieza es una cadena), así que el saldo nunca tiene por
@@ -1535,6 +1541,7 @@ def guardar_flujo_operaciones(costeo: str, cambios, materiales=None) -> dict:
     a qué operación se le manda cada materia prima además de lo que reciba de un
     paso anterior. op_key = "" quita la asignación (vuelve a automática: se
     atribuye sola al/los paso(s) que arrancan de materia prima directa)."""
+    requiere_vista("flujo_produccion")  # accesos por vista
     _exigir_flujo_editable(costeo)
     from costeo_yelke.costeo_yelke.doctype.costeo.costeo import _resolve_production_operations
 
@@ -1807,6 +1814,7 @@ def set_tipo_formato_cotizacion(name: str, custom_tipo_formato: str) -> dict:
     """Cambia solo la vista de impresión (Normal/Volumen) de una cotización en
     borrador, sin tocar el resto de sus campos -- para refrescar la vista previa
     al instante sin exigir guardar primero el resto de los cambios pendientes."""
+    requiere_vista("cotizar")  # accesos por vista
     if frappe.db.get_value("Quotation", name, "docstatus") != 0:
         frappe.throw(_("La cotización ya está validada; no se puede editar."))
     if frappe.db.has_column("Quotation", "custom_tipo_formato"):
@@ -1816,10 +1824,8 @@ def set_tipo_formato_cotizacion(name: str, custom_tipo_formato: str) -> dict:
 
 
 def _vistas_de_documento(doctype, name=None):
-    """Vistas de Producción que autorizan a escribir/validar ESE documento -- basta
-    con tener una (ver roles.requiere_vista). Tupla vacía = el documento no es de
-    Producción (Costeo, Cotización, Orden de Venta, Remisión, Factura de venta) y no
-    se restringe por vista; su gating sigue siendo el de la doble validación.
+    """Vistas que autorizan a escribir/validar ESE documento -- basta con tener una en
+    "editar" (ver roles.requiere_vista). Tupla vacía = no se restringe por vista.
 
     Esto se SUMA a la doble validación Revisor/Aprobador, no la reemplaza."""
     if doctype == "Purchase Order":
@@ -1833,6 +1839,12 @@ def _vistas_de_documento(doctype, name=None):
         propo = frappe.db.get_value("Stock Entry", name, "purpose") if name else None
         return ("talleres", "envios") if propo == "Send to Subcontractor" else ()
     return {
+        # Etapas fuera de Producción (accesos por vista, fase 4 del plan).
+        "Costeo": ("costear",),
+        "Quotation": ("cotizar",),
+        "Sales Order": ("vender",),
+        "Delivery Note": ("entrega",),
+        "Sales Invoice": ("facturar",),
         "Production Plan": ("preparacion",),
         "Material Request": ("preparacion",),
         "Request for Quotation": ("materia",),
@@ -2094,6 +2106,7 @@ def cancelar_orden_venta(name: str, motivo: str) -> dict:
     No procede mientras algo que salió de ella siga vivo (remisión, factura, compras,
     producción): eso se cancela primero. Si era la única OV viva del costeo, el costeo
     regresa a "Cotizado" para poder generar otra."""
+    requiere_vista("vender")  # accesos por vista
     if not puede_aprobar_documentos():
         frappe.throw(_("Solo quien valida documentos puede cancelar una orden de venta."), frappe.PermissionError)
     motivo = (motivo or "").strip()
@@ -2147,6 +2160,7 @@ def crear_revision_costeo(costeo: str, motivo: str = None) -> dict:
     a través de amended_from -- el original queda intacto como historial, igual que el
     amend nativo de Frappe. Necesario porque un Costeo validado (docstatus=1) queda
     bloqueado para edición directa; esta es la vía para ajustarlo tras un rechazo."""
+    requiere_vista("costear")  # accesos por vista
     doc = frappe.get_doc("Costeo", costeo)
     if doc.docstatus == 1:
         doc.flags.ignore_permissions = True
@@ -2179,6 +2193,7 @@ def reabrir_costeo(costeo: str, motivo: str = None) -> dict:
 
     Solo procede mientras el costeo no haya pasado a venta: sin órdenes de venta
     vivas ni cotizaciones vigentes (validadas y no rechazadas, o en borrador)."""
+    requiere_vista("costear")  # accesos por vista
     doc = frappe.get_doc("Costeo", costeo)
     if not doc.has_permission("write"):
         frappe.throw(_("No tienes permiso para editar este costeo."), frappe.PermissionError)
@@ -2309,6 +2324,7 @@ def crear_orden_venta(
     contact_email=None, contact_mobile=None, oc_cliente_archivo=None,
 ) -> dict:
     """Crea una Sales Order en BORRADOR desde el Costeo con los datos manuales."""
+    requiere_vista("vender")  # accesos por vista
     doc = frappe.get_doc("Costeo", costeo)
 
     deliv = delivery_date or nowdate()
@@ -2392,6 +2408,7 @@ def actualizar_orden_venta(
     contact_email=None, contact_mobile=None,
 ) -> dict:
     """Actualiza los datos manuales de una orden de venta en borrador."""
+    requiere_vista("vender")  # accesos por vista
     doc = frappe.get_doc("Sales Order", name)
     if doc.docstatus != 0:
         frappe.throw(_("La orden de venta ya está validada; no se puede editar."))
@@ -2608,6 +2625,7 @@ def crear_factura_venta(costeo: str, posting_date=None, payment_terms_template=N
     ``sales_order``, si se manda, es la OV activa elegida en el SPA -- si un Costeo
     tiene varias OV validadas (réplicas de un pedido recurrente), sin esto se elegía
     una de forma ambigua (sin orden definido)."""
+    requiere_vista("facturar")  # accesos por vista
     so_name = None
     if sales_order and frappe.db.get_value("Sales Order", sales_order, "docstatus") == 1 and frappe.db.get_value("Sales Order", sales_order, "costeo") == costeo:
         so_name = sales_order
@@ -2651,6 +2669,7 @@ def crear_factura_venta(costeo: str, posting_date=None, payment_terms_template=N
 @frappe.whitelist()
 def actualizar_factura_venta(name: str, posting_date=None, payment_terms_template=None, tc_name=None, due_date=None) -> dict:
     """Actualiza los datos manuales de una factura de venta en borrador."""
+    requiere_vista("facturar")  # accesos por vista
     doc = frappe.get_doc("Sales Invoice", name)
     if doc.docstatus != 0:
         frappe.throw(_("La factura ya está validada; no se puede editar."))
@@ -4016,6 +4035,7 @@ def delete_quotation(name: str) -> dict:
     mismos permisos y validaciones: truena igual que en Desk si el usuario no tiene
     permiso de borrado o si la cotización está validada (submitted) y no se puede
     eliminar sin cancelarla primero."""
+    requiere_vista("cotizar")  # accesos por vista
     frappe.delete_doc("Quotation", name, force=True, ignore_permissions=False)
     return {"ok": True, "deleted": name}
 
@@ -4025,6 +4045,7 @@ def delete_sales_order(name: str) -> dict:
     """Elimina una Orden de Venta -- mismo mecanismo estándar de Frappe que usa el
     botón Eliminar de ERPNext Desk, con los mismos permisos y validaciones heredados
     (truena si está validada/tiene documentos ligados sin cancelar primero)."""
+    requiere_vista("vender")  # accesos por vista
     frappe.delete_doc("Sales Order", name, force=True, ignore_permissions=False)
     return {"ok": True, "deleted": name}
 
@@ -4108,6 +4129,7 @@ def generar_replica_ov(sales_order: str, items) -> dict:
     cada artículo lo decide el servidor (_precio_nueva_ov): el acordado si existe, si
     no el último con que se le vendió. Un precio acordado vencido solo lo puede usar
     quien aprueba precios (no se borra ni se modifica, solo se autoriza generar con él)."""
+    requiere_vista("vender")  # accesos por vista
     from costeo_yelke.roles import puede_aprobar_precios
 
     if isinstance(items, str):
@@ -5390,7 +5412,7 @@ def revertir_flujo_produccion(costeo: str) -> dict:
     una OC, una orden de trabajo o una remisión activas, se pide cancelarlas primero --
     ahí ya hay compras o producción reales detrás. Todo o nada: si algo no se puede
     cancelar o borrar, no queda ningún cambio a medias."""
-    requiere_vista("preparacion")
+    requiere_vista("preparacion", "flujo_produccion")
     doc = frappe.get_doc("Costeo", costeo)
     if doc.costeo_status not in _ESTADOS_FLUJO_CONFIRMADO:
         frappe.throw(_("El flujo de este costeo todavía no se ha confirmado: se puede editar directamente."))
@@ -5493,7 +5515,7 @@ def preparar_produccion(costeo: str, sales_order: str = None) -> dict:
     todas las OV de un mismo costeo. El Plan sí es por OV: solo se salta si YA existe un
     plan para esta OV específica (no basta con que exista alguno para el costeo -- otra
     OV pudo haber creado el suyo antes)."""
-    requiere_vista("preparacion")
+    requiere_vista("preparacion", "flujo_produccion")
     existing = get_produccion_docs(costeo, sales_order)
     steps = []
 

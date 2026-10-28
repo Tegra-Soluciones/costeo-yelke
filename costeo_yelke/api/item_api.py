@@ -1,4 +1,5 @@
 import frappe
+from costeo_yelke.roles import requiere_vista
 from frappe import _
 from frappe.utils import flt, formatdate, getdate, now_datetime, nowdate
 
@@ -192,6 +193,7 @@ def get_pricing_rules(item_code):
 @frappe.whitelist()
 def save_pricing_rules(item_code, rules):
     """Save pricing rules for an item (create/update/delete by diff)."""
+    requiere_vista("precios", "vender")  # accesos por vista
     import json
     if isinstance(rules, str):
         rules = json.loads(rules)
@@ -369,6 +371,7 @@ def crear_precio_acordado(item_code, customer, price_list_rate, valid_from, vali
     validar_precio_acordado, solo rol CEO). Por eso cada guardado (nuevo o editado)
     regresa el precio a borrador: si alguien ajusta un precio ya validado, tiene que
     volver a pasar por la validación del CEO antes de contar como vigente."""
+    requiere_vista("precios", "vender")  # accesos por vista
     price_list = price_list or frappe.db.get_single_value("Selling Settings", "selling_price_list") or "Standard Selling"
     stock_uom  = frappe.db.get_value("Item", item_code, "stock_uom") or ""
     item_name  = frappe.db.get_value("Item", item_code, "item_name") or ""
@@ -927,6 +930,7 @@ def insertar_item_con_precio_estandar(doc):
     el Item traiga ignore_permissions. Aquí se inserta con el precio en 0 -- para que
     ERPNext no lo intente -- y se crea el MISMO Item Price que habría creado él, ya
     con permisos de sistema; el precio estándar queda guardado en el artículo."""
+    requiere_vista("costear", "alta")  # accesos por vista
     precio = flt(doc.get("standard_rate"))
     doc.standard_rate = 0
     doc.insert()

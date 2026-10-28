@@ -1,4 +1,5 @@
 import frappe
+from costeo_yelke.roles import requiere_vista
 from frappe.utils import nowdate, add_days
 
 from costeo_yelke.utils import nombres_comerciales
@@ -188,6 +189,7 @@ def get_sales_order(name):
 
 @frappe.whitelist()
 def save_sales_order(data):
+    requiere_vista("vender")  # accesos por vista
     import json
     if isinstance(data, str):
         data = json.loads(data)
@@ -261,6 +263,7 @@ def save_sales_order(data):
 
 @frappe.whitelist()
 def submit_sales_order(name):
+    requiere_vista("vender")  # accesos por vista
     doc = frappe.get_doc("Sales Order", name)
     if doc.docstatus != 0:
         frappe.throw("La orden de venta ya fue enviada o cancelada.")
@@ -282,6 +285,7 @@ def submit_sales_order(name):
 
 @frappe.whitelist()
 def cancel_sales_order(name):
+    requiere_vista("vender")  # accesos por vista
     doc = frappe.get_doc("Sales Order", name)
     doc.flags.ignore_permissions = True
     doc.cancel()
@@ -292,6 +296,7 @@ def cancel_sales_order(name):
 @frappe.whitelist()
 def make_sales_order_from_quotation(quotation_name):
     """Create a Sales Order from a submitted Quotation, setting delivery_date automatically."""
+    requiere_vista("vender")  # accesos por vista
     from erpnext.selling.doctype.quotation.quotation import make_sales_order as _make_so
 
     so = _make_so(quotation_name)
