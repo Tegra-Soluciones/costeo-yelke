@@ -93,3 +93,4 @@ costeo_yelke.patches.v0_2_67.flete_cobra_iva
 costeo_yelke.patches.v0_2_68.contabilidad_mx
 costeo_yelke.patches.v0_2_69.normalizar_maestros
 costeo_yelke.patches.v0_2_70.roles_por_vista
+costeo_yelke.patches.v0_2_71.permisos_por_vista

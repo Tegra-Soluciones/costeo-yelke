@@ -85,11 +85,11 @@ VISTAS = {
     # ── Ingeniería ──
     "alta":      {"etiqueta": "Alta de productos", "grupo": "Ingeniería", "rol": "Ingeniería Alta de Productos Yelke",
                   "paso": "preparar_manufactura", "rutas": ["ProductoList", "ProductoDetail", "ProductoNuevo"],
-                  "doctypes": {"Item": "editar", "BOM": "editar", "UOM": "ver", "Item Group": "ver"},
+                  "doctypes": {"Item": "editar", "BOM": "editar", "UOM": "ver", "Item Group": "ver", "Costeo": "editar"},
                   "descripcion": "Da de alta los productos terminados, piezas y servicios."},
     "flujo_produccion": {"etiqueta": "Flujo de producción", "grupo": "Ingeniería",
                   "rol": "Ingeniería Flujo de Producción Yelke", "paso": "flujo_manufactura", "rutas": [],
-                  "doctypes": {"BOM": "editar", "Subcontracting BOM": "editar"},
+                  "doctypes": {"BOM": "editar", "Subcontracting BOM": "editar", "Costeo": "editar"},
                   "descripcion": "Arma, confirma y revierte el flujo de producción del costeo."},
     "plantillas": {"etiqueta": "Plantillas", "grupo": "Ingeniería", "rol": "Ingeniería Plantillas Yelke",
                   "rutas": ["Plantillas"], "doctypes": {},
@@ -100,10 +100,10 @@ VISTAS = {
                     "descripcion": "Ve el tablero de producción de la orden de venta."},
     "preparacion": {"etiqueta": "Preparación", "grupo": "Producción", "rol": "Producción Preparación Yelke",
                     "paso": "producir", "rutas": ["MaterialRequestList"],
-                    "doctypes": {"Production Plan": "editar", "Material Request": "editar", "Purchase Order": "editar"},
+                    "doctypes": {"Production Plan": "editar", "Material Request": "editar", "Purchase Order": "editar", "Costeo": "editar"},
                     "descripcion": "Plan, solicitud de material, lotes de entrega, órdenes a talleres y apertura de lotes."},
     "om":          {"etiqueta": "Orden de manufactura", "grupo": "Producción", "rol": "Producción Orden de Manufactura Yelke",
-                    "paso": "producir", "rutas": [], "doctypes": {},
+                    "paso": "producir", "rutas": [], "doctypes": {"Costeo": "editar"},
                     "descripcion": "Captura la orden de manufactura general por producto."},
     "materia":     {"etiqueta": "Materia prima", "grupo": "Producción", "rol": "Producción Materia Prima Yelke",
                     "paso": "producir", "rutas": ["PurchaseOrderList", "PurchaseOrderDetail", "PurchaseOrderNueva", "PurchaseReceiptList"],
@@ -161,6 +161,50 @@ ETIQUETAS_VISTA = {c: v["etiqueta"] for c, v in VISTAS.items()}
 ROLES_VISTA = {**{v["rol"]: v["descripcion"] for v in VISTAS.values()},
                **{v["rol_ver"]: f"Solo lectura: {v['descripcion']}" for v in VISTAS.values()}}
 ROLES_VISTA_PRODUCCION = {v["rol"]: v["descripcion"] for v in VISTAS.values() if v["grupo"] == "Producción"}
+
+# ── Permisos de ERPNext por vista (Escritorio y API estándar; patch v0_2_71) ──
+# Lo que TODA vista necesita leer para que carguen los formularios y los PDF.
+LECTURA_BASE = (
+    "Costeo", "Company", "Warehouse", "Currency", "UOM", "Item", "Item Group", "Brand", "Customer", "Customer Group",
+    "Supplier", "Supplier Group", "Territory", "Country", "Address", "Contact", "Payment Terms Template",
+    "Terms and Conditions", "Sales Taxes and Charges Template", "Purchase Taxes and Charges Template",
+    "Item Tax Template", "Mode of Payment", "Price List", "Talla", "Letter Head", "Print Format", "Bank",
+    "Cost Center", "Sales Order", "Quotation",
+)
+PERMISOS_VER = ("read", "print", "email", "report", "export")
+PERMISOS_EDITAR = PERMISOS_VER + ("write", "create")
+# Quien administra (Director, Supervisor): además valida, cancela, corrige y borra.
+ROLES_ADMIN_DOCS = ("Director Yelke", "Supervisor Yelke")
+PERMISOS_ADMIN = PERMISOS_EDITAR + ("submit", "cancel", "amend", "delete")
+
+
+def permisos_por_rol():
+    """{(doctype, rol): set(ptypes)} que dan las vistas. Editar = leer y capturar, y
+    VALIDAR los documentos validables de su vista (las aprobaciones siguen frenando lo
+    que las lleve; el Costeo solo lo valida Costear). Cancelar, corregir y borrar,
+    solo Director y Supervisor."""
+    out = {}
+
+    def dar(dt, rol, ptypes):
+        out.setdefault((dt, rol), set()).update(ptypes)
+
+    todos = set(LECTURA_BASE)
+    for clave, v in VISTAS.items():
+        for dt in LECTURA_BASE:
+            dar(dt, v["rol"], PERMISOS_VER)
+            dar(dt, v["rol_ver"], PERMISOS_VER)
+        for dt, nivel in v.get("doctypes", {}).items():
+            todos.add(dt)
+            dar(dt, v["rol_ver"], PERMISOS_VER)
+            if nivel == "editar":
+                dar(dt, v["rol"], PERMISOS_EDITAR + (("submit",) if dt != "Costeo" or clave == "costear" else ()))
+            else:
+                dar(dt, v["rol"], PERMISOS_VER)
+    for dt in todos:
+        for rol in ROLES_ADMIN_DOCS:
+            dar(dt, rol, PERMISOS_ADMIN)
+    return out
+
 
 # Quien ve y hace TODO, sin necesidad de los roles por vista. "CEO" es el rol legado.
 PASE_LIBRE = ("System Manager", "Director Yelke", "Supervisor Yelke", "CEO")
