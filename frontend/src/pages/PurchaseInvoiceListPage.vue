@@ -47,6 +47,7 @@
 </template>
 
 <script setup>
+import { rutaDeDocumento, urlEscritorio } from "@/composables/useAccesos.js";
 import { ref, computed, onMounted, watch, defineComponent, h } from "vue";
 import { useRouter } from "vue-router";
 import DocumentListPage from "@/components/DocumentListPage.vue";
@@ -105,7 +106,11 @@ function fmtDate(s) {
 function fmtC(v) { return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(v || 0); }
 
 function openRow(pi) {
-  if (pi.costeo) router.push({ name: "CosteoDetail", params: { name: pi.costeo }, query: { step: "7", highlight: pi.name, doctype: "Purchase Invoice" } });
+  // Al lugar exacto de su proyecto si se tiene ese paso / vista (useAccesos.rutaDeDocumento);
+  // si no, el documento en el Escritorio (sus permisos de ERPNext deciden si solo se ve).
+  const ruta = rutaDeDocumento("Purchase Invoice", pi);
+  if (ruta) router.push(ruta);
+  else window.open(urlEscritorio("Purchase Invoice", pi.name), "_blank");
 }
 
 async function load() {

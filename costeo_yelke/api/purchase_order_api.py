@@ -91,6 +91,8 @@ def get_purchase_orders(status=None, supplier=None, company=None, limit=50):
     ]
     if frappe.db.has_column("Purchase Order", "costeo"):
         fields.append("costeo")
+    if frappe.db.has_column("Purchase Order", "lote_ref"):
+        fields.append("lote_ref")
 
     rows = frappe.get_all(
         "Purchase Order",

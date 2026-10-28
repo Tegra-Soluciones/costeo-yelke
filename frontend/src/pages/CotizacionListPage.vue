@@ -60,6 +60,7 @@
 </template>
 
 <script setup>
+import { rutaDeDocumento, urlEscritorio } from "@/composables/useAccesos.js";
 import { ref, computed, onMounted, watch, defineComponent, h } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import DocumentListPage from "@/components/DocumentListPage.vue";
@@ -128,11 +129,11 @@ function isExpired(dateStr) {
 }
 
 function openRow(q) {
-  if (q.costeo) {
-    router.push({ name: "CosteoDetail", params: { name: q.costeo }, query: { step: "1", highlight: q.name, doctype: "Quotation" } });
-  } else {
-    router.push(`/cotizaciones/${encodeURIComponent(q.name)}`);
-  }
+  // Al lugar exacto de su proyecto si se tiene ese paso / vista (useAccesos.rutaDeDocumento);
+  // si no, su página de detalle (en solo lectura si no se tiene "editar").
+  const ruta = rutaDeDocumento("Quotation", q);
+  if (ruta) router.push(ruta);
+  else router.push(`/cotizaciones/${encodeURIComponent(q.name)}`);
 }
 
 async function load() {

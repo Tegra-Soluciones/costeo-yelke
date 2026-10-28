@@ -65,7 +65,7 @@
 </template>
 
 <script setup>
-import { rutaPermitida } from "@/composables/useAccesos.js";
+import { rutaPermitida, rutaDeDocumento, urlEscritorio } from "@/composables/useAccesos.js";
 import { ref, computed, onMounted, watch, defineComponent, h } from "vue";
 import { useRouter } from "vue-router";
 import DocumentListPage from "@/components/DocumentListPage.vue";
@@ -141,11 +141,11 @@ function fmtC(v) { return new Intl.NumberFormat("es-MX", { style: "currency", cu
 function isDueOverdue(inv) { if (!inv.due_date || inv.docstatus !== 1) return false; return new Date(inv.due_date + "T23:59:59") < new Date() && (inv.outstanding_amount || 0) > 0; }
 
 function openRow(inv) {
-  if (inv.costeo) {
-    router.push({ name: "CosteoDetail", params: { name: inv.costeo }, query: { step: "7", highlight: inv.name, doctype: "Sales Invoice" } });
-  } else {
-    router.push(`/facturas/${encodeURIComponent(inv.name)}`);
-  }
+  // Al lugar exacto de su proyecto si se tiene ese paso / vista (useAccesos.rutaDeDocumento);
+  // si no, su página de detalle (en solo lectura si no se tiene "editar").
+  const ruta = rutaDeDocumento("Sales Invoice", inv);
+  if (ruta) router.push(ruta);
+  else router.push(`/facturas/${encodeURIComponent(inv.name)}`);
 }
 
 async function load() {

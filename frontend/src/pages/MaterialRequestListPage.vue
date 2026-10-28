@@ -47,6 +47,7 @@
 </template>
 
 <script setup>
+import { rutaDeDocumento, urlEscritorio } from "@/composables/useAccesos.js";
 import { ref, computed, onMounted, watch, defineComponent, h } from "vue";
 import { useRouter } from "vue-router";
 import DocumentListPage from "@/components/DocumentListPage.vue";
@@ -103,7 +104,11 @@ function fmtDate(s) {
 }
 
 function openRow(mr) {
-  if (mr.costeo) router.push({ name: "CosteoDetail", params: { name: mr.costeo }, query: { step: "5", highlight: mr.name, doctype: "Material Request" } });
+  // Al lugar exacto de su proyecto si se tiene ese paso / vista (useAccesos.rutaDeDocumento);
+  // si no, el documento en el Escritorio (sus permisos de ERPNext deciden si solo se ve).
+  const ruta = rutaDeDocumento("Material Request", mr);
+  if (ruta) router.push(ruta);
+  else window.open(urlEscritorio("Material Request", mr.name), "_blank");
 }
 
 async function load() {

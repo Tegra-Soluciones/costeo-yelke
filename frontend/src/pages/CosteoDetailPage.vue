@@ -9896,7 +9896,10 @@ async function loadCosteoData(opciones = {}) {
       // ganarle la carrera al scroll y dejarlo en 0 justo después de que ya se movió.
       await nextTick();
       await triggerHighlight(target, targetDoctype);
-      router.replace({ path: route.path });
+      // Solo se quita el resaltado: la vista de Producción (vista, lote, paso) que traiga
+      // el enlace de una lista o de Mi panel tiene que quedarse.
+      const { highlight: _h, doctype: _d, step: _s, ...resto } = route.query;
+      router.replace({ path: route.path, query: activeStep.value === 5 ? resto : {} });
     }
     // El costeo se abre directo en el último paso alcanzado -- si ese paso carga
     // datos aparte (Flujo de Producción, Reporte final), hay que dispararlo aquí

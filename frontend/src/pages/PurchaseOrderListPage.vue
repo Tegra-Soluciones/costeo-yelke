@@ -63,7 +63,7 @@
 </template>
 
 <script setup>
-import { rutaPermitida } from "@/composables/useAccesos.js";
+import { rutaPermitida, rutaDeDocumento, urlEscritorio } from "@/composables/useAccesos.js";
 import { ref, computed, onMounted, watch, defineComponent, h } from "vue";
 import { useRouter } from "vue-router";
 import DocumentListPage from "@/components/DocumentListPage.vue";
@@ -144,11 +144,11 @@ function isOverdue(dateStr, docstatus) { if (!dateStr || docstatus !== 1) return
 // resaltada -- es donde realmente se opera (recibos, transferencias, etc.), la vista
 // standalone de abajo es solo para OCs sueltas que no vienen del flujo de Costeo.
 function openRow(po) {
-  if (po.costeo) {
-    router.push({ name: "CosteoDetail", params: { name: po.costeo }, query: { step: "5", highlight: po.name, doctype: "Purchase Order" } });
-  } else {
-    router.push(`/ordenes-compra/${encodeURIComponent(po.name)}`);
-  }
+  // Al lugar exacto de su proyecto si se tiene ese paso / vista (useAccesos.rutaDeDocumento);
+  // si no, su página de detalle (en solo lectura si no se tiene "editar").
+  const ruta = rutaDeDocumento("Purchase Order", po);
+  if (ruta) router.push(ruta);
+  else router.push(`/ordenes-compra/${encodeURIComponent(po.name)}`);
 }
 
 async function load() {

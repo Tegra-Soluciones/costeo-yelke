@@ -59,13 +59,17 @@ def get_purchase_receipts(status=None, company=None, limit=100):
             )
         }
         po_names = list(set(po_by_pr.values()))
-        costeo_by_po = {
-            p.name: p.costeo
-            for p in frappe.get_all("Purchase Order", filters={"name": ["in", po_names]}, fields=["name", "costeo"])
+        con_lote = frappe.db.has_column("Purchase Order", "lote_ref")
+        po_datos = {
+            p.name: p
+            for p in frappe.get_all("Purchase Order", filters={"name": ["in", po_names]},
+                                    fields=["name", "costeo"] + (["lote_ref"] if con_lote else []))
         } if po_names else {}
         for r in rows:
-            po = po_by_pr.get(r["name"])
-            r["costeo"] = costeo_by_po.get(po) if po else None
+            po = po_datos.get(po_by_pr.get(r["name"]))
+            r["costeo"] = po.costeo if po else None
+            # El lote de la OC que recibió: la lista abre el recibo en su lote.
+            r["lote_ref"] = po.get("lote_ref") if po else None
     nombres = nombres_comerciales("Supplier", [r["supplier"] for r in rows], "supplier_name")
     for r in rows:
         r["supplier_name"] = nombres.get(r["supplier"], r["supplier_name"])
@@ -86,7 +90,7 @@ def get_delivery_notes(status=None, company=None, limit=100):
         fields=[
             "name", "status", "customer", "customer_name",
             "posting_date", "grand_total", "currency", "company", "docstatus", "costeo",
-        ],
+        ] + (["lote_ref"] if frappe.db.has_column("Delivery Note", "lote_ref") else []),
         filters=filters,
         order_by="posting_date desc, creation desc",
         limit=int(limit),

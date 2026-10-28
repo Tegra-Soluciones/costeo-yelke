@@ -57,6 +57,43 @@ export function rutaPermitida(nombre, nivel = "ver") {
 /** Nombre de la vista para los mensajes ("lo captura Facturas"). */
 export const etiquetaVista = (clave) => estado.mapa[clave]?.etiqueta || clave;
 
+// ── A dónde lleva un documento de una lista ────────────────────────────────────
+// Al lugar exacto de su proyecto si el usuario tiene ese paso / vista; si no, null y la
+// lista decide (su página de detalle o el Escritorio en solo lectura).
+const enCosteo = (costeo, query) => ({ name: "CosteoDetail", params: { name: costeo }, query });
+const DESKS = { "Material Request": "material-request", "Purchase Receipt": "purchase-receipt",
+  "Delivery Note": "delivery-note", "Purchase Invoice": "purchase-invoice", "Purchase Order": "purchase-order",
+  "Quotation": "quotation", "Sales Order": "sales-order", "Sales Invoice": "sales-invoice" };
+
+export function rutaDeDocumento(doctype, r) {
+  const c = r?.costeo;
+  if (!c) return null;
+  const hl = { highlight: r.name, doctype };
+  const lote = (paso) => (r.lote_ref ? { step: 5, vista: "lote", lote: r.lote_ref, paso } : null);
+  switch (doctype) {
+    case "Quotation": return pasoVisible("cotizar") ? enCosteo(c, { step: 1, ...hl }) : null;
+    case "Sales Order": return pasoVisible("vender") ? enCosteo(c, { step: 2, ...hl }) : null;
+    case "Sales Invoice": return pasoVisible("facturar") ? enCosteo(c, { step: 7, ...hl }) : null;
+    case "Material Request": return puede("preparacion") ? enCosteo(c, { step: 5, vista: "preparacion", ...hl }) : null;
+    case "Purchase Order":
+      if (r.is_subcontracted) {
+        if (puede("preparacion")) return enCosteo(c, { step: 5, vista: "ordenes", ...hl });
+        return puede("talleres") && lote("talleres") ? enCosteo(c, { ...lote("talleres"), ...hl }) : null;
+      }
+      return puede("materia") ? enCosteo(c, { ...(lote("materia") || { step: 5, vista: "preparacion" }), ...hl }) : null;
+    case "Purchase Receipt":
+      if (puede("materia") && lote("materia")) return enCosteo(c, { ...lote("materia"), ...hl });
+      return puede("envios") ? enCosteo(c, { step: 5, vista: "envios", filtro_lote: r.lote_ref || undefined, ...hl }) : null;
+    case "Delivery Note":
+      if (puede("entrega") && lote("entrega")) return enCosteo(c, { ...lote("entrega"), ...hl });
+      return puede("envios") ? enCosteo(c, { step: 5, vista: "envios", seg: "remision", ...hl }) : null;
+    case "Purchase Invoice": return puede("facturas") ? enCosteo(c, { step: 5, vista: "facturas", filtro_lote: "__todos", ...hl }) : null;
+    default: return null;
+  }
+}
+/** El documento en el Escritorio de ERPNext (sus permisos deciden si se edita o solo se ve). */
+export const urlEscritorio = (doctype, name) => `/app/${DESKS[doctype] || doctype.toLowerCase().replace(/ /g, "-")}/${encodeURIComponent(name)}`;
+
 export function simular(etiqueta, accesos) { estado.simulado = accesos ? { etiqueta, accesos } : null; }
 
 export function useAccesos() {
