@@ -565,13 +565,24 @@ def enviar_recordatorio_precio_email(recordatorio):
         frappe.throw(_("El cliente {0} no tiene un correo de contacto registrado.").format(doc.customer))
 
     vence_texto = "vence" if doc.tipo_aviso == "Un mes antes" else "venció"
-    message = _(
-        "Estimado cliente,<br><br>Le recordamos que el precio acordado de <b>{0}</b> "
-        "{1} el <b>{2}</b>. Quedamos atentos para renovar las condiciones si así lo desea."
-    ).format(doc.item_name or doc.item_code, vence_texto, formatdate(doc.valid_upto))
+    producto = doc.item_name or doc.item_code
+    from costeo_yelke.api.correos import copia_direccion, html
+
+    message = html(
+        _("Vigencia de su precio acordado"),
+        mensaje=_("Estimado cliente:\n\nLe recordamos que el precio acordado de {0} {1} el {2}. "
+                  "Quedamos atentos para renovar las condiciones si así lo desea.").format(
+            producto, vence_texto, formatdate(doc.valid_upto)),
+        filas=[(_("Producto"), producto), (_("Vigencia"), formatdate(doc.valid_upto))],
+        firma_de=frappe.session.user,
+        compania=frappe.defaults.get_user_default("Company"),
+    )
+    yo = frappe.db.get_value("User", frappe.session.user, "email") if frappe.session.user not in ("Administrator", "Guest") else None
     frappe.sendmail(
         recipients=[contact["email"]],
-        subject=_("Vigencia de precio acordado -- {0}").format(doc.item_name or doc.item_code),
+        cc=copia_direccion(excluir=[contact["email"]]) or None,
+        reply_to=yo or None,
+        subject=_("Vigencia de precio acordado · {0}").format(producto),
         message=message,
         reference_doctype=doc.doctype,
         reference_name=doc.name,

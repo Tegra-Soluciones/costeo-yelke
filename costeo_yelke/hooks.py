@@ -482,3 +482,7 @@ after_migrate = ["costeo_yelke.install.after_migrate"]
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
+
+# Las asignaciones de ERPNext ("assigned a new task") no mandan su correo genérico: el
+# aviso sale con el diseño de Yelke (costeo_api.asignar_documento, api/correos.py).
+notification_skip_email_types = ["Assignment"]

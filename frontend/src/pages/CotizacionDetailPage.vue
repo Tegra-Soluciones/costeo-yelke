@@ -1341,12 +1341,13 @@ async function sendEmail() {
   if (!emailForm.to) return;
   sendingEmail.value = true;
   try {
-    const recipients = emailForm.cc
-      ? [emailForm.to, ...emailForm.cc.split(",").map(e => e.trim()).filter(Boolean)]
-      : [emailForm.to];
+    // La copia va como copia (CC), no como otro destinatario.
+    const recipients = [emailForm.to];
+    const cc = (emailForm.cc || "").split(",").map(e => e.trim()).filter(Boolean).join(", ");
     await call("costeo_yelke.api.quotation_api.send_quotation_email", {
       name:         quot.name,
       recipients:   JSON.stringify(recipients),
+      cc:           cc || null,
       subject:      emailForm.subject,
       message:      emailForm.message.replace(/\n/g, "<br>"),
       print_format: emailForm.print_format,

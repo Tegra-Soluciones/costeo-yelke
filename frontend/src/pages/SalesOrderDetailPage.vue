@@ -918,11 +918,11 @@ async function sendEmail() {
   if (!emailForm.to) return;
   sendingEmail.value = true;
   try {
-    const recipients = emailForm.cc
-      ? [emailForm.to, ...emailForm.cc.split(",").map(e => e.trim()).filter(Boolean)]
-      : [emailForm.to];
+    // La copia va como copia (CC), no como otro destinatario.
+    const recipients = [emailForm.to];
+    const cc = (emailForm.cc || "").split(",").map(e => e.trim()).filter(Boolean).join(", ");
     await call("costeo_yelke.api.costeo_api.enviar_por_correo", {
-      doctype: "Sales Order", name: so.name, recipients: recipients.join(", "),
+      doctype: "Sales Order", name: so.name, recipients: recipients.join(", "), cc: cc || null,
       subject: emailForm.subject,
       message: emailForm.message.replace(/\n/g, "<br>"),
     });

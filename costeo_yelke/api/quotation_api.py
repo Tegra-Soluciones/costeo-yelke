@@ -420,7 +420,7 @@ def get_quotation_print_formats():
 
 
 @frappe.whitelist()
-def send_quotation_email(name, recipients, subject, message, print_format=None, attach_pdf=1):
+def send_quotation_email(name, recipients, subject, message, print_format=None, attach_pdf=1, cc=None):
     """Send a quotation via email, optionally attaching the PDF."""
     requiere_vista("cotizar")  # accesos por vista
     import json
@@ -434,23 +434,21 @@ def send_quotation_email(name, recipients, subject, message, print_format=None, 
 
     attachments = []
     if int(attach_pdf or 0):
-        fmt = print_format or "Standard"
+        # "Standard" es el formato genérico de ERPNext: al cliente va el de Yelke.
+        from costeo_yelke.api.costeo_api import get_default_print_format as _formato_yelke
+        fmt = print_format if print_format and print_format != "Standard" else (
+            _formato_yelke("Quotation", name).get("format") or "Standard")
         try:
             attachments = [frappe.attach_print("Quotation", name, print_format=fmt, lang=None)]
         except Exception:
             pass
 
-    frappe.sendmail(
-        recipients=recipients,
-        subject=subject,
-        message=message,
-        attachments=attachments,
-        reference_doctype="Quotation",
-        reference_name=name,
-        now=True,
-    )
+    from costeo_yelke.api.correos import enviar_documento
+
+    _a, copia = enviar_documento("Quotation", name, recipients, subject, message,
+                                 attachments=attachments, cc=cc, now=True)
     frappe.db.commit()
-    return {"ok": True}
+    return {"ok": True, "cc": copia}
 
 
 def _get_sales_tax_template(company):

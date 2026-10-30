@@ -172,7 +172,9 @@ def _describir(doc):
     texto = " ".join(partes)
     monto = _monto(doc)
     if monto:
-        texto += " · " + frappe.utils.fmt_money(monto, currency=doc.get("currency") or "MXN")
+        from costeo_yelke.api.correos import dinero
+
+        texto += " · " + dinero(monto, doc.get("currency") or "MXN")
     return texto
 
 
@@ -214,7 +216,7 @@ def _avisar(usuarios, asunto, doctype, name, mensaje="", ruta=None, boton=None, 
         frappe.sendmail(
             recipients=correos,
             subject=asunto,
-            message=_correo_html(asunto, mensaje, ruta, boton or _("Abrir en Costeo Yelke")),
+            message=_correo_html(asunto, mensaje, ruta, boton or _("Abrir en Costeo Yelke"), doctype, name),
             reference_doctype=doctype,
             reference_name=name,
         )
@@ -228,22 +230,30 @@ def _hay_correo_saliente():
     return bool(frappe.db.exists("Email Account", {"enable_outgoing": 1, "default_outgoing": 1}))
 
 
-def _correo_html(titulo, mensaje, ruta, boton):
-    url = get_url(ruta) if ruta else get_url("/costeo-yelke")
-    cuerpo = frappe.utils.escape_html(mensaje or "").replace("\n", "<br>")
-    return f"""
-<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;color:#111">
-  <div style="background:#111;padding:14px 20px;border-radius:12px 12px 0 0">
-    <span style="display:inline-block;background:#ff6b15;color:#fff;font-weight:700;border-radius:6px;padding:2px 8px">Y</span>
-    <span style="color:#fff;font-weight:600;margin-left:8px">Yelke</span>
-  </div>
-  <div style="border:1px solid #e4e4e7;border-top:0;border-radius:0 0 12px 12px;padding:20px">
-    <p style="font-size:16px;font-weight:600;margin:0 0 12px">{frappe.utils.escape_html(titulo)}</p>
-    <p style="font-size:14px;line-height:1.5;margin:0 0 18px">{cuerpo}</p>
-    <a href="{url}" style="display:inline-block;background:#ff6b15;color:#fff;text-decoration:none;font-weight:600;padding:10px 18px;border-radius:8px">{frappe.utils.escape_html(boton)}</a>
-    <p style="font-size:11px;color:#9ca3af;margin:18px 0 0">El botón abre el documento en la app; desde el correo no se aprueba nada.</p>
-  </div>
-</div>"""
+# Píldora sobre el título del correo, según de qué trata el aviso.
+_ETIQUETAS = (("envió a aprobación", "Por aprobar"), ("reenvió a aprobación", "Por aprobar"),
+              ("a revisión", "Por revisar"), ("revisó", "Revisado"), ("aprobó", "Aprobado"),
+              ("regresó", "Por corregir"), ("asignó", "Asignación"), ("Vence hoy", "Fecha límite"),
+              ("Venció", "Vencida"), ("Recordatorio", "Recordatorio"), ("canceló", "Cancelación"),
+              ("documento(s)", "Pendientes"), ("terminó", "Terminado"))
+
+
+def _correo_html(titulo, mensaje, ruta, boton, doctype=None, name=None):
+    """Correo de aviso con el diseño de Yelke (api/correos.py): qué pasó, el mensaje de
+    quien lo hizo, los datos clave del documento y el botón a la app."""
+    from costeo_yelke.api.correos import compania_de, html, resumen_documento
+
+    etiqueta = next((e for clave, e in _ETIQUETAS if clave.lower() in (titulo or "").lower()), None)
+    # El título termina en el folio: proveedor, cliente y monto ya van en la tarjeta (el
+    # asunto del correo sí los lleva, para leerlos desde la bandeja).
+    corto = titulo.split(name)[0] + name if name and name in (titulo or "") and doctype != "Costeo" else titulo
+    return html(
+        corto, mensaje=mensaje, etiqueta=etiqueta,
+        filas=resumen_documento(doctype, name),
+        boton=(boton, get_url(ruta) if ruta else get_url("/costeo-yelke")),
+        nota=_("El botón abre el documento en Costeo Yelke; desde el correo no se aprueba nada."),
+        compania=compania_de(doctype, name),
+    )
 
 
 def _marcar_leidos(doctype, name, excepto=None):

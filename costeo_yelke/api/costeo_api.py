@@ -2260,6 +2260,12 @@ def asignar_documento(doctype: str, name: str, assign_to: str, description: str 
         "name": name,
         "description": description or f"{doctype} {name}",
     })
+    # El aviso de ERPNext ("assigned a new task") va sin correo (hooks.py,
+    # notification_skip_email_types): el correo sale con el diseño de Yelke.
+    from costeo_yelke.api.aprobaciones import _avisar, _describir, _ruta_doc
+
+    _avisar(users, _("{0} te asignó {1}").format(frappe.utils.get_fullname(), _describir(frappe.get_doc(doctype, name))),
+            doctype, name, mensaje=description or "", ruta=_ruta_doc(doctype, name))
     return {"ok": True, "assigned_to": users}
 
 
@@ -12170,7 +12176,7 @@ def validar_envio_documento(doctype: str, name: str) -> dict:
 
 @frappe.whitelist()
 def enviar_por_correo(doctype: str, name: str, recipients: str, subject: str = None, message: str = None,
-                      print_format: str = None, print_formats=None) -> dict:
+                      print_format: str = None, print_formats=None, cc: str = None) -> dict:
     """Envía un documento por correo.
 
     Adjunta el PDF si el generador está disponible (wkhtmltopdf); si no,
@@ -12210,16 +12216,15 @@ def enviar_por_correo(doctype: str, name: str, recipients: str, subject: str = N
         body = (message or "") + "".join(
             "<br><br>" + frappe.get_print(doctype, name, print_format=f) for f in formatos)
 
-    frappe.sendmail(
-        recipients=recipient_list,
-        subject=subject or f"{doctype} {name}",
-        message=body,
-        attachments=attachments,
-        reference_doctype=doctype,
-        reference_name=name,
-    )
+    # Diseño de Yelke, copia a quien aprueba y respuesta a quien lo manda (api/correos.py).
+    from costeo_yelke.api.correos import enviar_documento
+    from costeo_yelke.api.impresion import titulo_documento
+
+    _a, copia = enviar_documento(doctype, name, recipient_list,
+                                 subject or f"{titulo_documento(frappe.get_doc(doctype, name))} {name}",
+                                 body, attachments=attachments, cc=cc)
     _marcar_enviado(doctype, name, _("Enviado por correo a {0}").format(", ".join(recipient_list)))
-    return {"ok": True, "sent_to": recipient_list, "attachment": used}
+    return {"ok": True, "sent_to": recipient_list, "cc": copia, "attachment": used}
 
 
 def _marcar_enviado(doctype, name, comentario):
