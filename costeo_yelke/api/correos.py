@@ -324,14 +324,13 @@ def html_documento(d, mensaje=None, firma_de=None, adjuntos=()):
         renglones = (
             f'<div style="{td}font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:{GRIS};font-weight:600;margin:22px 0 4px">{_("Detalle")}</div>'
             f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0">{filas}{totales}</table>')
-    # Adjuntos como "fichas".
-    fichas = "".join(
-        f'<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 8px 8px 0;display:inline-table"><tr>'
-        f'<td style="{td}background:#fff1e8;border-radius:8px;padding:9px 12px;font-size:12.5px;color:#9a3412;font-weight:600">'
-        f'<span style="display:inline-block;background:{NARANJA};color:#fff;border-radius:4px;font-size:9.5px;font-weight:700;padding:2px 5px;margin-right:7px">PDF</span>'
-        f'{escape_html(a)}</td></tr></table>' for a in adjuntos or [])
-    adjuntos_html = (f'<div style="{td}font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:{GRIS};font-weight:600;margin:24px 0 8px">'
-                     f'{_("Adjunto")}</div>{fichas}' if fichas else "")
+    # Los PDF van como adjuntos normales del correo (se abren y descargan desde ahí); aquí
+    # solo se dice cuáles son -- antes eran "fichas" dibujadas que parecían botones.
+    adjuntos_html = ""
+    if adjuntos:
+        nombres = ", ".join(adjuntos)
+        adjuntos_html = (f'<div style="{td}font-size:13px;color:{GRIS};margin:22px 0 0">'
+                         f'{_("Adjuntamos en este correo")}: <b style="color:{TINTA}">{escape_html(nombres)}</b></div>')
     # Firma de quien lo manda.
     firma = ""
     u = frappe.db.get_value("User", firma_de, ["full_name", "email", "mobile_no", "phone"], as_dict=True) \
