@@ -6,8 +6,10 @@ demás) y el logo por URL pública -- Gmail y Outlook bloquean las imágenes en 
 El diseño sigue al de los PDF (templates/print/membrete.html): logo, cinta reflejante
 naranja con franjas plateadas y la compañía del documento al pie.
 
-Los correos a clientes y proveedores llevan copia a quien aprueba (Juan, rol Aprobador
-de Documentos) y se contestan a quien los mandó, no al buzón de notificaciones.
+Los correos a clientes y proveedores se contestan a quien los mandó, no al buzón de
+notificaciones. La copia de TODOS los correos a Dirección (Juan) no se pone aquí: es la
+copia oculta de la cuenta de envío (Email Account "Notificaciones", always_bcc), así
+el cliente no la ve y no llega doble.
 """
 import frappe
 from frappe import _
@@ -177,16 +179,6 @@ def html(titulo, mensaje=None, filas=None, boton=None, nota=None, firma_de=None,
 # Copias y envío
 # ─────────────────────────────────────────────────────────────────────────────
 
-def copia_direccion(excluir=()):
-    """Correos de quien aprueba (Juan): reciben copia de lo que se manda a clientes y
-    proveedores."""
-    from costeo_yelke.roles import ROL_APROBADOR, usuarios_con_rol
-
-    fuera = {(x or "").strip().lower() for x in excluir}
-    correos = frappe.get_all("User", filters={"name": ["in", usuarios_con_rol(ROL_APROBADOR) or [""]]}, pluck="email")
-    return [c for c in correos if c and c.lower() not in fuera]
-
-
 def lista(texto):
     if isinstance(texto, (list, tuple)):
         return [t.strip() for t in texto if t and t.strip()]
@@ -209,10 +201,10 @@ def correo_documento(doctype, name, mensaje, titulo=None):
 
 
 def enviar_documento(doctype, name, recipients, subject, mensaje, attachments=None, cc=None, now=False):
-    """Manda un documento a un cliente o proveedor con el diseño de Yelke, copia a quien
-    aprueba y respuesta a quien lo envía."""
+    """Manda un documento a un cliente o proveedor con el diseño de Yelke y respuesta a
+    quien lo envía; `cc` es la copia que se capturó en la pantalla."""
     destinatarios = lista(recipients)
-    copia = list(dict.fromkeys(lista(cc) + copia_direccion(excluir=destinatarios)))
+    copia = list(dict.fromkeys(lista(cc)))
     yo = frappe.db.get_value("User", frappe.session.user, "email") if frappe.session.user not in ("Administrator", "Guest") else None
     copia = [c for c in copia if c.lower() not in {d.lower() for d in destinatarios}]
     frappe.sendmail(

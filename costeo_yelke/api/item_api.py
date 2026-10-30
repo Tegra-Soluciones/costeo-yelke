@@ -566,7 +566,7 @@ def enviar_recordatorio_precio_email(recordatorio):
 
     vence_texto = "vence" if doc.tipo_aviso == "Un mes antes" else "venció"
     producto = doc.item_name or doc.item_code
-    from costeo_yelke.api.correos import copia_direccion, html
+    from costeo_yelke.api.correos import html
 
     message = html(
         _("Vigencia de su precio acordado"),
@@ -580,7 +580,6 @@ def enviar_recordatorio_precio_email(recordatorio):
     yo = frappe.db.get_value("User", frappe.session.user, "email") if frappe.session.user not in ("Administrator", "Guest") else None
     frappe.sendmail(
         recipients=[contact["email"]],
-        cc=copia_direccion(excluir=[contact["email"]]) or None,
         reply_to=yo or None,
         subject=_("Vigencia de precio acordado · {0}").format(producto),
         message=message,
