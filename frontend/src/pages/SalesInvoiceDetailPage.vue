@@ -447,6 +447,7 @@
 </template>
 
 <script setup>
+import { useCompany } from "@/composables/useCompany.js";
 import { puedeEditar as _puedeEditarVista, useAccesos as _useAccesos } from "@/composables/useAccesos.js";
 import { ref, reactive, computed, onMounted, watch, defineComponent, h } from "vue";
 import { useRouter } from "vue-router";
@@ -454,6 +455,7 @@ import PageHeader from "@/components/PageHeader.vue";
 import BotonActividad from "@/components/aprobacion/BotonActividad.vue";
 import FacturaArchivos from "@/components/FacturaArchivos.vue";
 import { call, defaultPrintFormat } from "@/utils/frappe.js";
+const { state: companyState } = useCompany();
 
 const props  = defineProps({ name: { type: String, default: "" } });
 const router = useRouter();
@@ -743,7 +745,7 @@ async function sendEmail() {
 onMounted(async () => {
   loading.value = true;
   try {
-    const defs = await call("costeo_yelke.api.sales_invoice_api.get_sales_invoice_form_defaults");
+    const defs = await call("costeo_yelke.api.sales_invoice_api.get_sales_invoice_form_defaults", { company: companyState.selected || null });
     await loadItemIndex();
     defaults.customers      = defs.customers      || [];
     defaults.price_lists    = defs.price_lists    || [];
@@ -752,7 +754,7 @@ onMounted(async () => {
     defaults.terms_templates = defs.terms_templates || [];
     defaults.warehouses     = defs.warehouses     || [];
     defaults.uoms           = defs.uoms           || [];
-    form.company            = defs.company          || "";
+    form.company            = companyState.selected || defs.company || "";
     form.currency           = defs.default_currency || "MXN";
     form.selling_price_list = defs.default_price_list || "";
     form.posting_date       = today();

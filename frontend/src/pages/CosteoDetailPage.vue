@@ -140,6 +140,16 @@
         v-if="!isNew && docName"
         :doctype="headerDoc?.name ? headerDoc.doctype : 'Costeo'" :name="headerDoc?.name || docName"
       />
+      <!-- Asignaciones del proyecto (api/encargos.py): quién hace cada paso. -->
+      <button
+        v-if="!isNew && docName" data-libre type="button"
+        class="px-3 py-1.5 border border-gray-200 text-gray-600 text-sm font-medium rounded-md hover:bg-gray-50 flex items-center gap-1.5"
+        title="Asignar un paso a alguien y ver las asignaciones del proyecto" @click="abrirEncargos()"
+      >
+        <Icono nombre="persona" class="w-3.5 h-3.5" :grosor="2" />
+        Asignar
+        <span v-if="encargosAbiertos" class="min-w-[18px] h-[18px] px-1 rounded-full bg-amber-100 text-amber-800 text-[10.5px] font-bold flex items-center justify-center">{{ encargosAbiertos }}</span>
+      </button>
 
       <span v-if="headerDoc && headerDoc.docstatus === 1" class="h-8 px-3 flex items-center gap-1.5 text-[13px] font-medium text-green-700 bg-green-50 rounded-lg">
         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -187,6 +197,16 @@
       <p class="text-[14px] font-semibold text-ink">No tienes etapas asignadas en este proyecto</p>
       <p class="p-meta mt-1">Pídele a quien administra los accesos que te asigne la etapa en la que trabajas.</p>
     </div>
+
+    <!-- Lo que a esta persona le asignaron en este proyecto. -->
+    <div v-if="!isNew && docName && encargos.length" class="mx-5 mt-4">
+      <FranjaEncargos :encargos="encargos" @ir="irAMiEncargo" @cambio="cargarEncargos" />
+    </div>
+    <PanelEncargos
+      v-if="!isNew && docName" :abierto="encargosPanel.abierto" :costeo="docName" :titulo="form.titulo || docName"
+      :paso-inicial="encargosPanel.paso" :lote-inicial="encargosPanel.lote"
+      @cerrar="encargosPanel.abierto = false" @cambio="cargarEncargos"
+    />
 
     <!-- Aprobación del Costeo (api/aprobaciones.py): quien no puede validarlo lo envía. -->
     <div v-if="!isNew && docName && docState === 0" class="mx-5 mt-4">
@@ -1256,7 +1276,8 @@
                       @archivo="(ev) => subirOcCliente(ev, 'Sales Order', so.name)"
                       @quitar="quitarOcCliente('Sales Order', so.name)"
                     />
-                    <input v-else v-model="soForm.po_no" type="text" class="p-field" :disabled="so.docstatus !== 0" placeholder="Número de orden de compra" />
+                    <input v-model="soForm.po_no" type="text" class="p-field" :class="{ 'mt-2': ocClienteEsArchivo }" :disabled="so.docstatus !== 0"
+                           :placeholder="ocClienteEsArchivo ? 'Folio de la OC del cliente (opcional)' : 'Número de orden de compra'" />
                   </div>
                   <div><label class="p-field-label">Moneda</label>
                     <select v-model="soForm.currency" class="p-field" :disabled="so.docstatus !== 0">
@@ -1368,7 +1389,8 @@
                 @archivo="(ev) => subirOcCliente(ev, 'Costeo', docName)"
                 @quitar="quitarOcCliente('Costeo', docName)"
               />
-              <input v-else v-model="soForm.po_no" type="text" class="p-field" placeholder="Número de orden de compra" />
+              <input v-model="soForm.po_no" type="text" class="p-field" :class="{ 'mt-2': ocClienteEsArchivo }"
+                     :placeholder="ocClienteEsArchivo ? 'Folio de la OC del cliente (opcional)' : 'Número de orden de compra'" />
             </div>
             <div><label class="p-field-label">Moneda</label>
               <select v-model="soForm.currency" class="p-field">
@@ -2142,7 +2164,7 @@
                         >{{ f.talla || f.etiqueta }}</span>
                         <input
                           v-model.number="lote.tallas[p.item_code][f.clave]" type="number" min="0"
-                          class="field-input w-14 text-right text-[11.5px]"
+                          class="field-input w-[4.5rem] !px-2 text-right text-[12px] tabular-nums"
                           :class="mrLoteTallaDescuadrada(p.item_code, f.clave) ? 'border-amber-400 ring-1 ring-amber-400' : ''"
                           @input="sincronizarPiezasDeTallas(lote); actualizarPreviewLotes()"
                         />
@@ -3108,7 +3130,7 @@
             </div>
             <div>
               <label class="field-label">Fecha de entrega</label>
-              <input v-model="dnForm.posting_date" type="date" class="field-input mb-3" :disabled="dnValidated" />
+              <input v-model="dnForm.posting_date" type="date" :max="hoyLocal" class="field-input mb-3" :disabled="dnValidated" />
             </div>
             <div>
               <label class="field-label">Proveedor de paquetería <span v-if="Number(dnForm.flete_costo) > 0" class="text-red-400">*</span><span v-else class="text-ink-light font-normal">(si hay costo de envío)</span></label>
@@ -3678,6 +3700,9 @@ import Icono from "@/components/Icono.vue";
 import DialogoImagen from "@/components/DialogoImagen.vue";
 import FranjaAprobacion from "@/components/aprobacion/FranjaAprobacion.vue";
 import BotonActividad from "@/components/aprobacion/BotonActividad.vue";
+import FranjaEncargos from "@/components/encargos/FranjaEncargos.vue";
+import PanelEncargos from "@/components/encargos/PanelEncargos.vue";
+import { getDelProyecto, version as versionEncargos } from "@/composables/useEncargos.js";
 import ActividadPlegable from "@/components/aprobacion/ActividadPlegable.vue";
 import { puedeValidarDirecto, usePermisosAprobacion } from "@/composables/useAprobacion.js";
 import { fecha as fmtFecha } from "@/utils/formato.js";
@@ -4786,7 +4811,11 @@ function puedeVer(clave) {
 }
 // El paso "Talleres" acepta cualquiera de los dos roles: la matriz (encargar piezas)
 // es de Flujo y el detalle de cada taller es de Talleres. "flujo" ya no es un paso.
-const PASOS_LOTE_VISTA = { materia: "materia", talleres: ["flujo", "talleres"], entrega: "entrega" };
+// Envíos (almacén) también entra a Materia prima y a Talleres: ahí recibe el material
+// y hace el envío y el recibo de cada taller. Lo que puede CAPTURAR en cada parte lo
+// decide PASOS_LOTE_EDITA (y el panel de cada proveedor, panelProvSoloLectura).
+const PASOS_LOTE_VISTA = { materia: ["materia", "envios"], talleres: ["flujo", "talleres", "envios"], entrega: "entrega" };
+const PASOS_LOTE_EDITA = { materia: ["materia"], talleres: ["flujo", "talleres"], entrega: "entrega" };
 const CLAVES_PASO_LOTE = ["materia", "talleres", "entrega"];
 /** ¿Puede ver ese paso del lote? Un paso con dos roles basta con tener uno. */
 const puedeVerPasoLote = (clave) => [].concat(PASOS_LOTE_VISTA[clave] || []).some(puedeVer);
@@ -5043,7 +5072,12 @@ const VISTA_DE_PREP = { 1: "preparacion", 2: "preparacion", 3: "om" };
 /** Vistas del catálogo que cubren lo que se está viendo en Producción. */
 function clavesVistaActual() {
   const v = pVista.value;
-  if (v === "lote") return [].concat(PASOS_LOTE_VISTA[prodRuta.pasoLote.value] || []);
+  if (v === "lote") {
+    const paso = prodRuta.pasoLote.value;
+    // Envío de material y recibo del taller: también de Envíos (como en el servidor).
+    if (paso === "talleres" && paradaActiva.value && ["transfer", "recibo"].includes(subStepOpen.value)) return ["talleres", "envios"];
+    return [].concat(PASOS_LOTE_EDITA[paso] || []);
+  }
   if (v === "preparacion") return [VISTA_DE_PREP[Number(prodRuta.prepPaso.value)] || "preparacion"];
   if (v === "ordenes") return ["preparacion"];
   return [v];
@@ -7418,6 +7452,9 @@ function facBadge(inv) {
 let _seq = 0;
 function uid() { return `_${++_seq}_${Date.now()}`; }
 function today() { return new Date().toISOString().slice(0, 10); }
+// Tope de la fecha de la remisión: hoy en la hora local (sin fechas futuras, ver
+// contabilidad.sin_fecha_futura).
+const hoyLocal = new Date().toLocaleDateString("en-CA");
 function fmtC(v) { return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(v || 0); }
 // ── Accesos por vista (composables/useAccesos.js) ──
 // Claves de CosteoStepper, en el mismo orden que activeStep.
@@ -7449,6 +7486,41 @@ function goStep(idx) {
   if (idx === 5) restaurarVistaProduccion();
   else loteActivoRef.value = "";
 }
+// ── Encargos (api/encargos.py, docs/plan-encargos.md) ──
+const encargos = ref([]);
+const encargosPanel = reactive({ abierto: false, paso: "", lote: "" });
+const encargosAbiertos = computed(() => encargos.value.filter((f) => f.estado === "abierto").length);
+async function cargarEncargos() {
+  if (isNew.value || !docName.value) { encargos.value = []; return; }
+  try { encargos.value = (await getDelProyecto(docName.value)).encargos || []; } catch { /* opcional */ }
+}
+watch(versionEncargos, cargarEncargos);
+// Avanzar el proyecto (confirmar flujo, validar, cambiar de paso) puede cerrar una
+// asignación en el servidor: la franja se vuelve a pedir.
+watch(() => [docStatus.value, activeStep.value], () => { if (!isNew.value) cargarEncargos(); });
+/** El paso (vista) que se está viendo, para proponerlo al encargar. */
+function vistaActualParaEncargo() {
+  const porPaso = { 0: "costear", 1: "cotizar", 2: "vender", 3: "alta", 4: "flujo_produccion", 7: "facturar", 8: "reporte" };
+  if (activeStep.value !== 5) return porPaso[activeStep.value] || "";
+  const q = route.query;
+  if (q.vista === "lote") return { materia: "materia", talleres: "talleres", flujo: "talleres", entrega: "entrega" }[q.paso] || "talleres";
+  if (q.vista === "preparacion") return { 2: "materia", 3: "om" }[q.prep] || "preparacion";
+  return { ordenes: "preparacion", envios: "envios", facturas: "facturas", om: "om" }[q.vista] || "tablero";
+}
+function abrirEncargos(paso) {
+  encargosPanel.paso = paso ?? vistaActualParaEncargo();
+  encargosPanel.lote = String(route.query.lote || route.query.filtro_lote || loteActivoRef.value || "");
+  encargosPanel.abierto = true;
+}
+/** "Abrir" un encargo propio desde la franja: va a su paso sin salir del proyecto. */
+async function irAMiEncargo(f) {
+  const q = Object.fromEntries(new URL(f.ruta, location.origin).searchParams);
+  const step = Number(q.step ?? activeStep.value);
+  delete q.step; delete q.compania;
+  if (step === 5) await router.replace({ path: route.path, query: q });
+  goStep(step);
+}
+
 // Recuerda DÓNDE te quedaste en Producción para que un refresh o volver a abrir el
 // costeo regrese justo ahí. Ya no es solo el lote: la vista completa (menú, paso,
 // taller) vive en la URL y se recuerda por costeo + OV -- ver useProduccionRuta.
@@ -8348,10 +8420,16 @@ async function fillFromDoc(data) {
   // liberara aquí mismo alcanzaría a correr con la compañía recién asignada.
   await nextTick();
   cargandoDoc = false;
+  // Un borrador que nació sin almacenes (creado desde otra pantalla o una versión
+  // anterior): se le proponen los de su compañía, igual que al crearlo aquí.
+  if (data.docstatus === 0 && faltanAlmacenes.value) applyCompanyDefaults(form.compania);
 }
 
 async function loadRelated() {
   if (!docName.value) return;
+  // Cualquier acción que recarga los documentos del proyecto (enviar a aprobación,
+  // validar, crear…) puede haber cerrado una asignación: se vuelven a pedir.
+  cargarEncargos();
   try {
     const r = await call("costeo_yelke.api.costeo_api.get_costeo_related", { costeo: docName.value, sales_order: activeSOName.value || null });
     related.quotation = r.quotation; related.quotations = r.quotations || []; related.quotations_historial = r.quotations_historial || []; related.sales_order = r.sales_order;
@@ -9879,6 +9957,7 @@ async function loadCosteoData(opciones = {}) {
       pasoAbiertoDe = route.params.name;
     }
     await loadRevisionInfo();
+    cargarEncargos();
     // Llegada desde una lista de documentos (ej. /ordenes-compra): forzar el paso y
     // resaltar el documento exacto -- se consume una sola vez, luego se limpia la URL
     // para que un refresh no repita la animación.
@@ -9912,6 +9991,12 @@ async function loadCosteoData(opciones = {}) {
     // la URL (?lote=, mismo patrón que ?step=, para links compartidos) y si no
     // trae nada, el último guardado en este navegador.
     if (activeStep.value === 5) await restaurarVistaProduccion();
+    // Aviso "terminó X" / "regresó el encargo": abre Encargos con el paso propuesto.
+    if (route.query.encargar) {
+      const { encargar, ...resto } = route.query;
+      abrirEncargos(String(encargar));
+      router.replace({ path: route.path, query: resto });
+    }
   } catch { showToast("No se pudo cargar el costeo", "error"); }
   finally { if (!silencioso) loading.value = false; }
 }

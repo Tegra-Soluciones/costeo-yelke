@@ -255,6 +255,13 @@ def ajustar_iva_flete(doc, method=None):
             _recalcular(doc)
         return
     pos = taxes.index(flete)
+    actuales = list(doc.get("taxes") or [])
+    ya = actuales[pos + 1] if len(actuales) > pos + 1 else None
+    if ya is not None and ya.description == FLETE_IVA_DESCRIPTION and ya.account_head == cuenta \
+            and str(ya.row_id) == str(pos + 1) and len(actuales) == len(taxes) + 1:
+        # Ya está bien puesto: rehacerlo en cada guardado cambiaba el renglón aunque
+        # nada cambiara, y la factura salía como "cambió después de enviarse".
+        return
     doc.set("taxes", taxes[:pos + 1])
     doc.append("taxes", {
         "charge_type": "On Previous Row Amount", "row_id": str(pos + 1), "rate": TASA_IVA * 100,

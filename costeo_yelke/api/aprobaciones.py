@@ -27,6 +27,7 @@ from frappe.utils import cint, flt, get_url, now_datetime, nowdate, time_diff_in
 from costeo_yelke.roles import (
     DOCUMENTOS_CON_APROBACION,
     ROL_APROBADOR,
+    ROL_DIRECTOR,
     ROL_REVISOR,
     nivel_aprobacion,
     puede_aprobar_documentos,
@@ -96,7 +97,9 @@ def _aprobadores():
         delegados = frappe.get_all("Delegacion Aprobacion",
                                    filters={"cancelada": 0, "desde": ["<=", hoy], "hasta": [">=", hoy]},
                                    pluck="a_usuario")
-    return list(dict.fromkeys([*usuarios_con_rol(ROL_APROBADOR), *delegados]))
+    # Sin nadie con el rol de aprobador, los avisos van a Dirección: si no, un envío a
+    # aprobación no le llegaba a nadie.
+    return list(dict.fromkeys([*(usuarios_con_rol(ROL_APROBADOR) or usuarios_con_rol(ROL_DIRECTOR)), *delegados]))
 
 
 def _revisores():
@@ -746,7 +749,10 @@ def _tarjetas(doctype, filas):
         elif doctype == "Purchase Invoice":
             t.update(tipo="fc", titulo=f.supplier_name or f.supplier, monto=f.grand_total,
                      sub=extra.get(f.name, "") + (f" · {f.bill_no}" if f.bill_no else ""), contexto=None)
-            if "factura_pdf" in f and not (f.factura_pdf or "").strip():
+            # Proveedor sin alta en el SAT: no emite factura, el PDF es opcional
+            # (contabilidad.validar_archivos_factura tampoco lo exige al validar).
+            sin_sat = frappe.db.get_value("Supplier", f.supplier, "sin_alta_sat") if f.get("supplier") else 0
+            if "factura_pdf" in f and not (f.factura_pdf or "").strip() and not sin_sat:
                 t["bloqueo"] = _("Falta el PDF de la factura")
         t["etiqueta"] = _etiqueta(doctype, f.get("is_subcontracted"))
         salida.append(t)
@@ -795,9 +801,14 @@ def get_bandeja() -> dict:
     if not (aprueba or revisa or precios):
         frappe.throw(_("No tienes documentos por aprobar ni por revisar."), frappe.PermissionError)
     items, esperando = [], []
+    # Sin nadie con el rol de revisor, la revisión la da quien aprueba (_revisores):
+    # lo doble en Pendiente le llega en su bandeja para revisarlo y luego aprobarlo.
+    # Antes solo lo veía "esperando revisión" -- apagado y sin poder abrirse -- y las
+    # órdenes a talleres se quedaban atoradas.
+    sin_revisores = not usuarios_con_rol(ROL_REVISOR)
     for doctype, nivel in DOCUMENTOS_CON_APROBACION.items():
         if aprueba:
-            estados = [REVISADO] if nivel == "doble" else [PENDIENTE]
+            estados = ([PENDIENTE, REVISADO] if sin_revisores else [REVISADO]) if nivel == "doble" else [PENDIENTE]
         elif revisa and nivel == "doble":
             estados = [PENDIENTE]
         else:
@@ -805,7 +816,7 @@ def get_bandeja() -> dict:
         filas = frappe.get_all(doctype, filters={"docstatus": 0, "estado_aprobacion_yelke": ["in", estados]},
                                fields=_campos(doctype))
         items += _tarjetas(doctype, filas)
-        if aprueba and nivel == "doble":
+        if aprueba and nivel == "doble" and not sin_revisores:
             filas = frappe.get_all(doctype, filters={"docstatus": 0, "estado_aprobacion_yelke": PENDIENTE},
                                    fields=_campos(doctype))
             esperando += _tarjetas(doctype, filas)
@@ -825,9 +836,10 @@ def get_cuenta_bandeja() -> dict:
     """Solo la cuenta, para el contador del menú (sin armar las tarjetas)."""
     aprueba, revisa, precios = puede_aprobar_documentos(), puede_revisar_documentos(), puede_aprobar_precios()
     total = 0
+    sin_revisores = not usuarios_con_rol(ROL_REVISOR)  # ver get_bandeja
     for doctype, nivel in DOCUMENTOS_CON_APROBACION.items():
         if aprueba:
-            estados = [REVISADO] if nivel == "doble" else [PENDIENTE]
+            estados = ([PENDIENTE, REVISADO] if sin_revisores else [REVISADO]) if nivel == "doble" else [PENDIENTE]
         elif revisa and nivel == "doble":
             estados = [PENDIENTE]
         else:

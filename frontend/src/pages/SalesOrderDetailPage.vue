@@ -602,7 +602,8 @@ import AttachmentsPanel from "@/components/AttachmentsPanel.vue";
 import FranjaAprobacion from "@/components/aprobacion/FranjaAprobacion.vue";
 import BotonActividad from "@/components/aprobacion/BotonActividad.vue";
 import { puedeValidarDirecto, usePermisosAprobacion } from "@/composables/useAprobacion.js";
-import { asegurarCompania } from "@/composables/useCompany.js";
+import { asegurarCompania, useCompany } from "@/composables/useCompany.js";
+const { state: companyState } = useCompany();
 import { call, defaultPrintFormat } from "@/utils/frappe.js";
 
 const props  = defineProps({ name: { type: String, default: "" } });
@@ -1012,7 +1013,7 @@ async function loadTermsText() {
 onMounted(async () => {
   loading.value = true;
   try {
-    const defs = await call("costeo_yelke.api.sales_order_api.get_sales_order_form_defaults");
+    const defs = await call("costeo_yelke.api.sales_order_api.get_sales_order_form_defaults", { company: companyState.selected || null });
     await loadItemIndex();
 
     defaults.customers       = defs.customers       || [];
@@ -1023,7 +1024,7 @@ onMounted(async () => {
     defaults.warehouses      = defs.warehouses      || [];
     defaults.uoms            = defs.uoms            || [];
 
-    form.company            = defs.company           || "";
+    form.company            = companyState.selected || defs.company || "";
     form.currency           = defs.default_currency  || "MXN";
     form.selling_price_list = defs.default_price_list || "";
     form.transaction_date   = today();

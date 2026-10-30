@@ -876,7 +876,8 @@ import AttachmentsPanel from "@/components/AttachmentsPanel.vue";
 import FranjaAprobacion from "@/components/aprobacion/FranjaAprobacion.vue";
 import BotonActividad from "@/components/aprobacion/BotonActividad.vue";
 import { puedeValidarDirecto, usePermisosAprobacion } from "@/composables/useAprobacion.js";
-import { asegurarCompania } from "@/composables/useCompany.js";
+import { asegurarCompania, useCompany } from "@/composables/useCompany.js";
+const { state: companyState } = useCompany();
 import { call, defaultPrintFormat }   from "@/utils/frappe.js";
 
 const props  = defineProps({ name: { type: String, default: "" } });
@@ -1407,7 +1408,7 @@ onMounted(async () => {
   loading.value = true;
   try {
     const [defs, fmts] = await Promise.all([
-      call("costeo_yelke.api.quotation_api.get_quotation_form_defaults"),
+      call("costeo_yelke.api.quotation_api.get_quotation_form_defaults", { company: companyState.selected || null }),
       call("costeo_yelke.api.quotation_api.get_quotation_print_formats"),
       loadItemIndex(),
     ]);
@@ -1426,7 +1427,7 @@ onMounted(async () => {
       waPrintFormat.value    = fmts[0].name;
     }
 
-    form.company            = defs.company           || "";
+    form.company            = companyState.selected || defs.company || "";
     form.currency           = defs.default_currency  || "MXN";
     form.selling_price_list = defs.default_price_list || "";
     form.transaction_date   = today();

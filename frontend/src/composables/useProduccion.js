@@ -230,7 +230,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     actualizarPreviewLotes();
   }
   // Reparte el saldo de cada producto en partes iguales entre los lotes ya creados;
-  // el ÚLTIMO lote se lleva el residuo del redondeo (para que la suma cuadre exacto).
+  // sin tallas, el ÚLTIMO lote se lleva el residuo del redondeo (para que la suma cuadre exacto).
   function repartirMrLotesIgual() {
     const n = mrLotes.value.length;
     if (!n) return;
@@ -239,15 +239,18 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
       // la suma): repartir el total y luego las tallas por separado dejaría dos
       // números que no cuadran entre sí.
       if (tieneTallas(it.item_code)) {
+        // La unidad que sobra de cada talla impar se va turnando entre los lotes:
+        // si siempre caía en el último, 1,000 en 2 lotes salía 497 / 503.
+        let turno = 0;
         tallasDe(it.item_code).forEach((f) => {
           const total = Number(f.cantidad) || 0;
           const base = Math.floor(total / n);
-          let asignado = 0;
+          const extras = total - base * n;
+          const conExtra = new Set(Array.from({ length: extras }, (_, j) => (turno + j) % n));
+          turno = (turno + extras) % n;
           mrLotes.value.forEach((lote, i) => {
             if (!lote.tallas[it.item_code]) lote.tallas[it.item_code] = {};
-            const qty = i === n - 1 ? total - asignado : base;
-            lote.tallas[it.item_code][f.clave] = qty;
-            asignado += qty;
+            lote.tallas[it.item_code][f.clave] = base + (conExtra.has(i) ? 1 : 0);
           });
         });
         mrLotes.value.forEach(sincronizarPiezasDeTallas);
@@ -757,7 +760,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
   const subSel = ref("");
   const subPo = ref(null);
   const subItems = ref([]);
-  const subForm = reactive({ schedule_date: "", payment_terms_template: "", tc_name: "", shipping_cost: 0 });
+  const subForm = reactive({ schedule_date: "", payment_terms_template: "", tc_name: "", shipping_cost: 0, currency: "" });
   const subValidated = computed(() => subPo.value?.docstatus === 1);
   const subHasRate = computed(() => subItems.value.some((i) => i.has_rate));
   const subDone = computed(() => subOcs.value.length > 0 && subOcs.value.every((o) => o.docstatus === 1));
@@ -789,7 +792,10 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     return [...g.values()].map((m) => ({
       ...m, required_qty: Math.round(m.required_qty * 1e6) / 1e6, supplied_qty: Math.round(m.supplied_qty * 1e6) / 1e6,
       // Disponible es por almacén (no por renglón): el mismo material sale de un solo lugar.
-      falta: m.disponible !== null && m.disponible !== undefined && Number(m.disponible) < Math.round(m.required_qty * 1e6) / 1e6 - 1e-6,
+      // Lo requerido viene redondeado hacia arriba a la unidad (877.5 m -> 878): esa
+      // fracción no es faltante -- el envío se ajusta a la existencia mientras cubra lo
+      // que pide el BOM (_ajustar_a_existencia). Solo avisa si falta una unidad o más.
+      falta: m.disponible !== null && m.disponible !== undefined && Number(m.disponible) <= Math.round(m.required_qty * 1e6) / 1e6 - 1 + 1e-6,
     }));
   });
   // Lo que el taller va a ENTREGAR, agrupado por artículo (el cuello que pasa por
@@ -865,6 +871,8 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     subForm.payment_terms_template = r.payment_terms_template || "";
     subForm.tc_name = r.tc_name || "";
     subForm.shipping_cost = r.shipping_cost || 0;
+    // Sin esto el selector de moneda salía vacío y lo que se eligiera no se guardaba.
+    subForm.currency = r.currency || "";
     previewKey.value++;
     await loadOm(po);
     await loadFlujo(po);
@@ -1360,6 +1368,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
         schedule_date: subForm.schedule_date || null, payment_terms_template: subForm.payment_terms_template || null,
         tc_name: subForm.tc_name || null, items: JSON.stringify(subItems.value),
         shipping_cost: subPo.value.has_shipping ? (subForm.shipping_cost || 0) : null,
+        currency: subPo.value.has_currency ? (subForm.currency || null) : null,
       });
     }
     // Sólo la OC maestra puede escribir la Orden de Manufactura -- en las demás el

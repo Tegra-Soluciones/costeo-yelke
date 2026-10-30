@@ -44,6 +44,9 @@
           <span class="text-[12.5px] text-brand-600 font-medium">Abrir ›</span>
         </RouterLink>
 
+        <!-- Lo que le encargaron y lo que encargó (api/encargos.py). -->
+        <MisEncargos :company="companyState.selected || ''" :recargar="recargas" />
+
         <!-- Lo que le toca a esta persona en todos los proyectos (api/mi_panel.py). -->
         <MisPendientes :company="companyState.selected || ''" :recargar="recargas" />
 
@@ -64,6 +67,7 @@ import { RouterLink } from "vue-router";
 import Icono from "@/components/Icono.vue";
 import RegresadosAMi from "@/components/aprobacion/RegresadosAMi.vue";
 import MisPendientes from "@/components/MisPendientes.vue";
+import MisEncargos from "@/components/encargos/MisEncargos.vue";
 import TableroFinanzas from "@/components/tablero/TableroFinanzas.vue";
 import TableroOperativo from "@/components/tablero/TableroOperativo.vue";
 import { cargarPermisosAprobacion, cuentaBandeja, usePermisosAprobacion } from "@/composables/useAprobacion.js";

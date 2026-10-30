@@ -127,8 +127,11 @@ VISTAS = {
                     "descripcion": "Almacén: recibe material, envía a talleres, recibe de talleres y devoluciones."},
     "facturas":    {"etiqueta": "Facturas de compra", "grupo": "Producción", "rol": "Producción Facturas Yelke",
                     "paso": "producir", "rutas": ["PurchaseInvoiceList"],
-                    "doctypes": {"Purchase Invoice": "editar"},
-                    "descripcion": "Captura y valida las facturas de compra: material, maquila y fletes."},
+                    # Pagar a proveedores: el Pago de ERPNext lee el catálogo de cuentas y
+                    # las cuentas bancarias para proponer el pago.
+                    "doctypes": {"Purchase Invoice": "editar", "Payment Entry": "editar", "Journal Entry": "ver",
+                                 "Account": "ver", "Bank Account": "ver"},
+                    "descripcion": "Captura y valida las facturas de compra (material, maquila y fletes) y registra sus pagos."},
     "entrega":     {"etiqueta": "Entrega", "grupo": "Producción", "rol": "Producción Entrega Yelke",
                     "paso": "producir", "rutas": ["DeliveryNoteList"],
                     "doctypes": {"Delivery Note": "editar", "Address": "editar", "Contact": "editar"},
@@ -136,7 +139,10 @@ VISTAS = {
     # ── Finanzas ──
     "facturar":  {"etiqueta": "Facturar", "grupo": "Finanzas", "rol": "Finanzas Facturar Yelke",
                   "paso": "facturar", "rutas": ["SalesInvoiceList", "SalesInvoiceDetail", "SalesInvoiceNueva"],
-                  "doctypes": {"Sales Invoice": "editar", "Payment Entry": "editar", "Journal Entry": "ver"},
+                  # El cobro (Pago de ERPNext) lee el catálogo de cuentas y las cuentas
+                  # bancarias: sin ellas, "Crear pago" no se podía ni abrir.
+                  "doctypes": {"Sales Invoice": "editar", "Payment Entry": "editar", "Journal Entry": "ver",
+                               "Account": "ver", "Bank Account": "ver"},
                   "descripcion": "Emite la factura de venta y registra cobros."},
     "reporte":   {"etiqueta": "Reporte final", "grupo": "Finanzas", "rol": "Finanzas Reporte Final Yelke",
                   "paso": "reportar", "rutas": [], "doctypes": {},

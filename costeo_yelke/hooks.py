@@ -287,6 +287,12 @@ for _evento in ("before_insert", "before_validate", "before_update_after_submit"
 # Remisión cancelada: su factura de flete (borrador) se va con ella (api/fletes.py).
 doc_events.setdefault("Delivery Note", {})["on_cancel"] = "costeo_yelke.api.fletes.soltar_factura_remision"
 
+# Movimientos de inventario sin fecha futura (api/contabilidad.sin_fecha_futura).
+for _dt in ("Delivery Note", "Purchase Receipt", "Subcontracting Receipt", "Stock Entry"):
+	_actual = doc_events.setdefault(_dt, {}).get("validate")
+	_lista = [] if not _actual else ([_actual] if isinstance(_actual, str) else list(_actual))
+	doc_events[_dt]["validate"] = [*_lista, "costeo_yelke.api.contabilidad.sin_fecha_futura"]
+
 # Un documento contable/de inventario CANCELADO no se borra: Frappe libera el folio
 # del último de la serie y el siguiente documento lo reutilizaría (ver
 # costeo_yelke.api.contabilidad.bloquear_borrado_cancelado).
@@ -358,6 +364,17 @@ for _dt, _fn in (("Payment Entry", "al_mover_pago"), ("Journal Entry", "al_mover
 		_lista = [] if not _actual else ([_actual] if isinstance(_actual, str) else list(_actual))
 		doc_events[_dt][_evento] = [*_lista, f"costeo_yelke.api.cuentas_mx.{_fn}"]
 
+# Encargos (api/encargos.py, docs/plan-encargos.md): cualquier movimiento de un documento
+# del proyecto revisa si ya se atendió algún encargo; un ToDo cerrado en el Escritorio
+# cuenta como "Listo".
+for _dt in ("Costeo", "Quotation", "Sales Order", "Material Request", "Purchase Order", "Purchase Receipt",
+            "Subcontracting Order", "Subcontracting Receipt", "Stock Entry", "Delivery Note",
+            "Purchase Invoice", "Sales Invoice"):
+	_actual = doc_events.setdefault(_dt, {}).get("on_change")
+	_lista = [] if not _actual else ([_actual] if isinstance(_actual, str) else list(_actual))
+	doc_events[_dt]["on_change"] = [*_lista, "costeo_yelke.api.encargos.al_mover_documento"]
+doc_events.setdefault("ToDo", {})["on_update"] = "costeo_yelke.api.encargos.al_cambiar_todo"
+
 # Scheduled Tasks
 # ---------------
 
@@ -366,12 +383,15 @@ scheduler_events = {
 		"costeo_yelke.api.item_api.revisar_vigencias_precio_acordado",
 		"costeo_yelke.api.aprobaciones.recordatorio_pendientes",
 		"costeo_yelke.api.delegacion.avisos_delegacion",
+		"costeo_yelke.api.encargos.avisos_vencimiento",
 	],
 	# Préstamo de permisos: aplica los que empiezan y retira los vencidos.
 	"hourly": [
 		"costeo_yelke.api.permisos_temporales.procesar_permisos_temporales",
 		# Pagos conciliados con la herramienta de conciliación (no disparan eventos).
 		"costeo_yelke.api.cuentas_mx.revisar_iva_pendiente",
+		# Encargos que se atendieron por caminos sin eventos (db.set_value).
+		"costeo_yelke.api.encargos.revisar_todos",
 	],
 }
 

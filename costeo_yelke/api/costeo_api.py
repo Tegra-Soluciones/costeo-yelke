@@ -2678,10 +2678,7 @@ def actualizar_factura_venta(name: str, posting_date=None, payment_terms_templat
         doc.posting_date = posting_date
     _poner_plantilla_pago(doc, payment_terms_template)
     if doc.payment_terms_template:
-        # En borrador el calendario se rearma siempre: si solo cambió la fecha de
-        # factura, el viejo seguía mandando sobre el vencimiento.
-        doc.payment_schedule = []
-        doc.due_date = vencimiento_por_condicion(doc.payment_terms_template, doc.posting_date) or doc.due_date
+        _vencimiento_desde_condicion(doc)
     elif due_date:
         doc.due_date = due_date
     doc.tc_name = tc_name or None
@@ -2689,6 +2686,18 @@ def actualizar_factura_venta(name: str, posting_date=None, payment_terms_templat
     doc.flags.ignore_permissions = True
     doc.save()
     return {"name": doc.name}
+
+
+def _vencimiento_desde_condicion(doc):
+    """Vencimiento = condición de pago + fecha de factura. El calendario se rearma solo
+    si ya no corresponde (cambió la fecha o la plantilla): si solo cambió la fecha de
+    factura, el viejo seguía mandando sobre el vencimiento; y rearmarlo siempre dejaba
+    en la actividad "cambió después de enviarse a aprobación" sin ningún cambio real."""
+    nuevo = vencimiento_por_condicion(doc.payment_terms_template, doc.posting_date)
+    actual = max((getdate(r.due_date) for r in doc.get("payment_schedule") or [] if r.due_date), default=None)
+    if not nuevo or actual != getdate(nuevo):
+        doc.payment_schedule = []
+    doc.due_date = nuevo or doc.due_date
 
 
 @frappe.whitelist()
@@ -3268,12 +3277,17 @@ def _maquila_recibida_de_oc(po_doc):
     return out
 
 
-def _material_sobrante_de_costeo(costeo):
+def _material_sobrante_de_costeo(costeo, con_existencia=False):
     """Valor de la materia prima del costeo que NO se consumió y sigue siendo inventario
     de la empresa = lo recibido (valuado, ya con su flete) menos lo que de verdad
     consumieron los recibos de taller del costeo. Lo devuelto de un lote que se volvió
     a usar en otro SÍ es costo de este pedido -- por eso no se resta "lo devuelto",
-    sino solo lo que no se consumió. Regresa (total, libre_en_talleres, resto_en_almacen)."""
+    sino solo lo que no se consumió. Regresa (total, libre_en_talleres, resto_en_almacen).
+
+    Con ``con_existencia`` agrega un cuarto valor: lo que los talleres consumieron de
+    MÁS sobre lo recibido -- existencia que ya estaba en el almacén (el sobrante de un
+    proyecto anterior que el plan descontó). También es costo de este pedido: antes el
+    saldo negativo se recortaba a 0 y el reporte salía más barato que el inventario."""
     mat_pos = frappe.get_all("Purchase Order", filters={"costeo": costeo, "is_subcontracted": 0, "docstatus": 1},
                              pluck="name")
     prs = list(dict.fromkeys(frappe.get_all(
@@ -3315,18 +3329,28 @@ def _material_sobrante_de_costeo(costeo):
                  select it.item_code from `tabSubcontracting Receipt Item` it where it.parent in %(scrs)s)""",
         {"scos": scos or [""], "scrs": scrs or [""]},
     )[0][0])
-    total = max(round(recibido + flete_ida_mp - consumido, 2), 0.0)
+    saldo = round(recibido + flete_ida_mp - consumido, 2)
+    total = max(saldo, 0.0)
+    de_existencia = max(-saldo, 0.0)
 
     en_talleres = 0.0
+    # Solo materiales que este proyecto compró: el almacén de un taller puede tener
+    # sobrante de OTRO proyecto (7.5 m de gabardina naranja de la camisola en el de
+    # corte), y se contaba como si fuera de este.
+    propios = set(frappe.get_all("Purchase Receipt Item", filters={"parent": ["in", prs or [""]]}, pluck="item_code"))
     try:
         for t in sub_saldo_talleres(costeo).get("talleres", []):
             for m in t.get("materiales", []):
+                if m["item_code"] not in propios:
+                    continue
                 vr = flt(frappe.db.get_value("Bin", {"item_code": m["item_code"], "warehouse": t["warehouse"]},
                                              "valuation_rate"))
                 en_talleres += flt(m.get("libre")) * vr
     except Exception:
         pass
     en_talleres = round(min(en_talleres, total), 2)
+    if con_existencia:
+        return total, en_talleres, round(total - en_talleres, 2), de_existencia
     return total, en_talleres, round(total - en_talleres, 2)
 
 
@@ -3349,8 +3373,10 @@ def _costo_directo_real(costeo):
         # Lo FACTURADO manda sobre lo contratado (ver _costo_real_de_oc).
         renglones, _base = _costo_real_de_oc(po_doc)
         material_directo_real += sum(flt(r["amount"]) for r in renglones)
-    # El material que sobró y sigue en inventario no es costo de este pedido.
-    material_directo_real -= _material_sobrante_de_costeo(costeo)[0]
+    # El material que sobró y sigue en inventario no es costo de este pedido; el que
+    # se tomó de existencia previa, sí.
+    _sobra, _t, _a, _de_existencia = _material_sobrante_de_costeo(costeo, con_existencia=True)
+    material_directo_real += _de_existencia - _sobra
 
     servicio_directo_real = 0.0
     flete_taller_ida_real = 0.0
@@ -3958,10 +3984,7 @@ def actualizar_factura_compra(name: str, posting_date=None, due_date=None, bill_
     # Con condiciones de pago el vencimiento sale de ellas y de la fecha de factura;
     # a mano solo sin plantilla (igual que en la factura de venta).
     if doc.payment_terms_template:
-        # En borrador el calendario se rearma siempre: si solo cambió la fecha de
-        # factura, el viejo seguía mandando sobre el vencimiento.
-        doc.payment_schedule = []
-        doc.due_date = vencimiento_por_condicion(doc.payment_terms_template, doc.posting_date) or doc.due_date
+        _vencimiento_desde_condicion(doc)
     elif due_date:
         doc.due_date = due_date
     doc.tc_name = tc_name or None
@@ -4198,6 +4221,10 @@ def duplicate_costeo(name: str) -> dict:
     original = frappe.get_doc("Costeo", name)
     copy = frappe.copy_doc(original)
     copy.costeo_status = "Borrador"
+    # El reparto en lotes sale de la producción del original (Preparación); la copia
+    # arma el suyo. Si se quedaba, un lote del original que el nuevo no use seguía vivo.
+    copy.set("tabla_lotes_costeo", [])
+    copy.fecha = copy.posting_date = nowdate()
     copy.insert(ignore_permissions=False)
     frappe.db.commit()
     return {"ok": True, "name": copy.name}
@@ -5565,6 +5592,9 @@ def preparar_produccion(costeo: str, sales_order: str = None) -> dict:
     ok = all(s["ok"] for s in steps)
     if ok:
         frappe.db.set_value("Costeo", costeo, "costeo_status", "En Producción")
+        # set_value no dispara eventos: el encargo de Flujo de producción se cierra aquí.
+        from costeo_yelke.api.encargos import revisar
+        revisar(costeo)
     return {"steps": steps, "ok": ok}
 
 
@@ -6073,7 +6103,11 @@ def guardar_solicitud_material(mr: str, items=None, schedule_date=None) -> dict:
     if doc.docstatus != 0:
         frappe.throw(_("La solicitud ya está validada; no se puede editar."))
     if schedule_date:
+        # También en cada renglón: ERPNext recalcula la fecha del encabezado con la más
+        # temprana de los renglones, y si solo se cambiaba arriba regresaba a la de hoy.
         doc.schedule_date = schedule_date
+        for it in doc.items:
+            it.schedule_date = schedule_date
     if items:
         rows = json.loads(items) if isinstance(items, str) else items
         by_name = {r.get("name"): r for r in rows if r.get("name")}
@@ -6375,7 +6409,16 @@ def mr_crear_oc(mr: str, items=None, schedule_date=None, lote_ref: str = None) -
     from costeo_yelke.overrides.material_request import make_purchase_order
 
     pos_antes = set(frappe.get_all("Purchase Order Item", filters={"material_request": mr}, pluck="parent"))
-    result = make_purchase_order(mr)
+    # Con `items` solo se mapean los renglones de esos materiales (del lote, si se
+    # indicó): antes se mapeaba la solicitud completa -- una OC por cada proveedor de
+    # todos los lotes -- y luego se borraban las que sobraban, lo que gastaba folios y
+    # llenaba "Documentos eliminados" (6 OC creadas y 5 borradas por proveedor).
+    args = None
+    if qty_by_item:
+        filas = [it for it in doc.items if it.item_code in qty_by_item]
+        del_lote = [it for it in filas if lote_ref and it.get("lote_ref") == lote_ref]
+        args = {"filtered_children": [it.name for it in (del_lote or filas)]}
+    result = make_purchase_order(mr, args=args)
     pos_despues = list(dict.fromkeys(
         frappe.get_all("Purchase Order Item", filters={"material_request": mr}, pluck="parent")
     ))
@@ -6722,10 +6765,14 @@ def mr_dividir_en_lotes_por_piezas(mr: str, plan: str, lotes) -> dict:
     for materiales in materiales_por_lote.values():
         for mat, qty in materiales.items():
             asignado_por_material[mat] = asignado_por_material.get(mat, 0) + qty
+    # En los dos sentidos: también cuando la solicitud pide MENOS que la explosión
+    # (el plan ya descontó lo que hay en almacén). Antes solo se sumaba el resto
+    # positivo y los lotes volvían a pedir el total bruto: con 74 m de cinta en
+    # almacén, 1,486 m de solicitud se convertían en 780 + 780 = 1,560 al dividir.
     resto_por_material = {
         mat: qty_original_por_material.get(mat, 0) - asignado
         for mat, asignado in asignado_por_material.items()
-        if qty_original_por_material.get(mat, 0) - asignado > 0.001
+        if abs(qty_original_por_material.get(mat, 0) - asignado) > 0.001
     }
 
     # Artículos que se compran en PAQUETE COMPLETO (botones por Mazo, cinta por
@@ -6771,7 +6818,7 @@ def mr_dividir_en_lotes_por_piezas(mr: str, plan: str, lotes) -> dict:
             for mat, resto in resto_por_material.items():
                 if mat in paquete:
                     continue  # ya cuadrado arriba contra el total
-                materiales[mat] = materiales.get(mat, 0) + resto
+                materiales[mat] = max(flt(materiales.get(mat, 0) + resto, 4), 0.0)
         materiales.update(redondeo_paquete.get(lote_ref) or {})
         if not materiales:
             continue
@@ -6936,8 +6983,12 @@ def posicion_material_costeo(costeo: str) -> dict:
         del_costeo = f["recibido"] - f["enviado"] + f["devuelto"]
         disponible = max(0.0, min(del_costeo, en_almacen))
         en_talleres = max(0.0, f["enviado"] - f["consumido"] - f["devuelto"])
-        por_comprar = max(0.0, f["demanda"] - f["consumido"] - en_talleres
-                          - disponible - f["en_transito"])
+        # Lo cubierto nunca pasa de lo que este costeo recibió: si a un taller se le
+        # mandó de más (el envío redondea a unidad), ese extra salió de existencia que
+        # el plan ya había descontado de la demanda, y contarlo otra vez dejaba corta
+        # la compra del lote siguiente (cinta: 527 en vez de 527.6 m).
+        cubierto = min(f["consumido"] + en_talleres + disponible, f["recibido"])
+        por_comprar = max(0.0, f["demanda"] - cubierto - f["en_transito"])
         out.append({
             **f,
             "en_almacen": round(en_almacen, 6),
@@ -7437,10 +7488,26 @@ def _guardar_om_una(po: str, general=None, tallas_caballero=None, tallas_dama=No
             if f in _OM_GENERAL and doc.meta.get_field(f):
                 doc.set(f, v)
 
+    def igual_que_hoy(field, filas):
+        """Las tablas de la ficha se reescriben completas en cada guardado; si no
+        cambió nada se dejan como están -- si no, cada guardado (también desde las otras
+        órdenes del costeo) dejaba en la actividad "Agregó/Quitó renglón" sin cambio real."""
+        def norm(r):
+            return {k: (v if v not in ("", None) else None) for k, v in r.items()
+                    if k not in ("name", "idx", "parent", "parentfield", "parenttype", "doctype", "owner",
+                                 "creation", "modified", "modified_by", "docstatus")}
+        actuales = [norm(r.as_dict()) for r in doc.get(field) or []]
+        nuevas = [norm(r) for r in filas]
+        return len(actuales) == len(nuevas) and all(
+            all(a.get(k) == n.get(k) or (not a.get(k) and not n.get(k)) for k in n) for a, n in zip(actuales, nuevas))
+
     def set_tallas(field, rows_json, sizes, total_field):
         if rows_json is None:
             return
         rows = json.loads(rows_json) if isinstance(rows_json, str) else rows_json
+        con_total = [{**{k: v for k, v in r.items() if k != "name"}, "total": sum(int(r.get(s) or 0) for s in sizes)} for r in rows]
+        if igual_que_hoy(field, con_total):
+            return
         doc.set(field, [])
         gran_total = 0
         for r in rows:
@@ -7457,6 +7524,11 @@ def _guardar_om_una(po: str, general=None, tallas_caballero=None, tallas_dama=No
 
     if procesos is not None:
         rows = json.loads(procesos) if isinstance(procesos, str) else procesos
+        con_nombre = [{**{k: v for k, v in r.items() if k != "name"}, "proceso": r.get("proceso") or f"Proceso {i}"}
+                      for i, r in enumerate(rows, 1)]
+        if igual_que_hoy("om_procesos", con_nombre):
+            rows = None
+    if procesos is not None and rows is not None:
         doc.set("om_procesos", [])
         for i, r in enumerate(rows, 1):
             row = {k: v for k, v in r.items() if k != "name"}
@@ -7470,6 +7542,8 @@ def _guardar_om_una(po: str, general=None, tallas_caballero=None, tallas_dama=No
 
     if archivos is not None:
         a = json.loads(archivos) if isinstance(archivos, str) else archivos
+        a = None if igual_que_hoy("om_archivos", [{"archivo": r.get("archivo"), "descripcion": r.get("descripcion")} for r in a]) else a
+    if archivos is not None and a is not None:
         doc.set("om_archivos", [])
         for r in a:
             doc.append("om_archivos", {"archivo": r.get("archivo"), "descripcion": r.get("descripcion")})
@@ -9766,9 +9840,11 @@ def sub_guardar_transferencia(stock_entry: str, from_warehouse=None, to_warehous
             r = by_name.get(it.name)
             if not r:
                 continue
-            if r.get("qty") is not None:
+            if r.get("qty") is not None and abs(flt(r.get("qty")) - flt(it.qty)) > 1e-6:
                 # Igual que al crear la transferencia: la materia prima siempre se
-                # redondea hacia arriba, nunca hacia abajo.
+                # redondea hacia arriba, nunca hacia abajo. Solo lo que la persona
+                # cambió: re-redondear todo deshacía el ajuste a la existencia
+                # (877.5 m recibidos volvían a 878 y el envío ya no se podía validar).
                 it.qty = math.ceil(round(flt(r.get("qty")), 4) - 1e-6)
             if r.get("s_warehouse"):
                 it.s_warehouse = r.get("s_warehouse")
@@ -9796,6 +9872,10 @@ def sub_guardar_transferencia(stock_entry: str, from_warehouse=None, to_warehous
                 continue
             doc.append("additional_costs", _landed_cost_row(doc.company, r.get("description"), amount, r.get("expense_account"), r.get("proveedor_flete"), r.get("flete_incluye_iva")))
 
+    # El mismo ajuste que al crearla: lo que solo sobrepasa la existencia por el
+    # redondeo hacia arriba baja a lo que hay, mientras cubra lo que pide el BOM.
+    if doc.get("subcontracting_order"):
+        _ajustar_a_existencia(doc, doc.subcontracting_order)
     doc.flags.ignore_permissions = True
     doc.save()
     return {"ok": True}
@@ -11912,8 +11992,9 @@ def get_reporte_final(costeo: str, sales_order: str = None) -> dict:
     # ── TOTALES Y RENTABILIDAD ───────────────────────────────────────────────────
     # Materia prima que sobró y sigue siendo inventario (devuelta o aún libre en talleres):
     # no es costo de este pedido.
-    sobrante_total, sobrante_en_talleres, sobrante_en_almacen = _material_sobrante_de_costeo(costeo)
-    material_consumido_real = material_directo_real - sobrante_total
+    sobrante_total, sobrante_en_talleres, sobrante_en_almacen, material_de_existencia = \
+        _material_sobrante_de_costeo(costeo, con_existencia=True)
+    material_consumido_real = material_directo_real - sobrante_total + material_de_existencia
     costo_directo_real = (
         material_consumido_real + flete_materiales_real
         + servicio_directo_real + flete_taller_ida_real + flete_taller_regreso_real
@@ -12006,6 +12087,7 @@ def get_reporte_final(costeo: str, sales_order: str = None) -> dict:
             "materiales": materiales_real, "material_directo": material_directo_real,
             "material_sobrante": sobrante_total, "material_sobrante_en_almacen": sobrante_en_almacen,
             "material_sobrante_en_talleres": sobrante_en_talleres, "material_consumido": material_consumido_real,
+            "material_de_existencia": material_de_existencia,
             "flete_materiales": flete_materiales_real,
             "servicios": servicios_real, "servicio_directo": servicio_directo_real,
             "flete_taller_ida": flete_taller_ida_real, "flete_taller_regreso": flete_taller_regreso_real,

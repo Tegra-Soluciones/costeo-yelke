@@ -12,7 +12,18 @@
       @cancel="confirmDelete.open = false"
     />
 
+    <EncargarProyecto :abierto="encargarAbierto" @cerrar="encargarAbierto = false"
+                      @creado="(r) => { showToast(`${r.titulo}: asignado a ${r.para}. Le llegó el aviso.`); load(); }" />
+
     <PageHeader title="Costeos" subtitle="Lista de costeos de manufactura">
+      <!-- Proyecto nuevo que lo costea otra persona (asignación, api/encargos.crear_proyecto). -->
+      <button v-if="puedeEditar('costear') || puede('direccion')"
+        class="px-3 py-1.5 border border-gray-200 text-gray-600 text-sm font-medium rounded-md hover:bg-gray-50 flex items-center gap-1.5"
+        @click="encargarAbierto = true"
+      >
+        <Icono nombre="persona" class="w-4 h-4" :grosor="2" />
+        Asignar proyecto
+      </button>
       <button v-if="rutaPermitida('CosteoNuevo', 'editar')"
         class="px-3 py-1.5 bg-brand-500 text-white text-sm font-medium rounded-md hover:bg-brand-600 transition-colors flex items-center gap-1.5"
         @click="$router.push('/costeo/nuevo')"
@@ -69,6 +80,7 @@
               <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Compañía</th>
               <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Fecha</th>
               <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Estatus</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Asignado a</th>
               <th class="px-4 py-3 w-10"></th>
             </tr>
           </thead>
@@ -87,6 +99,15 @@
               <td class="px-4 py-3 text-gray-600">{{ item["compañia"] }}</td>
               <td class="px-4 py-3 text-gray-500">{{ formatDate(item.fecha) }}</td>
               <td class="px-4 py-3"><StatusBadge :model-value="item.costeo_status || 'Borrador'" /></td>
+              <!-- Asignaciones abiertas del proyecto (api/encargos.get_por_proyecto). -->
+              <td class="px-4 py-3">
+                <p v-for="(e, i) in (encargosDe[item.name] || []).slice(0, 2)" :key="i" class="text-[12.5px] leading-snug whitespace-nowrap"
+                   :class="e.vencido || e.vence_hoy ? 'text-red-700' : 'text-gray-700'">
+                  {{ e.etiqueta }}{{ e.lote ? ` · ${e.lote}` : "" }} → <b class="font-medium">{{ e.para_nombre }}</b>
+                </p>
+                <p v-if="(encargosDe[item.name] || []).length > 2" class="text-[11.5px] text-gray-400">y {{ encargosDe[item.name].length - 2 }} más</p>
+                <span v-if="!(encargosDe[item.name] || []).length" class="text-gray-300">—</span>
+              </td>
               <td class="px-4 py-3 text-right" @click.stop>
                 <div class="relative flex justify-end">
                   <button
@@ -103,7 +124,7 @@
               </td>
             </tr>
             <tr v-if="filteredItems.length === 0">
-              <td colspan="6" class="px-4 py-12 text-center text-gray-400">
+              <td colspan="7" class="px-4 py-12 text-center text-gray-400">
                 <svg class="w-10 h-10 mx-auto mb-3 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
@@ -164,7 +185,10 @@
 </template>
 
 <script setup>
-import { rutaPermitida } from "@/composables/useAccesos.js";
+import { puede, puedeEditar, rutaPermitida } from "@/composables/useAccesos.js";
+import EncargarProyecto from "@/components/encargos/EncargarProyecto.vue";
+import { getPorProyecto } from "@/composables/useEncargos.js";
+import Icono from "@/components/Icono.vue";
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import PageHeader from "@/components/PageHeader.vue";
@@ -172,6 +196,8 @@ import StatusBadge from "@/components/StatusBadge.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import { db, call } from "@/utils/frappe.js";
 import { useCompany } from "@/composables/useCompany.js";
+
+const encargarAbierto = ref(false);
 
 const { state: companyState } = useCompany();
 
@@ -207,7 +233,8 @@ const filteredItems = computed(() =>
 
 function formatDate(d) {
   if (!d) return "-";
-  return new Date(d).toLocaleDateString("es-MX", { year: "numeric", month: "short", day: "numeric" });
+  // "2026-10-28" sin hora se lee como UTC y en México salía un día antes.
+  return new Date(String(d).length === 10 ? `${d}T00:00` : d).toLocaleDateString("es-MX", { year: "numeric", month: "short", day: "numeric" });
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -300,6 +327,10 @@ async function loadClienteNombres() {
     clienteNombres.value = map;
   } catch { /* ignore */ }
 }
+const encargosDe = ref({});
+async function loadEncargos() {
+  try { encargosDe.value = await getPorProyecto(items.value.map((i) => i.name)); } catch { encargosDe.value = {}; }
+}
 function nombreCliente(id) {
   return clienteNombres.value[id] || id;
 }
@@ -318,7 +349,7 @@ async function load() {
       orderBy: "modified desc",
       limit: 200,
     });
-    await loadClienteNombres();
+    await Promise.all([loadClienteNombres(), loadEncargos()]);
   } catch (e) {
     console.error(e);
   } finally {

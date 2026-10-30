@@ -393,8 +393,10 @@ function hrefNotif(n) {
     : "/app/notification-log";
 }
 function onNotifClick(n, ev) {
+  // Se marca leído también en el servidor; si no, el contador regresaba al recargar.
+  if (!n.read) call("frappe.desk.doctype.notification_log.notification_log.mark_as_read", { docname: n.name }).catch(() => {});
+  if (!n.read && data.unread_notifications > 0) data.unread_notifications--;
   n.read = 1;
-  if (data.unread_notifications > 0) data.unread_notifications--;
   notifOpen.value = false;
   if (n.link && n.link.startsWith("/costeo-yelke")) {
     ev?.preventDefault();

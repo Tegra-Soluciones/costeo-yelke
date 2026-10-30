@@ -81,6 +81,7 @@ const ICONO = {
   aprobado: ["check-circulo", "bg-emerald-50 text-emerald-700"],
   validado: ["check-circulo", "bg-emerald-50 text-emerald-700"],
   cancelado: ["x", "bg-zinc-100 text-ink-muted"],
+  encargo: ["persona", "bg-amber-50 text-amber-800"],
 };
 
 const eventos = ref([]);

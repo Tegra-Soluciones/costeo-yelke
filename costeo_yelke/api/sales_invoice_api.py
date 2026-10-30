@@ -5,8 +5,8 @@ from costeo_yelke.utils import nombres_comerciales
 
 
 @frappe.whitelist()
-def get_sales_invoice_form_defaults():
-    company = frappe.db.get_default("company") or ""
+def get_sales_invoice_form_defaults(company=None):
+    company = company or frappe.db.get_default("company") or ""
 
     customers = frappe.get_all(
         "Customer",

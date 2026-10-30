@@ -16,7 +16,7 @@ LIMITE = 12  # renglones por sección; el total se cuenta aparte
 
 
 def _activos(company=None):
-    f = {"docstatus": ["<", 2], "costeo_status": ["not in", ["Completado", "Cancelado"]]}
+    f = {"docstatus": ["<", 2], "costeo_status": ["not in", ["Completado", "Cancelado"]], "es_plantilla": 0}
     if company and frappe.db.has_column("Costeo", "compañia"):
         f["compañia"] = company
     return {c.name: c for c in frappe.get_all("Costeo", filters=f, fields=["name", "titulo", "cliente", "costeo_status", "docstatus", "modified"])}

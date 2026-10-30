@@ -11,7 +11,7 @@ import frappe
 from frappe import _
 from frappe.model.naming import make_autoname
 from frappe.model.document import Document
-from frappe.utils import add_days, cint, flt, nowdate
+from frappe.utils import add_days, cint, flt, getdate, nowdate
 
 PP_SIMPLE_FIELDS = [
     "naming_series",
@@ -1627,7 +1627,9 @@ def _build_stage_subcontracting_rows(source, qty_map_override=None):
         or source.get("almacen_trabajo_en_proceso")
         or source.get("for_warehouse")
     )
-    default_schedule_date = source.get("posting_date") or source.get("fecha") or nowdate()
+    # La orden se hace hoy: la fecha del costeo (cuando se capturó el proyecto) dejaba
+    # las órdenes fechadas en el pasado y con fecha requerida ya vencida.
+    default_schedule_date = max(getdate(source.get("posting_date") or source.get("fecha") or nowdate()), getdate(nowdate()))
 
     etapas_por_producto = {}
     for row in source.get("tabla_etapas_costeo") or []:
@@ -1799,7 +1801,7 @@ def _create_subcontracting_pos_from_stages(source, stage_rows, sales_order=None)
         po.company = company
         po.supplier = supplier
         po.is_subcontracted = 1
-        po.transaction_date = source.get("posting_date") or source.get("fecha") or nowdate()
+        po.transaction_date = nowdate()
         # Fecha/almacén por defecto del grupo: los de la PRIMERA etapa -- cada línea
         # de todos modos trae los suyos propios (schedule_date/warehouse a nivel de
         # renglón), esto solo alimenta el default del selector si alguien agrega una

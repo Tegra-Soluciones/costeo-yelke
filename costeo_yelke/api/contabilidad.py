@@ -57,13 +57,24 @@ def asegurar_recepcion_servicio(scr_name):
     from erpnext.subcontracting.doctype.subcontracting_receipt.subcontracting_receipt import (
         make_purchase_receipt,
     )
-    pr = make_purchase_receipt(scr_name)
-    if not pr.get("items"):
-        return None
-    pr.flags.ignore_permissions = True
-    pr.insert()
-    pr.submit()
-    return pr.name
+    # Es un paso automático del sistema, no una captura: quien valida el recibo del
+    # taller (Talleres) no tiene por qué poder crear recepciones de compra, y el mapeo
+    # de ERPNext revisa el permiso de "crear" sin opción de saltarlo. Se hace como
+    # Administrator y se regresa al usuario. Sin esto, los recibos que validaba
+    # Talleres se quedaban sin recepción de servicio y la OC de maquila no llegaba al
+    # 100% (ni se podía facturar).
+    usuario = frappe.session.user
+    try:
+        frappe.set_user("Administrator")
+        pr = make_purchase_receipt(scr_name)
+        if not pr.get("items"):
+            return None
+        pr.flags.ignore_permissions = True
+        pr.insert()
+        pr.submit()
+        return pr.name
+    finally:
+        frappe.set_user(usuario)
 
 
 def despues_de_validar_recibo_taller(doc, method=None):
@@ -355,3 +366,15 @@ def bloquear_borrado_cancelado(doc, method=None):
     if doc.docstatus == 2 and not frappe.flags.get("permitir_borrar_cancelados"):
         frappe.throw(_("{0} {1} está cancelado: no se borra para no reutilizar su folio.")
                      .format(_(doc.doctype), doc.name))
+
+
+def sin_fecha_futura(doc, method=None):
+    """validate de remisión, recibos y movimientos de almacén: la fecha no puede ser
+    futura. Con costo promedio, una salida fechada a futuro se revalúa con cada entrada
+    anterior a esa fecha -- la remisión de un proyecto ya cerrado cambiaba de costo al
+    recibir las prendas del siguiente."""
+    from frappe.utils import getdate, nowdate
+
+    if doc.get("posting_date") and getdate(doc.posting_date) > getdate(nowdate()):
+        frappe.throw(_("La fecha de {0} no puede ser futura ({1}): usa la fecha de hoy o una anterior.").format(
+            _(doc.doctype), frappe.utils.formatdate(doc.posting_date)))

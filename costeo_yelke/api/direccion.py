@@ -205,7 +205,8 @@ def _resumen_compra(doc):
         if respaldo:
             resumen.append(_t(_("Respaldo"), ", ".join(respaldo)))
     alertas = []
-    if doc.doctype == "Purchase Invoice" and doc.meta.has_field("factura_pdf") and not doc.get("factura_pdf"):
+    if (doc.doctype == "Purchase Invoice" and doc.meta.has_field("factura_pdf") and not doc.get("factura_pdf")
+            and not frappe.db.get_value("Supplier", doc.supplier, "sin_alta_sat")):  # sin alta en el SAT: no emite factura
         alertas.append({"tono": "bad", "texto": _("Falta el PDF de la factura. Sin él no se puede aprobar.")})
     return resumen, _renglones(doc, moneda), alertas, moneda
 

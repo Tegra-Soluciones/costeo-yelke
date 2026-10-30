@@ -7,8 +7,8 @@ from costeo_yelke.api.costeo_api import adjuntar_info_variante, sincronizar_qty_
 
 
 @frappe.whitelist()
-def get_sales_order_form_defaults():
-    company = frappe.db.get_default("company") or ""
+def get_sales_order_form_defaults(company=None):
+    company = company or frappe.db.get_default("company") or ""
 
     customers = frappe.get_all(
         "Customer",

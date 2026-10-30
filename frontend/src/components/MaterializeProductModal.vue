@@ -268,8 +268,9 @@ function suggestCode(text) {
     .toUpperCase()
     .normalize("NFD").replace(/[̀-ͯ]/g, "")
     .replace(/[^A-Z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 30);
+    .slice(0, 30)
+    // Después de recortar: si el corte cae en un guion, no se deja colgando.
+    .replace(/^-+|-+$/g, "");
 }
 
 function addRango() {

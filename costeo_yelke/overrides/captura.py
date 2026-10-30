@@ -106,11 +106,17 @@ def cp_mx(v):
     return d
 
 
+# Ciudades con clave de 2 dígitos: su número se escribe 2-4-4 (33 3122 4455).
+_LADA_2 = ("33", "55", "56", "81")
+
+
 def telefono_mx(v):
-    """10 dígitos como `442 467 8939`; quita +52 / 52 / 521. Conserva una extensión."""
+    """10 dígitos como `442 467 8939` (o `33 3122 4455` en Guadalajara, CDMX y
+    Monterrey); quita +52 / 52 / 521. Conserva una extensión como `#12`: el campo de
+    teléfono de ERPNext no acepta letras ("ext") y rechazaba guardar."""
     if not (v or "").strip():
         return ""
-    partes = re.split(r"(?i)\s*(?:ext\.?|extensi[oó]n|x)\s*(?=\d)", v.strip(), maxsplit=1)
+    partes = re.split(r"(?i)\s*(?:ext\.?|extensi[oó]n|x|#)\s*(?=\d)", v.strip(), maxsplit=1)
     # Extensión sin "ext": 10 dígitos y, separada por espacios, la extensión
     # («462 623 8480  4756»).
     m = re.fullmatch(r"\D*((?:\d\D*){10})\s+(\d{1,5})", partes[0]) if len(partes) == 1 else None
@@ -123,9 +129,9 @@ def telefono_mx(v):
         d = d[2:]
     if len(d) != 10:
         raise Invalido(_("El teléfono «{0}» debe tener 10 dígitos (ej. 442 467 8939).").format(v.strip()))
-    numero = f"{d[:3]} {d[3:6]} {d[6:]}"
+    numero = f"{d[:2]} {d[2:6]} {d[6:]}" if d[:2] in _LADA_2 else f"{d[:3]} {d[3:6]} {d[6:]}"
     ext = re.sub(r"\D", "", partes[1]) if len(partes) > 1 else ""
-    return f"{numero} ext {ext}" if ext else numero
+    return f"{numero} #{ext}" if ext else numero
 
 
 def telefono_libre(v):

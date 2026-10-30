@@ -10,6 +10,8 @@ const routes = [
   // `movil`: en celular se pinta sin el menú ni la barra de la app (App.vue).
   { path: "/direccion", name: "Direccion", component: () => import("@/pages/DireccionPage.vue"), meta: { movil: true } },
   { path: "/inicio", name: "Dashboard", component: () => import("@/pages/DashboardPage.vue") },
+  { path: "/asignaciones", name: "Asignaciones", component: () => import("@/pages/AsignacionesPage.vue") },
+  { path: "/encargos", redirect: "/asignaciones" },
   { path: "/costeo", name: "CosteoList", component: () => import("@/pages/CosteoListPage.vue") },
   { path: "/costeo/nuevo", name: "CosteoNuevo", component: () => import("@/pages/CosteoDetailPage.vue") },
   { path: "/costeo/:name", name: "CosteoDetail", component: () => import("@/pages/CosteoDetailPage.vue"), props: true },

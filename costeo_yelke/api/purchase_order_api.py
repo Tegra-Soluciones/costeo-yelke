@@ -6,8 +6,8 @@ from costeo_yelke.roles import puede_aprobar_documentos, puede_revisar_documento
 
 
 @frappe.whitelist()
-def get_purchase_order_form_defaults():
-    company = frappe.db.get_default("company") or ""
+def get_purchase_order_form_defaults(company=None):
+    company = company or frappe.db.get_default("company") or ""
 
     suppliers = frappe.get_all(
         "Supplier",
@@ -226,7 +226,7 @@ def save_purchase_order(data):
         row.conversion_factor = float(r.get("conversion_factor") or 1)
         row.rate              = float(r.get("rate") or 0)
         row.discount_percentage = float(r.get("discount_percentage") or 0)
-        row.warehouse         = r.get("warehouse") or ""
+        row.warehouse         = r.get("warehouse") or _almacen_default(r["item_code"], doc.company)
         row.schedule_date     = r.get("schedule_date") or schedule_date
         # Preservar el vínculo con la Solicitud de Material si la fila ya lo traía --
         # sin esto, cualquier guardado (ej. cambiar proveedor/UDM/precio) lo borraba en
@@ -248,6 +248,17 @@ def save_purchase_order(data):
 
     frappe.db.commit()
     return get_purchase_order(doc.name)
+
+
+def _almacen_default(item_code, company):
+    """La pantalla de OC no pide almacén y ERPNext lo exige en artículos de inventario:
+    el del artículo en esa compañía, si no el de materia prima de la compañía."""
+    if not company:
+        return ""
+    return (frappe.db.get_value("Item Default", {"parent": item_code, "company": company}, "default_warehouse")
+            or frappe.db.get_value("Warehouse", {"company": company, "is_group": 0, "disabled": 0,
+                                                 "warehouse_name": ["like", "Materia Prima%"]}, "name")
+            or "")
 
 
 @frappe.whitelist()

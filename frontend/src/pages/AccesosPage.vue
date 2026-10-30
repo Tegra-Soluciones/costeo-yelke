@@ -87,7 +87,11 @@
                   </td>
                   <td class="p-meta">{{ u.pase_libre ? "Todo" : resumen(u.niveles) }}</td>
                   <td class="p-meta">{{ u.prestamos.length ? u.prestamos.map((x) => `de ${x.de} hasta ${x.hasta}`).join(", ") : "—" }}</td>
-                  <td class="text-right"><button v-if="!u.pase_libre" type="button" class="text-[12px] text-brand-600 hover:text-brand-700" @click="verComo(u.nombre, u.niveles)">Ver como…</button></td>
+                  <td class="text-right whitespace-nowrap">
+                    <!-- Sin puesto: sus vistas se cambian aquí (con puesto, en el puesto). -->
+                    <button v-if="!u.pase_libre && !u.perfil" type="button" class="text-[12px] text-brand-600 hover:text-brand-700 mr-3" @click="editarUsuario(u)">Editar vistas</button>
+                    <button v-if="!u.pase_libre" type="button" class="text-[12px] text-brand-600 hover:text-brand-700" @click="verComo(u.nombre, u.niveles)">Ver como…</button>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -95,6 +99,24 @@
         </template>
       </div>
     </div>
+
+    <!-- Vistas de un usuario sin puesto (api/accesos.guardar_usuario): conserva sus demás roles. -->
+    <PanelLateral
+      :abierto="!!usuarioEd" eyebrow="Vistas del usuario" :titulo="usuarioEd?.nombre || ''" :meta="usuarioEd?.usuario || ''"
+      :acciones="[{ texto: 'Cancelar', accion: () => (usuarioEd = null) }, { texto: ocupado ? 'Guardando…' : 'Guardar', tipo: 'primaria', accion: guardarUsuario }]"
+      :ocupado="ocupado" @cerrar="usuarioEd = null"
+    >
+      <p class="p-meta mb-4">No tiene puesto: sus vistas se cambian aquí y sus demás permisos (aprobar, enviar a aprobación…) se conservan.</p>
+      <div v-for="g in grupos" :key="g.grupo" class="mb-4">
+        <p class="p-eyebrow mb-1.5">{{ g.grupo }}</p>
+        <div v-for="v in g.vistas" :key="v.clave" class="flex items-center justify-between gap-3 py-1.5 border-b border-surface-border/70 last:border-0">
+          <span class="text-[13px]" :title="v.descripcion">{{ v.etiqueta }}</span>
+          <select v-model="nivelesEd[v.clave]" class="p-field h-8 py-0 text-[12.5px] w-28">
+            <option value="">—</option><option value="ver">Ver</option><option value="editar">Editar</option>
+          </select>
+        </div>
+      </div>
+    </PanelLateral>
   </div>
 </template>
 
@@ -103,6 +125,7 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { call } from "@/utils/frappe.js";
 import { simular } from "@/composables/useAccesos.js";
+import PanelLateral from "@/components/produccion/PanelLateral.vue";
 
 const router = useRouter();
 const m = ref(null);
@@ -173,6 +196,22 @@ async function asignar(u, perfil) {
     await call("costeo_yelke.api.accesos.asignar_perfil", { usuario: u.usuario, perfil: perfil || null });
     await cargar();
   } catch (e) { error.value = e.message || "No se pudo cambiar el puesto."; }
+  finally { ocupado.value = false; }
+}
+
+const usuarioEd = ref(null);
+const nivelesEd = reactive({});
+function editarUsuario(u) {
+  for (const v of m.value.vistas) nivelesEd[v.clave] = u.niveles[v.clave] || "";
+  usuarioEd.value = u;
+}
+async function guardarUsuario() {
+  ocupado.value = true; error.value = "";
+  try {
+    await call("costeo_yelke.api.accesos.guardar_usuario", { usuario: usuarioEd.value.usuario, niveles: JSON.stringify(limpio(nivelesEd)) });
+    usuarioEd.value = null;
+    await cargar();
+  } catch (e) { error.value = e.message || "No se pudieron guardar las vistas."; }
   finally { ocupado.value = false; }
 }
 

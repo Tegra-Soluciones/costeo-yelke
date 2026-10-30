@@ -37,7 +37,7 @@ export const PASOS_TALLER = ["encargo", "envio", "recibo"];
 // "talleres" acepta los dos roles: la matriz es de Flujo (ahí se encargan las
 // piezas) y el detalle de cada taller es de Talleres.
 export const VISTA_DE_PASO_LOTE = {
-  materia: "materia", talleres: ["flujo", "talleres"], entrega: "entrega",
+  materia: ["materia", "envios"], talleres: ["flujo", "talleres", "envios"], entrega: "entrega",
 };
 
 export function useProduccionRuta(route, router, { costeo, sales_order } = {}) {

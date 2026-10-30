@@ -179,8 +179,8 @@ function suggestCode(text) {
     .toUpperCase()
     .normalize("NFD").replace(/[̀-ͯ]/g, "")
     .replace(/[^A-Z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 30);
+    .slice(0, 30)
+    .replace(/^-+|-+$/g, "");
 }
 
 function addConversion() {

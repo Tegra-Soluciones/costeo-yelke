@@ -48,7 +48,7 @@
         <div v-if="doc.transaction_date"><label class="field-label">Fecha</label><div class="field-input bg-surface-raised/60">{{ doc.transaction_date }}</div></div>
         <div v-if="doc.has_posting_date">
           <label class="field-label">Fecha de recepción</label>
-          <input v-if="!isValidated" v-model="form.posting_date" type="date" class="field-input" />
+          <input v-if="!isValidated" v-model="form.posting_date" type="date" :max="hoyLocal" class="field-input" />
           <div v-else class="field-input bg-surface-raised/60">{{ form.posting_date || '—' }}</div>
         </div>
         <div v-if="doc.has_schedule_date">
@@ -219,6 +219,9 @@ import DocStatusPill from "./DocStatusPill.vue";
 import LinkInput from "./LinkInput.vue";
 import MultiploCompraModal from "./MultiploCompraModal.vue";
 import { call, FILTRO_TRANSPORTISTA } from "@/utils/frappe.js";
+
+// Recibos sin fecha futura (ver contabilidad.sin_fecha_futura).
+const hoyLocal = new Date().toLocaleDateString("en-CA");
 
 // Panel genérico para ver/editar CUALQUIER documento de compra-producción (OC, RFQ,
 // Presupuesto de proveedor, Recibo de compra, OC de subcontratación...) -- todos

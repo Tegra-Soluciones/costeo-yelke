@@ -162,6 +162,10 @@ def get_actividad(doctype: str, name: str) -> dict:
                         "texto": _("recibió un correo") if recibido else _("mandó por correo a {0}").format(m.recipients or ""),
                         "cita": m.subject, "en": m.creation})
 
+    if doctype == "Costeo":
+        from costeo_yelke.api.encargos import eventos_actividad
+        eventos += eventos_actividad(name)
+
     eventos.sort(key=lambda e: e["en"])
     usuarios = {e["usuario"] for e in eventos if e.get("usuario")}
     perfiles = {u.name: u for u in frappe.get_all("User", filters={"name": ["in", list(usuarios)]},
@@ -197,6 +201,9 @@ def agregar_comentario(doctype: str, name: str, texto: str) -> dict:
             destino, ruta = [autor], _ruta_doc(doctype, name)
         _avisar(destino, _("{0} comentó en {1}").format(quien, _describir(doc)), doctype, name,
                 mensaje=texto, ruta=ruta, correo=False)
+    # Encargos abiertos del proyecto: el comentario le llega a la contraparte.
+    from costeo_yelke.api.encargos import avisar_comentario
+    avisar_comentario(name if doctype == "Costeo" else doc.get("costeo"), texto)
     return get_actividad(doctype, name)
 
 

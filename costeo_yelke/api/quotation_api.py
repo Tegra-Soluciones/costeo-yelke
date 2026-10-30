@@ -7,9 +7,9 @@ from costeo_yelke.api.costeo_api import adjuntar_info_variante, sincronizar_qty_
 
 
 @frappe.whitelist()
-def get_quotation_form_defaults():
+def get_quotation_form_defaults(company=None):
     """Returns data needed to populate the Quotation form."""
-    company = frappe.db.get_default("company") or ""
+    company = company or frappe.db.get_default("company") or ""
 
     customers = frappe.get_all(
         "Customer",
