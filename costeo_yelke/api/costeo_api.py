@@ -2254,14 +2254,21 @@ def asignar_documento(doctype: str, name: str, assign_to: str, description: str 
     if not users:
         frappe.throw(_("Indica al menos un usuario."))
 
-    add({
-        "assign_to": users,
-        "doctype": doctype,
-        "name": name,
-        "description": description or f"{doctype} {name}",
-    })
-    # El aviso de ERPNext ("assigned a new task") va sin correo (hooks.py,
-    # notification_skip_email_types): el correo sale con el diseño de Yelke.
+    # El aviso de ERPNext ("assigned a new task", en inglés y con su correo genérico) se
+    # omite mientras se asigna: el aviso sale abajo, en la campana y con el diseño de Yelke.
+    from frappe.desk.form import assign_to
+
+    nativo = assign_to.notify_assignment
+    assign_to.notify_assignment = lambda *a, **k: None
+    try:
+        add({
+            "assign_to": users,
+            "doctype": doctype,
+            "name": name,
+            "description": description or f"{doctype} {name}",
+        })
+    finally:
+        assign_to.notify_assignment = nativo
     from costeo_yelke.api.aprobaciones import _avisar, _describir, _ruta_doc
 
     _avisar(users, _("{0} te asignó {1}").format(frappe.utils.get_fullname(), _describir(frappe.get_doc(doctype, name))),
