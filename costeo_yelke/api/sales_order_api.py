@@ -217,6 +217,13 @@ def save_sales_order(data):
     # la misma descripción (que lleva el desglose en texto).
     desglose_previo = {(x.item_code, (x.description or "").strip()): x.get("desglose_tallas")
                        for x in doc.items if x.get("desglose_tallas")}
+    # La liga con el renglón de la cotización (la llena _ligar_orden_venta_a_cotizacion)
+    # tampoco viaja: sin ella la cotización se quedaba «Abierta» aunque ya se vendió.
+    # Se conserva por artículo, en el mismo orden.
+    ligas_cotizacion = {}
+    for x in doc.items:
+        if x.get("quotation_item"):
+            ligas_cotizacion.setdefault(x.item_code, []).append((x.prevdoc_docname, x.quotation_item))
     doc.items = []
     for r in data.get("items") or []:
         if not r.get("item_code"):
@@ -242,6 +249,8 @@ def save_sales_order(data):
             row.desglose_tallas = r.get("desglose_tallas")
         else:
             row.desglose_tallas = desglose_previo.get((row.item_code, (row.description or "").strip()))
+        if ligas_cotizacion.get(row.item_code):
+            row.prevdoc_docname, row.quotation_item = ligas_cotizacion[row.item_code].pop(0)
 
     doc.flags.ignore_permissions = True
     doc.flags.ignore_mandatory   = True

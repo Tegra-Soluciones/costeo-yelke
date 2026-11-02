@@ -1108,14 +1108,8 @@
                 <div class="flex items-end justify-between gap-3 mb-3">
                   <div>
                     <p class="p-eyebrow">Desglose por talla · tallas regulares</p>
-                    <p class="p-meta mt-0.5">Debe sumar exacto la cantidad del producto.</p>
+                    <p class="p-meta mt-0.5">Debe sumar exacto la cantidad del producto para validar. Se guarda con «Guardar cambios» o «Validar orden».</p>
                   </div>
-                  <button
-                    type="button"
-                    :disabled="soDesgloseSaving"
-                    class="p-btn-secondary h-8 text-[12.5px] flex-shrink-0"
-                    @click="guardarDesgloseOV(so)"
-                  >{{ soDesgloseSaving ? "Guardando…" : "Guardar desglose" }}</button>
                 </div>
                 <div class="rounded-xl bg-white border border-surface-border divide-y divide-surface-border">
                   <div v-for="d in soDesgloseForm" :key="d.row" class="px-4 py-3">
@@ -1176,14 +1170,8 @@
                 <div class="flex items-end justify-between gap-3 mb-3">
                   <div>
                     <p class="p-eyebrow">Tallas extra</p>
-                    <p class="p-meta mt-0.5">Piezas que confirmó el cliente por talla. Con 0 se quita del pedido.</p>
+                    <p class="p-meta mt-0.5">Piezas que confirmó el cliente por talla. Con 0 se quita del pedido. Se guarda con «Guardar cambios» o «Validar orden».</p>
                   </div>
-                  <button
-                    type="button"
-                    :disabled="soVariantesSaving || soVariantesLoading"
-                    class="p-btn-secondary h-8 text-[12.5px] flex-shrink-0"
-                    @click="guardarVariantesOV(so)"
-                  >{{ soVariantesSaving ? "Guardando…" : "Guardar cantidades" }}</button>
                 </div>
                 <div v-if="soVariantesLoading" class="p-meta py-2 text-center">Cargando…</div>
                 <div v-else class="space-y-3">
@@ -4393,7 +4381,6 @@ const productosApilados = computed(() => {
 
 // ── Desglose por talla del producto principal (api/tallas_ov.py) ──
 const soDesgloseForm = ref([]);
-const soDesgloseSaving = ref(false);
 // De qué OV (y en qué estado) es lo que hay cargado ahora en soDesgloseForm.
 // Sirve para poder llamar al cargador desde varios lados sin repetir la llamada
 // ni pisar lo que el usuario esté capturando.
@@ -4422,34 +4409,29 @@ async function loadSoDesgloseForm(so, forzar = false) {
     });
   } catch { soDesgloseForm.value = []; soDesgloseDe.value = null; }
 }
-async function guardarDesgloseOV(so) {
+// Guarda el desglose regular de la OV (lo usan su botón y «Guardar cambios»/«Validar
+// orden»). Puede ir a medias mientras la OV está en borrador; exacto se exige al validar.
+async function persistirDesgloseOV(so) {
+  if (!soDesgloseForm.value.length || soDesgloseDe.value !== `${so.name}:0`) return;
   for (const d of soDesgloseForm.value) {
     const suma = sumaDesglose(d);
-    if (suma && suma !== d.qty) {
-      showToast(`El desglose de "${d.item_name}" suma ${suma} y el producto lleva ${d.qty}: debe coincidir exacto`, "error");
-      return;
-    }
+    if (suma > d.qty) throw new Error(`El desglose de "${d.item_name}" suma ${suma} y el producto lleva ${d.qty}`);
   }
-  soDesgloseSaving.value = true;
-  try {
-    for (const d of soDesgloseForm.value) {
-      limpiarDesglose(d);
-      const filas = Object.entries(d.valores).filter(([, q]) => Number(q) > 0).map(([talla, qty]) => ({ talla, qty: Number(qty) }));
-      await call("costeo_yelke.api.tallas_ov.guardar_desglose_tallas_ov", { sales_order: so.name, row: d.row, filas: JSON.stringify(filas) });
-    }
-    await loadRelated();
-    previewKey.value++;
-    await loadSoDesgloseForm(so, true);
-    showToast("Desglose guardado -- ya aparece en la descripción y en la orden de manufactura");
-  } catch (e) {
-    showToast(e.message || "No se pudo guardar el desglose", "error");
-  } finally {
-    soDesgloseSaving.value = false;
+  // Guardar las tallas extra reconstruye los renglones de la OV (cambian de nombre):
+  // se vuelve a pedir el renglón vigente de cada producto antes de escribirle su desglose.
+  const vigentes = await call("costeo_yelke.api.tallas_ov.get_desglose_tallas_ov", { sales_order: so.name }) || [];
+  for (const d of soDesgloseForm.value) {
+    const actual = vigentes.find((v) => v.row === d.row) || vigentes.find((v) => v.item_code === d.item_code);
+    if (actual) d.row = actual.row;
+  }
+  for (const d of soDesgloseForm.value) {
+    limpiarDesglose(d);
+    const filas = Object.entries(d.valores).filter(([, q]) => Number(q) > 0).map(([talla, qty]) => ({ talla, qty: Number(qty) }));
+    await call("costeo_yelke.api.tallas_ov.guardar_desglose_tallas_ov", { sales_order: so.name, row: d.row, filas: JSON.stringify(filas) });
   }
 }
 const soVariantesForm = ref([]);
 const soVariantesLoading = ref(false);
-const soVariantesSaving = ref(false);
 // Igual que soDesgloseDe: de qué OV y en qué estado es lo que está cargado.
 const soVariantesDe = ref(null);
 
@@ -4563,69 +4545,58 @@ async function loadSoVariantesForm(so, forzar = false) {
   }
 }
 
-async function guardarVariantesOV(so) {
-  // La suma del desglose debe coincidir EXACTO con la cantidad total de esa
-  // línea -- ni de más (piezas que no se están vendiendo) ni de menos
-  // (piezas sin talla asignada).
+// Guarda las tallas extra confirmadas de la OV (lo usan su botón y «Guardar
+// cambios»/«Validar orden»).
+async function persistirVariantesOV(so) {
+  if (!soVariantesForm.value.length || soVariantesDe.value !== `${so.name}:0`) return;
   // El total de cada variante es la suma de sus tallas.
   for (const v of soVariantesForm.value) v.qty = totalVariante(v);
-  soVariantesSaving.value = true;
-  try {
-    const data = await call("costeo_yelke.api.sales_order_api.get_sales_order", { name: so.name });
-    const variantCodes = new Set(soVariantesForm.value.map(v => v.item_code));
-    // Las líneas que NO son variantes se mandan tal cual venían -- esta sección
-    // solo toca las de variante, nunca el resto de los productos de la orden.
-    const items = (data.items || [])
-      .filter(it => !variantCodes.has(it.item_code))
-      .map(it => ({
-        item_code: it.item_code, item_name: it.item_name, description: it.description,
-        qty: it.qty, uom: it.uom, conversion_factor: it.conversion_factor,
-        rate: it.rate, discount_percentage: it.discount_percentage,
-        warehouse: it.warehouse, delivery_date: it.delivery_date,
-      }));
-    // Almacén de referencia para una variante que se agrega por primera vez --
-    // el mismo de cualquier otra línea ya presente (todas entregan del mismo
-    // almacén). set_missing_values() no lo completa solo en un save() sobre un
-    // documento ya existente (a diferencia de un insert() nuevo), así que hay
-    // que mandarlo explícito o la línea nueva queda sin almacén y truena.
-    const almacenRef = items[0]?.warehouse || "";
-    const incluidas = soVariantesForm.value.filter(v => Number(v.qty) > 0);
-    // Descripción (con el desglose por talla, si hay más de una en el grupo)
-    // y UOM correctos, armados del lado del servidor con la misma lógica que
-    // ya usa crear_cotizacion/crear_orden_venta -- reconstruirlos a mano aquí
-    // ya se le olvidó el UOM una vez.
-    const desglose = {}, cantidades = {};
-    for (const v of incluidas) {
-      desglose[v.item_code] = Object.fromEntries(Object.entries(v.desglose).filter(([, q]) => Number(q) > 0));
-      cantidades[v.item_code] = v.qty;
-    }
-    // Precio de cada variante: su tabla por volumen para esa cantidad, o su precio de venta.
-    const lineas = incluidas.length
-      ? await call("costeo_yelke.api.costeo_api.lineas_venta_variantes", {
-          costeo: docName.value, finished_items: JSON.stringify(incluidas.map(v => v.item_code)),
-          desglose: JSON.stringify(desglose), cantidades: JSON.stringify(cantidades),
-        })
-      : {};
-    for (const v of incluidas) {
-      const linea = lineas[v.item_code] || {};
-      items.push({
-        item_code: v.item_code, qty: v.qty, rate: linea.rate || v.rate,
-        description: linea.description || "", uom: linea.uom || "",
-        warehouse: almacenRef, delivery_date: data.delivery_date,
-      });
-    }
-    await call("costeo_yelke.api.sales_order_api.save_sales_order", {
-      data: JSON.stringify({ name: so.name, items }),
-    });
-    await loadRelated();
-    previewKey.value++;
-    await loadSoVariantesForm(so, true);
-    showToast("Cantidades guardadas -- se reflejarán en el Costeo al Validar esta orden");
-  } catch (e) {
-    showToast(e.message || "No se pudieron guardar las cantidades", "error");
-  } finally {
-    soVariantesSaving.value = false;
+  const data = await call("costeo_yelke.api.sales_order_api.get_sales_order", { name: so.name });
+  const variantCodes = new Set(soVariantesForm.value.map(v => v.item_code));
+  // Las líneas que NO son variantes se mandan tal cual venían -- esta sección
+  // solo toca las de variante, nunca el resto de los productos de la orden.
+  const items = (data.items || [])
+    .filter(it => !variantCodes.has(it.item_code))
+    .map(it => ({
+      item_code: it.item_code, item_name: it.item_name, description: it.description,
+      qty: it.qty, uom: it.uom, conversion_factor: it.conversion_factor,
+      rate: it.rate, discount_percentage: it.discount_percentage,
+      warehouse: it.warehouse, delivery_date: it.delivery_date,
+    }));
+  // Almacén de referencia para una variante que se agrega por primera vez --
+  // el mismo de cualquier otra línea ya presente (todas entregan del mismo
+  // almacén). set_missing_values() no lo completa solo en un save() sobre un
+  // documento ya existente (a diferencia de un insert() nuevo), así que hay
+  // que mandarlo explícito o la línea nueva queda sin almacén y truena.
+  const almacenRef = items[0]?.warehouse || "";
+  const incluidas = soVariantesForm.value.filter(v => Number(v.qty) > 0);
+  // Descripción (con el desglose por talla, si hay más de una en el grupo)
+  // y UOM correctos, armados del lado del servidor con la misma lógica que
+  // ya usa crear_cotizacion/crear_orden_venta -- reconstruirlos a mano aquí
+  // ya se le olvidó el UOM una vez.
+  const desglose = {}, cantidades = {};
+  for (const v of incluidas) {
+    desglose[v.item_code] = Object.fromEntries(Object.entries(v.desglose).filter(([, q]) => Number(q) > 0));
+    cantidades[v.item_code] = v.qty;
   }
+  // Precio de cada variante: su tabla por volumen para esa cantidad, o su precio de venta.
+  const lineas = incluidas.length
+    ? await call("costeo_yelke.api.costeo_api.lineas_venta_variantes", {
+        costeo: docName.value, finished_items: JSON.stringify(incluidas.map(v => v.item_code)),
+        desglose: JSON.stringify(desglose), cantidades: JSON.stringify(cantidades),
+      })
+    : {};
+  for (const v of incluidas) {
+    const linea = lineas[v.item_code] || {};
+    items.push({
+      item_code: v.item_code, qty: v.qty, rate: linea.rate || v.rate,
+      description: linea.description || "", uom: linea.uom || "",
+      warehouse: almacenRef, delivery_date: data.delivery_date,
+    });
+  }
+  await call("costeo_yelke.api.sales_order_api.save_sales_order", {
+    data: JSON.stringify({ name: so.name, items }),
+  });
 }
 // "OV activa": la que filtra Producir/Enviar/Facturar/Reportar -- por default sigue a
 // la expandida en Vender, pero se puede fijar aparte (selector en esos pasos) sin
@@ -9384,28 +9355,46 @@ async function guardarBorradorOrdenVenta() {
   } catch (e) { showToast(e.message || "No se pudo guardar la orden de venta", "error"); }
   finally { advancing.value = false; }
 }
+// Todo lo editable de la OV en borrador, de un solo golpe: sus datos, las tallas extra
+// y el desglose por talla. Lo usan «Guardar cambios», «Validar orden» y el envío a
+// aprobación, para no tener que guardar cada recuadro por separado.
+async function persistirOrdenVenta(name) {
+  await call("costeo_yelke.api.costeo_api.actualizar_orden_venta", {
+    name,
+    delivery_date: soForm.delivery_date || null,
+    payment_terms_template: soForm.payment_terms_template || null,
+    tc_name: soForm.tc_name || null,
+    po_no: soForm.po_no || null,
+    currency: soForm.currency || null,
+    selling_price_list: soForm.selling_price_list || null,
+    taxes_and_charges: soForm.taxes_and_charges || null,
+    contact_email: soForm.contact_email || null,
+    contact_mobile: soForm.contact_mobile || null,
+  });
+  const so = related.sales_orders.find((x) => x.name === name);
+  if (so && so.docstatus === 0) {
+    // Primero las tallas extra (reescriben las líneas de variante) y al final el
+    // desglose regular, que reescribe la descripción del producto principal.
+    await persistirVariantesOV(so);
+    await persistirDesgloseOV(so);
+  }
+}
 async function guardarCambiosOrdenVenta() {
   const name = expandedSOName.value;
   if (!name) return;
   advancing.value = true;
   try {
-    await call("costeo_yelke.api.costeo_api.actualizar_orden_venta", {
-      name,
-      delivery_date: soForm.delivery_date || null,
-      payment_terms_template: soForm.payment_terms_template || null,
-      tc_name: soForm.tc_name || null,
-      po_no: soForm.po_no || null,
-      currency: soForm.currency || null,
-      selling_price_list: soForm.selling_price_list || null,
-      taxes_and_charges: soForm.taxes_and_charges || null,
-      contact_email: soForm.contact_email || null,
-      contact_mobile: soForm.contact_mobile || null,
-    });
-    await loadRelated();
-    previewKey.value++;
+    await persistirOrdenVenta(name);
+    await recargarFormulariosOV(name);
     showToast("Cambios guardados");
   } catch (e) { showToast(e.message || "No se pudieron guardar los cambios", "error"); }
   finally { advancing.value = false; }
+}
+async function recargarFormulariosOV(name) {
+  await loadRelated();
+  previewKey.value++;
+  const so = related.sales_orders.find((x) => x.name === name);
+  if (so) await Promise.all([loadSoDesgloseForm(so, true), loadSoVariantesForm(so, true)]);
 }
 
 // ── Validar / borrador ──
@@ -9563,6 +9552,8 @@ async function validarDoc(doctype, name, after) {
     if (doctype === "Quotation" || doctype === "Sales Order") {
       if (!(await saveDoc())) return;
     }
+    // La OV se valida con lo que se ve en pantalla: sus datos, tallas extra y desglose.
+    if (doctype === "Sales Order") await persistirOrdenVenta(name);
     const res = await call("costeo_yelke.api.costeo_api.validar_documento", { doctype, name });
     await loadRelated();
     previewKey.value++;

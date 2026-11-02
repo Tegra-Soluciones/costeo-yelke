@@ -77,7 +77,7 @@ def get_desglose_tallas_ov(sales_order: str) -> list:
 @frappe.whitelist()
 def guardar_desglose_tallas_ov(sales_order: str, row: str, filas) -> dict:
     """Guarda el desglose por talla de un renglón de producto principal.
-    `filas` = [{"talla": <código Talla>, "qty": n}]; la suma debe ser la cantidad del renglón."""
+    `filas` = [{"talla": <código Talla>, "qty": n}]; la suma no puede pasar de la cantidad del renglón."""
     requiere_vista("vender")  # accesos por vista
     filas = frappe.parse_json(filas) if isinstance(filas, str) else (filas or [])
     so = frappe.get_doc("Sales Order", sales_order)
@@ -97,9 +97,11 @@ def guardar_desglose_tallas_ov(sales_order: str, row: str, filas) -> dict:
         etiqueta, genero = _etiqueta(f["talla"])
         limpias.append({"talla": f["talla"], "etiqueta": etiqueta, "genero": genero, "qty": int(qty)})
 
+    # En borrador puede ir a medias (se guarda el avance); exacto se exige al validar la
+    # OV (validar_desglose_ov). De más, nunca.
     suma = sum(f["qty"] for f in limpias)
-    if limpias and suma != flt(it.qty):
-        frappe.throw(_("El desglose suma {0} piezas y el producto lleva {1}: debe coincidir exacto.").format(
+    if suma > flt(it.qty):
+        frappe.throw(_("El desglose suma {0} piezas y el producto lleva {1}.").format(
             cint(suma), cint(it.qty)))
 
     base = quitar_bloque(it.description)
