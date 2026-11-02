@@ -5773,13 +5773,17 @@ def get_plan_detail(costeo: str, sales_order: str = None) -> dict:
     from costeo_yelke.api.tallas_ov import desglose_de_ov
     so_plan = pp.sales_orders[0].sales_order if pp.get("sales_orders") else None
     tallas_plan = {}
-    for code, filas in (desglose_de_ov(so_plan) if so_plan else {}).items():
-        filas = [f for f in filas if flt(f.get("cantidad")) > 0]
-        # Con Caballero y Dama en el mismo producto, el género va delante de la talla.
-        con_genero = len({f.get("genero") for f in filas}) > 1
-        tallas_plan[code] = " · ".join(
-            f"{(f.get('genero') + ' ') if con_genero and f.get('genero') else ''}{(f.get('talla') or '').strip()} ×{cint(f.get('cantidad'))}"
-            for f in filas)
+    generos = {t.finished_item: t.genero for t in frappe.get_all(
+        "Costeo Producto Talla", filters={"parent": costeo}, fields=["finished_item", "genero"]) if t.genero}
+    for code, filas in (desglose_de_ov(so_plan, generos) if so_plan else {}).items():
+        # Agrupadas por género y en orden de talla, como en los formatos de impresión.
+        grupos = {}
+        for f in filas:
+            if flt(f.get("cantidad")) > 0:
+                grupos.setdefault(f.get("genero") or "", []).append(
+                    {"talla": (f.get("talla") or "").strip(), "cantidad": cint(f.get("cantidad"))})
+        orden = lambda t: (0, float(t["talla"])) if t["talla"].replace(".", "", 1).isdigit() else (1, t["talla"])
+        tallas_plan[code] = [{"genero": g, "tallas": sorted(ts, key=orden)} for g, ts in grupos.items()]
 
     return {"plan": {
         "name": pp.name,
@@ -5792,7 +5796,7 @@ def get_plan_detail(costeo: str, sales_order: str = None) -> dict:
                       "planned_qty_original": r.get("planned_qty_original") or r.planned_qty,
                       "planned_start_date": r.planned_start_date, "sales_order": r.sales_order,
                       "item_name": frappe.db.get_value("Item", r.item_code, "item_name") or r.item_code,
-                      "tallas": tallas_plan.get(r.item_code) or ""}
+                      "tallas": tallas_plan.get(r.item_code) or []}
                      for r in pp.get("po_items") or []],
         "sub_assembly_items": [{"production_item": r.production_item, "qty": r.qty,
                                 "type_of_manufacturing": r.type_of_manufacturing, "supplier": r.supplier}
