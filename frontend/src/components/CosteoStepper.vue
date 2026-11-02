@@ -114,8 +114,10 @@ const REPORT_IDX = 8;
 function isDone(idx) {
   if (idx === REPORT_IDX) return statusIdx.value >= 5;
   if (idx === VENDER_IDX) return statusIdx.value >= 3 || (statusIdx.value >= 2 && props.venderListo);
-  if (idx === PREP_MFG_IDX) return statusIdx.value >= 3 || (statusIdx.value >= 2 && props.altaProductosListo);
-  if (idx === FLUJO_MFG_IDX) return statusIdx.value >= 3 || (statusIdx.value >= 2 && props.flujoProduccionListo);
+  // Con la OV en borrador ninguna de las dos ha empezado, aunque los productos ya
+  // existan: antes se pintaban como hechas apenas se creaba la OV.
+  if (idx === PREP_MFG_IDX) return statusIdx.value >= 3 || (statusIdx.value >= 2 && props.venderListo && props.altaProductosListo);
+  if (idx === FLUJO_MFG_IDX) return statusIdx.value >= 3 || (statusIdx.value >= 2 && props.venderListo && props.flujoProduccionListo);
   if (idx === ENVIAR_IDX) return statusIdx.value >= 4;
   if (idx === PRODUCIR_IDX) return statusIdx.value >= 3;
   const orderIdx = STEP_ORDER_IDX[idx];
