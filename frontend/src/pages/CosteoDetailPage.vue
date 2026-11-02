@@ -4265,7 +4265,8 @@ async function subirOcCliente(ev, doctype, docname) {
   if (!docname) { showToast("Guarda el costeo antes de adjuntar la OC del cliente", "error"); return; }
   ocClienteSubiendo.value = true;
   try {
-    const res = await uploadFile(file, { doctype, docname });
+    // En la OV va a su campo; antes de crearla se sube al Costeo y viaja al crear la OV.
+    const res = await uploadFile(file, { doctype, docname, fieldname: doctype === "Sales Order" ? "oc_cliente_archivo" : undefined });
     soForm.oc_cliente_archivo = res?.file_url || "";
     // Si la OV ya existe, el campo se persiste de una; si no, viaja al crearla.
     if (doctype === "Sales Order") {

@@ -83,13 +83,16 @@ export function call(method, args = {}) {
   return request("POST", `/api/method/${method}`, args).then((r) => r.message);
 }
 
-export async function uploadFile(file, { doctype, docname, folder = "Home", isPrivate = 1 } = {}) {
+// `fieldname`: el campo Adjunto del documento al que va el archivo. Sin él, al guardar
+// la ruta en ese campo ERPNext no reconoce el adjunto ya subido y crea otra copia.
+export async function uploadFile(file, { doctype, docname, fieldname, folder = "Home", isPrivate = 1 } = {}) {
   const form = new FormData();
   form.append("file", file, file.name);
   form.append("is_private", isPrivate ? 1 : 0);
   form.append("folder", folder);
   if (doctype) form.append("doctype", doctype);
   if (docname) form.append("docname", docname);
+  if (fieldname) form.append("fieldname", fieldname);
   const res = await fetch(BASE + "/api/method/upload_file", {
     method: "POST",
     credentials: "include",

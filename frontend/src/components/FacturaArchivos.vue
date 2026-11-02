@@ -67,7 +67,7 @@ async function subir(ev, campo) {
   }
   subiendo.value = campo;
   try {
-    const res = await uploadFile(file, { doctype: props.doctype, docname: props.docname });
+    const res = await uploadFile(file, { doctype: props.doctype, docname: props.docname, fieldname: campo });
     await guardar(campo, res?.file_url || "");
   } catch (e) {
     aviso.value = e.message || "No se pudo subir el archivo";

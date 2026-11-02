@@ -353,6 +353,14 @@ for _dt, _eventos in _CAPTURA.items():
 		_lista = [] if not _actual else ([_actual] if isinstance(_actual, str) else list(_actual))
 		doc_events[_dt][_evento] = [*_lista, *[f"costeo_yelke.overrides.captura.{f}" for f in _fns]]
 
+# Campos de archivo (OC del cliente, PDF/XML de facturas): en los adjuntos solo queda
+# el vigente, sin copias ni el que se reemplazó (overrides/adjuntos.py).
+for _dt in ("Sales Order", "Sales Invoice", "Purchase Invoice"):
+	for _evento in ("on_update", "on_update_after_submit"):
+		_actual = doc_events.setdefault(_dt, {}).get(_evento)
+		_lista = [] if not _actual else ([_actual] if isinstance(_actual, str) else list(_actual))
+		doc_events[_dt][_evento] = [*_lista, "costeo_yelke.overrides.adjuntos.limpiar_adjuntos"]
+
 # Términos y condiciones exclusivos de un cliente o proveedor (overrides/terminos.py).
 for _dt in ("Quotation", "Sales Order", "Sales Invoice", "Purchase Order"):
 	_actual = doc_events.setdefault(_dt, {}).get("before_validate")
