@@ -40,20 +40,26 @@
         </div>
       </template>
 
-      <!-- Edición -->
+      <!-- Edición: a quién va cada pieza sale del flujo; aquí solo se elige a cuál de las
+           direcciones de ese destino se entrega (si tiene más de una). -->
       <template v-if="d.indicar && editando">
-        <div class="mt-3 space-y-2.5">
-          <div v-for="(f, i) in borrador" :key="i" class="rounded-lg border border-surface-border p-2.5 space-y-2">
-            <div class="flex items-center gap-2">
-              <input v-model="f.piezas" class="p-field flex-1" placeholder="Piezas (ej. Frente, Espalda)" />
-              <button type="button" class="p-btn-ghost h-8 px-2 text-[12px] text-red-700" title="Quitar" @click="borrador.splice(i, 1)">Quitar</button>
-            </div>
-            <LinkInput :model-value="f.entregar_a || ''" doctype="Supplier" placeholder="Taller que recibe (vacío = almacén de Yelke)" @update:model-value="(v) => cambiarTaller(f, v)" />
-            <input v-model="f.destino" class="p-field" placeholder="Entregar a (nombre que se imprime)" />
-            <textarea v-model="f.direccion" rows="3" class="p-field" placeholder="Dirección" />
-          </div>
-          <button type="button" class="p-btn-ghost h-8 text-[12px]" @click="borrador.push({ producto: '', piezas: '', entregar_a: '', destino: '', direccion: '' })">+ Agregar destino</button>
-        </div>
+        <ul class="mt-3 divide-y divide-surface-border rounded-lg border border-surface-border">
+          <li v-for="(f, i) in borrador" :key="i" class="px-3 py-2">
+            <p class="text-[12.5px] text-ink"><span class="font-medium">{{ f.piezas || "—" }}</span>
+              <span v-if="varios && f.producto" class="text-ink-light"> · {{ d.nombres[f.producto] || f.producto }}</span></p>
+            <p class="text-[12.5px] text-brand-700 font-medium mt-0.5">→ {{ f.destino || "—" }}</p>
+            <p v-if="f.entregar_a && f.entregar_a === d.supplier" class="text-[11.5px] text-ink-muted">Se queda en este taller para el siguiente paso</p>
+            <template v-else>
+              <select v-if="(opciones[i] || []).length > 1" v-model="f.direccion" class="p-field mt-1.5 text-[12px]">
+                <option v-for="o in opciones[i]" :key="o.name" :value="o.texto">{{ o.texto.replace(/\n/g, " · ") }}</option>
+              </select>
+              <p v-else-if="f.direccion" class="text-[11.5px] text-ink-muted whitespace-pre-line">{{ f.direccion }}</p>
+              <p v-if="opciones[i] && opciones[i].length <= 1" class="text-[11px] text-ink-light mt-0.5">
+                {{ opciones[i].length ? "Solo tiene esta dirección." : "No tiene dirección registrada." }}
+              </p>
+            </template>
+          </li>
+        </ul>
         <div class="flex gap-2 mt-2.5">
           <button type="button" class="p-btn-primary h-8 text-[12px]" :disabled="ocupado" @click="guardar">Guardar</button>
           <button type="button" class="p-btn-secondary h-8 text-[12px]" :disabled="ocupado" @click="editando = false">Cancelar</button>
@@ -66,7 +72,6 @@
 
 <script setup>
 import { computed, ref, watch } from "vue";
-import LinkInput from "@/components/LinkInput.vue";
 import { call } from "@/utils/frappe.js";
 
 const props = defineProps({ po: { type: String, required: true } });
@@ -100,17 +105,21 @@ const cambiarIndicar = (v) => enviar(v, d.value.editadas ? d.value.filas : null)
 const volverAlFlujo = () => enviar(true, null);
 const guardar = () => enviar(true, borrador.value);
 
-function editar() {
+// Direcciones a elegir de cada renglón (índice -> [{name, texto}]).
+const opciones = ref({});
+async function editar() {
   borrador.value = d.value.filas.map((f) => ({ ...f }));
+  opciones.value = {};
   editando.value = true;
-}
-async function cambiarTaller(f, v) {
-  f.entregar_a = v;
-  if (!v) return;
-  try {
-    const r = await call(`${API}.direccion_de_proveedor`, { supplier: v });
-    f.destino = r.destino;
-    f.direccion = r.direccion;
-  } catch { /* se captura a mano */ }
+  await Promise.all(borrador.value.map(async (f, i) => {
+    if (f.entregar_a && f.entregar_a === d.value.supplier) return;
+    try {
+      const lista = await call(`${API}.direcciones_destino`, { po: props.po, entregar_a: f.entregar_a || null }) || [];
+      // La dirección que ya trae el renglón se conserva aunque ya no esté entre las suyas.
+      if (f.direccion && !lista.some((o) => o.texto === f.direccion)) lista.unshift({ name: "actual", texto: f.direccion });
+      if (!f.direccion && lista.length) f.direccion = lista[0].texto;
+      opciones.value[i] = lista;
+    } catch { opciones.value[i] = []; }
+  }));
 }
 </script>

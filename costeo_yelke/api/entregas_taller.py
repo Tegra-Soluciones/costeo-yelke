@@ -190,3 +190,29 @@ def direccion_de_proveedor(supplier: str) -> dict:
         "destino": frappe.db.get_value("Supplier", supplier, "supplier_name") or supplier,
         "direccion": _direccion_proveedor(supplier),
     }
+
+
+@frappe.whitelist()
+def direcciones_destino(po: str, entregar_a: str = None) -> list:
+    """Direcciones entre las que se puede elegir para un destino de la entrega: las del
+    taller que recibe o, si va al almacén de Yelke, las de la compañía de la orden. Las
+    que dicen exactamente lo mismo (envío y facturación con el mismo domicilio) salen
+    una sola vez; la de envío primero."""
+    if entregar_a:
+        link_doctype, link_name = "Supplier", entregar_a
+    else:
+        link_doctype, link_name = "Company", frappe.db.get_value("Purchase Order", po, "company")
+    filas = frappe.db.sql("""
+        select a.name, a.address_type from tabAddress a
+        join `tabDynamic Link` d on d.parent = a.name and d.parenttype = 'Address'
+        where d.link_doctype = %s and d.link_name = %s and ifnull(a.disabled, 0) = 0
+        order by a.is_shipping_address desc, a.address_type = 'Shipping' desc, a.is_primary_address desc, a.creation""",
+        (link_doctype, link_name), as_dict=True)
+    out, vistos = [], set()
+    for f in filas:
+        texto = _direccion_texto(f.name)
+        if texto and texto not in vistos:
+            vistos.add(texto)
+            out.append({"name": f.name, "texto": texto})
+    return out
+
