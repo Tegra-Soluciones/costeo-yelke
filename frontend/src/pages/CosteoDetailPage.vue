@@ -3953,18 +3953,23 @@ function avisosLigas(prod, op) {
 function relatoFlujo(prod) {
   const ops = prod.operaciones || [];
   const porKey = new Map(ops.map((o) => [o.op_key, o]));
-  const etq = (k) => supplierLabel(prod, porKey.get(k));
+  const nombre = (op) => (op.supplier ? supplierLabel(prod, op) : "(Paso sin taller)");
+  const etq = (k) => nombre(porKey.get(k));
   const terminales = new Set(terminalKeysVivo(prod));
   const fin = (op) => (terminales.has(op.op_key) ? "; con esto queda terminada la prenda" : "");
   const { union, armado, rutas } = rutasDePiezas(prod);
 
   // Sin piezas: una cadena de taller a taller.
   if (!rutas.length) {
-    const lineal = ops.every((op, i) => (i === 0 ? !op.recibe_de.length : op.recibe_de.length === 1 && op.recibe_de[0] === ops[i - 1].op_key));
+    // Sin contar las ligas sobrantes (esas salen como aviso aparte).
+    const lineal = ops.every((op, i) => {
+      const f = fuentesEfectivas(prod, op);
+      return i === 0 ? !f.length : f.length === 1 && f[0].op_key === ops[i - 1].op_key;
+    });
     const relato = ops.map((op) => {
       const f = fuentesEfectivas(prod, op);
-      const inicio = f.length ? `recibe de ${listaY(f.map((o) => supplierLabel(prod, o)))} y hace ${serviciosDe(op)}` : `empieza con la materia prima y hace ${serviciosDe(op)}`;
-      return { quien: supplierLabel(prod, op), texto: `${inicio}${fin(op)}.` };
+      const inicio = f.length ? `recibe de ${listaY(f.map((o) => nombre(o)))} y hace ${serviciosDe(op)}` : `empieza con la materia prima y hace ${serviciosDe(op)}`;
+      return { quien: nombre(op), texto: `${inicio}${fin(op)}.` };
     });
     const tipo = ops.length <= 1 ? "Un solo paso." : lineal
       ? "Flujo lineal: cada taller trabaja lo que le entrega el anterior."
@@ -3982,19 +3987,19 @@ function relatoFlujo(prod) {
     return [...g.entries()];
   };
   const relato = ops.map((op) => {
-    const quien = supplierLabel(prod, op);
+    const quien = nombre(op);
     if (op.op_key === union) {
       const grupos = agrupar(rutas.map((r) => [r.pasos[r.pasos.length - 1] || null, nombrePieza(r.pieza)]));
       return { quien, texto: `hace ${serviciosDe(op)} y aquí se unen las piezas en una sola prenda${fin(op)}. Recibe:`,
         partes: grupos.map(([k, n]) => deQuien(k, n)) };
     }
     if (armado.despues.has(op.op_key)) {
-      const f = fuentesEfectivas(prod, op).map((o) => supplierLabel(prod, o));
+      const f = fuentesEfectivas(prod, op).map((o) => nombre(o));
       return { quien, texto: `recibe la prenda ya armada${f.length ? ` de ${listaY(f)}` : ""} y hace ${serviciosDe(op)}${fin(op)}.` };
     }
     const mias = rutas.filter((r) => r.pasos.includes(op.op_key));
     if (!mias.length) {
-      const f = fuentesEfectivas(prod, op).map((o) => supplierLabel(prod, o));
+      const f = fuentesEfectivas(prod, op).map((o) => nombre(o));
       return { quien, texto: `${f.length ? `recibe de ${listaY(f)} y ` : ""}hace ${serviciosDe(op)} (no tiene piezas marcadas en el desglose)${fin(op)}.` };
     }
     const grupos = agrupar(mias.map((r) => [r.pasos[r.pasos.indexOf(op.op_key) - 1] || null, nombrePieza(r.pieza)]));
