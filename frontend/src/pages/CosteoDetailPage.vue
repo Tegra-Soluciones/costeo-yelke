@@ -20,8 +20,19 @@
           <p class="text-gray-500">{{ r.pasos }} {{ r.pasos === 1 ? "paso" : "pasos" }}<template v-if="r.piezas"> · {{ r.piezas }} piezas · se unen en {{ r.union || "el paso final" }}</template></p>
           <p class="mt-1.5 text-gray-700">{{ r.tipo }}</p>
           <ol class="mt-1 space-y-1 list-decimal pl-4 text-gray-700">
-            <li v-for="(p, i) in r.relato" :key="i"><span class="font-medium text-gray-900">{{ p.quien }}</span> {{ p.texto }}</li>
+            <li v-for="(p, i) in r.relato" :key="i">
+              <span class="font-medium text-gray-900">{{ p.quien }}</span> {{ p.texto }}
+              <ul v-if="p.partes" class="mt-0.5 space-y-0.5 list-disc pl-4">
+                <li v-for="(x, j) in p.partes" :key="j">{{ x }}</li>
+              </ul>
+            </li>
           </ol>
+          <template v-if="r.recorridos.length">
+            <p class="mt-2 font-medium text-gray-900">Recorrido de cada pieza</p>
+            <ul class="mt-0.5 space-y-0.5 text-gray-700">
+              <li v-for="(c, i) in r.recorridos" :key="i"><span class="font-medium">{{ c.piezas }}:</span> {{ c.camino }}</li>
+            </ul>
+          </template>
           <ul v-if="r.avisos.length" class="mt-1 space-y-0.5 text-amber-700">
             <li v-for="(a, i) in r.avisos" :key="i">• {{ a }}</li>
           </ul>
@@ -3872,10 +3883,7 @@ const resumenConfirmarFlujo = computed(() => (flujoOps.value || []).map((prod) =
   ops.forEach((op) => {
     if (opIncompleta(op)) avisos.push(`"${supplierLabel(prod, op)}" tiene datos incompletos (proveedor o servicio).`);
     if (esHuerfano(prod, op)) avisos.push(`"${supplierLabel(prod, op)}" no alimenta a ningún otro paso.`);
-    if (recibeRedundantesVivo(prod, op).size) {
-      const via = listaY(fuentesEfectivas(prod, op).map((o) => supplierLabel(prod, o)));
-      avisos.push(`«${supplierLabel(prod, op)}» también recibe directo de ${listaY(recibeRedundanteTexto(prod, op).split(", "))}, aunque eso ya le llega a través de ${via}. Revisa si es correcto.`);
-    }
+    for (const a of avisosLigas(prod, op)) avisos.push(a);
   });
   return {
     producto: prod.finished_item, pasos: ops.length, piezas: (prod.sub_ensamblajes || []).filter((s) => (s.nombre || "").trim()).length,
@@ -3898,40 +3906,121 @@ function fuentesEfectivas(prod, op) {
     .map((k) => prod.operaciones.find((o) => o.op_key === k)).filter(Boolean);
 }
 const servicioLegible = (item) => (item || "").replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+const stageIdsDe = (op) => new Set(op.stage_ids || (op.servicios || []).map((sv) => sv.stage_id));
+const serviciosDe = (op) => listaY((op.servicios || []).map((sv) => servicioLegible(sv.item))) || "su servicio";
+const nombrePieza = (x) => `${x.nombre.toLowerCase()}${Number(x.multiplicador) > 1 ? ` ×${Number(x.multiplicador)}` : ""}`;
+// Camino de cada pieza: los pasos por los que pasa (según el desglose de piezas del
+// flujo) antes del paso donde se une con las demás.
+function rutasDePiezas(prod) {
+  const ops = prod.operaciones || [];
+  const orden = new Map(ops.map((o, i) => [o.op_key, i]));
+  const armado = armadoVivo(prod);
+  const terminales = terminalKeysVivo(prod);
+  const union = armado.ensamble || terminales[terminales.length - 1] || null;
+  const piezas = (prod.sub_ensamblajes || []).filter((x) => (x.nombre || "").trim());
+  const rutas = piezas.map((pz) => {
+    const ids = new Set(pz.stage_ids || []);
+    const pasos = ops.filter((o) => o.op_key !== union && !armado.despues.has(o.op_key)
+      && (union == null || orden.get(o.op_key) < orden.get(union))
+      && [...stageIdsDe(o)].some((id) => ids.has(id))).map((o) => o.op_key);
+    return { pieza: pz, pasos };
+  });
+  return { union, armado, rutas };
+}
+// Pasos en los que una liga «recibe de» no lleva nada: con piezas, ninguna pieza pasa
+// de ese paso a este; sin piezas, lo que manda ese paso ya le llega por otro camino.
+function avisosLigas(prod, op) {
+  const etq = (k) => supplierLabel(prod, prod.operaciones.find((o) => o.op_key === k) || { op_key: k });
+  const { union, armado, rutas } = rutasDePiezas(prod);
+  if (!rutas.length) {
+    const sobra = recibeRedundantesVivo(prod, op);
+    if (!sobra.size) return [];
+    const via = listaY(fuentesEfectivas(prod, op).map((o) => supplierLabel(prod, o)));
+    return [`«${supplierLabel(prod, op)}» también recibe directo de ${listaY([...sobra].map(etq))}, aunque lo que hace ese paso ya le llega a través de ${via}. Revisa si sobra esa liga.`];
+  }
+  if (armado.despues.has(op.op_key)) return [];
+  const llegan = new Set();
+  for (const r of rutas) {
+    const idx = r.pasos.indexOf(op.op_key);
+    if (op.op_key === union) { if (r.pasos.length) llegan.add(r.pasos[r.pasos.length - 1]); }
+    else if (idx > 0) llegan.add(r.pasos[idx - 1]);
+  }
+  const vacias = (op.recibe_de || []).filter((k) => !llegan.has(k));
+  return vacias.length
+    ? [`«${supplierLabel(prod, op)}» recibe de ${listaY(vacias.map(etq))}, pero según el desglose de piezas ninguna pieza pasa de ahí a este paso. Revisa si sobra esa liga o falta marcar la pieza.`]
+    : [];
+}
 function relatoFlujo(prod) {
   const ops = prod.operaciones || [];
-  const piezas = (prod.sub_ensamblajes || []).filter((x) => (x.nombre || "").trim());
-  const armado = armadoVivo(prod);
+  const porKey = new Map(ops.map((o) => [o.op_key, o]));
+  const etq = (k) => supplierLabel(prod, porKey.get(k));
   const terminales = new Set(terminalKeysVivo(prod));
-  const lineal = ops.every((op, i) => {
-    const f = fuentesEfectivas(prod, op);
-    return i === 0 ? !f.length : f.length === 1 && f[0].op_key === ops[i - 1].op_key;
-  });
-  const pasos = ops.map((op) => {
-    const st = new Set(op.stage_ids || (op.servicios || []).map((sv) => sv.stage_id));
-    const suyas = piezas.filter((x) => (x.stage_ids || []).some((id) => st.has(id)))
-      .map((x) => `${x.nombre.toLowerCase()}${Number(x.multiplicador) > 1 ? ` ×${Number(x.multiplicador)}` : ""}`);
-    const fuentes = fuentesEfectivas(prod, op);
-    const servicios = listaY((op.servicios || []).map((sv) => servicioLegible(sv.item)));
-    const inicio = fuentes.length
-      ? `recibe de ${listaY(fuentes.map((o) => supplierLabel(prod, o)))} y hace ${servicios || "su servicio"}`
-      : `empieza con la materia prima y hace ${servicios || "su servicio"}`;
-    let detalle = "";
-    if (armado.ensamble === op.op_key) detalle = "; aquí se unen las piezas en una sola prenda";
-    else if (armado.despues.has(op.op_key)) detalle = " sobre la prenda ya armada";
-    else if (suyas.length && !(armado.hayPiezas && !armado.ensamble && terminales.has(op.op_key)))
-      detalle = suyas.length === piezas.length && piezas.length > 1
-        ? ` (${piezas.length} piezas: ${listaY(suyas)})`
-        : ` en ${suyas.length === 1 ? "la pieza" : "las piezas"} ${listaY(suyas)}`;
-    if (terminales.has(op.op_key)) {
-      detalle += armado.hayPiezas && !armado.ensamble ? "; aquí se unen las piezas y queda terminada la prenda" : "; con esto queda terminada la prenda";
+  const fin = (op) => (terminales.has(op.op_key) ? "; con esto queda terminada la prenda" : "");
+  const { union, armado, rutas } = rutasDePiezas(prod);
+
+  // Sin piezas: una cadena de taller a taller.
+  if (!rutas.length) {
+    const lineal = ops.every((op, i) => (i === 0 ? !op.recibe_de.length : op.recibe_de.length === 1 && op.recibe_de[0] === ops[i - 1].op_key));
+    const relato = ops.map((op) => {
+      const f = fuentesEfectivas(prod, op);
+      const inicio = f.length ? `recibe de ${listaY(f.map((o) => supplierLabel(prod, o)))} y hace ${serviciosDe(op)}` : `empieza con la materia prima y hace ${serviciosDe(op)}`;
+      return { quien: supplierLabel(prod, op), texto: `${inicio}${fin(op)}.` };
+    });
+    const tipo = ops.length <= 1 ? "Un solo paso." : lineal
+      ? "Flujo lineal: cada taller trabaja lo que le entrega el anterior."
+      : "Flujo con ramas: hay talleres que trabajan en paralelo y después se junta su trabajo.";
+    return { tipo, relato, recorridos: [] };
+  }
+
+  // Con piezas: qué pieza recibe cada paso, de quién y con qué ya hecho.
+  const deQuien = (k, nombres) => (k
+    ? `${listaY(nombres)} de ${etq(k)} — ya con ${serviciosDe(porKey.get(k))}`
+    : `${listaY(nombres)} directo de la materia prima`);
+  const agrupar = (pares) => {
+    const g = new Map();
+    for (const [k, n] of pares) { if (!g.has(k)) g.set(k, []); g.get(k).push(n); }
+    return [...g.entries()];
+  };
+  const relato = ops.map((op) => {
+    const quien = supplierLabel(prod, op);
+    if (op.op_key === union) {
+      const grupos = agrupar(rutas.map((r) => [r.pasos[r.pasos.length - 1] || null, nombrePieza(r.pieza)]));
+      return { quien, texto: `hace ${serviciosDe(op)} y aquí se unen las piezas en una sola prenda${fin(op)}. Recibe:`,
+        partes: grupos.map(([k, n]) => deQuien(k, n)) };
     }
-    return { quien: supplierLabel(prod, op), texto: `${inicio}${detalle}.` };
+    if (armado.despues.has(op.op_key)) {
+      const f = fuentesEfectivas(prod, op).map((o) => supplierLabel(prod, o));
+      return { quien, texto: `recibe la prenda ya armada${f.length ? ` de ${listaY(f)}` : ""} y hace ${serviciosDe(op)}${fin(op)}.` };
+    }
+    const mias = rutas.filter((r) => r.pasos.includes(op.op_key));
+    if (!mias.length) {
+      const f = fuentesEfectivas(prod, op).map((o) => supplierLabel(prod, o));
+      return { quien, texto: `${f.length ? `recibe de ${listaY(f)} y ` : ""}hace ${serviciosDe(op)} (no tiene piezas marcadas en el desglose)${fin(op)}.` };
+    }
+    const grupos = agrupar(mias.map((r) => [r.pasos[r.pasos.indexOf(op.op_key) - 1] || null, nombrePieza(r.pieza)]));
+    if (grupos.length === 1 && grupos[0][0] === null) {
+      const todas = mias.length === rutas.length && rutas.length > 1;
+      return { quien, texto: `empieza con la materia prima y hace ${serviciosDe(op)}: ${todas ? `saca las ${rutas.length} piezas (${listaY(grupos[0][1])})` : `saca ${listaY(grupos[0][1])}`}.` };
+    }
+    if (grupos.length === 1) {
+      return { quien, texto: `recibe ${deQuien(grupos[0][0], grupos[0][1])}, y ${mias.length === 1 ? "le" : "les"} hace ${serviciosDe(op)}.` };
+    }
+    return { quien, texto: `hace ${serviciosDe(op)}. Recibe:`, partes: grupos.map(([k, n]) => deQuien(k, n)) };
   });
-  const tipo = ops.length <= 1 ? "Un solo paso." : lineal
-    ? "Flujo lineal: cada taller trabaja después del anterior."
-    : "Flujo con ramas: algunas piezas se trabajan por separado y luego se juntan.";
-  return { tipo, relato: pasos };
+
+  // Recorrido de cada pieza (las que siguen el mismo camino van juntas).
+  const caminos = new Map();
+  for (const r of rutas) {
+    const pasos = [...r.pasos, union].filter(Boolean).map((k) => serviciosDe(porKey.get(k)));
+    const clave = pasos.join(" → ");
+    if (!caminos.has(clave)) caminos.set(clave, []);
+    caminos.get(clave).push(nombrePieza(r.pieza));
+  }
+  const recorridos = [...caminos.entries()].map(([camino, nombres]) => ({ piezas: listaY(nombres), camino }));
+  const tipo = caminos.size === 1
+    ? `Todas las piezas siguen el mismo camino y se unen con ${etq(union)}.`
+    : `Las piezas siguen caminos distintos y se juntan con ${etq(union)}.`;
+  return { tipo, relato, recorridos };
 }
 function pedirConfirmarFlujo(accion) {
   confirmFlujoDlg.accion = accion;
