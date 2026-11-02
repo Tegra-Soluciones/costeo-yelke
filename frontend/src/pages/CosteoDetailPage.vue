@@ -8,14 +8,14 @@
       @confirm="doDelete" @cancel="confirmDelete.open = false"
     />
     <ConfirmDialog
-      v-model="confirmFlujoDlg.open" variant="warning"
+      v-model="confirmFlujoDlg.open" variant="warning" ancho="max-w-3xl"
       title="¿Confirmar el flujo de producción?"
       message="Revisa bien antes de continuar: se crean las BOMs, los Subcontracting BOMs y el plan de producción con este flujo, y después ya no se podrá editar (solo revirtiéndolo)."
       confirm-label="Sí, confirmar y pasar a producción"
       @confirm="aceptarConfirmarFlujo" @cancel="confirmFlujoDlg.open = false"
     >
       <div v-if="resumenConfirmarFlujo.length" class="mt-3 max-h-[60vh] overflow-y-auto space-y-2">
-        <div v-for="r in resumenConfirmarFlujo" :key="r.producto" class="rounded-lg border border-gray-200 px-3 py-2 text-[12px]">
+        <div v-for="r in resumenConfirmarFlujo" :key="r.producto" class="rounded-lg border border-gray-200 px-4 py-3 text-[13px] leading-relaxed">
           <p class="font-semibold text-gray-900 truncate">{{ r.producto }}</p>
           <p class="text-gray-500">{{ r.pasos }} {{ r.pasos === 1 ? "paso" : "pasos" }}<template v-if="r.piezas"> · {{ r.piezas }} piezas · se unen en {{ r.union || "el paso final" }}</template></p>
           <p class="mt-1.5 text-gray-700">{{ r.tipo }}</p>

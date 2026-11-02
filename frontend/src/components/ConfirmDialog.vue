@@ -10,7 +10,7 @@
         <div class="absolute inset-0 bg-black/30 backdrop-blur-sm" />
 
         <!-- Panel -->
-        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col gap-4">
+        <div class="relative bg-white rounded-2xl shadow-2xl w-full p-6 flex flex-col gap-4" :class="ancho">
           <!-- Icon -->
           <div class="flex items-center gap-3">
             <div
@@ -71,6 +71,8 @@ const props = defineProps({
   cancelLabel:  { type: String, default: "Cancelar" },
   variant:      { type: String, default: "danger" }, // 'danger' | 'warning'
   loading:      { type: Boolean, default: false },
+  // Clase de ancho máximo; los avisos con mucho contenido (p. ej. el relato del flujo) la amplían.
+  ancho:        { type: String, default: "max-w-sm" },
 });
 
 defineEmits(["update:modelValue", "confirm", "cancel"]);
