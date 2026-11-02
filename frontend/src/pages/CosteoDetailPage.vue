@@ -14,10 +14,14 @@
       confirm-label="Sí, confirmar y pasar a producción"
       @confirm="aceptarConfirmarFlujo" @cancel="confirmFlujoDlg.open = false"
     >
-      <div v-if="resumenConfirmarFlujo.length" class="mt-3 max-h-72 overflow-y-auto space-y-2">
+      <div v-if="resumenConfirmarFlujo.length" class="mt-3 max-h-[60vh] overflow-y-auto space-y-2">
         <div v-for="r in resumenConfirmarFlujo" :key="r.producto" class="rounded-lg border border-gray-200 px-3 py-2 text-[12px]">
           <p class="font-semibold text-gray-900 truncate">{{ r.producto }}</p>
           <p class="text-gray-500">{{ r.pasos }} {{ r.pasos === 1 ? "paso" : "pasos" }}<template v-if="r.piezas"> · {{ r.piezas }} piezas · se unen en {{ r.union || "el paso final" }}</template></p>
+          <p class="mt-1.5 text-gray-700">{{ r.tipo }}</p>
+          <ol class="mt-1 space-y-1 list-decimal pl-4 text-gray-700">
+            <li v-for="(p, i) in r.relato" :key="i"><span class="font-medium text-gray-900">{{ p.quien }}</span> {{ p.texto }}</li>
+          </ol>
           <ul v-if="r.avisos.length" class="mt-1 space-y-0.5 text-amber-700">
             <li v-for="(a, i) in r.avisos" :key="i">• {{ a }}</li>
           </ul>
@@ -3868,14 +3872,67 @@ const resumenConfirmarFlujo = computed(() => (flujoOps.value || []).map((prod) =
   ops.forEach((op) => {
     if (opIncompleta(op)) avisos.push(`"${supplierLabel(prod, op)}" tiene datos incompletos (proveedor o servicio).`);
     if (esHuerfano(prod, op)) avisos.push(`"${supplierLabel(prod, op)}" no alimenta a ningún otro paso.`);
-    if (recibeRedundantesVivo(prod, op).size) avisos.push(`"${supplierLabel(prod, op)}" recibe de más pasos de los necesarios (${recibeRedundanteTexto(prod, op)}).`);
+    if (recibeRedundantesVivo(prod, op).size) {
+      const via = listaY(fuentesEfectivas(prod, op).map((o) => supplierLabel(prod, o)));
+      avisos.push(`«${supplierLabel(prod, op)}» también recibe directo de ${listaY(recibeRedundanteTexto(prod, op).split(", "))}, aunque eso ya le llega a través de ${via}. Revisa si es correcto.`);
+    }
   });
   return {
     producto: prod.finished_item, pasos: ops.length, piezas: (prod.sub_ensamblajes || []).filter((s) => (s.nombre || "").trim()).length,
+    ...relatoFlujo(prod),
     union: union ? `${supplierLabel(prod, union)}${armado.elegida ? "" : " (deducido por el sistema)"}` : "",
     avisos,
   };
 }));
+// ── Relato del flujo para la confirmación ──
+// Oraciones armadas con lo que hay capturado (sin IA): siempre dicen lo mismo para el
+// mismo flujo, sea lineal o con ramas y con los servicios y piezas que tenga.
+function listaY(items) {
+  const xs = items.filter(Boolean);
+  return xs.length <= 1 ? (xs[0] || "") : `${xs.slice(0, -1).join(", ")} y ${xs[xs.length - 1]}`;
+}
+// De quién recibe de verdad: sin las ligas sobrantes (ya le llegan por otro paso).
+function fuentesEfectivas(prod, op) {
+  const sobra = recibeRedundantesVivo(prod, op);
+  return (op.recibe_de || []).filter((k) => !sobra.has(k))
+    .map((k) => prod.operaciones.find((o) => o.op_key === k)).filter(Boolean);
+}
+const servicioLegible = (item) => (item || "").replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+function relatoFlujo(prod) {
+  const ops = prod.operaciones || [];
+  const piezas = (prod.sub_ensamblajes || []).filter((x) => (x.nombre || "").trim());
+  const armado = armadoVivo(prod);
+  const terminales = new Set(terminalKeysVivo(prod));
+  const lineal = ops.every((op, i) => {
+    const f = fuentesEfectivas(prod, op);
+    return i === 0 ? !f.length : f.length === 1 && f[0].op_key === ops[i - 1].op_key;
+  });
+  const pasos = ops.map((op) => {
+    const st = new Set(op.stage_ids || (op.servicios || []).map((sv) => sv.stage_id));
+    const suyas = piezas.filter((x) => (x.stage_ids || []).some((id) => st.has(id)))
+      .map((x) => `${x.nombre.toLowerCase()}${Number(x.multiplicador) > 1 ? ` ×${Number(x.multiplicador)}` : ""}`);
+    const fuentes = fuentesEfectivas(prod, op);
+    const servicios = listaY((op.servicios || []).map((sv) => servicioLegible(sv.item)));
+    const inicio = fuentes.length
+      ? `recibe de ${listaY(fuentes.map((o) => supplierLabel(prod, o)))} y hace ${servicios || "su servicio"}`
+      : `empieza con la materia prima y hace ${servicios || "su servicio"}`;
+    let detalle = "";
+    if (armado.ensamble === op.op_key) detalle = "; aquí se unen las piezas en una sola prenda";
+    else if (armado.despues.has(op.op_key)) detalle = " sobre la prenda ya armada";
+    else if (suyas.length && !(armado.hayPiezas && !armado.ensamble && terminales.has(op.op_key)))
+      detalle = suyas.length === piezas.length && piezas.length > 1
+        ? ` (${piezas.length} piezas: ${listaY(suyas)})`
+        : ` en ${suyas.length === 1 ? "la pieza" : "las piezas"} ${listaY(suyas)}`;
+    if (terminales.has(op.op_key)) {
+      detalle += armado.hayPiezas && !armado.ensamble ? "; aquí se unen las piezas y queda terminada la prenda" : "; con esto queda terminada la prenda";
+    }
+    return { quien: supplierLabel(prod, op), texto: `${inicio}${detalle}.` };
+  });
+  const tipo = ops.length <= 1 ? "Un solo paso." : lineal
+    ? "Flujo lineal: cada taller trabaja después del anterior."
+    : "Flujo con ramas: algunas piezas se trabajan por separado y luego se juntan.";
+  return { tipo, relato: pasos };
+}
 function pedirConfirmarFlujo(accion) {
   confirmFlujoDlg.accion = accion;
   confirmFlujoDlg.open = true;
