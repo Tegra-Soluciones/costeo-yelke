@@ -1,4 +1,6 @@
 import frappe
+
+from costeo_yelke.overrides import terminos
 from costeo_yelke.roles import requiere_vista
 from frappe.utils import nowdate
 
@@ -38,13 +40,8 @@ def get_quotation_form_defaults(company=None):
         limit=30,
     )
 
-    terms_templates = frappe.get_all(
-        "Terms and Conditions",
-        fields=["name"],
-        filters={"selling": 1},
-        order_by="name asc",
-        limit=30,
-    )
+    # Con de quién es exclusivo cada uno: la pantalla filtra por la parte (overrides/terminos.py).
+    terms_templates = terminos.opciones(venta=True)
 
     warehouses = frappe.get_all(
         "Warehouse",

@@ -56,7 +56,10 @@ add_to_apps_screen = [
 
 # include js in doctype views
 doctype_js = {
-	"Purchase Order": "public/js/purchase_order_manufacturing_order.js",
+	"Purchase Order": ["public/js/purchase_order_manufacturing_order.js", "public/js/terminos_exclusivos.js"],
+	"Quotation": "public/js/terminos_exclusivos.js",
+	"Sales Order": "public/js/terminos_exclusivos.js",
+	"Sales Invoice": "public/js/terminos_exclusivos.js",
 	"Precio Acordado Recordatorio": "public/js/precio_acordado_recordatorio.js",
 	# doble_captura.js va primero: define la ayuda que usan los otros tres.
 	"Supplier": ["public/js/doble_captura.js", "public/js/supplier.js"],
@@ -345,6 +348,12 @@ for _dt, _eventos in _CAPTURA.items():
 		_actual = doc_events.setdefault(_dt, {}).get(_evento)
 		_lista = [] if not _actual else ([_actual] if isinstance(_actual, str) else list(_actual))
 		doc_events[_dt][_evento] = [*_lista, *[f"costeo_yelke.overrides.captura.{f}" for f in _fns]]
+
+# Términos y condiciones exclusivos de un cliente o proveedor (overrides/terminos.py).
+for _dt in ("Quotation", "Sales Order", "Sales Invoice", "Purchase Order"):
+	_actual = doc_events.setdefault(_dt, {}).get("before_validate")
+	_lista = [] if not _actual else ([_actual] if isinstance(_actual, str) else list(_actual))
+	doc_events[_dt]["before_validate"] = [*_lista, "costeo_yelke.overrides.terminos.terminos_del_documento"]
 
 # IVA separado (api/cuentas_mx.py): la cuenta genérica "IVA" se cambia por IVA
 # acreditable en compras y por IVA trasladado en ventas. Al final de la lista, para

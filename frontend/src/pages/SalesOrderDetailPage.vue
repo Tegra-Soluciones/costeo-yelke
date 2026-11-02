@@ -297,7 +297,7 @@
               <label class="field-label">Plantilla de Términos</label>
               <select v-model="form.tc_name" :disabled="!canEdit" class="field-input" @change="loadTermsText">
                 <option value="">— Sin plantilla —</option>
-                <option v-for="t in defaults.terms_templates" :key="t.name" :value="t.name">{{ t.name }}</option>
+                <option v-for="t in terminosPara(defaults.terms_templates, 'venta', form.customer, form.tc_name)" :key="t.name" :value="t.name">{{ t.name }}</option>
               </select>
             </div>
             <div>
@@ -605,6 +605,7 @@ import { puedeValidarDirecto, usePermisosAprobacion } from "@/composables/useApr
 import { asegurarCompania, useCompany } from "@/composables/useCompany.js";
 const { state: companyState } = useCompany();
 import { call, defaultPrintFormat } from "@/utils/frappe.js";
+import { terminosPara } from "@/utils/terminos.js";
 
 const props  = defineProps({ name: { type: String, default: "" } });
 const router = useRouter();

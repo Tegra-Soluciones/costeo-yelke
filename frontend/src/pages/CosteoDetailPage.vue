@@ -874,7 +874,7 @@
                   <div class="col-span-2"><label class="p-field-label">Términos y condiciones</label>
                     <select v-model="cotForm.tc_name" class="p-field" :disabled="q.docstatus === 1">
                       <option value="">— Sin términos —</option>
-                      <option v-for="t in cotDefaults.terms" :key="t.name" :value="t.name">{{ t.name }}</option>
+                      <option v-for="t in terminosPara(cotDefaults.terms, 'venta', form.cliente, cotForm.tc_name)" :key="t.name" :value="t.name">{{ t.name }}</option>
                     </select>
                   </div>
                   <div class="col-span-2"><label class="p-field-label">Lista de Precios</label>
@@ -976,7 +976,7 @@
             <div><label class="p-field-label">Términos y condiciones</label>
               <select v-model="cotForm.tc_name" class="p-field">
                 <option value="">— Sin términos —</option>
-                <option v-for="t in cotDefaults.terms" :key="t.name" :value="t.name">{{ t.name }}</option>
+                <option v-for="t in terminosPara(cotDefaults.terms, 'venta', form.cliente, cotForm.tc_name)" :key="t.name" :value="t.name">{{ t.name }}</option>
               </select>
             </div>
             <div class="col-span-2"><label class="p-field-label">Lista de Precios</label>
@@ -1261,7 +1261,7 @@
                   <div class="col-span-2"><label class="p-field-label">Términos y condiciones</label>
                     <select v-model="soForm.tc_name" class="p-field" :disabled="so.docstatus !== 0">
                       <option value="">— Sin términos —</option>
-                      <option v-for="t in cotDefaults.terms" :key="t.name" :value="t.name">{{ t.name }}</option>
+                      <option v-for="t in terminosPara(cotDefaults.terms, 'venta', form.cliente, soForm.tc_name)" :key="t.name" :value="t.name">{{ t.name }}</option>
                     </select>
                   </div>
                   <div class="col-span-2">
@@ -1377,7 +1377,7 @@
             <div><label class="p-field-label">Términos y condiciones</label>
               <select v-model="soForm.tc_name" class="p-field">
                 <option value="">— Sin términos —</option>
-                <option v-for="t in cotDefaults.terms" :key="t.name" :value="t.name">{{ t.name }}</option>
+                <option v-for="t in terminosPara(cotDefaults.terms, 'venta', form.cliente, soForm.tc_name)" :key="t.name" :value="t.name">{{ t.name }}</option>
               </select>
             </div>
             <div class="col-span-2">
@@ -3490,7 +3490,7 @@
           <label class="field-label">Términos y condiciones</label>
           <select v-model="siForm.tc_name" class="field-input mb-4" :disabled="siValidated">
             <option value="">— Sin términos —</option>
-            <option v-for="t in cotDefaults.terms" :key="t.name" :value="t.name">{{ t.name }}</option>
+            <option v-for="t in terminosPara(cotDefaults.terms, 'venta', form.cliente, siForm.tc_name)" :key="t.name" :value="t.name">{{ t.name }}</option>
           </select>
 
           <div class="border-t border-surface-border pt-3 mb-4 space-y-1">
@@ -3708,6 +3708,7 @@ import { puedeValidarDirecto, usePermisosAprobacion } from "@/composables/useApr
 import { fecha as fmtFecha } from "@/utils/formato.js";
 import { useAccesos } from "@/composables/useAccesos.js";
 import { db, call, openDesk as deskOpen, uploadFile, searchLink, fuzzyQuery, getLinkDisplayLabel, FILTRO_TRANSPORTISTA } from "@/utils/frappe.js";
+import { terminosPara } from "@/utils/terminos.js";
 import { useToast } from "@/composables/useToast.js";
 import { useDocumentActions } from "@/composables/useDocumentActions.js";
 import { asegurarCompania, useCompany } from "@/composables/useCompany.js";

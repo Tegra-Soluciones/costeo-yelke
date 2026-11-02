@@ -68,7 +68,7 @@
         </div>
         <div v-if="doc.has_tc">
           <label class="field-label">Términos y condiciones</label>
-          <select v-if="!isValidated" v-model="form.tc_name" class="field-input"><option value="">— Sin términos —</option><option v-for="t in termsOptions" :key="t.name" :value="t.name">{{ t.name }}</option></select>
+          <select v-if="!isValidated" v-model="form.tc_name" class="field-input"><option value="">— Sin términos —</option><option v-for="t in terminosPara(termsOptions, 'compra', form.supplier || doc.supplier, form.tc_name)" :key="t.name" :value="t.name">{{ t.name }}</option></select>
           <div v-else class="field-input bg-surface-raised/60 truncate">{{ form.tc_name || '—' }}</div>
         </div>
         <div v-if="doc.set_warehouse !== undefined"><label class="field-label">Almacén (aceptado)</label><div class="field-input bg-surface-raised/60 truncate">{{ doc.set_warehouse || (items[0] && items[0].warehouse) || '—' }}</div></div>
@@ -219,6 +219,7 @@ import DocStatusPill from "./DocStatusPill.vue";
 import LinkInput from "./LinkInput.vue";
 import MultiploCompraModal from "./MultiploCompraModal.vue";
 import { call, FILTRO_TRANSPORTISTA } from "@/utils/frappe.js";
+import { terminosPara } from "@/utils/terminos.js";
 
 // Recibos sin fecha futura (ver contabilidad.sin_fecha_futura).
 const hoyLocal = new Date().toLocaleDateString("en-CA");

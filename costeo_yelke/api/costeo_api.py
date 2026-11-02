@@ -15,6 +15,7 @@ from costeo_yelke.roles import (
     requiere_vista,
     vistas_produccion,
 )
+from costeo_yelke.overrides import terminos as terminos_yelke
 from costeo_yelke.utils import resolver_terminos
 
 # UOM usada en Subcontracting BOM / Purchase Order cuando un servicio de maquila se
@@ -2304,7 +2305,8 @@ def get_cotizacion_defaults(company: str = None) -> dict:
     v0_2_56 el campo no existe, y la pantalla debe seguir mostrando el número de OC
     de siempre en vez de un adjunto que no se podría guardar."""
     payment_terms = frappe.get_all("Payment Terms Template", fields=["name"], order_by="name asc")
-    terms = frappe.get_all("Terms and Conditions", fields=["name"], order_by="name asc")
+    # De venta y de compra (el costeo arma ambos), con de quién es exclusivo cada uno.
+    terms = terminos_yelke.opciones()
     users = frappe.get_all(
         "User",
         filters={"enabled": 1, "user_type": "System User"},

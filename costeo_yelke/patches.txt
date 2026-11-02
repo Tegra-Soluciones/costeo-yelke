@@ -97,3 +97,4 @@ costeo_yelke.patches.v0_2_71.permisos_por_vista
 costeo_yelke.patches.v0_2_72.encargos
 costeo_yelke.patches.v0_2_73.cuenta_banco_mxn
 costeo_yelke.patches.v0_2_74.sin_flujos_nativos
+costeo_yelke.patches.v0_2_75.terminos_exclusivos
