@@ -5971,6 +5971,17 @@ def get_solicitud_material(plan: str) -> dict:
         order_by="creation asc",
     )
     primary = frappe.get_doc("Material Request", mr_names[0])
+    costeo_mr = primary.get("costeo") if primary.meta.has_field("costeo") else None
+    # Fecha requerida de cada lote: la de sus órdenes de compra de materia prima (se
+    # captura al dividir la solicitud); si aún no hay, la del lote del costeo.
+    fechas_lote = {}
+    if costeo_mr:
+        fechas_lote = {l: f for l, f in frappe.get_all("Costeo Lote", filters={"parent": costeo_mr},
+                                                         fields=["lote_ref", "schedule_date"], as_list=True) if f}
+        for l, f in frappe.db.sql("""select po.lote_ref, min(po.schedule_date) from `tabPurchase Order` po
+                where po.costeo = %s and po.docstatus < 2 and ifnull(po.is_subcontracted, 0) = 0
+                  and ifnull(po.lote_ref, '') != '' group by po.lote_ref""", (costeo_mr,)):
+            fechas_lote[l] = f
     detail = {
         "name": primary.name,
         "docstatus": primary.docstatus,
@@ -5992,6 +6003,10 @@ def get_solicitud_material(plan: str) -> dict:
             # en sentido inverso al guardar (flt(...) or None).
             "rate": (flt(it.get("rate")) or None if has_rate else None),
             "qty_original": it.get("qty_original") or it.qty,
+            # Para agrupar la tabla por lote en pantalla, con la fecha del LOTE (Costeo
+            # Lote): la de la línea de la solicitud es la de su creación.
+            "lote_ref": it.get("lote_ref") or "",
+            "schedule_date": str(fechas_lote.get(it.get("lote_ref")) or ""),
         } for it in primary.items],
     }
     detail["linked_ocs"] = list(dict.fromkeys(

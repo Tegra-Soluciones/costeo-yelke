@@ -2104,8 +2104,15 @@
               </div>
               <table class="w-full text-sm">
                 <thead><tr class="text-left text-xs font-semibold text-ink-light border-b border-surface-border"><th class="py-2">Artículo</th><th class="py-2 w-24 text-right">Cantidad</th><th class="py-2 w-20">UOM</th><th class="py-2 w-1/4">Proveedor</th></tr></thead>
-                <tbody>
-                  <tr v-for="it in mrItems" :key="it.name" class="border-b border-surface-border/60">
+                <tbody v-for="g in mrItemsPorLote" :key="g.lote">
+                  <!-- Un encabezado por lote (con su fecha requerida) cuando la solicitud se dividió. -->
+                  <tr v-if="mrItemsPorLote.length > 1 || g.lote">
+                    <td colspan="4" class="pt-3 pb-1">
+                      <span class="text-[12px] font-semibold text-ink">{{ g.lote || "Sin lote" }}</span>
+                      <span class="text-[11px] text-ink-light"> · {{ g.items.length }} {{ g.items.length === 1 ? "material" : "materiales" }}<template v-if="g.fecha"> · requerido {{ g.fecha }}</template></span>
+                    </td>
+                  </tr>
+                  <tr v-for="it in g.items" :key="it.name" class="border-b border-surface-border/60">
                     <td class="py-1.5 pr-2 font-mono text-[12px]">{{ it.item_code }}</td>
                     <td class="py-1.5 pr-2"><input v-if="!mrValidated" v-model.number="it.qty" type="number" :min="Math.round((it.qty_original || it.qty) * 0.95 * 100) / 100" :max="Math.round((it.qty_original || it.qty) * 1.05 * 100) / 100" class="field-input text-right" :class="(it.qty > (it.qty_original || it.qty) * 1.05 + 0.001 || it.qty < (it.qty_original || it.qty) * 0.95 - 0.001) ? 'border-red-400' : ''" /><span v-else class="text-right block">{{ it.qty }}</span></td>
                     <td class="py-1.5 pr-2 text-ink-muted text-xs">{{ it.uom }}</td>
@@ -4532,6 +4539,17 @@ const productosApilados = computed(() => {
   return out;
 });
 
+// Renglones de la solicitud de material agrupados por lote, en el orden de los lotes.
+const mrItemsPorLote = computed(() => {
+  const grupos = new Map();
+  for (const it of mrItems.value || []) {
+    const k = it.lote_ref || "";
+    if (!grupos.has(k)) grupos.set(k, { lote: k, fecha: it.schedule_date || "", items: [] });
+    grupos.get(k).items.push(it);
+  }
+  const num = (l) => Number((l.match(/\d+/) || [Infinity])[0]);
+  return [...grupos.values()].sort((a, b) => num(a.lote) - num(b.lote) || a.lote.localeCompare(b.lote));
+});
 // ── Desglose por talla del producto principal (api/tallas_ov.py) ──
 const soDesgloseForm = ref([]);
 // De qué OV (y en qué estado) es lo que hay cargado ahora en soDesgloseForm.
