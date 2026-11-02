@@ -1995,7 +1995,11 @@
             <div class="border-t border-surface-border pt-3">
               <div class="prod-head"><span class="prod-title"><svg class="w-4 h-4 text-ink-light" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M20 13V7a2 2 0 00-2-2H6a2 2 0 00-2 2v6m16 0v4a2 2 0 01-2 2H6a2 2 0 01-2-2v-4m16 0H4"/></svg>Cantidad a producir <span class="prod-count">{{ planDetail.po_items.length }}</span></span></div>
               <div v-for="it in planDetail.po_items" :key="it.name" class="prod-row">
-                <span class="flex-1 min-w-0 truncate font-mono text-[12px]">{{ it.item_code }}</span>
+                <!-- Nombre y tallas: el código de una talla extra no dice qué tallas lleva. -->
+                <div class="flex-1 min-w-0">
+                  <p class="truncate text-[13px] font-medium text-ink" :title="it.item_code">{{ it.item_name || it.item_code }}</p>
+                  <p v-if="it.tallas" class="text-[11.5px] text-ink-light">Tallas: {{ it.tallas }}</p>
+                </div>
                 <input
                   v-if="!planValidated" v-model.number="it.planned_qty" type="number" min="0" step="1"
                   :max="Math.round(it.planned_qty_original * 1.05 * 100) / 100"

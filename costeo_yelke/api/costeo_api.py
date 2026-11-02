@@ -445,6 +445,21 @@ def _slug_item_code(base_item_code, texto):
     return f"{base_item_code}-{slug}" if slug else f"{base_item_code}-VAR"
 
 
+def _nombre_talla_extra(doc, base, item_code=None):
+    """«TALLA EXTRA» para el primer grupo de tallas extra de un producto, «TALLA EXTRA 2»
+    para el segundo, etc. Se salta los números ya usados (en este costeo o por un
+    artículo que ya existe con ese código, de otro costeo del mismo producto)."""
+    usados = {p.finished_item for p in doc.costeo_producto}
+    n = 1 + sum(1 for p in doc.costeo_producto if p.get("variante_talla_de") == base.finished_item)
+    while True:
+        nombre = "TALLA EXTRA" if n == 1 else f"TALLA EXTRA {n}"
+        codigo = _slug_item_code(base.finished_item, nombre)
+        texto = f"{base.finished_item} - {nombre}".upper()
+        if item_code or (not frappe.db.exists("Item", codigo) and codigo not in usados and texto not in usados):
+            return nombre
+        n += 1
+
+
 @frappe.whitelist()
 def crear_variante_talla(costeo: str, producto_base: str, genero: str = None, talla: str = None,
                           qty: float = 0, pendiente: bool = False, item_code: str = None,
@@ -494,15 +509,20 @@ def crear_variante_talla(costeo: str, producto_base: str, genero: str = None, ta
         frappe.throw(_("Indica la cantidad de esta variante, o márcala como pendiente."))
 
     label = talla_grupo_label or " ".join(filter(None, [genero, _tallas_label(talla)])) or "Variante"
+    # El artículo se llama como el producto + «TALLA EXTRA» (o «TALLA EXTRA 2», 3… si ya
+    # hay otro grupo): las tallas que cubre van en su etiqueta (talla_grupo_label) y en la
+    # descripción de cada documento. Antes el nombre traía las tallas con las que nació
+    # (…-CABALLERO-44-46) y dejaba de ser cierto al agregarle otra talla en la OV.
+    nombre_extra = _nombre_talla_extra(doc, base, item_code)
     if frappe.db.exists("Item", base.finished_item):
-        item_code = item_code or _slug_item_code(base.finished_item, label)
+        item_code = item_code or _slug_item_code(base.finished_item, nombre_extra)
         if frappe.db.exists("Item", item_code):
             frappe.throw(_("Ya existe un artículo con ese código ({0}).").format(item_code))
 
         base_item = frappe.get_doc("Item", base.finished_item)
         nuevo_item = frappe.copy_doc(base_item)
         nuevo_item.item_code = item_code
-        nuevo_item.item_name = f"{base_item.item_name} - {label}"
+        nuevo_item.item_name = f"{base_item.item_name} - {nombre_extra}"
         # La imagen SÍ se hereda a propósito (frappe.copy_doc ya la trae) -- es la
         # misma prenda, solo cambia talla/consumo; el frontend la vuelve a jalar del
         # Artículo en cada carga (fetchItemImage), así que basta con no borrarla aquí.
@@ -520,7 +540,7 @@ def crear_variante_talla(costeo: str, producto_base: str, genero: str = None, ta
         nuevo_codigo = nuevo_item.name
     else:
         # Base en texto libre: la variante también, sin artículo todavía (ver docstring).
-        nuevo_codigo = (item_code or f"{base.finished_item} - {label}").strip().upper()
+        nuevo_codigo = (item_code or f"{base.finished_item} - {nombre_extra}").strip().upper()
         if any(p.finished_item == nuevo_codigo for p in doc.costeo_producto):
             frappe.throw(_("Este costeo ya tiene un producto llamado «{0}».").format(nuevo_codigo))
 
@@ -5748,6 +5768,19 @@ def get_plan_detail(costeo: str, sales_order: str = None) -> dict:
                     "origen": "bom",
                 })
 
+    # Tallas de cada producto según la OV («44 ×3 · 46 ×2 · 60 ×2»): el nombre de una
+    # talla extra no las dice, y sin esto el plan no dejaba ver qué se va a producir.
+    from costeo_yelke.api.tallas_ov import desglose_de_ov
+    so_plan = pp.sales_orders[0].sales_order if pp.get("sales_orders") else None
+    tallas_plan = {}
+    for code, filas in (desglose_de_ov(so_plan) if so_plan else {}).items():
+        filas = [f for f in filas if flt(f.get("cantidad")) > 0]
+        # Con Caballero y Dama en el mismo producto, el género va delante de la talla.
+        con_genero = len({f.get("genero") for f in filas}) > 1
+        tallas_plan[code] = " · ".join(
+            f"{(f.get('genero') + ' ') if con_genero and f.get('genero') else ''}{(f.get('talla') or '').strip()} ×{cint(f.get('cantidad'))}"
+            for f in filas)
+
     return {"plan": {
         "name": pp.name,
         "docstatus": pp.docstatus,
@@ -5757,7 +5790,9 @@ def get_plan_detail(costeo: str, sales_order: str = None) -> dict:
         "total_planned_qty": pp.total_planned_qty,
         "po_items": [{"name": r.name, "item_code": r.item_code, "planned_qty": r.planned_qty, "bom_no": r.bom_no,
                       "planned_qty_original": r.get("planned_qty_original") or r.planned_qty,
-                      "planned_start_date": r.planned_start_date, "sales_order": r.sales_order}
+                      "planned_start_date": r.planned_start_date, "sales_order": r.sales_order,
+                      "item_name": frappe.db.get_value("Item", r.item_code, "item_name") or r.item_code,
+                      "tallas": tallas_plan.get(r.item_code) or ""}
                      for r in pp.get("po_items") or []],
         "sub_assembly_items": [{"production_item": r.production_item, "qty": r.qty,
                                 "type_of_manufacturing": r.type_of_manufacturing, "supplier": r.supplier}
