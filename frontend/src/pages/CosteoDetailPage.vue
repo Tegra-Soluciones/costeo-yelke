@@ -1998,14 +1998,11 @@
                 <!-- Nombre y tallas: el código de una talla extra no dice qué tallas lleva. -->
                 <div class="flex-1 min-w-0">
                   <p class="truncate text-[13px] font-medium text-ink" :title="it.item_code">{{ it.item_name || it.item_code }}</p>
-                  <div v-if="it.tallas && it.tallas.length" class="mt-1 space-y-1">
-                    <div v-for="g in it.tallas" :key="g.genero" class="flex flex-wrap items-baseline gap-1.5">
-                      <span v-if="g.genero" class="text-[11px] font-semibold uppercase tracking-wide text-ink-light w-20 flex-shrink-0">{{ g.genero }}</span>
-                      <span v-for="t in g.tallas" :key="t.talla" class="inline-flex items-baseline gap-1 rounded-md border border-surface-border bg-surface-raised/60 px-1.5 py-0.5 text-[11.5px]">
-                        <b class="font-semibold text-ink">{{ t.talla }}</b><span class="text-ink-light">× {{ t.cantidad.toLocaleString("es-MX") }}</span>
-                      </span>
-                    </div>
-                  </div>
+                  <ul v-if="it.tallas && it.tallas.length" class="mt-1 space-y-0.5 text-[12px] text-ink-light">
+                    <template v-for="g in it.tallas" :key="g.genero">
+                      <li v-for="t in g.tallas" :key="g.genero + t.talla">{{ g.genero ? g.genero + " " : "" }}{{ t.talla }} × {{ t.cantidad.toLocaleString("es-MX") }} pzas</li>
+                    </template>
+                  </ul>
                 </div>
                 <input
                   v-if="!planValidated" v-model.number="it.planned_qty" type="number" min="0" step="1"
