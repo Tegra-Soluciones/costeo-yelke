@@ -3227,7 +3227,7 @@
           <button data-nav class="p-rail-item" @click="abrirDocProveedor('rfq')">Solicitar cotización al proveedor</button>
         </template>
         <template #enlaces>
-          <button data-libre v-if="docPanelProv" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="openPdf(docPanelProv.doctype, docPanelProv.name)">Vista previa</button>
+          <button data-libre v-if="docPanelProv" class="p-btn-ghost h-8 text-[12.5px] px-2" @click="openPdf(doctypePanelProv, docPanelProv.name)">Vista previa</button>
           <a v-if="docPanelProv" class="p-btn-ghost h-8 text-[12.5px] px-2" :href="`/app/${deskDelPaso}/${docPanelProv.name}`" target="_blank">ERPNext ↗</a>
         </template>
 
@@ -3303,7 +3303,7 @@
           :advancing="advancing" :payment-terms-options="cotDefaults.payment_terms_templates"
           :preview-url="pinvDoc ? printUrl('Purchase Invoice', pinvDoc.name) : ''" :preview-key="previewKey"
         />
-        <ActividadPlegable data-libre v-if="docPanelProv && !panelProv.cargando" :doctype="docPanelProv.doctype" :name="docPanelProv.name" />
+        <ActividadPlegable data-libre v-if="docPanelProv && !panelProv.cargando" :doctype="doctypePanelProv" :name="docPanelProv.name" />
       </PanelLateral>
 
       <!-- ═══ Panel lateral · Orden a un taller (Preparación · paso 3) ═══
@@ -6193,6 +6193,12 @@ const docPanelProv = computed(() =>
   panelProv.tab === "recibo" ? reciboPr.value
     : panelProv.tab === "factura" ? pinvDoc.value
       : docCompra.value);
+// El recibo y la factura no traen `doctype`: sin esto la vista previa pedía
+// /printview?doctype=undefined (error 500) y la actividad no cargaba.
+const doctypePanelProv = computed(() =>
+  panelProv.tab === "recibo" ? "Purchase Receipt"
+    : panelProv.tab === "factura" ? "Purchase Invoice"
+      : docCompra.value?.doctype || "Purchase Order");
 const panelProvMeta = computed(() => {
   if (!grpPanelProv.value) return "";
   // Solo el documento del paso abierto: la cotización y el presupuesto ya se ven
