@@ -204,7 +204,7 @@ function openTelaConvert() {
 function closeTelaConvert() { telaConvert.open = false; }
 function aplicarTelaConvert() {
   form.precio = telaConvertPrecioM.value;
-  form.stock_uom = "MTR - Metro";
+  form.stock_uom = "Metro";
   closeTelaConvert();
 }
 

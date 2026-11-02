@@ -3,7 +3,7 @@ import frappe
 # "MTR - Metro" y "H87 - Pieza" ya existen (creadas por import_sample_items). Kilogramo
 # usa la misma convención de clave SAT que esas dos (KGM); Mazo/Gruesa no tienen clave
 # SAT -- son unidades de empaque de avíos (botones, broches...), no de facturación.
-UOMS = ["KGM - Kilogramo", "Mazo", "Gruesa"]
+UOMS = ["Kilogramo", "Mazo", "Gruesa"]  # sin clave SAT desde v0_2_76
 
 
 def execute():

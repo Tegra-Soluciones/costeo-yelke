@@ -289,7 +289,7 @@ const casiCero = (v) => Math.abs(v || 0) < 0.5;
 const clase = (v) => (casiCero(v) ? "text-ink-muted" : v > 0 ? "text-emerald-700" : "text-red-600");
 const pctDe = (v, total) => (total ? `${((v / total) * 100).toFixed(1)}%` : "—");
 const limpio = (t) => String(t || "").replace(/-+$/, "");
-// «MTR - Metro» -> «m»; «H87 - Pieza» -> «pzas».
+// «Metro» -> «m»; «Pieza» -> «pzas» (las viejas traían clave SAT: «MTR - Metro»).
 const UNIDAD = { metro: "m", pieza: "pzas", kilogramo: "kg", litro: "L" };
 function cant(q, uom) {
   const nombre = String(uom || "").split(" - ").pop().toLowerCase();

@@ -40,8 +40,8 @@ def execute():
     frappe.clear_cache(doctype="Item")
 
     backfill = {
-        "BOTON-DE-PASTA-18-L": ["Gruesa", "H87 - Pieza"],
-        "BOTON DE PASTA": ["Gruesa", "H87 - Pieza"],
+        "BOTON-DE-PASTA-18-L": ["Gruesa", "Pieza"],
+        "BOTON DE PASTA": ["Gruesa", "Pieza"],
         "CINTA REFLEJANTE GRIS": ["Rollo"],
     }
     for item_code, uoms in backfill.items():

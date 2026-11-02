@@ -78,7 +78,7 @@
   },
   {
    "allow_on_submit": 1,
-   "default": "H87 - Pieza",
+   "default": "Pieza",
    "description": "Unidad en la que se cuenta \"Cantidad por lote\" -- normalmente Pieza, pero puede ser otra.",
    "fieldname": "lote_uom",
    "fieldtype": "Link",

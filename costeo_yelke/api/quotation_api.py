@@ -373,7 +373,7 @@ def prefill_from_costeo(costeo):
         if not p.finished_item:
             continue
         item_name = frappe.db.get_value("Item", p.finished_item, "item_name") or p.finished_item
-        uom = frappe.db.get_value("Item", p.finished_item, "stock_uom") or "Nos"
+        uom = frappe.db.get_value("Item", p.finished_item, "stock_uom") or "Pieza"
         items.append({
             "item_code": p.finished_item,
             "item_name": item_name,

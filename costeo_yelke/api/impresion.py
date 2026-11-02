@@ -128,7 +128,7 @@ TITULOS = {
     "Stock Entry": "Movimiento de almacén", "Costeo": "Costeo",
 }
 
-# "H87 - Pieza" -> "pzas"; lo demás, el nombre de la unidad sin la clave SAT.
+# "Pieza" -> "pzas"; lo demás, el nombre de la unidad (sin la clave SAT que traían las viejas).
 _UDM_CORTA = {"pieza": "pzas", "metro": "m", "kilogramo": "kg", "litro": "l", "par": "pares",
               "juego": "juegos", "rollo": "rollos", "caja": "cajas", "mazo": "mazos", "prendas": "prendas"}
 

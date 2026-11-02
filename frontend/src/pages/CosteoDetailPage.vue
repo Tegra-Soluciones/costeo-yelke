@@ -7714,7 +7714,7 @@ function addPunto(prod) {
   etapas.value.push({
     _tid: uid(), _grupo_id: uid(), producto_terminado: fi, etapa: String(next), stage_id: genStageId(),
     recibe_de: "", servicio: "", proveedor: "", precio_servicio: 0,
-    lote_qty: 1, lote_uom: "H87 - Pieza", modo_precio: "Por operación", operaciones_por_pieza: 1,
+    lote_qty: 1, lote_uom: "Pieza", modo_precio: "Por operación", operaciones_por_pieza: 1,
     precio_por_operacion: 0, subensamblaje: "",
   });
   manufacturaGuardada.value = false;
@@ -7727,7 +7727,7 @@ function addServicioAPunto(punto, prod) {
   etapas.value.push({
     _tid: uid(), _grupo_id: punto.grupo_id, producto_terminado: prod.finished_item, etapa: String(next),
     stage_id: genStageId(), recibe_de: anchor.recibe_de, servicio: "", proveedor: anchor.proveedor,
-    precio_servicio: 0, lote_qty: 1, lote_uom: "H87 - Pieza", modo_precio: "Por operación",
+    precio_servicio: 0, lote_qty: 1, lote_uom: "Pieza", modo_precio: "Por operación",
     operaciones_por_pieza: 1, precio_por_operacion: 0, subensamblaje: "",
   });
   manufacturaGuardada.value = false;
@@ -7918,15 +7918,15 @@ function addDetalle(prod, type) { detalles.value.push({ _tid: uid(), material_id
 // eso representa (que nadie captura a mano de forma natural).
 const UDM_POR_TIPO = {
   Tela: [
-    { value: "KGM - Kilogramo", label: "Kilogramo" },
-    { value: "MTR - Metro", label: "Metro" },
+    { value: "Kilogramo", label: "Kilogramo" },
+    { value: "Metro", label: "Metro" },
   ],
   "Avío": [
-    { value: "MTR - Metro", label: "Metro" },
-    { value: "KGM - Kilogramo", label: "Kilogramo" },
+    { value: "Metro", label: "Metro" },
+    { value: "Kilogramo", label: "Kilogramo" },
     { value: "Mazo", label: "Mazo — 1,728 pzas" },
     { value: "Gruesa", label: "Gruesa — 144 pzas" },
-    { value: "H87 - Pieza", label: "Pieza" },
+    { value: "Pieza", label: "Pieza" },
   ],
 };
 const PIEZAS_POR_UDM = { Mazo: 1728, Gruesa: 144 };
@@ -7980,11 +7980,11 @@ function piezasPorUdm(d) { return PIEZAS_POR_UDM[d.internal_uom] || 0; }
 // rendimiento/consumo, y ahí sí se respeta lo último que el usuario clickeó.
 const QTY_MODE_LABEL = { rendimiento: "Rendimiento", consumo: "Consumo", piezas: "Piezas" };
 function qtyModeLocked(d) {
-  return d.internal_uom === "KGM - Kilogramo" || d.internal_uom === "MTR - Metro" || d.internal_uom === "H87 - Pieza" || esUdmPorPiezas(d);
+  return d.internal_uom === "Kilogramo" || d.internal_uom === "Metro" || d.internal_uom === "Pieza" || esUdmPorPiezas(d);
 }
 function qtyModeFor(d) {
-  if (d.internal_uom === "KGM - Kilogramo") return "rendimiento";
-  if (d.internal_uom === "MTR - Metro" || d.internal_uom === "H87 - Pieza") return "consumo";
+  if (d.internal_uom === "Kilogramo") return "rendimiento";
+  if (d.internal_uom === "Metro" || d.internal_uom === "Pieza") return "consumo";
   if (esUdmPorPiezas(d)) return "piezas";
   return d._qtyMode || "rendimiento";
 }
@@ -8051,7 +8051,7 @@ function onProdQtyChange(prod) {
 }
 function addEtapa(prod) {
   const next = etapasDe(prod.finished_item).length + 1;
-  etapas.value.push({ _tid: uid(), producto_terminado: prod.finished_item, etapa: String(next), stage_id: genStageId(), recibe_de: "", servicio: "", proveedor: "", precio_servicio: 0, lote_qty: 1, lote_uom: "H87 - Pieza", modo_precio: "Por operación", operaciones_por_pieza: 1, precio_por_operacion: 0, subensamblaje: "" });
+  etapas.value.push({ _tid: uid(), producto_terminado: prod.finished_item, etapa: String(next), stage_id: genStageId(), recibe_de: "", servicio: "", proveedor: "", precio_servicio: 0, lote_qty: 1, lote_uom: "Pieza", modo_precio: "Por operación", operaciones_por_pieza: 1, precio_por_operacion: 0, subensamblaje: "" });
   manufacturaGuardada.value = false;
 }
 // Precio de la etapa por UNA pieza -- si el proveedor cobra por lote (ej. $19 por 25
@@ -8294,7 +8294,7 @@ async function openTelaConvert(d, prod) {
   telaConvertModal.open = true;
   telaConvertModal.d = d;
   telaConvertModal.prod = prod;
-  telaConvertModal.precio_kg = d.internal_uom === "KGM - Kilogramo" ? (d.unit_price || 0) : 0;
+  telaConvertModal.precio_kg = d.internal_uom === "Kilogramo" ? (d.unit_price || 0) : 0;
   telaConvertModal.metros_por_kilo = null;
   telaConvertModal.itemExists = false;
   if (!d.item) return;
@@ -8312,8 +8312,8 @@ async function aplicarTelaConvert() {
   // del renglon: queda cotizado en su propia unidad, sin factor.
   d.unit_price = telaConvertPrecioM.value;
   d.precio_compra = telaConvertPrecioM.value;
-  d.internal_uom = "MTR - Metro";
-  d.supplier_uom = "MTR - Metro";
+  d.internal_uom = "Metro";
+  d.supplier_uom = "Metro";
   d.conversion_factor = 1;
   onUdmSelectChange(d, prod);
   if (telaConvertModal.itemExists && telaConvertModal.metros_por_kilo) {
@@ -8530,7 +8530,7 @@ async function fillFromDoc(data) {
   // el costo por prenda no cambia, y lote_qty>1 dejaría de significar lo mismo para
   // crear_subcontracting_bom ("1 lote de servicio produce N piezas").
   etapas.value = (data.tabla_etapas_costeo || []).map(r => {
-    const e = { _tid: uid(), ...r, lote_qty: r.lote_qty || 1, lote_uom: r.lote_uom || "H87 - Pieza", modo_precio: "Por operación", operaciones_por_pieza: r.operaciones_por_pieza || 1, precio_por_operacion: r.precio_por_operacion || 0, stage_id: r.stage_id || genStageId() };
+    const e = { _tid: uid(), ...r, lote_qty: r.lote_qty || 1, lote_uom: r.lote_uom || "Pieza", modo_precio: "Por operación", operaciones_por_pieza: r.operaciones_por_pieza || 1, precio_por_operacion: r.precio_por_operacion || 0, stage_id: r.stage_id || genStageId() };
     if ((r.modo_precio || "Por lote") !== "Por operación") {
       e.operaciones_por_pieza = 1;
       e.precio_por_operacion = round2((Number(r.precio_servicio) || 0) / (Number(r.lote_qty) || 1));

@@ -1322,7 +1322,7 @@ def auto_materializar_subensamblajes(costeo: str) -> dict:
             item_code=item_code,
             prefill=json.dumps({
                 "item_group": g.get("item_group_sugerido") or "Sub-Ensamblajes",
-                "stock_uom": "H87 - Pieza",
+                "stock_uom": "Pieza",
                 "is_stock_item": 1,
                 "is_sub_contracted_item": 1,
                 "allow_negative_stock": 0 if hay_piezas else 1,
@@ -4506,7 +4506,7 @@ def _fila_bom_semi(item_code, qty, company, explotar=True):
     en cada validate()) rellena cualquier bom_no vacío con el default_bom del ítem, así
     que un vínculo "en blanco a propósito" se re-conecta solo al guardar.
     do_not_explode es el único mecanismo nativo que evita ese refill."""
-    uom = frappe.db.get_value("Item", item_code, "stock_uom") or "Nos"
+    uom = frappe.db.get_value("Item", item_code, "stock_uom") or "Pieza"
     bom_no = "" if not explotar else (
         frappe.db.get_value(
             "BOM",
@@ -4533,7 +4533,7 @@ def _uom_material(mat):
     return (
         mat.get("internal_uom")
         or frappe.db.get_value("Item", mat.item, "stock_uom")
-        or "Nos"
+        or "Pieza"
     )
 
 
@@ -4585,7 +4585,7 @@ def _bom_specs_de_producto(finished_item, operaciones, ps, mats_by_key, mats_sin
             ]
             if ps.hay_piezas:
                 for mat_item, qty in (mats_pieza.get(est.pieza) or {}).items():
-                    uom = next((_uom_material(m) for m, _q in stage_mats if m.item == mat_item), "Nos")
+                    uom = next((_uom_material(m) for m, _q in stage_mats if m.item == mat_item), "Pieza")
                     filas.append(_fila_bom_material(mat_item, qty, uom))
             else:
                 # Sin piezas: la materia prima de la etapa entra COMPLETA, agrupando
@@ -4765,7 +4765,7 @@ def crear_solicitud_material(costeo: str) -> dict:
     added = 0
     for d in doc.costeo_producto_detalle:
         if d.concept_type == "Materia Prima" and d.item and float(d.supplier_qty or 0) > 0:
-            uom = d.supplier_uom or frappe.db.get_value("Item", d.item, "stock_uom") or "Nos"
+            uom = d.supplier_uom or frappe.db.get_value("Item", d.item, "stock_uom") or "Pieza"
             row = {
                 "item_code":     d.item,
                 "qty":           float(d.supplier_qty),
@@ -4911,19 +4911,19 @@ def _crear_un_subcontracting_bom(doc, costeo, finished_good, servicio, servicios
         # Varios servicios sobre UNA pieza: el SubBOM usa el servicio primario con
         # conversion_factor = k, para que los k renglones produzcan UNA pieza y cada
         # servicio se facture completo.
-        finished_good_uom = frappe.db.get_value("Item", finished_good, "stock_uom") or "Nos"
-        svc_uom = frappe.db.get_value("Item", servicio, "stock_uom") or "Nos"
+        finished_good_uom = frappe.db.get_value("Item", finished_good, "stock_uom") or "Pieza"
+        svc_uom = frappe.db.get_value("Item", servicio, "stock_uom") or "Pieza"
         finished_good_qty, service_item_qty = 1, k
     elif lote_qty > 1:
         # El proveedor cobra por lote (ej. $19 por 25 confecciones): "1 Lote de
         # servicio produce lote_qty de producto", no "1 servicio = 1 pieza".
         finished_good_uom = (servicios[0].get("lote_uom")
-                             or frappe.db.get_value("Item", finished_good, "stock_uom") or "Nos")
+                             or frappe.db.get_value("Item", finished_good, "stock_uom") or "Pieza")
         svc_uom = LOTE_UOM
         finished_good_qty, service_item_qty = lote_qty, 1
     else:
-        finished_good_uom = frappe.db.get_value("Item", finished_good, "stock_uom") or "Nos"
-        svc_uom = frappe.db.get_value("Item", servicio, "stock_uom") or "Nos"
+        finished_good_uom = frappe.db.get_value("Item", finished_good, "stock_uom") or "Pieza"
+        svc_uom = frappe.db.get_value("Item", servicio, "stock_uom") or "Pieza"
         finished_good_qty, service_item_qty = 1, 1
 
     try:
@@ -9822,7 +9822,7 @@ def sub_devolver_material(costeo: str, warehouse: str, items=None, destino: str 
         if se.meta.get_field("costeo"):
             se.costeo = costeo
         for code, qty in sueltos.items():
-            uom = frappe.db.get_value("Item", code, "stock_uom") or "Nos"
+            uom = frappe.db.get_value("Item", code, "stock_uom") or "Pieza"
             se.append("items", {
                 "item_code": code, "qty": round(qty, 6),
                 "s_warehouse": warehouse, "t_warehouse": destino,

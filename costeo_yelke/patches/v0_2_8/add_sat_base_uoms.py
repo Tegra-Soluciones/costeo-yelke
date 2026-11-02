@@ -7,7 +7,7 @@ import frappe
 # install-app, sin correr ese script) esos Link truenan al guardar. Se separan aquí en
 # un patch para que cualquier instalación nueva las tenga sin depender de acordarse de
 # correr el script de datos de ejemplo.
-UOMS = ["MTR - Metro", "H87 - Pieza", "E48 - Unidad de servicio"]
+UOMS = ["Metro", "Pieza", "Unidad de servicio"]  # sin clave SAT desde v0_2_76
 
 
 def execute():

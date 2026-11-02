@@ -1859,7 +1859,7 @@ def _create_subcontracting_pos_from_stages(source, stage_rows, sales_order=None)
                 service_qty = flt(row.get("fg_qty_total")) or (fg_qty * conversion_factor)
             else:
                 service_qty = fg_qty * conversion_factor
-            service_uom = (bom_data.service_item_uom if bom_data else None) or _get_service_stock_uom(service_item) or "Nos"
+            service_uom = (bom_data.service_item_uom if bom_data else None) or _get_service_stock_uom(service_item) or "Pieza"
             if service_uom == "Lote":
                 # El proveedor solo entrega lotes completos (ej. lotes de 25 piezas) -- si
                 # fg_qty no es múltiplo exacto, hay que pedir de más, no truncar.

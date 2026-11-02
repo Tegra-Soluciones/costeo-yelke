@@ -97,7 +97,7 @@ def _grupo_y_articulo():
         frappe.get_doc({"doctype": "Supplier Group", "supplier_group_name": GRUPO, "parent_supplier_group": padre}).insert(
             ignore_permissions=True)
     if not frappe.db.exists("Item", ITEM_FLETE):
-        uom = next((u for u in ("E48 - Unidad de servicio", "H87 - Pieza", "Nos", "Unit") if frappe.db.exists("UOM", u)), None)
+        uom = next((u for u in ("Unidad de servicio", "E48 - Unidad de servicio", "Pieza", "H87 - Pieza", "Nos", "Unit") if frappe.db.exists("UOM", u)), None)
         grupo = "Servicios" if frappe.db.exists("Item Group", "Servicios") else \
             frappe.db.get_value("Item Group", {"is_group": 0}, "name")
         frappe.get_doc({"doctype": "Item", "item_code": ITEM_FLETE, "item_name": ITEM_FLETE, "item_group": grupo,
