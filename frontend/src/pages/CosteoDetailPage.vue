@@ -1142,6 +1142,8 @@
                           <span class="block text-[11.5px] font-medium text-ink-muted text-center mb-1">{{ t.talla }}</span>
                           <input v-model.number="d.valores[t.name]" type="number" min="0" step="1" class="p-field h-8 px-1.5 text-[13px] text-center tabular-nums" />
                         </label>
+                        <button v-if="hayTallasOcultas(d, b)" type="button" class="add-link h-8" @click="b.todas = true">Ver todas las tallas</button>
+                        <button v-else-if="b.todas" type="button" class="add-link h-8" @click="b.todas = false; limpiarDesglose(d)">Solo las comunes</button>
                       </div>
                     </div>
                     <button v-if="d.bloques.length < 2" type="button" class="add-link mt-3" @click="d.bloques.push({ genero: generosLibres(d)[0] || '', grupo: '' })">
@@ -8292,9 +8294,15 @@ function tallasDeGrupo(grupoName) {
 // piezas (capturada antes de esta regla) se sigue mostrando para no perderla.
 function tallasRegulares(d, b) {
   const todas = tallasDeGrupo(b.grupo);
+  if (b.todas) return todas;
   const comunes = todas.filter(t => t.uso_comun || Number(d.valores?.[t.name]) > 0);
   // Un tipo de talla sin ninguna marcada como común se comporta como antes.
   return comunes.length ? comunes : todas;
+}
+// Hay tallas del tipo que no se están mostrando (no son de uso común): se ofrecen con
+// «Ver todas», para poder capturar cualquier talla que pida el cliente.
+function hayTallasOcultas(d, b) {
+  return !b.todas && tallasRegulares(d, b).length < tallasDeGrupo(b.grupo).length;
 }
 // Géneros que todavía no tienen bloque (b = el bloque que se está editando).
 function generosLibres(d, b = null) {

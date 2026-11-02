@@ -425,8 +425,10 @@ def _validaciones_previas(doc):
     llega a Dirección algo que no puede aprobar."""
     if doc.doctype == "Sales Order":
         from costeo_yelke.api.costeo_api import validar_oc_cliente_adjunta
+        from costeo_yelke.api.tallas_ov import validar_desglose_ov
 
         validar_oc_cliente_adjunta(doc)
+        validar_desglose_ov(doc)
     if doc.doctype == "Purchase Invoice":
         from costeo_yelke.api.contabilidad import validar_archivos_factura
 

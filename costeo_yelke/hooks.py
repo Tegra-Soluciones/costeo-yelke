@@ -196,7 +196,11 @@ doc_events = {
 	# validarla (v0_2_56). El candado va en el doctype, no solo en la app, para que
 	# tampoco se pueda saltar desde el escritorio de ERPNext.
 	"Sales Order": {
-		"before_submit": "costeo_yelke.api.costeo_api.validar_oc_cliente_adjunta",
+		"before_submit": [
+			"costeo_yelke.api.costeo_api.validar_oc_cliente_adjunta",
+			# Cada producto con su desglose por talla (api/tallas_ov.py).
+			"costeo_yelke.api.tallas_ov.validar_desglose_ov",
+		],
 	},
 	"Purchase Receipt": {
 		"validate": "costeo_yelke.api.contabilidad.validar_recepcion_contra_oc",

@@ -141,6 +141,37 @@ def _filas_de_renglon(r, generos):
     return filas
 
 
+def validar_desglose_ov(doc, method=None):
+    """before_submit de la Orden de venta del costeo: cada producto lleva su desglose
+    por talla y suma exacto su cantidad. Antes la OV se validaba sin tallas y no
+    aparecían en la descripción, la remisión, la factura ni la Orden de Manufactura.
+
+    - Producto principal: «Desglose por talla · tallas regulares» (JSON o líneas).
+    - Talla extra que agrupa varias tallas (ej. 44/46): «Tallas extra», una línea
+      por talla. Si agrupa una sola talla, su cantidad ya es su desglose."""
+    costeo = doc.get("costeo")
+    if not costeo or not frappe.db.exists("Costeo", costeo):
+        return
+    c = frappe.get_doc("Costeo", costeo)
+    principales = {p.finished_item for p in c.costeo_producto if p.finished_item and not p.get("variante_talla_de")}
+    tallas_variante = {t.finished_item: [x for x in (t.talla or "").split(",") if x.strip()]
+                       for t in c.get("tabla_tallas_costeo") or [] if t.finished_item not in principales}
+    faltan = []
+    for it in doc.items:
+        if it.item_code in tallas_variante:
+            if len(tallas_variante[it.item_code]) <= 1:
+                continue
+        elif it.item_code not in principales:
+            continue
+        suma = sum(f["cantidad"] for f in _filas_de_renglon(it.as_dict(), {}))
+        if abs(suma - flt(it.qty)) > 0.001:
+            faltan.append(_("{0}: {1} de {2} pzas por talla").format(it.item_name or it.item_code, cint(suma), cint(it.qty)))
+    if faltan:
+        frappe.throw(_("Falta el desglose por talla. Captúralo en el paso Orden de venta («Desglose por talla» y "
+                       "«Tallas extra») y guárdalo antes de validar:") + "<br>• " + "<br>• ".join(faltan),
+                     title=_("Faltan las tallas"))
+
+
 def desglose_canonico_de_ov(sales_order, generos=None):
     """{item_code: [{clave, etiqueta, genero, talla, cantidad}]} -- el desglose por
     talla de la OV con su clave estable y SUMANDO los renglones repetidos del mismo
