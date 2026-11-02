@@ -2176,10 +2176,13 @@
                           :title="`${f.etiqueta || f.talla}: la orden de venta pide ${f.cantidad}`"
                         >{{ f.talla || f.etiqueta }}</span>
                         <input
-                          v-model.number="lote.tallas[p.item_code][f.clave]" type="number" min="0"
+                          v-model.number="lote.tallas[p.item_code][f.clave]" type="number" min="0" step="1"
+                          :max="mrLoteTallaMax(lote, p.item_code, f.clave)"
+                          :title="`Máximo en este lote: ${mrLoteTallaMax(lote, p.item_code, f.clave)} (la orden de venta pide ${f.cantidad})`"
                           class="field-input w-[4.5rem] !px-2 text-right text-[12px] tabular-nums"
                           :class="mrLoteTallaDescuadrada(p.item_code, f.clave) ? 'border-amber-400 ring-1 ring-amber-400' : ''"
-                          @input="sincronizarPiezasDeTallas(lote); actualizarPreviewLotes()"
+                          @input="limitarTallaLote(lote, p.item_code, f.clave); sincronizarPiezasDeTallas(lote); actualizarPreviewLotes()"
+                          @blur="lote.tallas[p.item_code][f.clave] === '' && (lote.tallas[p.item_code][f.clave] = 0)"
                         />
                       </label>
                     </div>
@@ -4881,7 +4884,7 @@ const {
   mrLotes, addMrLote, removeMrLote, repartirMrLotesIgual, mrLotePendiente,
   mrLotesPreview, actualizarPreviewLotes, mrLoteProductoExcedido, mrLoteProductoIncompleto, mrLotesInvalidos,
   tallasDe: tallasDeLote, tieneTallas, hayTallasEnLotes, sincronizarPiezasDeTallas,
-  mrLoteTallaPendiente, mrLoteTallaDescuadrada, mrLoteTallasDescuadradas,
+  mrLoteTallaPendiente, mrLoteTallaDescuadrada, mrLoteTallasDescuadradas, mrLoteTallaMax, limitarTallaLote,
   mrLoteMargenTotal, mrLoteTotalDeProducto, mrLoteTotalFueraDeMargen,
   loadSolicitud, crearSolicitud, guardarSolicitud, validarSolicitud,
   selectOC, selectOcLote, selectRfq, selectSq, guardarDocCompra, validarDocCompra, revisarDocCompra, jalarPreciosOC,

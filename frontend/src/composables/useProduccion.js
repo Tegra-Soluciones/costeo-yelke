@@ -190,6 +190,20 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     const fila = tallasDe(producto).find((f) => f.clave === clave);
     return Math.round(((Number(fila?.cantidad) || 0) - mrLoteTallaAsignada(producto, clave)) * 100) / 100;
   }
+  // Lo más que puede llevar ESTE lote de esa talla: lo que pide la orden de venta menos
+  // lo que ya tienen los demás lotes. Nunca se deja capturar de más.
+  function mrLoteTallaMax(lote, producto, clave) {
+    const fila = tallasDe(producto).find((f) => f.clave === clave);
+    const otros = mrLotes.value.reduce(
+      (sum, l) => sum + (l === lote ? 0 : Number(l.tallas?.[producto]?.[clave]) || 0), 0);
+    return Math.max((Number(fila?.cantidad) || 0) - otros, 0);
+  }
+  function limitarTallaLote(lote, producto, clave) {
+    const crudo = lote.tallas?.[producto]?.[clave];
+    if (crudo === "" || crudo == null) return; // se está borrando para escribir otro número
+    const tope = mrLoteTallaMax(lote, producto, clave);
+    lote.tallas[producto][clave] = Math.min(Math.max(Math.floor(Number(crudo) || 0), 0), tope);
+  }
   function mrLoteTallaDescuadrada(producto, clave) {
     return Math.abs(mrLoteTallaPendiente(producto, clave)) > 0.001;
   }
@@ -2091,7 +2105,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     mrLotesPreview, actualizarPreviewLotes, mrLoteProductoExcedido, mrLoteProductoIncompleto, mrLotesInvalidos,
     // Reparto por talla de cada lote (api/tallas_lote.py)
     tallasOv, tallasDe, tieneTallas, hayTallasEnLotes, sincronizarPiezasDeTallas,
-    mrLoteTallaPendiente, mrLoteTallaDescuadrada, mrLoteTallasDescuadradas,
+    mrLoteTallaPendiente, mrLoteTallaDescuadrada, mrLoteTallasDescuadradas, mrLoteTallaMax, limitarTallaLote,
     mrLoteTotalDeProducto, mrLoteMargenTotal, mrLoteTotalFueraDeMargen,
     loadSolicitud, crearSolicitud, guardarSolicitud, validarSolicitud,
     loadDocCompra, selectOC, selectOcLote, selectRfq, selectSq, guardarDocCompra, validarDocCompra, revisarDocCompra, jalarPreciosOC,
