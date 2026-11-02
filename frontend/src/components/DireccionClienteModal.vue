@@ -42,7 +42,7 @@
                   <option v-for="e in ESTADOS" :key="e" :value="e">{{ e }}</option>
                 </select>
                 <input v-else v-model="f.state" v-mayus class="p-field" /></label>
-              <label class="col-span-3 sm:col-span-2"><span class="p-field-label">Código postal</span>
+              <label class="col-span-3 sm:col-span-2"><span class="p-field-label">Código postal <span v-if="esMexico" class="text-red-400">*</span></span>
                 <input v-model="f.pincode" class="p-field" :class="err.pincode ? 'border-red-400' : ''" inputmode="numeric"
                        :maxlength="esMexico ? 5 : 10" @input="esMexico && (f.pincode = f.pincode.replace(/\D/g, ''))" /></label>
               <label class="col-span-6 sm:col-span-3"><span class="p-field-label">País <span class="text-red-400">*</span></span>
@@ -127,7 +127,7 @@ function guardar() {
   err.city = !f.city.trim();
   err.country = !f.country;
   err.state = esMexico.value && !f.state;
-  err.pincode = esMexico.value && !!f.pincode && !/^\d{5}$/.test(f.pincode);
+  err.pincode = esMexico.value && !/^\d{5}$/.test(f.pincode);
   if (Object.values(err).some(Boolean)) return;
   emit("guardar", { ...f });
 }

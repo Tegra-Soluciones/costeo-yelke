@@ -250,6 +250,59 @@ def direccion_ligada(doc, method=None):
                      title=_("Dirección sin dueño"))
 
 
+def direccion_completa(doc, method=None):
+    """validate de Address: en México, estado y código postal (la factura los necesita)."""
+    if not _captura_de_persona(doc) or not _es_mexico(doc.country):
+        return
+    faltan = [etiqueta for campo, etiqueta in (("state", _("Estado")), ("pincode", _("Código postal")))
+              if not (doc.get(campo) or "").strip()]
+    if faltan:
+        frappe.throw(_("Falta en la dirección: {0}.").format(", ".join(faltan)), title=_("Dirección incompleta"))
+
+
+def contacto_completo(doc, method=None):
+    """validate de Contact: nombre y al menos un correo o teléfono para localizarlo."""
+    if not _captura_de_persona(doc) or doc.get("user"):
+        return
+    if not (doc.get("first_name") or "").strip():
+        frappe.throw(_("Escribe el nombre del contacto."), title=_("Contacto incompleto"))
+    medios = [doc.get("email_id"), doc.get("phone"), doc.get("mobile_no"),
+              *[f.email_id for f in doc.get("email_ids") or []], *[f.phone for f in doc.get("phone_nos") or []]]
+    if not any((m or "").strip() for m in medios):
+        frappe.throw(_("Escribe al menos un correo o un teléfono del contacto."), title=_("Contacto incompleto"))
+
+
+def parte_con_direccion(doc, method=None):
+    """validate de Customer y Supplier: al editar uno ya creado, debe tener su dirección.
+    Al crearlo se deja pasar: el Escritorio da de alta la dirección después de guardarlo."""
+    if not _captura_de_persona(doc) or doc.is_new() or doc.get("disabled"):
+        return
+    if not frappe.db.exists("Dynamic Link", {"parenttype": "Address", "link_doctype": doc.doctype, "link_name": doc.name}):
+        quien = _("del cliente") if doc.doctype == "Customer" else _("del proveedor")
+        frappe.throw(_("Da de alta la dirección {0} (sección «Dirección y contacto») antes de guardar cambios.").format(quien),
+                     title=_("Falta la dirección"))
+
+
+def ligar_principales(doc, method=None):
+    """on_update de Customer y Supplier: la dirección y el contacto principales quedan
+    ligados a este registro. Si la liga se perdía, la dirección no salía al capturar
+    cotizaciones u órdenes aunque el cliente la tuviera como principal."""
+    campos = (("Address", "customer_primary_address" if doc.doctype == "Customer" else "supplier_primary_address"),
+              ("Contact", "customer_primary_contact" if doc.doctype == "Customer" else "supplier_primary_contact"))
+    for tipo, campo in campos:
+        nombre = doc.get(campo)
+        if not nombre or not frappe.db.exists(tipo, nombre):
+            continue
+        if frappe.db.exists("Dynamic Link", {"parenttype": tipo, "parent": nombre,
+                                             "link_doctype": doc.doctype, "link_name": doc.name}):
+            continue
+        d = frappe.get_doc(tipo, nombre)
+        d.append("links", {"link_doctype": doc.doctype, "link_name": doc.name})
+        d.flags.ignore_permissions = True
+        d.flags.ignore_confirmacion = True  # proceso del sistema: no le exige lo que le falte
+        d.save()
+
+
 def contacto(doc, method=None):
     """before_validate de Contact: correos y teléfonos, en los campos y en sus tablas."""
     errores = []

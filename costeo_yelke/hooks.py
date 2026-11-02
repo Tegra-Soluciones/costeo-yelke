@@ -331,10 +331,10 @@ for _dt in ("Customer", "Supplier"):
 # Reglas de captura (overrides/captura.py): datos maestros y folios escritos de una sola
 # forma, en la app y en el Escritorio. Después de los bloques de arriba y como listas.
 _CAPTURA = {
-	"Customer": {"before_validate": ["parte"], "validate": ["rfc_unico"]},
-	"Supplier": {"before_validate": ["parte"], "validate": ["rfc_unico"]},
-	"Address": {"before_validate": ["direccion"], "validate": ["direccion_ligada"]},
-	"Contact": {"before_validate": ["contacto"], "validate": ["contacto_ligado"]},
+	"Customer": {"before_validate": ["parte"], "validate": ["rfc_unico", "parte_con_direccion"], "on_update": ["ligar_principales"]},
+	"Supplier": {"before_validate": ["parte"], "validate": ["rfc_unico", "parte_con_direccion"], "on_update": ["ligar_principales"]},
+	"Address": {"before_validate": ["direccion"], "validate": ["direccion_ligada", "direccion_completa"]},
+	"Contact": {"before_validate": ["contacto"], "validate": ["contacto_ligado", "contacto_completo"]},
 	"Bank Account": {"validate": ["cuenta_bancaria"]},
 	"Sales Order": {"before_validate": ["folio_oc_cliente"]},
 	"Purchase Invoice": {"before_validate": ["folio_proveedor"]},
