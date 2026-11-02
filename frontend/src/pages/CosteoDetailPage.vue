@@ -17,22 +17,22 @@
       <div v-if="resumenConfirmarFlujo.length" class="mt-3 max-h-[60vh] overflow-y-auto space-y-2">
         <div v-for="r in resumenConfirmarFlujo" :key="r.producto" class="rounded-lg border border-gray-200 px-4 py-3 text-[13px] leading-relaxed">
           <p class="font-semibold text-gray-900 truncate">{{ r.producto }}</p>
-          <p class="text-gray-500">{{ r.pasos }} {{ r.pasos === 1 ? "paso" : "pasos" }}<template v-if="r.piezas"> · {{ r.piezas }} piezas · se unen en {{ r.union || "el paso final" }}</template></p>
-          <p class="mt-1.5 text-gray-700">{{ r.tipo }}</p>
-          <ol class="mt-1 space-y-1 list-decimal pl-4 text-gray-700">
-            <li v-for="(p, i) in r.relato" :key="i">
-              <span class="font-medium text-gray-900">{{ p.quien }}</span> {{ p.texto }}
-              <ul v-if="p.partes" class="mt-0.5 space-y-0.5 list-disc pl-4">
-                <li v-for="(x, j) in p.partes" :key="j">{{ x }}</li>
-              </ul>
+          <p class="text-gray-500">{{ r.pasos }} {{ r.pasos === 1 ? "paso" : "pasos" }}<template v-if="r.piezas"> · {{ r.piezas }} piezas · se unen en {{ r.union || "el paso final" }}</template> · {{ r.tipo }}</p>
+          <ol class="mt-2 space-y-1.5">
+            <li v-for="(p, i) in r.relato" :key="i" class="flex gap-2.5">
+              <span class="mt-0.5 w-5 h-5 flex-shrink-0 rounded-full bg-gray-100 text-gray-600 text-[11px] font-semibold flex items-center justify-center">{{ i + 1 }}</span>
+              <div class="min-w-0">
+                <p><span class="font-semibold text-gray-900">{{ p.quien }}</span> <span class="text-gray-500">· {{ p.servicio }}</span></p>
+                <p v-if="p.detalle" class="text-gray-600">{{ p.detalle }}</p>
+              </div>
             </li>
           </ol>
-          <template v-if="r.recorridos.length">
-            <p class="mt-2 font-medium text-gray-900">Recorrido de cada pieza</p>
-            <ul class="mt-0.5 space-y-0.5 text-gray-700">
-              <li v-for="(c, i) in r.recorridos" :key="i"><span class="font-medium">{{ c.piezas }}:</span> {{ c.camino }}</li>
+          <div v-if="r.recorridos.length" class="mt-2.5 pt-2 border-t border-gray-100">
+            <p class="font-medium text-gray-900">Recorrido de cada pieza</p>
+            <ul class="mt-0.5 space-y-0.5 text-gray-600">
+              <li v-for="(c, i) in r.recorridos" :key="i"><span class="font-medium text-gray-800">{{ c.piezas }}:</span> {{ c.camino }}</li>
             </ul>
-          </template>
+          </div>
           <ul v-if="r.avisos.length" class="mt-1 space-y-0.5 text-amber-700">
             <li v-for="(a, i) in r.avisos" :key="i">• {{ a }}</li>
           </ul>
@@ -3905,7 +3905,8 @@ function fuentesEfectivas(prod, op) {
   return (op.recibe_de || []).filter((k) => !sobra.has(k))
     .map((k) => prod.operaciones.find((o) => o.op_key === k)).filter(Boolean);
 }
-const servicioLegible = (item) => (item || "").replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+const servicioLegible = (item) => (item || "").replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase()
+  .replace(/^servicio de /, "");
 const stageIdsDe = (op) => new Set(op.stage_ids || (op.servicios || []).map((sv) => sv.stage_id));
 const serviciosDe = (op) => listaY((op.servicios || []).map((sv) => servicioLegible(sv.item))) || "su servicio";
 const nombrePieza = (x) => `${x.nombre.toLowerCase()}${Number(x.multiplicador) > 1 ? ` ×${Number(x.multiplicador)}` : ""}`;
@@ -3936,7 +3937,7 @@ function avisosLigas(prod, op) {
     const sobra = recibeRedundantesVivo(prod, op);
     if (!sobra.size) return [];
     const via = listaY(fuentesEfectivas(prod, op).map((o) => supplierLabel(prod, o)));
-    return [`«${supplierLabel(prod, op)}» también recibe directo de ${listaY([...sobra].map(etq))}, aunque lo que hace ese paso ya le llega a través de ${via}. Revisa si sobra esa liga.`];
+    return [`«${supplierLabel(prod, op)}» también recibe directo de ${listaY([...sobra].map(etq))}, aunque eso ya le llega por ${via}. ¿Sobra la liga?`];
   }
   if (armado.despues.has(op.op_key)) return [];
   const llegan = new Set();
@@ -3947,7 +3948,7 @@ function avisosLigas(prod, op) {
   }
   const vacias = (op.recibe_de || []).filter((k) => !llegan.has(k));
   return vacias.length
-    ? [`«${supplierLabel(prod, op)}» recibe de ${listaY(vacias.map(etq))}, pero según el desglose de piezas ninguna pieza pasa de ahí a este paso. Revisa si sobra esa liga o falta marcar la pieza.`]
+    ? [`«${supplierLabel(prod, op)}» recibe de ${listaY(vacias.map(etq))}, pero ninguna pieza hace ese camino. ¿Sobra la liga o falta marcar la pieza?`]
     : [];
 }
 function relatoFlujo(prod) {
@@ -3956,7 +3957,8 @@ function relatoFlujo(prod) {
   const nombre = (op) => (op.supplier ? supplierLabel(prod, op) : "(Paso sin taller)");
   const etq = (k) => nombre(porKey.get(k));
   const terminales = new Set(terminalKeysVivo(prod));
-  const fin = (op) => (terminales.has(op.op_key) ? "; con esto queda terminada la prenda" : "");
+  const fin = (op) => (terminales.has(op.op_key) ? " Termina la prenda." : "");
+  const paso = (op, detalle) => ({ quien: nombre(op), servicio: serviciosDe(op), detalle: `${detalle}${fin(op)}`.trim() });
   const { union, armado, rutas } = rutasDePiezas(prod);
 
   // Sin piezas: una cadena de taller a taller.
@@ -3968,65 +3970,53 @@ function relatoFlujo(prod) {
     });
     const relato = ops.map((op) => {
       const f = fuentesEfectivas(prod, op);
-      const inicio = f.length ? `recibe de ${listaY(f.map((o) => nombre(o)))} y hace ${serviciosDe(op)}` : `empieza con la materia prima y hace ${serviciosDe(op)}`;
-      return { quien: nombre(op), texto: `${inicio}${fin(op)}.` };
+      return paso(op, f.length ? `Recibe de ${listaY(f.map((o) => nombre(o)))}.` : "Empieza con la materia prima.");
     });
-    const tipo = ops.length <= 1 ? "Un solo paso." : lineal
-      ? "Flujo lineal: cada taller trabaja lo que le entrega el anterior."
-      : "Flujo con ramas: hay talleres que trabajan en paralelo y después se junta su trabajo.";
+    const tipo = ops.length <= 1 ? "un solo paso" : lineal ? "flujo lineal" : "flujo con ramas (talleres en paralelo)";
     return { tipo, relato, recorridos: [] };
   }
 
-  // Con piezas: qué pieza recibe cada paso, de quién y con qué ya hecho.
-  const deQuien = (k, nombres) => (k
-    ? `${listaY(nombres)} de ${etq(k)} — ya con ${serviciosDe(porKey.get(k))}`
-    : `${listaY(nombres)} directo de la materia prima`);
+  // Con piezas: qué pieza recibe cada paso y de quién (el «con qué ya hecho» lo dice
+  // el recorrido de cada pieza).
   const agrupar = (pares) => {
     const g = new Map();
     for (const [k, n] of pares) { if (!g.has(k)) g.set(k, []); g.get(k).push(n); }
     return [...g.entries()];
   };
+  const recibe = (grupos) => "Recibe " + grupos.map(([k, n]) => `${listaY(n)} ${k ? `de ${etq(k)}` : "de materia prima"}`).join("; ") + ".";
   const relato = ops.map((op) => {
-    const quien = nombre(op);
     if (op.op_key === union) {
-      const grupos = agrupar(rutas.map((r) => [r.pasos[r.pasos.length - 1] || null, nombrePieza(r.pieza)]));
-      return { quien, texto: `hace ${serviciosDe(op)} y aquí se unen las piezas en una sola prenda${fin(op)}. Recibe:`,
-        partes: grupos.map(([k, n]) => deQuien(k, n)) };
+      return paso(op, `Une las piezas. ${recibe(agrupar(rutas.map((r) => [r.pasos[r.pasos.length - 1] || null, nombrePieza(r.pieza)])))}`);
     }
     if (armado.despues.has(op.op_key)) {
       const f = fuentesEfectivas(prod, op).map((o) => nombre(o));
-      return { quien, texto: `recibe la prenda ya armada${f.length ? ` de ${listaY(f)}` : ""} y hace ${serviciosDe(op)}${fin(op)}.` };
+      return paso(op, `Recibe la prenda armada${f.length ? ` de ${listaY(f)}` : ""}.`);
     }
     const mias = rutas.filter((r) => r.pasos.includes(op.op_key));
     if (!mias.length) {
       const f = fuentesEfectivas(prod, op).map((o) => nombre(o));
-      return { quien, texto: `${f.length ? `recibe de ${listaY(f)} y ` : ""}hace ${serviciosDe(op)} (no tiene piezas marcadas en el desglose)${fin(op)}.` };
+      return paso(op, `${f.length ? `Recibe de ${listaY(f)}. ` : ""}Sin piezas marcadas.`);
     }
     const grupos = agrupar(mias.map((r) => [r.pasos[r.pasos.indexOf(op.op_key) - 1] || null, nombrePieza(r.pieza)]));
     if (grupos.length === 1 && grupos[0][0] === null) {
       const todas = mias.length === rutas.length && rutas.length > 1;
-      return { quien, texto: `empieza con la materia prima y hace ${serviciosDe(op)}: ${todas ? `saca las ${rutas.length} piezas (${listaY(grupos[0][1])})` : `saca ${listaY(grupos[0][1])}`}.` };
+      return paso(op, `Empieza con la materia prima y saca ${todas ? `las ${rutas.length} piezas` : listaY(grupos[0][1])}.`);
     }
-    if (grupos.length === 1) {
-      return { quien, texto: `recibe ${deQuien(grupos[0][0], grupos[0][1])}, y ${mias.length === 1 ? "le" : "les"} hace ${serviciosDe(op)}.` };
-    }
-    return { quien, texto: `hace ${serviciosDe(op)}. Recibe:`, partes: grupos.map(([k, n]) => deQuien(k, n)) };
+    return paso(op, recibe(grupos));
   });
 
   // Recorrido de cada pieza (las que siguen el mismo camino van juntas).
   const caminos = new Map();
   for (const r of rutas) {
-    const pasos = [...r.pasos, union].filter(Boolean).map((k) => serviciosDe(porKey.get(k)));
-    const clave = pasos.join(" → ");
+    const clave = [...r.pasos, union].filter(Boolean).map((k) => serviciosDe(porKey.get(k))).join(" → ");
     if (!caminos.has(clave)) caminos.set(clave, []);
     caminos.get(clave).push(nombrePieza(r.pieza));
   }
   const recorridos = [...caminos.entries()].map(([camino, nombres]) => ({ piezas: listaY(nombres), camino }));
-  const tipo = caminos.size === 1
-    ? `Todas las piezas siguen el mismo camino y se unen con ${etq(union)}.`
-    : `Las piezas siguen caminos distintos y se juntan con ${etq(union)}.`;
+  const tipo = caminos.size === 1 ? "todas las piezas van por el mismo camino" : "cada pieza sigue su camino";
   return { tipo, relato, recorridos };
 }
+
 function pedirConfirmarFlujo(accion) {
   confirmFlujoDlg.accion = accion;
   confirmFlujoDlg.open = true;
