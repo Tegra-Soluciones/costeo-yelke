@@ -5912,15 +5912,14 @@ def plan_crear_solicitud_material(plan: str) -> dict:
         for mr_name in mrs:
             frappe.db.set_value("Material Request", mr_name, "costeo", pp.get("costeo"))
     _asignar_proveedores_a_mrs(pp.get("costeo"), mrs)
-    # Cada material en la UDM en que se compra (la del costeo o la de compra del
-    # artículo), no en la de almacén: de aquí la toma la orden de compra.
-    if pp.get("costeo") and mrs:
-        costeo_doc = frappe.get_doc("Costeo", pp.get("costeo"))
-        for mr_name in mrs:
-            mr_doc = frappe.get_doc("Material Request", mr_name)
-            if mr_doc.docstatus == 0 and _pasar_a_uom_compra(mr_doc, costeo_doc):
-                mr_doc.flags.ignore_permissions = True
-                mr_doc.save()
+    # Cada material en su UDM base (la de almacén): la de compra (Mazo, Rollo…) solo
+    # se usa en la orden de compra, en paquetes completos (mr_crear_oc). ERPNext arma la
+    # solicitud en la UDM de compra del artículo si tiene una.
+    for mr_name in mrs:
+        mr_doc = frappe.get_doc("Material Request", mr_name)
+        if mr_doc.docstatus == 0 and _pasar_a_uom_almacen(mr_doc):
+            mr_doc.flags.ignore_permissions = True
+            mr_doc.save()
     # Guarda la cantidad EXACTA calculada (antes de que alguien la edite) -- es la
     # base contra la que se valida el margen de "hasta 5% más" al guardar la solicitud.
     if mrs and frappe.db.has_column("Material Request Item", "qty_original"):
@@ -6068,6 +6067,32 @@ def _uom_compra_por_defecto(item_code, supplier=None, costeo_doc=None):
         if factor:
             return uom, factor
     return None, None
+
+
+def _pasar_a_uom_almacen(doc):
+    """Pasa los renglones de una Solicitud de Material a la UDM de almacén (la base):
+    botones en Pieza, no en Mazo. La UDM de compra y el redondeo a paquetes completos
+    solo aplican en la orden de compra (_pasar_a_uom_compra, mr_crear_oc): un mazo no
+    se divide, así que en la solicitud 13.02 mazos no significaban nada. Conserva la
+    cantidad real de material. Regresa cuántos renglones cambió."""
+    cambiados = 0
+    for it in doc.get("items") or []:
+        if not it.item_code:
+            continue
+        stock_uom = it.get("stock_uom") or frappe.db.get_value("Item", it.item_code, "stock_uom")
+        if not it.uom or it.uom == stock_uom:
+            continue
+        cf = flt(it.conversion_factor) or 1.0
+        qty = flt(it.qty) * cf
+        # 13.022569 Mazo × 1,728 = 22,502.9992: el residuo es del redondeo de la UDM vieja.
+        qty = float(round(qty)) if abs(qty - round(qty)) < 0.01 else round(qty, 6)
+        if it.get("qty_original"):
+            orig = flt(it.qty_original) * cf
+            it.qty_original = float(round(orig)) if abs(orig - round(orig)) < 0.01 else round(orig, 6)
+        it.uom, it.stock_uom, it.conversion_factor = stock_uom, stock_uom, 1.0
+        it.qty = it.stock_qty = qty
+        cambiados += 1
+    return cambiados
 
 
 def _pasar_a_uom_compra(doc, costeo_doc=None, redondear_paquete=False):
@@ -6431,8 +6456,28 @@ def mr_crear_oc(mr: str, items=None, schedule_date=None, lote_ref: str = None) -
                 total_mr[it.item_code] = total_mr.get(it.item_code, 0) + flt(it.qty) * cf
                 cf_mr.setdefault(it.item_code, cf)
                 uom_mr.setdefault(it.item_code, it.uom)
+        costeo_mr = doc.get("costeo") if doc.meta.has_field("costeo") else None
+        costeo_doc_mr = frappe.get_doc("Costeo", costeo_mr) if costeo_mr and frappe.db.exists("Costeo", costeo_mr) else None
+        proveedor_mr = {it.item_code: it.get("supplier") for it in doc.items}
         for item_code, qty in list(qty_by_item.items()):
             cf = cf_mr.get(item_code, 1.0)
+            # La solicitud viene en la UDM base (piezas): el paquete que no se divide es el
+            # de COMPRA (Mazo = 1,728 piezas), así que el redondeo se hace en esa unidad.
+            # Solicitudes viejas ya traen la de compra en la línea (cf_mr).
+            uom_compra, factor_compra = _uom_compra_por_defecto(item_code, proveedor_mr.get(item_code), costeo_doc_mr)
+            if uom_compra and abs(cf - 1.0) < 1e-9 and _es_compra_por_paquete(item_code, uom_compra):
+                ya_cubierto = sum(
+                    flt(it.qty) * (flt(it.conversion_factor) or 1.0) for it in doc.items
+                    if it.item_code == item_code and it.name in cubiertos_por_item.get(item_code, set())
+                )
+                total_a_comprar = math.ceil((ya_cubierto + qty * cf) / factor_compra - 1e-6)
+                paquetes = max(math.ceil(total_a_comprar - comprometido_stock.get(item_code, 0) / factor_compra - 1e-6), 0.0)
+                if abs(paquetes - qty * cf / factor_compra) > 0.001:
+                    redondeos_aplicados[item_code] = {
+                        "solicitada": round(qty * cf / factor_compra, 3), "ajustada": paquetes, "uom": uom_compra,
+                    }
+                qty_by_item[item_code] = paquetes * factor_compra / cf
+                continue
             if _es_compra_por_paquete(item_code, uom_mr.get(item_code)):
                 uom_linea = uom_mr.get(item_code) or frappe.db.get_value("Item", item_code, "stock_uom")
                 # No se puede pedir una fracción de paquete (Mazo/Gruesa/Pieza...) --
