@@ -8610,6 +8610,9 @@ def sub_get_flujo(po: str) -> dict:
             for p in scr_parents
         ]
         entry["estado_recibos"] = estado_recibos_sco(sco.name)
+        # «Dirección de envío»: a dónde manda el taller lo que termina (informativa).
+        from costeo_yelke.api.entregas_taller import direccion_envio_encargo
+        entry["envio"] = direccion_envio_encargo(sco)
         out["scos"].append(entry)
 
     return out
