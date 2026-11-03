@@ -6076,6 +6076,17 @@ def _uom_compra_por_defecto(item_code, supplier=None, costeo_doc=None):
     (uom, factor) o (None, None) cuando la de compra es la misma de almacén."""
     stock_uom, purchase_uom = frappe.db.get_value("Item", item_code, ["stock_uom", "purchase_uom"]) or (None, None)
     candidatas = []
+    if costeo_doc and costeo_doc.get("name") and frappe.db.has_column("Purchase Order", "costeo"):
+        # Lo que ya se compró en ESTE costeo manda: si el lote 1 se pidió en Rollo,
+        # el lote 2 también (el costeo puede traer Metro aunque se compre en rollo).
+        previas = frappe.db.sql("""
+            select poi.uom from `tabPurchase Order Item` poi
+            join `tabPurchase Order` po on po.name = poi.parent
+            where po.costeo = %s and po.docstatus < 2 and ifnull(po.is_subcontracted, 0) = 0
+              and poi.item_code = %s and poi.uom != %s
+            order by (po.supplier = %s) desc, po.creation desc""",
+            (costeo_doc.name, item_code, stock_uom, supplier or ""), pluck=True)
+        candidatas += previas[:1]
     if costeo_doc:
         filas = [d for d in costeo_doc.get("costeo_producto_detalle") or []
                  if d.item == item_code and d.get("supplier_uom")]
@@ -6607,6 +6618,17 @@ def mr_crear_oc(mr: str, items=None, schedule_date=None, lote_ref: str = None) -
         if po.docstatus == 0 and _pasar_a_uom_compra(po, costeo_doc, redondear_paquete=True):
             po.flags.ignore_permissions = True
             po.save()
+
+    # «Enviar a»: al crearse la orden todavía no estaba ligada al costeo
+    # (envio_oc.prellenar_envio en before_insert no tenía de dónde sugerir).
+    from costeo_yelke.api.envio_oc import prellenar_envio
+    for po_name in pos:
+        po = frappe.get_doc("Purchase Order", po_name)
+        if po.docstatus == 0 and not po.get("enviar_a_taller") and po.meta.has_field("enviar_a_taller"):
+            prellenar_envio(po)
+            if po.get("enviar_a_taller"):
+                po.db_set({"enviar_a_taller": po.enviar_a_taller,
+                           "enviar_a_direccion": po.get("enviar_a_direccion")}, update_modified=False)
 
     _aplicar_precios_oc(pos)
 
@@ -8287,7 +8309,14 @@ def get_lotes_produccion(plan: str) -> dict:
     # el orden incidental en que sus documentos fueron llegando a la base de
     # datos -- un lote sin ninguna fecha capturada todavía se manda al final,
     # no se queda al azar entre los que sí tienen.
-    lotes_out.sort(key=lambda lote: (lote["schedule_date"] is None, lote["schedule_date"]))
+    # Con la misma fecha, por número de lote: el Lote 2 antes que el 3 (Python
+    # conserva el orden de llegada en un empate, y ese salía 3, 2).
+    def _num_lote(ref):
+        m = re.search(r"(\d+)\s*$", ref or "")
+        return (0, int(m.group(1)), ref) if m else (1, 0, ref or "")
+
+    lotes_out.sort(key=lambda lote: (lote["schedule_date"] is None, lote["schedule_date"] or "",
+                                     _num_lote(lote["lote_ref"])))
 
     return {
         "productos": [
