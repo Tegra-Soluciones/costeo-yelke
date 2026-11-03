@@ -62,8 +62,8 @@ doctype_js = {
 	"Sales Invoice": "public/js/terminos_exclusivos.js",
 	"Precio Acordado Recordatorio": "public/js/precio_acordado_recordatorio.js",
 	# doble_captura.js va primero: define la ayuda que usan los otros tres.
-	"Supplier": ["public/js/doble_captura.js", "public/js/supplier.js"],
-	"Customer": ["public/js/doble_captura.js", "public/js/customer.js"],
+	"Supplier": ["public/js/doble_captura.js", "public/js/supplier.js", "public/js/cuentas_bancarias_tercero.js"],
+	"Customer": ["public/js/doble_captura.js", "public/js/customer.js", "public/js/cuentas_bancarias_tercero.js"],
 	"Bank Account": ["public/js/doble_captura.js", "public/js/bank_account.js"],
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
@@ -509,3 +509,16 @@ after_migrate = ["costeo_yelke.install.after_migrate"]
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
+
+# Terceros en moneda extranjera y cuentas bancarias por moneda (api/moneda_terceros.py):
+# cuenta por pagar/cobrar en la moneda del tercero, moneda de la cuenta bancaria y, en
+# cada pago, la cuenta del tercero en la moneda del dinero. Se SUMAN a lo de arriba.
+# La cuenta del tercero va en before_validate: ERPNext revisa en su validate que la cuenta
+# por pagar/cobrar sea de la moneda del tercero, y tiene que encontrarla ya ajustada.
+for _dt, _evento, _fn in (("Supplier", "before_validate", "cuentas_por_moneda"),
+                          ("Customer", "before_validate", "cuentas_por_moneda"),
+                          ("Bank Account", "validate", "moneda_cuenta_bancaria"),
+                          ("Payment Entry", "validate", "cuenta_del_tercero_por_moneda")):
+	_actual = doc_events.setdefault(_dt, {}).get(_evento)
+	_lista = [] if not _actual else ([_actual] if isinstance(_actual, str) else list(_actual))
+	doc_events[_dt][_evento] = [*_lista, f"costeo_yelke.api.moneda_terceros.{_fn}"]

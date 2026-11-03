@@ -101,3 +101,4 @@ costeo_yelke.patches.v0_2_75.terminos_exclusivos
 costeo_yelke.patches.v0_2_76.catalogo_udm
 costeo_yelke.patches.v0_2_77.enviar_a_taller_oc
 costeo_yelke.patches.v0_2_78.entrega_estimada_remision
+costeo_yelke.patches.v0_2_79.cuentas_moneda_extranjera
