@@ -2778,14 +2778,16 @@
                                 <span class="block text-ink">{{ nombreVisible(g.item_name || g.item_code).titulo }}</span>
                                 <span v-if="nombreVisible(g.item_name || g.item_code).sub" class="block text-[10.5px] text-ink-light">{{ nombreVisible(g.item_name || g.item_code).sub }}</span>
                               </td>
-                              <td class="py-1.5 pr-2"><input v-if="!transValidated" :value="cantidadVisible(g.qty)" type="number" min="0" step="1" class="field-input text-right" @change="cambiarCantidadMaterial(g, $event.target.value)" /><span v-else class="block text-right tabular-nums">{{ cantidadVisible(g.qty).toLocaleString('es-MX') }}</span></td>
+                              <td class="py-1.5 pr-2"><input v-if="!transValidated" :value="cantidadEnvio(g, g.qty)" type="number" min="0" :step="g.uom_envio && !g.envio_entero ? 0.01 : 1" class="field-input text-right" @change="cambiarCantidadEnvio(g, $event.target.value)" /><span v-else class="block text-right tabular-nums">{{ cantidadEnvio(g, g.qty).toLocaleString('es-MX') }}</span></td>
                               <td class="py-1.5 pr-2">
                                 <select v-if="!transValidated" :value="g.s_warehouse" class="field-input" @change="cambiarAlmacenDeMaterial(g, $event.target.value)"><option value="">— Selecciona —</option><option v-for="w in flujo.warehouses" :key="w.name" :value="w.name">{{ w.warehouse_name || w.name }}</option></select>
                                 <span v-else class="text-ink-muted text-xs">{{ g.s_warehouse }}</span>
                               </td>
-                              <td class="py-1.5 pr-2 text-right tabular-nums" :class="!transValidated && (g.available ?? 0) < g.qty ? 'text-red-600 font-semibold' : 'text-ink-muted'">{{ g.available === null ? '—' : g.available.toLocaleString('es-MX', { maximumFractionDigits: 3 }) }}</td>
-                              
-                              <td class="py-1.5 pr-2 text-ink-muted text-xs">{{ g.uom }}</td>
+                              <td class="py-1.5 pr-2 text-right tabular-nums" :class="!transValidated && (g.available ?? 0) < g.qty ? 'text-red-600 font-semibold' : 'text-ink-muted'">{{ g.available === null ? '—' : (g.uom_envio ? g.available / g.factor_envio : g.available).toLocaleString('es-MX', { maximumFractionDigits: g.uom_envio ? 2 : 3 }) }}</td>
+                              <td class="py-1.5 pr-2 text-ink-muted text-xs">
+                                <template v-if="g.uom_envio">{{ g.uom_envio }}<span class="block text-[10.5px] text-ink-light whitespace-nowrap">{{ cantidadVisible(g.qty).toLocaleString('es-MX') }} {{ g.uom }}</span></template>
+                                <template v-else>{{ g.uom }}</template>
+                              </td>
                             </tr>
                           </tbody>
                         </table>
@@ -4098,6 +4100,22 @@ async function deshacerEncargo() {
 // campo solo escribe si la persona edita la cantidad).
 const cantidadVisible = (q) => Math.ceil((Number(q) || 0) - 1e-6);
 const sobranteVisible = (q) => (Number(q) || 0) >= 1;
+/** El envío se cuenta en la UDM en que se compró (37 Rollo, no 3,700 Metro); el
+ *  documento sigue en la base. Si esa UDM no se divide, solo paquetes completos. */
+function cantidadEnvio(g, q) {
+  if (!g.uom_envio) return cantidadVisible(q);
+  const v = (Number(q) || 0) / g.factor_envio;
+  return g.envio_entero ? Math.ceil(v - 1e-6) : Math.round(v * 100) / 100;
+}
+function cambiarCantidadEnvio(g, valor) {
+  let v = Number(valor);
+  if (!Number.isFinite(v) || v < 0) return;
+  if (g.uom_envio) {
+    if (g.envio_entero) v = Math.ceil(v - 1e-6);
+    v *= g.factor_envio;
+  }
+  cambiarCantidadMaterial(g, v);
+}
 /** «CAMISOLA-GABARDINA-NARANJA · BOLSA-C» -> «BOLSA», con el producto abajo: el
  *  sufijo (-C, -CR…) es el estado interno de la pieza en el flujo. */
 function nombreVisible(texto) {

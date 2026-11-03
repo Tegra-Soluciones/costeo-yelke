@@ -1705,6 +1705,9 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
       } else {
         g.set(it.item_code, {
           item_code: it.item_code, item_name: it.item_name, uom: it.uom,
+          // UDM en que se compró (Rollo de 100 m): la pantalla cuenta en ella.
+          uom_envio: it.uom_envio || "", factor_envio: Number(it.factor_envio) || 1,
+          envio_entero: !!it.envio_entero,
           qty: Number(it.qty) || 0, available: it.available ?? null,
           ya_en_taller: Number(it.ya_en_taller) || 0,
           s_warehouse: it.s_warehouse, filas: [it],

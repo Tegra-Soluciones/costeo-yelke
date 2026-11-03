@@ -9428,6 +9428,7 @@ def sub_transferir_material(sco: str) -> dict:
     if existing:
         se_existing = frappe.get_doc("Stock Entry", existing)
         _redondear_qty_arriba(se_existing, save=False)
+        _redondear_a_paquete_envio(se_existing)
         ajustado = _ajustar_a_existencia(se_existing, sco)
         se_existing.flags.ignore_permissions = True
         se_existing.save()
@@ -9440,6 +9441,7 @@ def sub_transferir_material(sco: str) -> dict:
     _aplicar_almacenes_origen_por_material(se, po)
     _redondear_qty_arriba(se, save=False)
     descontado = _descontar_lo_que_ya_tiene_el_taller(se, sco)
+    _redondear_a_paquete_envio(se)
     ajustado = _ajustar_a_existencia(se, sco, ya_en_taller=descontado)
     se.flags.ignore_permissions = True
     try:
@@ -9451,6 +9453,66 @@ def sub_transferir_material(sco: str) -> dict:
         raise
     return {"ok": True, "stock_entry": se.name, "docstatus": se.docstatus,
             "descontado": descontado, "ajustado_a_existencia": ajustado}
+
+
+def _costeo_de_envio(se):
+    sco = se.get("subcontracting_order")
+    po = frappe.db.get_value("Subcontracting Order", sco, "purchase_order") if sco else None
+    return frappe.db.get_value("Purchase Order", po, "costeo") if po else None
+
+
+def _uom_envio(item_code, costeo=None, _cache=None):
+    """``(uom, factor, entero)`` en que se le manda el material al taller: la UDM en que
+    se COMPRÓ para este costeo (la tela llegó en Rollo de 100 m, sale en Rollo), y si
+    no hay compra, la de compra por defecto (_uom_compra_por_defecto). ``entero`` =
+    esa UDM no se divide (_es_compra_por_paquete). El documento sigue en la UDM base;
+    esto es solo cómo se cuenta y se redondea. ``(None, 1.0, False)`` si es la misma."""
+    if _cache is not None and item_code in _cache:
+        return _cache[item_code]
+    stock_uom = frappe.db.get_value("Item", item_code, "stock_uom")
+    uom = factor = None
+    if costeo and frappe.db.has_column("Purchase Order", "costeo"):
+        fila = frappe.db.sql("""
+            select poi.uom, poi.conversion_factor from `tabPurchase Order Item` poi
+            join `tabPurchase Order` po on po.name = poi.parent
+            where po.costeo = %s and po.docstatus = 1 and ifnull(po.is_subcontracted, 0) = 0
+              and poi.item_code = %s and poi.uom != %s
+            order by po.creation desc limit 1""", (costeo, item_code, stock_uom), as_dict=True)
+        if fila:
+            uom, factor = fila[0].uom, flt(fila[0].conversion_factor)
+    if not uom:
+        costeo_doc = frappe.get_cached_doc("Costeo", costeo) if costeo else None
+        uom, factor = _uom_compra_por_defecto(item_code, costeo_doc=costeo_doc)
+    out = (uom, factor, _es_compra_por_paquete(item_code, uom)) if uom and flt(factor) > 0 else (None, 1.0, False)
+    if _cache is not None:
+        _cache[item_code] = out
+    return out
+
+
+def _redondear_a_paquete_envio(se):
+    """Sube el total de cada material a paquetes completos cuando se compró en una UDM
+    que no se divide: 3,633 m de gabardina comprada en Rollo de 100 m salen como 37
+    rollos (3,700 m) -- el almacén no corta un rollo para mandarlo. Va después de
+    descontar lo que el taller ya tiene y antes de _ajustar_a_existencia (si en el
+    almacén queda un rollo empezado, se manda lo que hay). El pico se queda con el
+    taller como sobrante, igual que el redondeo a metro entero. Mismo reparto que
+    _redondear_arriba_por_material: el excedente va al renglón más grande; ERPNext
+    concilia el consumo contra el BOM, no contra lo transferido por renglón."""
+    costeo = _costeo_de_envio(se)
+    cache = {}
+    grupos = {}
+    for it in se.items:
+        grupos.setdefault(it.item_code, []).append(it)
+    for code, rows in grupos.items():
+        _uom, factor, entero = _uom_envio(code, costeo, cache)
+        if not entero or flt(factor) <= 1:
+            continue
+        total = sum(flt(r.qty) for r in rows)
+        objetivo = math.ceil(round(total / factor, 6) - 1e-6) * factor
+        sobra = objetivo - total
+        if sobra > 1e-9:
+            mayor = max(rows, key=lambda r: flt(r.qty))
+            mayor.qty = round(flt(mayor.qty) + sobra, 6)
 
 
 def _necesidad_exacta_sco(sco):
@@ -9880,8 +9942,11 @@ def sub_get_transferencia(stock_entry: str) -> dict:
     ya_por_fila = _repartir_lo_que_ya_tiene(
         doc.items or [], ya_en_taller, lambda r: r.qty)
 
+    costeo_envio = _costeo_de_envio(doc)
+    cache_uom = {}
     items = []
     for idx, r in enumerate(doc.items or []):
+        uom_envio, factor_envio, envio_entero = _uom_envio(r.item_code, costeo_envio, cache_uom)
         avail = None
         if r.s_warehouse:
             avail = flt(frappe.db.get_value("Bin", {"item_code": r.item_code, "warehouse": r.s_warehouse}, "actual_qty"))
@@ -9895,6 +9960,9 @@ def sub_get_transferencia(stock_entry: str) -> dict:
             "uom": r.uom,
             "available": avail,
             "ya_en_taller": round(flt(ya_por_fila[idx]), 6),
+            "uom_envio": uom_envio,
+            "factor_envio": flt(factor_envio) or 1.0,
+            "envio_entero": 1 if envio_entero else 0,
         })
     recommended = None
     if doc.subcontracting_order:
