@@ -9563,24 +9563,36 @@ def _costeo_de_envio(se):
 
 def _uom_envio(item_code, costeo=None, _cache=None):
     """``(uom, factor, entero)`` en que se le manda el material al taller: la UDM en que
-    se COMPRÓ para este costeo (la tela llegó en Rollo de 100 m, sale en Rollo), y si
-    no hay compra, la de compra por defecto (_uom_compra_por_defecto). ``entero`` =
-    esa UDM no se divide (_es_compra_por_paquete). El documento sigue en la UDM base;
-    esto es solo cómo se cuenta y se redondea. ``(None, 1.0, False)`` si es la misma."""
+    se COMPRÓ. Primero la última compra de este costeo (la tela llegó en Rollo de
+    100 m, sale en Rollo); si el material sale de existencias sin compra en este
+    costeo, la última compra de ese material en cualquier proyecto; solo si nunca se
+    ha comprado, la de compra por defecto (_uom_compra_por_defecto). El costeo va en
+    la UDM base y no cuenta. ``entero`` = esa UDM no se divide
+    (_es_compra_por_paquete). El documento sigue en la UDM base; esto es solo cómo
+    se cuenta y se redondea. ``(None, 1.0, False)`` si es la base."""
     if _cache is not None and item_code in _cache:
         return _cache[item_code]
     stock_uom = frappe.db.get_value("Item", item_code, "stock_uom")
-    uom = factor = None
-    if costeo and frappe.db.has_column("Purchase Order", "costeo"):
-        fila = frappe.db.sql("""
+    compra = None
+    tiene_costeo = frappe.db.has_column("Purchase Order", "costeo")
+    for filtro, valores in ((("and po.costeo = %s", (costeo,)) if costeo and tiene_costeo else (None, None)),
+                            ("", ())):
+        if filtro is None:
+            continue
+        fila = frappe.db.sql(f"""
             select poi.uom, poi.conversion_factor from `tabPurchase Order Item` poi
             join `tabPurchase Order` po on po.name = poi.parent
-            where po.costeo = %s and po.docstatus = 1 and ifnull(po.is_subcontracted, 0) = 0
-              and poi.item_code = %s and poi.uom != %s
-            order by po.creation desc limit 1""", (costeo, item_code, stock_uom), as_dict=True)
+            where po.docstatus = 1 and ifnull(po.is_subcontracted, 0) = 0
+              and poi.item_code = %s {filtro}
+            order by po.transaction_date desc, po.creation desc limit 1""",
+            (item_code, *valores), as_dict=True)
         if fila:
-            uom, factor = fila[0].uom, flt(fila[0].conversion_factor)
-    if not uom:
+            compra = fila[0]
+            break
+    if compra:
+        # La última compra fue en la base (Metro): se manda en la base.
+        uom, factor = (compra.uom, flt(compra.conversion_factor)) if compra.uom != stock_uom else (None, None)
+    else:
         costeo_doc = frappe.get_cached_doc("Costeo", costeo) if costeo else None
         uom, factor = _uom_compra_por_defecto(item_code, costeo_doc=costeo_doc)
     out = (uom, factor, _es_compra_por_paquete(item_code, uom)) if uom and flt(factor) > 0 else (None, 1.0, False)
