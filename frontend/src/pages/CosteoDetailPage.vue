@@ -3155,8 +3155,12 @@
               </select>
             </div>
             <div>
-              <label class="field-label">Fecha de entrega</label>
+              <label class="field-label">Fecha de salida <span class="text-ink-light font-normal">(del almacén)</span></label>
               <input v-model="dnForm.posting_date" type="date" :max="hoyLocal" class="field-input mb-3" :disabled="dnValidated" />
+            </div>
+            <div>
+              <label class="field-label">Entrega estimada al cliente <span class="text-ink-light font-normal">(informativa)</span></label>
+              <input v-model="dnForm.entrega_estimada" type="date" :min="dnForm.posting_date || undefined" class="field-input mb-3" :disabled="dnValidated" />
             </div>
             <div>
               <label class="field-label">Proveedor de paquetería <span v-if="Number(dnForm.flete_costo) > 0" class="text-red-400">*</span><span v-else class="text-ink-light font-normal">(si hay costo de envío)</span></label>
@@ -4798,7 +4802,7 @@ watch(expandedSOName, (name) => { if (name && soVivas.value.some(s => s.name ===
 const siForm = reactive({ posting_date: "", due_date: "", payment_terms_template: "", tc_name: "" });
 const dnDoc = ref(null);
 const dnSel = ref("");
-const dnForm = reactive({ posting_date: "", shipping_address_name: "", customer_address: "", flete_proveedor: "", flete_costo: 0 , flete_incluye_iva: 0 });
+const dnForm = reactive({ posting_date: "", entrega_estimada: "", shipping_address_name: "", customer_address: "", flete_proveedor: "", flete_costo: 0 , flete_incluye_iva: 0 });
 const reporte = ref(null);
 const reporteLoading = ref(false);
 const compras = reactive({ materiales: [], maquila: [], fletes: [] });
@@ -8699,6 +8703,7 @@ async function loadRemisionDetalle(name) {
   try {
     dnDoc.value = await call("costeo_yelke.api.costeo_api.get_remision", { name });
     dnForm.posting_date = dnDoc.value.posting_date || "";
+    dnForm.entrega_estimada = dnDoc.value.entrega_estimada || "";
     dnForm.shipping_address_name = dnDoc.value.shipping_address_name || "";
     dnForm.customer_address = dnDoc.value.customer_address || "";
     dnForm.flete_proveedor = dnDoc.value.flete_proveedor || "";
@@ -8813,6 +8818,7 @@ async function guardarRemision() {
   try {
     await call("costeo_yelke.api.costeo_api.actualizar_remision", {
       name: dnDoc.value.name, posting_date: dnForm.posting_date || null,
+      entrega_estimada: dnForm.entrega_estimada || "",
       items: JSON.stringify(dnDoc.value.items),
       shipping_address_name: dnForm.shipping_address_name || null,
       customer_address: dnForm.customer_address || null,
@@ -8834,6 +8840,7 @@ async function validarRemision() {
   try {
     await call("costeo_yelke.api.costeo_api.actualizar_remision", {
       name: dnDoc.value.name, posting_date: dnForm.posting_date || null,
+      entrega_estimada: dnForm.entrega_estimada || "",
       items: JSON.stringify(dnDoc.value.items),
       shipping_address_name: dnForm.shipping_address_name || null,
       customer_address: dnForm.customer_address || null,

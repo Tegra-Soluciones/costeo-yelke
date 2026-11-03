@@ -3038,6 +3038,7 @@ def get_remision(name: str) -> dict:
         "customer": doc.customer,
         "customer_name": frappe.db.get_value("Customer", doc.customer, "nombre_comercial") or doc.customer_name,
         "posting_date": str(doc.posting_date) if doc.posting_date else "",
+        "entrega_estimada": str(doc.get("entrega_estimada") or ""),
         "grand_total": doc.grand_total,
         "customer_address": doc.customer_address or "",
         "shipping_address_name": doc.shipping_address_name or "",
@@ -3069,7 +3070,8 @@ def get_remision(name: str) -> dict:
 
 @frappe.whitelist()
 def actualizar_remision(name: str, posting_date=None, items=None, shipping_address_name=None, customer_address=None,
-                         flete_proveedor=None, flete_costo=None, flete_incluye_iva=None) -> dict:
+                         flete_proveedor=None, flete_costo=None, flete_incluye_iva=None,
+                         entrega_estimada=None) -> dict:
     """Actualiza fecha, almacén y cantidad de las líneas, y direcciones de envío/facturación
     de una remisión en borrador -- el cliente a veces recibe en una dirección distinta a la
     de facturación."""
@@ -3079,6 +3081,11 @@ def actualizar_remision(name: str, posting_date=None, items=None, shipping_addre
     if posting_date:
         doc.set_posting_time = 1
         doc.posting_date = posting_date
+    # Cuándo llega al cliente: puede ser futura (la de arriba es la salida del almacén).
+    if entrega_estimada is not None and doc.meta.has_field("entrega_estimada"):
+        if entrega_estimada and doc.posting_date and getdate(entrega_estimada) < getdate(doc.posting_date):
+            frappe.throw(_("La entrega estimada no puede ser antes de la salida del almacén."))
+        doc.entrega_estimada = entrega_estimada or None
     if shipping_address_name is not None:
         doc.shipping_address_name = shipping_address_name or None
     if customer_address is not None:
