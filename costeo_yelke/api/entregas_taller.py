@@ -64,9 +64,8 @@ def _destinos_de_producto(doc, producto):
     return destinos, por_key, pieza_de
 
 
-def calcular_entregas(po_doc, solo_fg=None):
-    """Filas sugeridas: una por destino, con las piezas que van ahí. ``solo_fg`` limita
-    a esas piezas (las de un encargo)."""
+def calcular_entregas(po_doc):
+    """Filas sugeridas: una por destino, con las piezas que van ahí."""
     costeo = po_doc.get("costeo")
     if not costeo or not frappe.db.exists("Costeo", costeo):
         return []
@@ -77,7 +76,7 @@ def calcular_entregas(po_doc, solo_fg=None):
     for it in po_doc.items:
         fg = it.get("fg_item") or ""
         prod = it.get("producto_terminado") or fg.split(" · ")[0]
-        if not fg or not prod or (solo_fg and fg not in solo_fg):
+        if not fg or not prod:
             continue
         if prod not in cache:
             try:
@@ -217,53 +216,3 @@ def direcciones_destino(po: str, entregar_a: str = None) -> list:
             out.append({"name": f.name, "texto": texto})
     return out
 
-
-
-def direccion_envio_encargo(sco):
-    """«Dirección de envío» del encargo (Subcontracting Order): a dónde manda el taller
-    lo que termina. Es solo informativa (no mueve inventario ni se imprime); por defecto
-    la del taller que sigue en el flujo con esas piezas (calcular_entregas, o la tabla
-    capturada en la orden de maquila), o la de la compañía si va con Yelke.
-
-    Regresa ``{"sugerida": Address | None, "opciones": [{value, label}]}``: las
-    direcciones de cada destino del encargo, la compañía y el propio taller."""
-    po_doc = frappe.get_doc("Purchase Order", sco.purchase_order) if sco.get("purchase_order") else None
-    if not po_doc:
-        return {"sugerida": None, "opciones": []}
-    if po_doc.get("om_indicar_entrega") and po_doc.get("om_entregas"):
-        filas = entregas_de_oc(po_doc)
-    else:
-        try:
-            filas = calcular_entregas(po_doc, {it.item_code for it in sco.items})
-        except Exception:
-            frappe.log_error(title=f"Dirección de envío del encargo: {sco.name}")
-            filas = []
-
-    opciones, vistos, sugerida = [], set(), None
-
-    def _agregar(nombre_destino, entregar_a, texto_elegido=None, sugerir=False):
-        nonlocal sugerida
-        dirs = direcciones_destino(po_doc.name, entregar_a)
-        for d in dirs:
-            if d["name"] not in vistos:
-                vistos.add(d["name"])
-                linea = d["texto"].splitlines()[0] if d["texto"] else d["name"]
-                opciones.append({"value": d["name"], "label": f"{nombre_destino} · {linea}"})
-        if sugerir and sugerida is None and dirs:
-            sugerida = next((d["name"] for d in dirs if texto_elegido and d["texto"] == texto_elegido),
-                            dirs[0]["name"])
-
-    # Primero los destinos del flujo (el primero es el sugerido), luego la compañía y
-    # el propio taller por si se quiere otra cosa.
-    # Si las piezas van a varios talleres, se sugiere el que recibe más; el reparto
-    # completo va en la orden de maquila («Al terminar, entregar a»).
-    filas = sorted(filas, key=lambda f: -len([x for x in str(f.piezas or "").split(",") if x.strip()]))
-    for f in filas:
-        if not f.mismo_taller:
-            _agregar(f.destino if f.entregar_a else po_doc.company, f.entregar_a, f.direccion, sugerir=True)
-    _agregar(po_doc.company, None)
-    _agregar(frappe.db.get_value("Supplier", po_doc.supplier, "supplier_name") or po_doc.supplier, po_doc.supplier)
-    actual = sco.get("shipping_address")
-    if actual and actual not in vistos:
-        opciones.append({"value": actual, "label": actual})
-    return {"sugerida": sugerida, "opciones": opciones}

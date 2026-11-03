@@ -924,8 +924,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     scoForm.set_warehouse = s.set_warehouse || "";
     scoForm.supplier_address = s.supplier_address || "";
     scoForm.contact_person = s.contact_person || "";
-    // Vacía en borrador: la del taller que sigue en el flujo (se guarda al Guardar/Validar).
-    scoForm.shipping_address = s.shipping_address || (s.docstatus === 0 ? s.envio?.sugerida || "" : "");
+    scoForm.shipping_address = s.shipping_address || "";
     scoForm.distribute_additional_costs_based_on = s.distribute_additional_costs_based_on || "Qty";
     scoCostos.value = (s.additional_costs || []).map((c) => ({ ...c }));
     // Con varios recibos se abre el borrador, o si no hay, el último validado.
