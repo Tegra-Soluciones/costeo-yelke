@@ -72,6 +72,29 @@
           <div v-else class="field-input bg-surface-raised/60 truncate">{{ form.tc_name || '—' }}</div>
         </div>
         <div v-if="doc.set_warehouse !== undefined"><label class="field-label">Almacén (aceptado)</label><div class="field-input bg-surface-raised/60 truncate">{{ doc.set_warehouse || (items[0] && items[0].warehouse) || '—' }}</div></div>
+        <!-- «Enviar a»: el proveedor manda el material directo al taller que lo usa
+             (api/envio_oc.py). Solo se imprime en la orden: en el sistema la compra
+             entra a tu almacén y se envía al taller como siempre. -->
+        <div v-if="doc.envio_taller" class="col-span-2 grid grid-cols-2 gap-3">
+          <div>
+            <label class="field-label">Enviar el material a</label>
+            <select v-if="!isValidated" v-model="form.enviar_a_taller" class="field-input" @change="form.enviar_a_direccion = (tallerEnvio?.direcciones?.[0]?.name) || ''">
+              <option value="">Yelke (nuestro almacén)</option>
+              <option v-for="t in doc.envio_taller.talleres" :key="t.supplier" :value="t.supplier">{{ t.supplier_name }}{{ t.supplier === doc.envio_taller.sugerido ? ' (sugerido)' : '' }}</option>
+            </select>
+            <div v-else class="field-input bg-surface-raised/60 truncate">{{ tallerEnvio?.supplier_name || form.enviar_a_taller || 'Yelke (nuestro almacén)' }}</div>
+            <p v-if="tallerEnvio?.materiales?.length" class="text-[11px] text-ink-light mt-1">Usa: {{ tallerEnvio.materiales.join(', ') }}</p>
+          </div>
+          <div v-if="form.enviar_a_taller">
+            <label class="field-label">Dirección del taller</label>
+            <select v-if="!isValidated" v-model="form.enviar_a_direccion" class="field-input">
+              <option value="">— Sin dirección —</option>
+              <option v-for="d in tallerEnvio?.direcciones || []" :key="d.name" :value="d.name">{{ d.texto }}</option>
+            </select>
+            <div v-else class="field-input bg-surface-raised/60 truncate">{{ (tallerEnvio?.direcciones || []).find((d) => d.name === form.enviar_a_direccion)?.texto || '—' }}</div>
+          </div>
+          <p class="col-span-2 text-[11px] text-ink-light -mt-1">Solo es una indicación impresa en la orden: en el sistema el material entra a tu almacén y se envía al taller como siempre.</p>
+        </div>
         <div v-if="doc.has_shipping" class="col-span-2">
           <!-- Quién cobra el envío: el mismo proveedor del material (va en su factura,
                como siempre) o una paquetería externa, a la que se le crea su propia
@@ -315,6 +338,8 @@ watch(() => props.form.currency, (nueva, vieja) => {
 });
 
 const isValidated = computed(() => Number(props.doc.docstatus) === 1);
+const tallerEnvio = computed(() =>
+  (props.doc.envio_taller?.talleres || []).find((t) => t.supplier === props.form.enviar_a_taller) || null);
 // Importe del renglón: el agrupado por piezas trae la suma de sus piezas (_importe).
 const importe = (it) => (it._importe != null ? it._importe : (it.amount != null ? it.amount : (Number(it.qty) || 0) * (Number(it.rate) || 0)));
 const dinero = (v) => new Intl.NumberFormat("es-MX", { style: "currency", currency: props.doc?.currency || "MXN" }).format(Number(v) || 0);

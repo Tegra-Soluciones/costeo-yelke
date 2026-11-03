@@ -8529,6 +8529,13 @@ def sub_get_flujo(po: str) -> dict:
     def _sale_de(code):
         return (wip_wh if code in semi_terminados else mp_wh) or mp_wh or wip_wh
 
+    # Lo que se le manda se cuenta en la UDM en que se compró (ver _uom_envio).
+    cache_uom = {}
+
+    def _envio(code):
+        uom, factor, entero = _uom_envio(code, po_doc.get("costeo"), cache_uom)
+        return {"uom_envio": uom, "factor_envio": flt(factor) or 1.0, "envio_entero": 1 if entero else 0}
+
     for sco_name in sco_names:
         sco = frappe.get_doc("Subcontracting Order", sco_name)
         entry = {
@@ -8564,6 +8571,7 @@ def sub_get_flujo(po: str) -> dict:
                     "disponible": flt(frappe.db.get_value(
                         "Bin", {"item_code": r.rm_item_code, "warehouse": _sale_de(r.rm_item_code)},
                         "actual_qty")) if _sale_de(r.rm_item_code) else None,
+                    **_envio(r.rm_item_code),
                 }
                 for r in (sco.supplied_items or [])
             ],
@@ -11415,8 +11423,20 @@ def get_documento_compra(doctype: str, name: str) -> dict:
         "revisado_yelke": bool(doc.get("revisado_yelke")) if meta.has_field("revisado_yelke") else False,
         "revisado_por_yelke": doc.get("revisado_por_yelke") or "",
         "revisado_en_yelke": str(doc.get("revisado_en_yelke") or "") if meta.has_field("revisado_yelke") else "",
+        # «Enviar a» (api/envio_oc.py): solo en la OC de materia prima de un costeo.
+        "envio_taller": _envio_taller_doc(doc),
+        "enviar_a_taller": doc.get("enviar_a_taller") or "",
+        "enviar_a_direccion": doc.get("enviar_a_direccion") or "",
         "items": items,
     }
+
+
+def _envio_taller_doc(doc):
+    if doc.doctype != "Purchase Order" or not doc.meta.has_field("enviar_a_taller"):
+        return None
+    from costeo_yelke.api.envio_oc import sugerencia_envio
+
+    return sugerencia_envio(doc)
 
 
 @frappe.whitelist()
@@ -11438,7 +11458,8 @@ def guardar_documento_compra(doctype: str, name: str, schedule_date=None, valid_
                              transaction_date=None, posting_date=None, payment_terms_template=None,
                              tc_name=None, items=None, shipping_cost=None, supplier=None,
                              currency=None, conversion_rate=None, flete_modo=None, flete_proveedor=None,
-                             flete_incluye_iva=None, flete_cobra_iva=None) -> dict:
+                             flete_incluye_iva=None, flete_cobra_iva=None, enviar_a_taller=None,
+                             enviar_a_direccion=None) -> dict:
     """Guarda ediciones de un documento de compra en borrador.
 
     La UDM de línea, y el proveedor del documento completo, solo se pueden cambiar en la
@@ -11484,6 +11505,12 @@ def guardar_documento_compra(doctype: str, name: str, schedule_date=None, valid_
         doc.tc_name = tc_name or None
         if meta.get_field("terms"):
             doc.terms = resolver_terminos(tc_name)
+
+    # «Enviar a» (api/envio_oc.py): None = no se tocó; vacío = se manda a Yelke.
+    if doctype == "Purchase Order" and enviar_a_taller is not None and meta.has_field("enviar_a_taller"):
+        from costeo_yelke.api.envio_oc import aplicar_envio
+
+        aplicar_envio(doc, enviar_a_taller, enviar_a_direccion)
 
     supplier_changed = False
     if doctype == "Purchase Order" and supplier and supplier != doc.supplier:

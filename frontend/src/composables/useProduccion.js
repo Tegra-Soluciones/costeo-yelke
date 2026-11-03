@@ -113,7 +113,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
 
   const docCompra = ref(null);
   const docCompraItems = ref([]);
-  const docCompraForm = reactive({ schedule_date: "", valid_till: "", payment_terms_template: "", tc_name: "", shipping_cost: 0, supplier: "", currency: "", conversion_rate: 1, flete_modo: "", flete_proveedor: "", flete_incluye_iva: 0, flete_cobra_iva: 1 });
+  const docCompraForm = reactive({ schedule_date: "", valid_till: "", payment_terms_template: "", tc_name: "", shipping_cost: 0, supplier: "", currency: "", conversion_rate: 1, flete_modo: "", flete_proveedor: "", flete_incluye_iva: 0, flete_cobra_iva: 1, enviar_a_taller: "", enviar_a_direccion: "" });
   const docCompraValidated = computed(() => docCompra.value?.docstatus === 1);
   const docCompraHasRate = computed(() => docCompraItems.value.some((i) => i.has_rate));
   const ocSelected = ref("");
@@ -533,6 +533,8 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
     docCompraForm.flete_incluye_iva = r.flete_incluye_iva || 0;
     docCompraForm.flete_cobra_iva = r.flete_cobra_iva ? 1 : 0;
     docCompraForm.conversion_rate = r.conversion_rate || 1;
+    docCompraForm.enviar_a_taller = r.enviar_a_taller || "";
+    docCompraForm.enviar_a_direccion = r.enviar_a_direccion || "";
     previewKey.value++;
   }
   async function selectOC(po) { ocSelected.value = po; advancing.value = true; try { await loadDocCompra("Purchase Order", po); } finally { advancing.value = false; } }
@@ -558,6 +560,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
         ...(docCompra.value.has_shipping ? { flete_modo: docCompraForm.flete_modo || "", flete_proveedor: docCompraForm.flete_proveedor || "",
           flete_incluye_iva: docCompraForm.flete_incluye_iva ? 1 : 0, flete_cobra_iva: docCompraForm.flete_cobra_iva ? 1 : 0 } : {}),
         conversion_rate: docCompra.value.has_currency && docCompraForm.currency !== docCompra.value.company_currency ? (Number(docCompraForm.conversion_rate) || null) : null,
+        ...(docCompra.value.envio_taller ? { enviar_a_taller: docCompraForm.enviar_a_taller || "", enviar_a_direccion: docCompraForm.enviar_a_direccion || "" } : {}),
       });
       await loadDocCompra(docCompra.value.doctype, docCompra.value.name);
       showToast("Guardado");
@@ -581,6 +584,7 @@ export function useProduccion({ showToast, advancing, ensurePrintFmt, previewKey
         ...(docCompra.value.has_shipping ? { flete_modo: docCompraForm.flete_modo || "", flete_proveedor: docCompraForm.flete_proveedor || "",
           flete_incluye_iva: docCompraForm.flete_incluye_iva ? 1 : 0, flete_cobra_iva: docCompraForm.flete_cobra_iva ? 1 : 0 } : {}),
         conversion_rate: docCompra.value.has_currency && docCompraForm.currency !== docCompra.value.company_currency ? (Number(docCompraForm.conversion_rate) || null) : null,
+        ...(docCompra.value.envio_taller ? { enviar_a_taller: docCompraForm.enviar_a_taller || "", enviar_a_direccion: docCompraForm.enviar_a_direccion || "" } : {}),
       });
       await call("costeo_yelke.api.costeo_api.validar_documento", { doctype: docCompra.value.doctype, name: docCompra.value.name });
       const poName = docCompra.value.doctype === "Purchase Order" ? docCompra.value.name : null;

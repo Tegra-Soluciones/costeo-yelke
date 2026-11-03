@@ -327,6 +327,15 @@ html body:last-child .print-format td img { width: auto !important; }
      ("Entregar en", doc.get("set_warehouse") if mostrar_almacen else None),
      ("Centro de costos", doc.get("cost_center")),
      ("Moneda", doc.currency)]) }}
+{#- «Enviar a» (api/envio_oc.py): el material va directo al taller que lo usa. -#}
+{%- set envio = envio_impresion(doc) -%}
+{%- if envio %}
+<div style="margin-top:2.5mm; border:0.3mm solid #d4d4d4; border-radius:1.5mm; padding:2mm 3.5mm; page-break-inside:avoid">
+    <span class="yk-lbl">Enviar el material a</span>
+    <div class="yk-nombre" style="font-size:8.6pt">{{ envio.nombre }}</div>
+    {% for linea in envio.direccion %}<div class="yk-sub">{{ linea }}</div>{% endfor %}
+</div>
+{%- endif %}
 {%- endmacro -%}
 
 

@@ -121,6 +121,10 @@ jinja = {
 		"costeo_yelke.api.impresion.descripcion_html",
 		"costeo_yelke.api.impresion.imagen_articulo",
 		"costeo_yelke.api.impresion.tallas_atipicas",
+		# Envío al taller agrupado por material, en la UDM de compra.
+		"costeo_yelke.api.impresion.envio_por_material",
+		# «Enviar a» (taller) en la orden de compra de materia prima.
+		"costeo_yelke.api.envio_oc.envio_impresion",
 		# "Al terminar, entregar a" en la Orden de Maquila.
 		"costeo_yelke.api.entregas_taller.entregas_impresion",
 		# Reporte final del costeo en PDF (formato "Reporte Final Yelke").
@@ -233,6 +237,8 @@ doc_events = {
 		"validate": "costeo_yelke.api.costeo_api.redondear_materia_prima_sco",
 	},
 	"Purchase Order": {
+		# «Enviar a»: la OC de materia prima nace con el taller que usa el material.
+		"before_insert": "costeo_yelke.api.envio_oc.prellenar_envio",
 		"on_submit": "costeo_yelke.overrides.purchase_order.registrar_precios_oficiales",
 		# Orden a un taller: no se valida sin la orden de manufactura (por ninguna vía).
 		"before_submit": "costeo_yelke.api.om_general.exigir_om_para_validar",

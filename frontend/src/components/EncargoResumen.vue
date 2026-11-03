@@ -28,11 +28,14 @@
                 <div v-if="nombre(m.item_name || m.rm_item_code).sub" class="text-[10.5px] text-ink-light">{{ nombre(m.item_name || m.rm_item_code).sub }}</div>
               </td>
               <!-- Materiales en unidades cerradas: las fracciones son del reparto interno por pieza. -->
-              <td class="py-1.5 pr-2 text-right tabular-nums">{{ entero(m.required_qty) }}</td>
-              <td class="py-1.5 pl-2 text-ink-muted text-[11px]">{{ m.stock_uom }}</td>
+              <td class="py-1.5 pr-2 text-right tabular-nums">{{ enCompra(m, m.required_qty) }}</td>
+              <td class="py-1.5 pl-2 text-ink-muted text-[11px]">
+                <template v-if="m.uom_envio">{{ m.uom_envio }}<span class="block text-[10.5px] text-ink-light whitespace-nowrap">{{ entero(m.required_qty) }} {{ m.stock_uom }}</span></template>
+                <template v-else>{{ m.stock_uom }}</template>
+              </td>
               <td class="py-1.5 pr-2 text-ink-muted text-[11.5px]">{{ m.sale_de || '—' }}</td>
-              <td v-if="enviado" class="py-1.5 text-right tabular-nums text-ink-muted">{{ entero(m.supplied_qty) }}</td>
-              <td v-else class="py-1.5 text-right tabular-nums" :class="m.falta ? 'text-red-600 font-semibold' : 'text-ink-muted'">{{ m.disponible === null || m.disponible === undefined ? '—' : num(m.disponible) }}</td>
+              <td v-if="enviado" class="py-1.5 text-right tabular-nums text-ink-muted">{{ enCompra(m, m.supplied_qty) }}</td>
+              <td v-else class="py-1.5 text-right tabular-nums" :class="m.falta ? 'text-red-600 font-semibold' : 'text-ink-muted'">{{ m.disponible === null || m.disponible === undefined ? '—' : num(m.uom_envio ? m.disponible / m.factor_envio : m.disponible) }}</td>
             </tr>
           </tbody>
         </table>
@@ -133,6 +136,12 @@ function nombre(texto) {
   return { titulo: props.nombresPieza[slug] || slug.replace(/-/g, " "), sub: t.slice(0, i) };
 }
 const entero = (v) => Math.ceil((Number(v) || 0) - 1e-6).toLocaleString("es-MX");
+// En la UDM en que se compró (Rollo de 100 m): paquetes completos si no se divide.
+function enCompra(m, v) {
+  if (!m.uom_envio) return entero(v);
+  const q = (Number(v) || 0) / (Number(m.factor_envio) || 1);
+  return m.envio_entero ? entero(q) : num(Math.round(q * 100) / 100);
+}
 const num = (v) => (Number(v) || 0).toLocaleString("es-MX", { maximumFractionDigits: 3 });
 const money = (v) => (Number(v) || 0).toLocaleString("es-MX", { style: "currency", currency: "MXN" });
 function fecha(d) {

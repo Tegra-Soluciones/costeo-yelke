@@ -12,12 +12,13 @@ cambio docstatus 0 -> 1, así sirve también para documentos ya validados.
 """
 import base64
 import io
+import math
 import os
 from functools import lru_cache
 
 import frappe
 from frappe import _
-from frappe.utils import cint, formatdate
+from frappe.utils import cint, flt, formatdate
 
 
 def _persona(usuario):
@@ -505,3 +506,33 @@ def descargar_om(po: str, no_letterhead: int = 0):
     frappe.local.response.filename = f"Ficha de manufactura - {po}.pdf"
     frappe.local.response.filecontent = pdf_om_con_anexos(po, no_letterhead)
     frappe.local.response.type = "pdf"
+
+
+def envio_por_material(doc):
+    """Renglones del envío al taller agrupados por material y en la UDM en que se
+    compró (37 rollos, no 12 renglones de metros por pieza). El documento lleva un
+    renglón por pieza en la UDM base; al taller se le entrega un montón por material.
+    Para otros movimientos regresa los renglones tal cual."""
+    if doc.get("purpose") != "Send to Subcontractor":
+        return list(doc.get("items") or [])
+    from costeo_yelke.api.costeo_api import _costeo_de_envio, _uom_envio
+
+    costeo = _costeo_de_envio(doc)
+    cache, grupos = {}, {}
+    for r in doc.get("items") or []:
+        k = (r.item_code, r.s_warehouse, r.t_warehouse)
+        if k not in grupos:
+            grupos[k] = frappe._dict(item_code=r.item_code, item_name=r.item_name, description=r.description,
+                                     s_warehouse=r.s_warehouse, t_warehouse=r.t_warehouse,
+                                     stock_uom=r.stock_uom or r.uom, qty_base=0.0, idx=len(grupos) + 1)
+        grupos[k].qty_base += flt(r.transfer_qty or r.qty)
+    for g in grupos.values():
+        uom, factor, entero = _uom_envio(g.item_code, costeo, cache)
+        if uom:
+            q = g.qty_base / flt(factor)
+            g.qty = math.ceil(q - 1e-6) if entero else round(q, 2)
+            g.uom = uom
+            g.base = cantidad_uom(round(g.qty_base, 3), g.stock_uom)
+        else:
+            g.qty, g.uom, g.base = round(g.qty_base, 3), g.stock_uom, ""
+    return list(grupos.values())
