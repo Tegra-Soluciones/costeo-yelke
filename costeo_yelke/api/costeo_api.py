@@ -9064,7 +9064,7 @@ def sub_crear_sco(po: str, qty: float = None, schedule_date: str = None, lote_re
     return {"ok": True, "sco": sco.name}
 
 
-def _redondear_arriba_por_material(filas, key, leer, escribir):
+def _redondear_arriba_por_material(filas, key, leer, escribir, paso=None):
     """Redondea hacia arriba el TOTAL de cada material, no cada renglón suelto.
 
     Lo que físicamente se le entrega al taller es un montón por material -- 29 metros
@@ -9074,6 +9074,10 @@ def _redondear_arriba_por_material(filas, key, leer, escribir):
     6 renglones de 4.143 m que, redondeados uno por uno, daban 34 m en vez de 29.
     Ese 17% de más se queda varado en el almacén del taller (ver la nota de
     sobrantes). Redondeando el total queda en 29 m exactos.
+
+    ``paso(material)`` = de cuánto en cuánto se redondea (1 por omisión). Con un
+    paquete que no se divide es su factor: 4,259 m de cinta en Rollo de 100 m
+    quedan en 4,300 (ver _paso_paquete).
 
     El sobrante del redondeo se carga al renglón más grande, para que ninguno quede
     por DEBAJO de lo que su BOM pide. Con un solo renglón por material --el caso de
@@ -9092,7 +9096,9 @@ def _redondear_arriba_por_material(filas, key, leer, escribir):
         # prendas repartido en 6 piezas da 29.001 en vez de 29, y sin tolerancia el
         # techo lo subía a 30 -- un metro regalado por puro redondeo de captura.
         tol = len(rows) * 0.5 * (10 ** -3)
-        objetivo = math.ceil(round(exacto - tol, 4))
+        step = flt(paso(_mat)) if paso else 1.0
+        step = step if step > 1 else 1.0
+        objetivo = math.ceil(round((exacto - tol) / step, 4)) * step
         sobra = objetivo - exacto
         if abs(sobra) < 1e-9:
             continue
@@ -9119,7 +9125,54 @@ def redondear_materia_prima_sco(doc, method=None):
         key=lambda r: r.rm_item_code,
         leer=lambda r: r.required_qty,
         escribir=lambda r, v: setattr(r, "required_qty", v),
+        paso=_paso_paquete(_costeo_de_sco(doc)),
     )
+
+
+def _costeo_de_sco(sco_doc):
+    po = sco_doc.get("purchase_order")
+    return frappe.db.get_value("Purchase Order", po, "costeo") if po else None
+
+
+def _paso_paquete(costeo):
+    """``paso(material)`` para _redondear_arriba_por_material: el factor de su UDM de
+    compra cuando esa UDM no se divide (Rollo de 100 m -> 100), si no 1. Mismo
+    criterio que el envío (_redondear_a_paquete_envio): el encargo tiene que admitir
+    lo que el envío manda, o ERPNext lo bloquea al validar ("no puede transferirse
+    más que X contra Subcontracting Order")."""
+    cache = {}
+
+    def paso(code):
+        _uom, factor, entero = _uom_envio(code, costeo, cache)
+        return flt(factor) if entero else 1.0
+    return paso
+
+
+def _requerido_sco_a_paquetes(sco):
+    """Encargo YA validado (el hook de arriba no vuelve a correr): sube su requerido a
+    paquetes completos, igual que si se hubiera creado con esta regla. Solo sube,
+    nunca baja; el consumo del taller no cambia (se concilia contra el BOM) y el pico
+    queda como sobrante del taller (_descontar_lo_que_ya_tiene_el_taller)."""
+    doc = frappe.get_doc("Subcontracting Order", sco)
+    if doc.docstatus != 1:
+        return
+    antes = {r.name: flt(r.required_qty) for r in doc.supplied_items}
+    redondear_materia_prima_sco(doc)
+    for r in doc.supplied_items:
+        if flt(r.required_qty) > antes[r.name] + 1e-9:
+            frappe.db.set_value("Subcontracting Order Supplied Item", r.name, "required_qty",
+                                r.required_qty, update_modified=False)
+
+
+def _cuenta_diferencia_envio(se):
+    """El envío al taller es un traspaso entre almacenes: la cuenta de diferencia no
+    genera asiento, pero ERPNext toma la de gasto del artículo (Costo sobre ventas en
+    avíos) y avisa en naranja en cada renglón. Se usa la de ajuste de existencias,
+    la misma que ya traen las piezas."""
+    cuenta = frappe.get_cached_value("Company", se.company, "stock_adjustment_account")
+    if cuenta:
+        for it in se.items:
+            it.expense_account = cuenta
 
 
 def ajustar_consumo_a_existencia_taller(doc, method=None):
@@ -9433,10 +9486,12 @@ def sub_transferir_material(sco: str) -> dict:
         {"subcontracting_order": sco, "purpose": "Send to Subcontractor", "docstatus": 0},
         "name",
     )
+    _requerido_sco_a_paquetes(sco)
     if existing:
         se_existing = frappe.get_doc("Stock Entry", existing)
         _redondear_qty_arriba(se_existing, save=False)
         _redondear_a_paquete_envio(se_existing)
+        _cuenta_diferencia_envio(se_existing)
         ajustado = _ajustar_a_existencia(se_existing, sco)
         se_existing.flags.ignore_permissions = True
         se_existing.save()
@@ -9450,6 +9505,7 @@ def sub_transferir_material(sco: str) -> dict:
     _redondear_qty_arriba(se, save=False)
     descontado = _descontar_lo_que_ya_tiene_el_taller(se, sco)
     _redondear_a_paquete_envio(se)
+    _cuenta_diferencia_envio(se)
     ajustado = _ajustar_a_existencia(se, sco, ya_en_taller=descontado)
     se.flags.ignore_permissions = True
     try:
@@ -10066,6 +10122,8 @@ def sub_guardar_transferencia(stock_entry: str, from_warehouse=None, to_warehous
     # redondeo hacia arriba baja a lo que hay, mientras cubra lo que pide el BOM.
     if doc.get("subcontracting_order"):
         _ajustar_a_existencia(doc, doc.subcontracting_order)
+    if doc.purpose == "Send to Subcontractor":
+        _cuenta_diferencia_envio(doc)
     doc.flags.ignore_permissions = True
     doc.save()
     return {"ok": True}
@@ -10079,6 +10137,10 @@ def sub_validar_transferencia(stock_entry: str) -> dict:
     doc = frappe.get_doc("Stock Entry", stock_entry)
     if doc.docstatus == 0:
         _exigir_existencia_envio(doc)
+        if doc.get("subcontracting_order"):
+            _requerido_sco_a_paquetes(doc.subcontracting_order)
+        if doc.purpose == "Send to Subcontractor":
+            _cuenta_diferencia_envio(doc)
         doc.flags.ignore_permissions = True
         doc.submit()
     return {"ok": True}
