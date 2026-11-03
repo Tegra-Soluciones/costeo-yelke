@@ -134,7 +134,8 @@ async function encargar() {
   finally { ocupado.value = false; }
 }
 
-watch(() => props.abierto, (a) => { if (a) { hecho.value = ""; if (op.pasos.length) preparar(); cargar(); } });
+// immediate: Dirección › Por asignar lo monta ya abierto.
+watch(() => props.abierto, (a) => { if (a) { hecho.value = ""; if (op.pasos.length) preparar(); cargar(); } }, { immediate: true });
 watch(() => [props.pasoInicial, props.loteInicial], () => { if (props.abierto && op.pasos.length) preparar(); });
 watch(() => props.costeo, () => { op.pasos = []; lista.value = []; });
 watch(version, () => { if (props.abierto) cargar(); });

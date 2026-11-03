@@ -27,10 +27,14 @@ def _ruta(costeo, step=None, **query):
     return {"name": "CosteoDetail", "params": {"name": costeo}, "query": {k: v for k, v in q.items() if v not in (None, "")}}
 
 
-def _fila(costeos, costeo, titulo, detalle, ruta, fecha=None):
+def _fila(costeos, costeo, titulo, detalle, ruta, fecha=None, lote=None, sin_documento=False):
+    """``sin_documento``: lo que sigue todavía no tiene documento (nadie lo ha empezado);
+    ``lote`` sale de la ruta si no se indica (Dirección › Por asignar agrupa por él)."""
     c = costeos.get(costeo) or {}
     return {"titulo": titulo, "detalle": detalle, "costeo": costeo, "proyecto": c.get("titulo") or costeo,
-            "cliente": c.get("cliente") or "", "ruta": ruta, "fecha": str(fecha or c.get("modified") or "")}
+            "cliente": c.get("cliente") or "", "ruta": ruta, "fecha": str(fecha or c.get("modified") or ""),
+            "lote": lote if lote is not None else ((ruta or {}).get("query") or {}).get("lote") or "",
+            "sin_documento": sin_documento}
 
 
 def _pos(costeos, filtros, campos=("name", "costeo", "supplier_name", "lote_ref", "per_received", "per_billed", "grand_total", "currency", "transaction_date")):
@@ -89,6 +93,13 @@ def _seccion_alta(cs, paso, texto):
 
 def _seccion_preparacion(cs):
     out = []
+    # Flujo confirmado y plan hecho (En Producción) pero sin solicitud de material.
+    en_prod = [c for c, v in cs.items() if v.costeo_status == "En Producción"]
+    con_mr = set(frappe.get_all("Material Request", filters={"costeo": ["in", en_prod or [""]], "docstatus": ["<", 2]}, pluck="costeo"))
+    for c in en_prod:
+        if c not in con_mr:
+            out.append(_fila(cs, c, cs[c].titulo or c, _("Falta la solicitud de material"), _ruta(c, 5, vista="preparacion"),
+                             cs[c].modified, sin_documento=True))
     for mr in frappe.get_all("Material Request", filters={"costeo": ["in", list(cs) or [""]], "docstatus": 0}, fields=["name", "costeo", "modified"]):
         out.append(_fila(cs, mr.costeo, mr.name, _("Solicitud de material en borrador"), _ruta(mr.costeo, 5, vista="preparacion"), mr.modified))
     for po in _pos(cs, {"is_subcontracted": 1, "docstatus": 0}):
@@ -97,12 +108,34 @@ def _seccion_preparacion(cs):
     return out
 
 
-def _seccion_materia(cs):
+def _lotes_sin_oc(cs):
+    """[(costeo, lote, mr, n)]: lotes de una solicitud validada con materiales a los que
+    todavía no se les genera orden de compra (ni en borrador). Sin lotes declarados, la
+    solicitud entera cuenta como un lote sin nombre."""
     out = []
     for mr in frappe.get_all("Material Request", filters={"costeo": ["in", list(cs) or [""]], "docstatus": 1, "per_ordered": ["<", 100]},
-                             fields=["name", "costeo", "per_ordered", "modified"]):
-        out.append(_fila(cs, mr.costeo, mr.name, _("Solicitud sin OC completa ({0}% pedido)").format(round(mr.per_ordered)),
-                         _ruta(mr.costeo, 5, vista="preparacion"), mr.modified))
+                             fields=["name", "costeo", "modified"]):
+        items = frappe.get_all("Material Request Item", filters={"parent": mr.name},
+                               fields=["name", "lote_ref"] if frappe.db.has_column("Material Request Item", "lote_ref") else ["name"])
+        con_oc = set(frappe.get_all("Purchase Order Item", filters={"material_request": mr.name, "docstatus": ["<", 2]},
+                                    pluck="material_request_item"))
+        por_lote = {}
+        for it in items:
+            if it.name not in con_oc:
+                por_lote[it.get("lote_ref") or ""] = por_lote.get(it.get("lote_ref") or "", 0) + 1
+        for lote, n in por_lote.items():
+            out.append((mr.costeo, lote, mr, n))
+    return out
+
+
+def _seccion_materia(cs):
+    out = []
+    # Lo que todavía no tiene documento: nadie ha generado las órdenes de ese lote.
+    for costeo, lote, mr, n in _lotes_sin_oc(cs):
+        out.append(_fila(cs, costeo, mr.name, (_("{0}: faltan las órdenes de compra ({1} materiales)").format(lote, n) if lote
+                                                else _("Faltan las órdenes de compra ({0} materiales)").format(n)),
+                         _ruta(costeo, 5, vista="lote", lote=lote, paso="materia") if lote else _ruta(costeo, 5, vista="preparacion"),
+                         mr.modified, lote=lote, sin_documento=True))
     for po in _pos(cs, {"is_subcontracted": 0, "docstatus": 0}):
         out.append(_fila(cs, po.costeo, po.name, _("OC en borrador · {0}").format(po.supplier_name),
                          _ruta(po.costeo, 5, vista="lote", lote=po.lote_ref, paso="materia"), po.transaction_date))
@@ -121,8 +154,34 @@ def _scos(cs):
     return pos, scos, enviados
 
 
+def _lotes_sin_encargo(cs):
+    """[(costeo, lote)]: lotes con toda su materia prima recibida y ningún encargo a
+    taller todavía (ni en borrador)."""
+    out = []
+    mat = frappe.get_all("Purchase Order", filters={"costeo": ["in", list(cs) or [""]], "is_subcontracted": 0, "docstatus": ["<", 2],
+                                                    "lote_ref": ["not in", ["", None]]},
+                         fields=["costeo", "lote_ref", "docstatus", "per_received"])
+    por_lote = {}
+    for p in mat:
+        por_lote.setdefault((p.costeo, p.lote_ref), []).append(p)
+    if not por_lote:
+        return out
+    sub = {p.name: p.costeo for p in frappe.get_all("Purchase Order", filters={"costeo": ["in", list(cs) or [""]], "is_subcontracted": 1,
+                                                                               "docstatus": ["<", 2]}, fields=["name", "costeo"])}
+    con_encargo = {(sub[s.purchase_order], s.lote_ref) for s in frappe.get_all(
+        "Subcontracting Order", filters={"purchase_order": ["in", list(sub) or [""]], "docstatus": ["<", 2]},
+        fields=["purchase_order", "lote_ref"])}
+    for (costeo, lote), ps in por_lote.items():
+        if (costeo, lote) not in con_encargo and all(p.docstatus == 1 and (p.per_received or 0) >= 99.99 for p in ps):
+            out.append((costeo, lote))
+    return out
+
+
 def _seccion_talleres(cs):
     out = []
+    for costeo, lote in _lotes_sin_encargo(cs):
+        out.append(_fila(cs, costeo, cs[costeo].titulo or costeo, _("{0}: material recibido, falta encargar a los talleres").format(lote),
+                         _ruta(costeo, 5, vista="lote", lote=lote, paso="talleres"), lote=lote, sin_documento=True))
     pos, scos, enviados = _scos(cs)
     for s in scos:
         costeo = pos[s.purchase_order].costeo

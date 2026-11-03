@@ -45,13 +45,14 @@
         </template>
         <ProyectosDireccion v-else-if="tab === 'proyectos'" ref="proyectosRef" :grupo-inicial="grupoProyectos" />
         <div v-else-if="tab === 'encargos'" class="px-4 pt-3"><VistaAsignaciones modo="equipo" movil /></div>
+        <PorAsignar v-else-if="tab === 'porasignar'" @cuenta="porAsignar = $event" />
         <ResumenDireccion
           v-else ref="resumenRef" :pendientes="bandeja.items.length" :bloqueadas="bloqueadas" :dlg="dlg"
           @ir="irDesdeResumen" @delegar="hojaDelegar = true" @delegacion="alCambiarDelegacion"
         />
       </div>
 
-      <nav v-if="permisos.ve_panel" class="fixed bottom-0 inset-x-0 z-30 grid grid-cols-4 bg-white/95 backdrop-blur border-t border-surface-border" style="padding-bottom: env(safe-area-inset-bottom)">
+      <nav v-if="permisos.ve_panel" class="fixed bottom-0 inset-x-0 z-30 grid grid-cols-5 bg-white/95 backdrop-blur border-t border-surface-border" style="padding-bottom: env(safe-area-inset-bottom)">
         <button
           v-for="t in TABS" :key="t.k" type="button" class="relative h-[56px] flex flex-col items-center justify-center gap-0.5 text-[10.5px] font-medium"
           :class="tab === t.k ? 'text-brand-600' : 'text-ink-light'" @click="irTab(t.k)"
@@ -78,11 +79,11 @@
       <div class="h-14 bg-white border-b border-surface-border flex items-center px-6 gap-4 flex-shrink-0">
         <div>
           <p class="p-eyebrow">{{ soloRevisa ? "Revisión de documentos" : "Dirección" }}</p>
-          <p class="text-[16px] font-semibold leading-tight">{{ { aprobar: soloRevisa ? "Por revisar" : "Por aprobar", proyectos: "Proyectos", encargos: "Asignaciones", resumen: "Resumen" }[tab] }}</p>
+          <p class="text-[16px] font-semibold leading-tight">{{ { aprobar: soloRevisa ? "Por revisar" : "Por aprobar", proyectos: "Proyectos", porasignar: "Por asignar", encargos: "Asignaciones", resumen: "Resumen" }[tab] }}</p>
         </div>
         <div v-if="permisos.ve_panel" class="p-seg ml-6">
           <button v-for="t in TABS" :key="t.k" type="button" :class="tab === t.k ? 'on' : ''" @click="irTab(t.k)">
-            {{ t.l }}<template v-if="t.k === 'aprobar'"> · {{ bandeja.items.length }}</template>
+            {{ t.l }}<template v-if="t.k === 'aprobar'"> · {{ bandeja.items.length }}</template><template v-if="t.k === 'porasignar' && porAsignar"> · {{ porAsignar }}</template>
           </button>
         </div>
         <button v-if="permisos.ve_panel && dlg && !dlg.activa && !dlg.programadas?.length" type="button" class="p-btn-secondary ml-auto h-8 text-[12.5px]" @click="hojaDelegar = true">Delegar…</button>
@@ -108,6 +109,7 @@
       <div v-else class="flex-1 overflow-y-auto"><div class="max-w-[1100px] mx-auto px-6 py-5">
         <ProyectosDireccion v-if="tab === 'proyectos'" ref="proyectosRef" :grupo-inicial="grupoProyectos" />
         <VistaAsignaciones v-else-if="tab === 'encargos'" modo="equipo" />
+        <PorAsignar v-else-if="tab === 'porasignar'" @cuenta="porAsignar = $event" />
         <ResumenDireccion
           v-else ref="resumenRef" :pendientes="bandeja.items.length" :bloqueadas="bloqueadas" :dlg="dlg"
           @ir="irDesdeResumen" @delegar="hojaDelegar = true" @delegacion="alCambiarDelegacion"
@@ -161,6 +163,7 @@ import DetalleAprobacion from "@/components/direccion/DetalleAprobacion.vue";
 import ProyectosDireccion from "@/components/direccion/ProyectosDireccion.vue";
 import ResumenDireccion from "@/components/direccion/ResumenDireccion.vue";
 import VistaAsignaciones from "@/components/asignaciones/VistaAsignaciones.vue";
+import PorAsignar from "@/components/direccion/PorAsignar.vue";
 import HojaDelegar from "@/components/direccion/HojaDelegar.vue";
 import { cargarPermisosAprobacion, refrescarCuentaBandeja, usePermisosAprobacion } from "@/composables/useAprobacion.js";
 import { call } from "@/utils/frappe.js";
@@ -174,11 +177,13 @@ const ICONOS = {
   aprobar: '<svg class="w-[22px] h-[22px]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4"/><rect x="4" y="4" width="16" height="16" rx="4"/></svg>',
   proyectos: '<svg class="w-[22px] h-[22px]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 5h7v7H4zM13 5h7v4h-7zM13 11h7v8h-7zM4 14h7v5H4z"/></svg>',
   encargos: '<svg class="w-[22px] h-[22px]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M16 8a4 4 0 11-8 0 4 4 0 018 0zM4 20a8 8 0 0116 0"/></svg>',
+  porasignar: '<svg class="w-[22px] h-[22px]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M15 8a3 3 0 11-6 0 3 3 0 016 0zM4 20a8 8 0 0111-7.4M19 15v6M16 18h6"/></svg>',
   resumen: '<svg class="w-[22px] h-[22px]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>',
 };
 const TABS = [
   { k: "aprobar", l: "Por aprobar", icono: ICONOS.aprobar },
   { k: "proyectos", l: "Proyectos", icono: ICONOS.proyectos },
+  { k: "porasignar", l: "Por asignar", icono: ICONOS.porasignar },
   { k: "encargos", l: "Asignaciones", icono: ICONOS.encargos },
   { k: "resumen", l: "Resumen", icono: ICONOS.resumen },
 ];
@@ -203,12 +208,13 @@ const notificaciones = ref([]);
 const noLeidas = ref(0);
 const toast = ref("");
 const grupoProyectos = ref("activos");
+const porAsignar = ref(0);
 const proyectosRef = ref(null);
 const resumenRef = ref(null);
 
 const accede = computed(() => permisos.ve_panel || permisos.puede_aprobar || permisos.puede_revisar || permisos.puede_aprobar_precios);
 const soloRevisa = computed(() => permisos.puede_revisar && !permisos.puede_aprobar && !permisos.ve_panel);
-const tab = computed(() => (permisos.ve_panel && ["proyectos", "encargos", "resumen"].includes(route.query.tab) ? route.query.tab : "aprobar"));
+const tab = computed(() => (permisos.ve_panel && ["proyectos", "porasignar", "encargos", "resumen"].includes(route.query.tab) ? route.query.tab : "aprobar"));
 const lista = computed(() => bandeja.items.filter((f) => filtro.value === "todos" || GRUPO[f.tipo] === filtro.value));
 const viejos = computed(() => bandeja.items.filter((f) => f.horas > 48).length);
 const bloqueadas = computed(() => bandeja.items.filter((f) => f.bloqueo).length);
@@ -216,9 +222,9 @@ const cuentaFiltro = (k) => (k === "todos" ? bandeja.items.length : bandeja.item
 const clave = (f) => `${f.tipo === "precio" ? "precio" : f.doctype}/${f.name}`;
 
 const saludo = () => { const hr = new Date().getHours(); return hr < 12 ? "Buenos días" : hr < 19 ? "Buenas tardes" : "Buenas noches"; };
-const tituloMovil = computed(() => (tab.value === "proyectos" ? "Proyectos" : tab.value === "encargos" ? "Asignaciones" : tab.value === "resumen" ? "Resumen" : soloRevisa.value ? "Por revisar" : saludo()));
+const tituloMovil = computed(() => (tab.value === "proyectos" ? "Proyectos" : tab.value === "porasignar" ? "Por asignar" : tab.value === "encargos" ? "Asignaciones" : tab.value === "resumen" ? "Resumen" : soloRevisa.value ? "Por revisar" : saludo()));
 const subtitulo = computed(() => {
-  if (tab.value !== "aprobar") return { resumen: "Indicadores y delegación", encargos: "Qué tiene asignado cada persona" }[tab.value] || "Avance y alertas de cada costeo";
+  if (tab.value !== "aprobar") return { resumen: "Indicadores y delegación", encargos: "Qué tiene asignado cada persona", porasignar: "Lo que ya puede empezarse y quién lo tiene" }[tab.value] || "Avance y alertas de cada costeo";
   if (soloRevisa.value) return "Revisas antes de que llegue a Dirección.";
   const n = bandeja.items.length;
   if (!n) return "Nada por aprobar";
@@ -416,6 +422,10 @@ onMounted(async () => {
   cargarBandeja();
   cargarDelegacion();
   contarNotificaciones();
+  // Para el número de la pestaña "Por asignar" aunque no se abra.
+  if (permisos.ve_panel) {
+    call("costeo_yelke.api.encargos.get_por_asignar").then((r) => { porAsignar.value = r.sin_asignar || 0; }).catch(() => {});
+  }
   intervalo = setInterval(alVolver, 60000);
   document.addEventListener("visibilitychange", alVolver);
 });

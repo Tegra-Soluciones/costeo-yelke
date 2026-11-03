@@ -676,6 +676,57 @@ def get_equipo(company: str = None) -> dict:
 
 
 @frappe.whitelist()
+def get_por_asignar(company: str = None) -> dict:
+    """Panel de Dirección › Por asignar: todo lo que ya se puede hacer en los proyectos
+    activos, por proyecto, paso y lote, con quién lo tiene asignado.
+
+    Son los pendientes de Mi panel (api/mi_panel) de TODOS los pasos, no solo los de
+    quien consulta, incluidos los que todavía no tienen documento ("Lote 1: faltan las
+    órdenes de compra"). Así Dirección ve lo que ya pasó al siguiente paso y nadie ha
+    empezado, y lo asigna. Una asignación del paso sin lote cubre todos sus lotes."""
+    if not _ve_equipo():
+        frappe.throw(_("Solo Dirección ve lo que falta por asignar."), frappe.PermissionError)
+    from costeo_yelke.api import mi_panel
+
+    cs = mi_panel._activos(company)
+    grupos = {}
+    for vista, fn in mi_panel.SECCIONES.items():
+        try:
+            filas = fn(cs)
+        except Exception:
+            frappe.log_error(title=f"Por asignar: sección {vista}")
+            continue
+        for f in filas:
+            if f["costeo"] not in cs:
+                continue
+            lote = (f.get("lote") or "") if vista in CON_LOTE else ""
+            g = grupos.setdefault((f["costeo"], vista, lote), {
+                "costeo": f["costeo"], "proyecto": f["proyecto"], "cliente": f["cliente"], "vista": vista,
+                "etiqueta": _etiqueta(vista), "lote": lote, "ruta": f["ruta"], "fecha": f["fecha"],
+                "sin_documento": False, "pendientes": [], "asignado": []})
+            g["pendientes"].append({"titulo": f["titulo"], "detalle": f["detalle"], "ruta": f["ruta"],
+                                    "sin_documento": bool(f.get("sin_documento"))})
+            g["sin_documento"] = g["sin_documento"] or bool(f.get("sin_documento"))
+            g["fecha"] = max(g["fecha"], f["fecha"])
+
+    if grupos and _hay_encargos():
+        for e in frappe.get_all("ToDo", filters={"reference_type": "Costeo", "reference_name": ["in", list(cs)],
+                                                 "status": ABIERTO, "encargo_yelke": 1},
+                                fields=["name", "allocated_to", "reference_name", "vista_yelke", "lote_yelke", "creation"]):
+            for (costeo, vista, lote), g in grupos.items():
+                if costeo != e.reference_name:
+                    continue
+                if (e.vista_yelke or "") in (vista, GENERAL) and (not e.lote_yelke or e.lote_yelke == lote):
+                    g["asignado"].append({"name": e.name, "usuario": e.allocated_to, "nombre": _nombre(e.allocated_to),
+                                          "desde": str(e.creation), "general": not e.vista_yelke,
+                                          "todos_los_lotes": bool(lote) and not e.lote_yelke})
+
+    orden = {v: i for i, v in enumerate(ENCARGABLES)}
+    out = sorted(grupos.values(), key=lambda g: (bool(g["asignado"]), g["proyecto"], orden.get(g["vista"], 99), g["lote"]))
+    return {"grupos": out, "sin_asignar": sum(1 for g in out if not g["asignado"])}
+
+
+@frappe.whitelist()
 def marcar_listo(name: str, nota: str = None) -> dict:
     e = _encargo(name)
     _exigir_encargado(e)
