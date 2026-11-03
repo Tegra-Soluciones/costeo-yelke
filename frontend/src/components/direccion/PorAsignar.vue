@@ -48,7 +48,7 @@
               <span class="block text-[11px] text-ink-light">{{ notaAsignado(g.asignado[0]) }}</span>
             </span>
             <template v-else>
-              <span v-if="g.sin_documento" class="p-pill-wait flex-shrink-0 hidden sm:inline-flex">Sin empezar</span>
+              <span v-if="g.sin_documento" class="p-pill-wait flex-shrink-0">Sin empezar</span>
               <button type="button" class="p-btn-primary h-7 px-3 text-[12px] flex-shrink-0" @click.stop="asignar(g)">Asignar</button>
             </template>
           </template>

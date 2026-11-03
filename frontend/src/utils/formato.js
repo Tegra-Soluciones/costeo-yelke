@@ -30,10 +30,24 @@ function aFecha(valor) {
   return new Date(String(valor).replace(" ", "T"));
 }
 
+// Las fechas de Frappe vienen en la hora del servidor (System Settings: Ciudad de
+// México) y sin zona. «Hace cuánto» se mide contra la hora de ahí, no la de la
+// computadora: en una laptop con otra zona decía «hace 1 h» de algo recién hecho.
+const ZONA_SERVIDOR = "America/Mexico_City";
+function ahoraEnServidor() {
+  try {
+    const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+      timeZone: ZONA_SERVIDOR, hour12: false, year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+    }).formatToParts(new Date()).map((x) => [x.type, x.value]));
+    return new Date(`${p.year}-${p.month}-${p.day}T${p.hour === "24" ? "00" : p.hour}:${p.minute}:${p.second}`).getTime();
+  } catch { return Date.now(); }
+}
+
 export function haceCuanto(valor) {
   const d = aFecha(valor);
   if (!d || isNaN(d)) return "";
-  const s = Math.floor((Date.now() - d.getTime()) / 1000);
+  const s = Math.max(0, Math.floor((ahoraEnServidor() - d.getTime()) / 1000));
   if (s < 60) return "hace un momento";
   if (s < 3600) return `hace ${Math.floor(s / 60)} min`;
   if (s < 86400) return `hace ${Math.floor(s / 3600)} h`;
