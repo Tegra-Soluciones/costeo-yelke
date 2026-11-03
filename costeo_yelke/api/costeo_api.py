@@ -6069,9 +6069,10 @@ def _convertir_uom_compra(item_code, qty_actual, conversion_factor_actual, nuevo
 
 
 def _uom_compra_por_defecto(item_code, supplier=None, costeo_doc=None):
-    """UDM en la que se COMPRA un material por defecto: la que se capturó en el costeo
-    para ese material (supplier_uom, preferente la del mismo proveedor) y, si no, la
-    UDM de compra del artículo (Item.purchase_uom, la que se elige al darlo de alta).
+    """UDM en la que se COMPRA un material por defecto: la de la última compra en este
+    costeo; si aquí no se ha comprado, la de la última compra de ese material en
+    cualquier proyecto; luego la que se capturó en el costeo (supplier_uom, preferente
+    la del mismo proveedor) y la UDM de compra del artículo (Item.purchase_uom).
     Solo vale si el artículo tiene esa conversión dada de alta. Regresa
     (uom, factor) o (None, None) cuando la de compra es la misma de almacén."""
     stock_uom, purchase_uom = frappe.db.get_value("Item", item_code, ["stock_uom", "purchase_uom"]) or (None, None)
@@ -6087,6 +6088,18 @@ def _uom_compra_por_defecto(item_code, supplier=None, costeo_doc=None):
             order by (po.supplier = %s) desc, po.creation desc""",
             (costeo_doc.name, item_code, stock_uom, supplier or ""), pluck=True)
         candidatas += previas[:1]
+    # Si en este costeo todavía no se compra, la última compra de ese material en
+    # cualquier proyecto (la tela se compra en Rollo aunque el costeo diga Metro).
+    # Si esa última compra fue en la base, no se propone otra.
+    ultima = frappe.db.sql("""
+        select poi.uom from `tabPurchase Order Item` poi
+        join `tabPurchase Order` po on po.name = poi.parent
+        where po.docstatus = 1 and ifnull(po.is_subcontracted, 0) = 0 and poi.item_code = %s
+        order by (po.supplier = %s) desc, po.transaction_date desc, po.creation desc limit 1""",
+        (item_code, supplier or ""), pluck=True)
+    if ultima and ultima[0] == stock_uom and not candidatas:
+        return None, None
+    candidatas += ultima
     if costeo_doc:
         filas = [d for d in costeo_doc.get("costeo_producto_detalle") or []
                  if d.item == item_code and d.get("supplier_uom")]
@@ -6262,7 +6275,10 @@ def _precio_costeo_material(costeo, item_code):
     )
     for r in rows:
         if flt(r.unit_price):
-            return flt(r.unit_price), r.internal_uom
+            # unit_price siempre es por UDM base (Costeo.derivar_precio_unitario): sin
+            # internal_uom capturada, es la de almacén -- si no, $65/Metro se tomaba
+            # como $65/Rollo al proponer la OC en Rollo.
+            return flt(r.unit_price), r.internal_uom or frappe.db.get_value("Item", item_code, "stock_uom")
     return None, None
 
 

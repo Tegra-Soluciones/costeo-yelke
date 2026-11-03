@@ -245,7 +245,16 @@ def _seccion_entrega(cs):
                          _ruta(dn.costeo, 5, vista="lote", lote=dn.get("lote_ref"), paso="entrega") if dn.get("lote_ref") else _ruta(dn.costeo, 5, vista="envios"), dn.modified))
     for so in frappe.get_all("Sales Order", filters={"costeo": ["in", [c for c, v in cs.items() if v.costeo_status == "En Producción"] or [""]],
                                                      "docstatus": 1, "per_delivered": ["<", 99.99]}, fields=["name", "costeo", "per_delivered", "modified"]):
-        out.append(_fila(cs, so.costeo, so.name, _("Entregado {0}% de la orden de venta").format(round(so.per_delivered)),
+        # Solo cuando ya hay prendas terminadas por entregar: mientras se producen, el
+        # pendiente es de los talleres, no de entrega.
+        listas = 0.0
+        for it in frappe.get_all("Sales Order Item", filters={"parent": so.name}, fields=["item_code", "qty", "delivered_qty"]):
+            if it.qty - (it.delivered_qty or 0) > 0:
+                hay = frappe.db.sql("select sum(actual_qty) from tabBin where item_code = %s and actual_qty > 0", it.item_code)[0][0] or 0
+                listas += min(hay, it.qty - (it.delivered_qty or 0))
+        if listas <= 0:
+            continue
+        out.append(_fila(cs, so.costeo, so.name, _("{0} prendas terminadas por entregar (entregado {1}%)").format(int(listas), round(so.per_delivered)),
                          _ruta(so.costeo, 5, vista="tablero"), so.modified))
     return out
 
