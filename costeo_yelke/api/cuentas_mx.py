@@ -110,9 +110,68 @@ def _ya_realizado(doctype, name, realizado, signo):
         (realizado, doctype, name))[0][0]), 2)
 
 
+def _tc_fiscal_del_pago(voucher_type, voucher_no, tc_factura):
+    """Tipo de cambio con el que se acredita (o traslada) el IVA de ese pago: el «Tipo de
+    cambio para el IVA» capturado en el pago (el FIX del DOF del día anterior, art. 20
+    CFF) o, si se dejó vacío, el del propio pago. Una póliza manual, el de su renglón."""
+    if voucher_type == "Payment Entry":
+        pe = frappe.db.get_value("Payment Entry", voucher_no, ["payment_type", "source_exchange_rate", "target_exchange_rate",
+                                                               "tc_iva"] if frappe.db.has_column("Payment Entry", "tc_iva")
+                                 else ["payment_type", "source_exchange_rate", "target_exchange_rate"], as_dict=True)
+        if pe:
+            # El lado del tercero: a él se le paga (paid_to) o él paga (paid_from).
+            return flt(pe.get("tc_iva")) or flt(pe.target_exchange_rate if pe.payment_type == "Pay" else pe.source_exchange_rate) \
+                or tc_factura
+    return tc_factura
+
+
+def _iva_al_tc_de_los_pagos(doctype, name, iva):
+    """Factura en moneda extranjera: el IVA de lo pagado, en pesos, al tipo de cambio de
+    CADA pago (art. 5 LIVA: se acredita lo efectivamente pagado, convertido a la fecha
+    del pago) en lugar del de la factura. None si la factura es en pesos."""
+    inv = frappe.db.get_value(doctype, name, ["currency", "conversion_rate", "company"], as_dict=True)
+    if not inv or inv.currency == frappe.get_cached_value("Company", inv.company, "default_currency") \
+            or not flt(inv.conversion_rate):
+        return None
+    iva_moneda = iva / flt(inv.conversion_rate)
+    filas = frappe.get_all("Payment Ledger Entry", filters={"against_voucher_type": doctype, "against_voucher_no": name,
+                                                            "delinked": 0},
+                           fields=["voucher_type", "voucher_no", "amount_in_account_currency"])
+    total = sum(flt(f.amount_in_account_currency) for f in filas if f.voucher_no == name and f.voucher_type == doctype)
+    if not total:
+        return None
+    por_pago = {}
+    for f in filas:
+        if f.voucher_type in ("Payment Entry", "Journal Entry") and f.voucher_no != name:
+            por_pago[(f.voucher_type, f.voucher_no)] = por_pago.get((f.voucher_type, f.voucher_no), 0.0) + flt(f.amount_in_account_currency)
+    monto = 0.0
+    for (vt, vn), importe in por_pago.items():
+        fraccion = -importe / total
+        if abs(fraccion) < 1e-9:
+            continue  # la póliza de diferencia cambiaria de ERPNext: no es pago
+        monto += iva_moneda * fraccion * _tc_fiscal_del_pago(vt, vn, flt(inv.conversion_rate))
+    return round(monto, 2)
+
+
+def _ya_salio(doctype, name, origen, signo):
+    """Lo que ya salió de la cuenta pendiente (o genérica) por las pólizas de IVA."""
+    if not origen:
+        return 0.0
+    return round(-signo * flt(frappe.db.sql(
+        """select sum(g.debit - g.credit) from `tabGL Entry` g join `tabJournal Entry` j on j.name = g.voucher_no
+           where g.is_cancelled = 0 and g.voucher_type = 'Journal Entry' and g.account = %s
+           and j.docstatus = 1 and j.iva_factura_doctype = %s and j.iva_factura = %s""",
+        (origen, doctype, name))[0][0]), 2)
+
+
 def sincronizar_iva(doctype, name):
     """Deja en PAGADO / COBRADO exactamente la parte del IVA de la factura que ya se
-    pagó; si sobra o falta (pago nuevo, pago cancelado), una póliza con la diferencia."""
+    pagó; si sobra o falta (pago nuevo, pago cancelado), una póliza con la diferencia.
+
+    Factura en moneda extranjera: de la PENDIENTE sale lo que registró la factura (a su
+    tipo de cambio) y a PAGADO / COBRADO entra el IVA al tipo de cambio de cada pago
+    (_iva_al_tc_de_los_pagos); la diferencia va a la cuenta de diferencia cambiaria de
+    la compañía. En pesos las dos cantidades son la misma, como siempre."""
     if doctype not in FACTURAS or not frappe.db.has_column("Journal Entry", "iva_factura"):
         return
     inv = frappe.db.get_value(doctype, name, ["docstatus", "company", "is_return"], as_dict=True)
@@ -123,28 +182,43 @@ def sincronizar_iva(doctype, name):
     if not realizado:
         return
     iva, origen = _iva_de_factura(doctype, name, inv.company, signo)
-    fraccion, fecha = _fraccion_pagada(doctype, name) if inv.docstatus == 1 else (0.0, None)
-    objetivo = iva if fraccion >= 0.99995 else round(iva * fraccion, 2)
-    hecho = _ya_realizado(doctype, name, realizado, signo)
-    dif = round(objetivo - hecho, 2)
-    if abs(dif) < 0.01:
-        return
     if not origen:
         origen = cuenta(inv.company, pendiente_nombre)
+    fraccion, fecha = _fraccion_pagada(doctype, name) if inv.docstatus == 1 else (0.0, None)
+    objetivo = iva if fraccion >= 0.99995 else round(iva * fraccion, 2)
+    objetivo_real = objetivo
+    if inv.docstatus == 1 and fraccion > 0:
+        fiscal = _iva_al_tc_de_los_pagos(doctype, name, iva)
+        if fiscal is not None:
+            objetivo_real = fiscal
+    dif_real = round(objetivo_real - _ya_realizado(doctype, name, realizado, signo), 2)
+    dif_orig = round(objetivo - _ya_salio(doctype, name, origen, signo), 2)
+    if abs(dif_real) < 0.01 and abs(dif_orig) < 0.01:
+        return
     # Compras (activo): cargo a PAGADO, abono a PENDIENTE. Ventas (pasivo): al revés.
-    # Con `dif` negativo (pago cancelado) se invierte solo.
-    monto = dif * signo
+    # Con diferencias negativas (pago cancelado) se invierte solo. Lo que no cuadra entre
+    # las dos es tipo de cambio: a la cuenta de diferencia cambiaria.
+    cargo_real, abono_orig = dif_real * signo, dif_orig * signo
+    renglones = [
+        {"account": realizado, "debit_in_account_currency": max(cargo_real, 0), "credit_in_account_currency": max(-cargo_real, 0)},
+        {"account": origen, "debit_in_account_currency": max(-abono_orig, 0), "credit_in_account_currency": max(abono_orig, 0)},
+    ]
+    cambiaria = round(abono_orig - cargo_real, 2)
+    if abs(cambiaria) >= 0.01:
+        cta = frappe.get_cached_value("Company", inv.company, "exchange_gain_loss_account")
+        if not cta:
+            frappe.throw(_("Falta la cuenta de diferencia cambiaria de {0}.").format(inv.company))
+        renglones.append({"account": cta, "debit_in_account_currency": max(cambiaria, 0),
+                          "credit_in_account_currency": max(-cambiaria, 0)})
+    renglones = [r for r in renglones if r["debit_in_account_currency"] or r["credit_in_account_currency"]]
     je = frappe.get_doc({
         "doctype": "Journal Entry", "voucher_type": "Journal Entry", "company": inv.company,
-        "posting_date": fecha if (dif > 0 and fecha) else nowdate(),
+        "posting_date": fecha if ((dif_real > 0 or dif_orig > 0) and fecha) else nowdate(),
         "iva_factura_doctype": doctype, "iva_factura": name,
         "user_remark": _("IVA {0} -- {1} {2} ({3:.2f}% pagado)").format(
             _("efectivamente pagado") if doctype == "Purchase Invoice" else _("efectivamente cobrado"),
             _(doctype), name, fraccion * 100),
-        "accounts": [
-            {"account": realizado, "debit_in_account_currency": max(monto, 0), "credit_in_account_currency": max(-monto, 0)},
-            {"account": origen, "debit_in_account_currency": max(-monto, 0), "credit_in_account_currency": max(monto, 0)},
-        ],
+        "accounts": renglones,
     })
     je.flags.ignore_permissions = True
     je.insert()
