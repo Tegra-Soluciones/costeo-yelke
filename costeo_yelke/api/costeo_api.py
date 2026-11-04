@@ -11322,6 +11322,37 @@ def _get_shipping_row_amount(doc):
     return 0
 
 
+def moneda_flete(doc):
+    """Moneda en la que se captura el costo de envío: la del transportista (su cuenta
+    por pagar) si lo cobra una paquetería externa; si lo cobra el mismo proveedor, la
+    del documento (va en su factura)."""
+    if doc.get("flete_modo") == "Paquetería externa" and doc.get("flete_proveedor"):
+        from erpnext.accounts.party import get_party_account_currency
+
+        return get_party_account_currency("Supplier", doc.flete_proveedor, doc.company) or _moneda_compania(doc.company)
+    return doc.get("currency") or _moneda_compania(doc.company)
+
+
+def _a_moneda_documento(doc, monto, moneda):
+    """Un importe en `moneda` expresado en la moneda del documento (pasando por pesos)."""
+    mc = _moneda_compania(doc.company)
+    actual = doc.get("currency") or mc
+    if not flt(monto) or moneda == actual:
+        return flt(monto)
+    fecha = doc.get("posting_date") or doc.get("transaction_date")
+    en_mc = flt(monto) if moneda == mc else flt(monto) * (_tipo_cambio(moneda, mc, fecha) or 1.0)
+    return en_mc if actual == mc else en_mc / (flt(doc.get("conversion_rate")) or 1.0)
+
+
+@frappe.whitelist()
+def moneda_de_proveedor(supplier: str, company: str) -> str:
+    """Para la pantalla: en qué moneda cobra un proveedor (la de su cuenta por pagar)."""
+    from erpnext.accounts.party import get_party_account_currency
+
+    return (get_party_account_currency("Supplier", supplier, company) if supplier and company else None) \
+        or (_moneda_compania(company) if company else "MXN")
+
+
 def _set_purchase_shipping_row(doc, amount, incluye_iva=None):
     """Agrega/edita la fila de flete en 'taxes' (Purchase Taxes and Charges),
     identificándola por su descripción para no duplicarla en guardados sucesivos.
@@ -11344,6 +11375,10 @@ def _set_purchase_shipping_row(doc, amount, incluye_iva=None):
     # factura -> "Valuation and Total", como siempre. Al inventario, la base sin IVA.
     externa = doc.get("flete_modo") == "Paquetería externa"
     amount = base_sin_iva(capturado, cint(incluye_iva)) if externa else capturado
+    # Lo capturado va en la moneda de quien cobra el envío (moneda_flete): el
+    # transportista en pesos, el recibo en dólares -> el renglón, en dólares.
+    if externa:
+        amount = _a_moneda_documento(doc, amount, moneda_flete(doc))
     if doc.meta.get_field("flete_importe_capturado"):
         doc.flete_importe_capturado = capturado
     rows = doc.get("taxes") or []
@@ -11460,6 +11495,10 @@ def _aplicar_moneda(doc, moneda, tipo_cambio=None):
         for campo in ("rate", "price_list_rate"):
             if it.meta.get_field(campo) and flt(it.get(campo)):
                 it.set(campo, flt(it.get(campo)) * anterior / nuevo)
+    # Los cargos de importe fijo (el flete) también estaban en la moneda anterior.
+    for t in doc.get("taxes") or []:
+        if t.get("charge_type") == "Actual" and flt(t.get("tax_amount")):
+            t.tax_amount = flt(t.tax_amount) * anterior / nuevo
 
 
 @frappe.whitelist()
@@ -11539,6 +11578,7 @@ def get_documento_compra(doctype: str, name: str) -> dict:
                          if _envio_capturado_taxes(doc) else None,
         "flete_modo": doc.get("flete_modo") or "",
         "flete_proveedor": doc.get("flete_proveedor") or "",
+        "flete_moneda": moneda_flete(doc) if meta.has_field("flete_modo") else doc.get("currency"),
         "flete_incluye_iva": cint(doc.get("flete_incluye_iva")),
         "flete_cobra_iva": cint(doc.get("flete_cobra_iva")) if meta.has_field("flete_cobra_iva") else 0,
         "factura_flete": doc.get("factura_flete") or "",

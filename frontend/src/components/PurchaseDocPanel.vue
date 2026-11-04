@@ -101,12 +101,12 @@
                factura con IVA acreditable y retención de 4% si aplica (api/fletes.py). -->
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="field-label">Costo de envío <span v-if="shippingRequired" class="text-red-400">*</span><span v-else class="text-ink-light font-normal">(flete)</span></label>
+              <label class="field-label">Costo de envío <span v-if="shippingRequired" class="text-red-400">*</span><span v-else class="text-ink-light font-normal">(flete)</span><span v-if="fleteOtraMoneda" class="text-ink-light font-normal"> en {{ monedaFlete }}</span></label>
               <div v-if="!isValidated" class="flex items-center border rounded-lg focus-within:ring-2 focus-within:ring-brand-500/30 bg-white" :class="shippingRequired && !shippingCaptured ? 'border-red-300' : 'border-surface-border'">
                 <span class="pl-3 pr-1 text-sm text-ink-light select-none">$</span>
                 <input v-model.number="form.shipping_cost" type="number" min="0" step="0.01" placeholder="0.00" class="flex-1 min-w-0 py-2 pr-3 text-sm focus:outline-none bg-transparent" />
               </div>
-              <div v-else class="field-input bg-surface-raised/60">${{ form.shipping_cost || 0 }}</div>
+              <div v-else class="field-input bg-surface-raised/60">${{ form.shipping_cost || 0 }}<span v-if="fleteOtraMoneda"> {{ monedaFlete }}</span></div>
               <p v-if="shippingRequired && !isValidated" class="text-[11px] text-ink-light mt-1">Obligatorio -- pon 0 si no hubo costo de envío.</p>
             </div>
             <div v-if="Number(form.shipping_cost) > 0 || form.flete_modo">
@@ -129,7 +129,7 @@
                 </label>
               </div>
               <p class="col-span-2 text-[11px] text-ink-light -mt-1">
-                Al inventario va {{ baseFlete.toLocaleString("es-MX", { style: "currency", currency: "MXN" }) }} (sin IVA).
+                Al inventario va {{ fmtMoneda(baseFlete, monedaFlete) }} (sin IVA)<template v-if="monedaFlete !== monedaActual">, en {{ monedaFlete }} como lo cobra la paquetería; en el recibo ({{ monedaActual }}) se convierte al tipo de cambio</template>.
                 Al validar el recibo se crea en borrador la factura del proveedor de paquetería con IVA acreditable y, si aplica, retención de 4%; ahí se adjuntan el CFDI y la carta porte.
                 <a v-if="doc.factura_flete" :href="`/app/purchase-invoice/${doc.factura_flete}`" target="_blank" class="text-brand-600 hover:underline">Factura del flete: {{ doc.factura_flete }}</a>
               </p>
@@ -139,7 +139,7 @@
               <label class="col-span-2 flex items-center gap-1.5 text-[12px] text-ink-muted -mt-1">
                 <input v-model="form.flete_cobra_iva" type="checkbox" :true-value="1" :false-value="0" :disabled="isValidated" />
                 El proveedor cobra IVA sobre el envío
-                <span class="text-ink-light">· {{ form.flete_cobra_iva ? `+ ${ivaFlete.toLocaleString("es-MX", { style: "currency", currency: "MXN" })} de IVA en su factura (no va al inventario)` : "sin IVA" }}</span>
+                <span class="text-ink-light">· {{ form.flete_cobra_iva ? `+ ${fmtMoneda(ivaFlete, monedaActual)} de IVA en su factura (no va al inventario)` : "sin IVA" }}</span>
               </label>
             </template>
           </div>
@@ -315,6 +315,28 @@ const baseFlete = computed(() => {
 });
 // Moneda que tendrá el documento al guardar (la elegida o la que ya trae).
 const monedaActual = computed(() => props.form.currency || props.doc?.currency || "");
+// El costo de envío va en la moneda de quien lo cobra: la paquetería externa (la de su
+// cuenta, normalmente pesos) o el mismo proveedor (la del documento, va en su factura).
+const monedaTransportista = reactive({ proveedor: null, moneda: "" });
+watch(() => [props.form.flete_modo, props.form.flete_proveedor], async ([modo, prov]) => {
+  if (modo !== "Paquetería externa" || !prov || prov === monedaTransportista.proveedor) return;
+  monedaTransportista.proveedor = prov;
+  monedaTransportista.moneda = prov === props.doc?.flete_proveedor && props.doc?.flete_moneda ? props.doc.flete_moneda : "";
+  try {
+    monedaTransportista.moneda = await call("costeo_yelke.api.costeo_api.moneda_de_proveedor",
+      { supplier: prov, company: props.doc?.company });
+  } catch { /* se queda con la que traía el documento */ }
+}, { immediate: true });
+const monedaFlete = computed(() => {
+  if (props.form.flete_modo === "Paquetería externa" && props.form.flete_proveedor)
+    return monedaTransportista.moneda || props.doc?.company_currency || "MXN";
+  return monedaActual.value || "MXN";
+});
+const fleteOtraMoneda = computed(() => monedaFlete.value !== (props.doc?.company_currency || "MXN") || monedaFlete.value !== monedaActual.value);
+function fmtMoneda(v, moneda) {
+  try { return `${Number(v || 0).toLocaleString("es-MX", { style: "currency", currency: moneda || "MXN" })}${moneda && moneda !== "MXN" ? ` ${moneda}` : ""}`; }
+  catch { return `$${Number(v || 0).toFixed(2)} ${moneda || ""}`; }
+}
 const extranjera = computed(() => !!monedaActual.value && !!props.doc?.company_currency && monedaActual.value !== props.doc.company_currency);
 const buscandoTc = reactive({ v: false, aviso: "" });
 /** "Usar el del sistema": el tipo de cambio de referencia de la fecha del documento

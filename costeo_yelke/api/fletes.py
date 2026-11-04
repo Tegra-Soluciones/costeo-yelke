@@ -55,9 +55,11 @@ def cuenta_gasto_distribucion(company):
 
 
 def crear_factura_flete(company, proveedor, base, cuenta_gasto, fecha, origen_doctype, origen, descripcion="",
-                        costeo=None):
+                        costeo=None, moneda=None, tipo_cambio=None):
     """Factura de compra del transportista, en BORRADOR, por la base sin IVA del flete.
-    Regresa su nombre."""
+    `base` va en `moneda` (pesos si no se dice); un transportista en dólares sin
+    `moneda` recibe la factura convertida al tipo de cambio del día
+    (moneda_terceros.documento_en_moneda_del_proveedor). Regresa su nombre."""
     if flt(base) <= 0 or not proveedor:
         return None
     from erpnext.controllers.accounts_controller import get_taxes_and_charges
@@ -68,6 +70,12 @@ def crear_factura_flete(company, proveedor, base, cuenta_gasto, fecha, origen_do
     pi.supplier = proveedor
     pi.posting_date = fecha
     pi.set_posting_time = 1
+    if moneda and moneda != frappe.get_cached_value("Company", company, "default_currency"):
+        from costeo_yelke.api.costeo_api import _tipo_cambio
+
+        pi.currency = moneda
+        pi.conversion_rate = flt(tipo_cambio) or _tipo_cambio(
+            moneda, frappe.get_cached_value("Company", company, "default_currency"), fecha) or 1.0
     pi.es_factura_flete = 1
     pi.flete_origen_doctype = origen_doctype
     pi.flete_origen = origen
@@ -152,14 +160,23 @@ def factura_flete_recibo(doc, method=None):
     puente; la factura carga esa misma cuenta)."""
     if doc.get("flete_modo") != "Paquetería externa" or not doc.get("flete_proveedor") or doc.get("factura_flete"):
         return
-    from costeo_yelke.api.costeo_api import FLETE_DESCRIPTION
+    from costeo_yelke.api.costeo_api import FLETE_DESCRIPTION, moneda_flete
 
     fila = next((t for t in (doc.get("taxes") or []) if t.description == FLETE_DESCRIPTION), None)
     if not fila or flt(fila.base_tax_amount or fila.tax_amount) <= 0:
         return
-    pi = crear_factura_flete(doc.company, doc.flete_proveedor, flt(fila.base_tax_amount or fila.tax_amount),
+    # Lo capturado está en la moneda del transportista: su factura, por esa base exacta
+    # (no por la reconvertida del renglón, que trae centavos de redondeo).
+    moneda = moneda_flete(doc)
+    base, tc = flt(fila.base_tax_amount or fila.tax_amount), None
+    if flt(doc.get("flete_importe_capturado")):
+        base = base_sin_iva(doc.flete_importe_capturado, doc.get("flete_incluye_iva"))
+        tc = doc.conversion_rate if moneda == doc.currency else None
+    else:
+        moneda = None  # sin lo capturado (documentos viejos): en pesos, como antes
+    pi = crear_factura_flete(doc.company, doc.flete_proveedor, base,
                              fila.account_head, doc.posting_date, doc.doctype, doc.name, _("Envío de material"),
-                             costeo_de(doc))
+                             costeo_de(doc), moneda=moneda, tipo_cambio=tc)
     if pi:
         frappe.db.set_value("Purchase Receipt", doc.name, "factura_flete", pi, update_modified=False)
 
