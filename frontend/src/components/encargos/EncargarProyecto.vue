@@ -34,6 +34,7 @@
         <span class="p-field-label">Mensaje</span>
         <textarea v-model="form.mensaje" rows="4" class="p-field h-auto py-2" placeholder="Qué pidió el cliente: prenda, cantidad, tela, fecha de entrega…"></textarea>
       </label>
+      <ArchivosAsignacion v-model="archivos" />
       <label class="block w-1/2">
         <span class="p-field-label">Fecha límite (opcional)</span>
         <input v-model="form.fecha" type="date" class="p-field" />
@@ -54,7 +55,8 @@
 import { reactive, ref, watch } from "vue";
 import LinkInput from "@/components/LinkInput.vue";
 import PanelLateral from "@/components/produccion/PanelLateral.vue";
-import { crearProyecto, getOpciones } from "@/composables/useEncargos.js";
+import { crearProyecto, getOpciones, subirArchivosAsignacion } from "@/composables/useEncargos.js";
+import ArchivosAsignacion from "@/components/asignaciones/ArchivosAsignacion.vue";
 import { useCompany } from "@/composables/useCompany.js";
 
 const props = defineProps({ abierto: { type: Boolean, default: false } });
@@ -63,13 +65,14 @@ const { state: companyState } = useCompany();
 
 const form = reactive({ titulo: "", cliente: "", cliente_nuevo: "", compania: "", usuario: "", mensaje: "", fecha: "" });
 const nuevo = ref(false);
+const archivos = ref([]);
 const candidatos = ref([]);
 const ocupado = ref(false);
 const error = ref("");
 
 watch(() => props.abierto, async (a) => {
   if (!a) return;
-  nuevo.value = false;
+  nuevo.value = false; archivos.value = [];
   Object.assign(form, { titulo: "", cliente: "", cliente_nuevo: "", compania: companyState.selected || "", usuario: "", mensaje: "", fecha: "" });
   error.value = "";
   try {
@@ -83,6 +86,7 @@ async function crear() {
   ocupado.value = true; error.value = "";
   try {
     const r = await crearProyecto({ ...form, titulo: form.titulo.trim(), fecha: form.fecha || undefined, compania: form.compania || undefined });
+    if (archivos.value.length) await subirArchivosAsignacion(r.encargo, archivos.value);
     const quien = candidatos.value.find((c) => c.usuario === form.usuario)?.nombre || form.usuario;
     emit("creado", { costeo: r.costeo, titulo: form.titulo.trim(), para: quien });
     emit("cerrar");

@@ -50,3 +50,9 @@ export const ESTADO = {
   regresado: ["Regresada", "p-pill-bad"],
   quitado: ["Quitada", "p-pill-off"],
 };
+
+// Sube los archivos juntados al asignar (ArchivosAsignacion sin encargo) al encargo ya creado.
+export async function subirArchivosAsignacion(encargo, files) {
+  const { uploadToMethod } = await import("@/utils/frappe.js");
+  for (const f of files || []) await uploadToMethod("costeo_yelke.api.encargos.subir_archivo", f, { name: encargo });
+}

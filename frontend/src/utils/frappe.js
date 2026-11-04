@@ -194,3 +194,21 @@ function slugify(str) {
 export function fuzzyQuery(text) {
   return (text || "").trim().split(/\s+/).filter(Boolean).join("%");
 }
+
+// Sube un archivo a un método propio (p. ej. encargos.subir_archivo) con sus parámetros.
+export async function uploadToMethod(method, file, params = {}) {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  for (const [k, v] of Object.entries(params)) form.append(k, v);
+  const res = await fetch(BASE + "/api/method/" + method, {
+    method: "POST",
+    credentials: "include",
+    headers: { "X-Frappe-CSRF-Token": getCsrfToken() },
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(err, res.statusText));
+  }
+  return (await res.json()).message;
+}

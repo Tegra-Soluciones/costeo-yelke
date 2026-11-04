@@ -29,6 +29,8 @@
         <p class="text-[13.5px] leading-relaxed bg-surface-raised rounded-lg px-3.5 py-3 whitespace-pre-line">{{ f.mensaje }}</p>
       </div>
 
+      <ArchivosAsignacion :encargo="f.name" class="mt-5" />
+
       <div v-if="f.estado !== 'abierto'" class="mt-5 rounded-lg px-3.5 py-3 text-[13px]" :class="f.estado === 'hecho' ? 'bg-emerald-50 text-emerald-900' : f.estado === 'regresado' ? 'bg-red-50 text-red-900' : 'bg-surface-raised text-ink'">
         <p class="font-medium">{{ { hecho: f.cierre === "Automático" ? "Se marcó sola" : "Marcada como hecha", regresado: "La regresó " + f.para_nombre, quitado: "Se quitó" }[f.estado] }}</p>
         <p v-if="f.nota" class="mt-0.5">{{ f.nota }}</p>
@@ -64,6 +66,7 @@ import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import Icono from "@/components/Icono.vue";
 import PanelLateral from "@/components/produccion/PanelLateral.vue";
+import ArchivosAsignacion from "@/components/asignaciones/ArchivosAsignacion.vue";
 import { asegurarCompania } from "@/composables/useCompany.js";
 import {
   AL_DIA, ESTADO, getOpciones, marcarListo, quitarEncargo, reasignarEncargo, recordarEncargo, regresarEncargo,

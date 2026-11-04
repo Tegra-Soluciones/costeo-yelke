@@ -40,6 +40,7 @@
           <span class="p-field-label">Fecha límite (opcional)</span>
           <input v-model="form.fecha" type="date" class="p-field" :min="hoy" />
         </label>
+        <ArchivosAsignacion v-model="archivos" class="col-span-2" />
       </div>
       <p v-if="paso" class="text-[11.5px] text-ink-light">{{ paso.regla }}</p>
       <p v-if="error" class="text-[12px] text-red-700">{{ error }}</p>
@@ -66,7 +67,8 @@
 import { computed, reactive, ref, watch } from "vue";
 import PanelLateral from "@/components/produccion/PanelLateral.vue";
 import FilaEncargo from "@/components/encargos/FilaEncargo.vue";
-import { crearEncargo, getDelProyecto, getOpciones, version } from "@/composables/useEncargos.js";
+import ArchivosAsignacion from "@/components/asignaciones/ArchivosAsignacion.vue";
+import { crearEncargo, getDelProyecto, getOpciones, subirArchivosAsignacion, version } from "@/composables/useEncargos.js";
 
 const props = defineProps({
   abierto: { type: Boolean, default: false },
@@ -84,6 +86,7 @@ const ocupado = ref(false);
 const error = ref("");
 const hecho = ref("");
 const form = reactive({ vista: "", lote: "", usuario: "", mensaje: "", fecha: "" });
+const archivos = ref([]);
 const hoy = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
 const paso = computed(() => op.pasos.find((p) => p.clave === form.vista));
@@ -124,8 +127,10 @@ async function cargar() {
 async function encargar() {
   ocupado.value = true; error.value = ""; hecho.value = "";
   try {
-    await crearEncargo({ costeo: props.costeo, vista: form.vista, usuario: form.usuario, mensaje: form.mensaje,
+    const r = await crearEncargo({ costeo: props.costeo, vista: form.vista, usuario: form.usuario, mensaje: form.mensaje,
       fecha: form.fecha || undefined, lote: form.lote || undefined });
+    if (archivos.value.length) await subirArchivosAsignacion(r.name, archivos.value);
+    archivos.value = [];
     const quien = paso.value?.candidatos.find((c) => c.usuario === form.usuario)?.nombre || form.usuario;
     hecho.value = `Listo: se le avisó a ${quien}.`;
     form.mensaje = ""; form.fecha = "";

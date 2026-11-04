@@ -835,3 +835,51 @@ def eventos_actividad(costeo):
                         "en": e.cerrado_en_yelke, "texto": texto.format(paso),
                         "cita": e.nota_cierre_yelke if e.cierre_yelke != AUTOMATICO else None})
     return out
+
+
+# ── Fotos y adjuntos de la asignación ──────────────────────────────────────────
+# Viven como File ligados al ToDo. Los ven y agregan quien asignó, el responsable y
+# Dirección; se suben por aquí (no por upload_file) para no depender de los permisos
+# del ToDo en el Escritorio.
+IMAGENES = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif", ".bmp")
+
+
+def _exigir_acceso_archivos(name):
+    e = _encargo(name)
+    if frappe.session.user not in (e.allocated_to, e.assigned_by) and not _ve_equipo():
+        frappe.throw(_("No tienes acceso a esta asignación."), frappe.PermissionError)
+    return e
+
+
+@frappe.whitelist()
+def get_archivos(name: str) -> list:
+    _exigir_acceso_archivos(name)
+    archivos = frappe.get_all("File", filters={"attached_to_doctype": "ToDo", "attached_to_name": name},
+                              fields=["name", "file_name", "file_url", "owner", "creation"], order_by="creation asc")
+    for a in archivos:
+        a["es_foto"] = (a.file_name or a.file_url or "").lower().endswith(IMAGENES)
+    return archivos
+
+
+@frappe.whitelist()
+def subir_archivo(name: str) -> dict:
+    _exigir_acceso_archivos(name)
+    f = frappe.request.files.get("file") if frappe.request else None
+    if not f:
+        frappe.throw(_("No llegó ningún archivo."))
+    doc = frappe.get_doc({"doctype": "File", "file_name": f.filename, "content": f.stream.read(), "is_private": 1,
+                          "attached_to_doctype": "ToDo", "attached_to_name": name})
+    doc.insert(ignore_permissions=True)
+    return {"name": doc.name, "file_url": doc.file_url}
+
+
+@frappe.whitelist()
+def quitar_archivo(name: str, archivo: str) -> dict:
+    e = _exigir_acceso_archivos(name)
+    f = frappe.db.get_value("File", archivo, ["attached_to_doctype", "attached_to_name", "owner"], as_dict=True)
+    if not f or f.attached_to_doctype != "ToDo" or f.attached_to_name != name:
+        frappe.throw(_("Ese archivo no es de esta asignación."))
+    if frappe.session.user not in (f.owner, e.assigned_by) and not _ve_equipo():
+        frappe.throw(_("Solo quien lo subió o quien asignó puede quitarlo."), frappe.PermissionError)
+    frappe.delete_doc("File", archivo, ignore_permissions=True)
+    return {"ok": True}
