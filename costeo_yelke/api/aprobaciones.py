@@ -141,6 +141,25 @@ def _ruta_doc(doctype, name):
 
     ruta = (_RUTA_DOC.get(doctype) or "/costeo-yelke").format(name=quote(name))
     params = {}
+    # Dentro del proyecto, en la etapa del documento (no las pantallas sueltas de detalle).
+    costeo = name if doctype == "Costeo" else (
+        frappe.db.get_value(doctype, name, "costeo") if doctype in ("Quotation", "Sales Order", "Purchase Order")
+        and frappe.db.has_column(doctype, "costeo") else None)
+    if costeo:
+        ruta = f"/costeo-yelke/costeo/{quote(costeo)}"
+        if doctype == "Costeo":
+            params["step"] = "0"
+        elif doctype == "Quotation":
+            params.update(step="1", highlight=name, doctype=doctype)
+        elif doctype == "Sales Order":
+            params.update(step="2", highlight=name, doctype=doctype)
+        else:
+            po = frappe.db.get_value("Purchase Order", name, ["is_subcontracted", "lote_ref"], as_dict=True) or {}
+            if po.get("lote_ref"):
+                params.update(step="5", vista="lote", lote=po.lote_ref,
+                              paso="talleres" if po.get("is_subcontracted") else "materia")
+            else:
+                params.update(step="5", vista="preparacion")
     if doctype == "Purchase Invoice":
         costeo = _costeo_de_factura(name)
         if costeo:
