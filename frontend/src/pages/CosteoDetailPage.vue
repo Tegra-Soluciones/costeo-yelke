@@ -75,7 +75,7 @@
       @confirm="doDeleteSO" @cancel="confirmDeleteSO.open = false"
     />
 
-    <!-- Precio de venta escrito dos veces (la primera oculta) -->
+    <!-- Precio de venta escrito dos veces -->
     <DialogoPrecio
       :abierto="!!precioEnEdicion" :producto="precioEnEdicion?.finished_item || 'Producto'"
       :actual="precioEnEdicion?.unit_sales_price || 0" @cerrar="precioEnEdicion = null" @confirmar="aplicarPrecio"
@@ -407,7 +407,7 @@
                   <!-- Costo y precio de venta: una franja, arriba de los pasos para que las tablas usen todo el ancho. -->
                   <div class="rounded-xl bg-zinc-50/70 border border-surface-border p-4 grid md:grid-cols-2 xl:grid-cols-[1.05fr_1fr_1.1fr] gap-x-7 gap-y-5">
                     <div class="space-y-4">
-                    <!-- Precio de venta: se escribe dos veces, la primera oculta (pedido de Yelke): DialogoPrecio. -->
+                    <!-- Precio de venta: se escribe dos veces (pedido de Yelke): DialogoPrecio. -->
                     <div>
                       <p class="p-eyebrow flex items-center gap-1.5">Precio de venta unitario
                         <span v-if="prod.precio_manual" class="normal-case tracking-normal text-[10px] font-medium text-brand-700 bg-brand-50 border border-brand-200 rounded px-1" title="Precio fijado a mano -- no se recalcula aunque cambien costos, el margen se ajusta a él">fijo</span>
@@ -7952,7 +7952,7 @@ function genStageId() { return Math.random().toString(36).slice(2, 10) + Date.no
 
 
 // ── Product / detail / stage ──
-function addProducto() { const p = { _tid: uid(), _lastFinishedItem: "", image: "", description: "", finished_item: "", variante_talla_de: "", talla_grupo_label: "", qty: 1, shipping_cost: 0, labeling_cost: 0, packaging_cost: 0, overhead_pct: 0, margin_pct: 0, material_cost: 0, services_cost: 0, overhead_amt: 0, total_unit_cost: 0, unit_sales_price: 0, precio_manual: 0, total_sales_price: 0 }; productos.value.push(p); expandedTids.add(p._tid); }
+function addProducto() { const p = { _tid: uid(), _lastFinishedItem: "", image: "", description: "", finished_item: "", variante_talla_de: "", talla_grupo_label: "", qty: 1, shipping_cost: 0, labeling_cost: 0, packaging_cost: 0, overhead_pct: 0, margin_pct: 30, material_cost: 0, services_cost: 0, overhead_amt: 0, total_unit_cost: 0, unit_sales_price: 0, precio_manual: 0, total_sales_price: 0 }; productos.value.push(p); expandedTids.add(p._tid); }
 function directCost(prod) { return (prod.material_cost || 0) + (prod.services_cost || 0) + (prod.shipping_cost || 0) + (prod.labeling_cost || 0) + (prod.packaging_cost || 0); }
 // Desglose informativo de directCost por grupo -- telas y avíos son subconjuntos
 // de material_cost (según tipo_material de cada renglón), servicios agrupa todo

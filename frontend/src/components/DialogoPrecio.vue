@@ -1,7 +1,6 @@
 <!--
-  Precio de venta escrito dos veces (pedido de Yelke): la primera captura va oculta,
-  como una contraseña, para que la segunda se teclee y no se copie. El precio solo
-  se aplica cuando las dos coinciden.
+  Precio de venta escrito dos veces (pedido de Yelke), las dos a la vista. El precio
+  solo se aplica cuando las dos coinciden.
 -->
 <template>
   <Teleport to="body">
@@ -13,10 +12,9 @@
         <label class="text-[12px] font-medium text-ink-muted block mt-4 mb-1">Precio unitario</label>
         <div class="relative">
           <span class="absolute left-3 top-1/2 -translate-y-1/2 text-ink-light text-[14px]">$</span>
-          <input ref="primero" v-model="uno" type="password" inputmode="decimal" autocomplete="new-password"
-                 class="w-full h-10 pl-7 pr-3 text-[15px] border border-surface-border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/25 focus:border-brand-400" />
+          <input ref="primero" v-model="uno" type="text" inputmode="decimal" autocomplete="off"
+                 class="w-full h-10 pl-7 pr-3 text-[15px] tabular-nums border border-surface-border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/25 focus:border-brand-400" />
         </div>
-        <p class="text-[11px] text-ink-light mt-1">Se oculta mientras lo escribes.</p>
 
         <label class="text-[12px] font-medium text-ink-muted block mt-3 mb-1">Escríbelo otra vez</label>
         <div class="relative">
