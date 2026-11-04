@@ -278,18 +278,21 @@
             </div>
             <div>
               <label class="p-field-label">Cliente <span class="text-red-400">*</span></label>
-              <template v-if="clienteNuevoModo">
-                <input v-model="form.cliente_nuevo" v-mayus type="text" class="p-field" :class="errors.cliente ? 'border-red-400' : ''" placeholder="Nombre del cliente (aún sin alta)" :disabled="docState !== 0" />
-                <div class="flex items-center gap-3 mt-1">
-                  <button v-if="docState === 0 && !isNew" type="button" class="text-[12px] text-brand-600 font-medium" @click="abrirAltaCliente">Dar de alta</button>
-                  <button v-if="docState === 0" type="button" class="text-[12px] text-ink-muted" @click="clienteNuevoModo = false; form.cliente_nuevo = ''">Elegir uno dado de alta</button>
-                </div>
-                <p class="p-meta mt-0.5">Sin alta todavía: se da de alta antes de cotizar.</p>
-              </template>
-              <template v-else>
-                <LinkInput v-model="form.cliente" doctype="Customer" placeholder="Buscar cliente…" :error="!!errors.cliente" />
-                <button v-if="docState === 0 && !form.cliente" type="button" class="mt-1 text-[12px] text-brand-600 font-medium" @click="clienteNuevoModo = true">¿Aún no está dado de alta? Escribe su nombre</button>
-              </template>
+              <!-- Cliente nuevo (sin alta, p. ej. lo puso Juan al asignar): se puede buscar
+                   igual por si alguien ya lo dio de alta, o darlo de alta aquí. -->
+              <div v-if="clienteNuevoModo && !form.cliente" class="mb-1.5 rounded-lg bg-amber-50 border border-amber-200 px-2.5 py-1.5 text-[12px] text-amber-900">
+                <template v-if="docState === 0">
+                  <span class="font-medium">Cliente nuevo:</span>
+                  <input v-model="form.cliente_nuevo" v-mayus type="text" class="mt-1 w-full h-8 px-2 rounded-md border border-amber-200 bg-white text-[13px]" placeholder="Nombre del cliente (aún sin alta)" />
+                  <span class="block mt-1">Si ya está dado de alta, búscalo abajo; si no,
+                    <button v-if="!isNew" type="button" class="font-semibold text-brand-700 underline" @click="abrirAltaCliente">dalo de alta</button><template v-else>se da de alta al guardar y antes de cotizar</template>.
+                    <button type="button" class="ml-1 text-amber-700/80 underline" @click="clienteNuevoModo = false; form.cliente_nuevo = ''">Quitar</button>
+                  </span>
+                </template>
+                <template v-else><span class="font-medium">Cliente nuevo:</span> {{ form.cliente_nuevo }}</template>
+              </div>
+              <LinkInput v-model="form.cliente" doctype="Customer" :placeholder="clienteNuevoModo ? 'Buscar si ya está dado de alta…' : 'Buscar cliente…'" :error="!!errors.cliente" @update:model-value="(v) => { if (v) { clienteNuevoModo = false; form.cliente_nuevo = ''; } }" />
+              <button v-if="docState === 0 && !form.cliente && !clienteNuevoModo" type="button" class="mt-1 text-[12px] text-brand-600 font-medium" @click="clienteNuevoModo = true">¿Aún no está dado de alta? Escribe su nombre</button>
             </div>
             <div><label class="p-field-label">Fecha <span class="text-red-400">*</span></label><input v-model="form.fecha" type="date" class="p-field" :class="errors.fecha ? 'border-red-400' : ''" /></div>
             <div><label class="p-field-label">Compañía <span class="text-red-400">*</span></label><LinkInput v-model="form.compania" doctype="Company" placeholder="Compañía…" :error="!!errors.compania" /></div>
