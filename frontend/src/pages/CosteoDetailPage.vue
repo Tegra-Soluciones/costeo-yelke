@@ -1140,14 +1140,15 @@
                 <div class="flex items-end justify-between gap-3 mb-3">
                   <div>
                     <p class="p-eyebrow">Desglose por talla · tallas regulares</p>
-                    <p class="p-meta mt-0.5">Debe sumar exacto la cantidad del producto para validar. Se guarda con «Guardar cambios» o «Validar orden».</p>
+                    <p class="p-meta mt-0.5">Las piezas que confirmó el cliente: la cantidad del producto es la suma de sus tallas (puede ser distinta a la cotizada). Se guarda con «Guardar cambios» o «Validar orden».</p>
                   </div>
                 </div>
                 <div class="rounded-xl bg-white border border-surface-border divide-y divide-surface-border">
                   <div v-for="d in soDesgloseForm" :key="d.row" class="px-4 py-3">
                     <div class="flex items-center gap-2.5">
                       <span class="flex-1 min-w-0 text-[13px] font-medium text-ink truncate" :title="d.item_name">{{ d.item_name }}</span>
-                      <span class="tabular-nums w-24 justify-center" :class="sumaDesglose(d) === d.qty ? 'p-pill-ok' : 'p-pill-wait'">{{ sumaDesglose(d) }} / {{ d.qty }}</span>
+                      <span v-if="sumaDesglose(d) && sumaDesglose(d) !== d.qty" class="text-[11.5px] text-ink-light tabular-nums">antes {{ d.qty }}</span>
+                      <span class="tabular-nums justify-center" :class="sumaDesglose(d) ? 'p-pill-ok' : 'p-pill-wait'">{{ sumaDesglose(d) || d.qty }} pzas</span>
                     </div>
                     <div v-for="(b, bi) in d.bloques" :key="bi" class="mt-3">
                       <div class="flex items-center gap-2.5 flex-wrap">
@@ -4647,10 +4648,6 @@ async function loadSoDesgloseForm(so, forzar = false) {
 // orden»). Puede ir a medias mientras la OV está en borrador; exacto se exige al validar.
 async function persistirDesgloseOV(so) {
   if (!soDesgloseForm.value.length || soDesgloseDe.value !== `${so.name}:0`) return;
-  for (const d of soDesgloseForm.value) {
-    const suma = sumaDesglose(d);
-    if (suma > d.qty) throw new Error(`El desglose de "${d.item_name}" suma ${suma} y el producto lleva ${d.qty}`);
-  }
   // Guardar las tallas extra reconstruye los renglones de la OV (cambian de nombre):
   // se vuelve a pedir el renglón vigente de cada producto antes de escribirle su desglose.
   const vigentes = await call("costeo_yelke.api.tallas_ov.get_desglose_tallas_ov", { sales_order: so.name }) || [];
