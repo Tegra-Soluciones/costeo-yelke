@@ -44,63 +44,18 @@
           </div>
 
           <!-- Costeo / precios acordados: de qué está hecho cada producto, por prenda -->
-          <div v-for="(p, i) in d.desglose || []" :key="`des-${i}`" class="p-panel overflow-hidden">
-            <div class="px-4 py-3 border-b border-surface-border">
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <p class="text-[13.5px] font-semibold leading-snug">{{ p.producto }}</p>
-                  <p class="p-meta">{{ p.talla ? `${p.talla} · ` : "" }}{{ numero(p.cantidad) }} prendas</p>
-                </div>
-                <div class="text-right flex-shrink-0">
-                  <p class="text-[13.5px] font-semibold tabular-nums">{{ dinero(p.precio, p.moneda) }}</p>
-                  <p class="text-[11.5px] tabular-nums" :class="p.margen < 20 ? 'text-red-700' : 'text-emerald-700'">margen {{ Number(p.margen).toFixed(1) }} %</p>
-                </div>
-              </div>
+          <DesgloseProducto v-for="(p, i) in d.desglose || []" :key="`des-${i}`" :p="p" :movil="movil" />
+
+          <!-- Los demás documentos: el costeo de su proyecto, para saber de qué se trata sin salir de aquí -->
+          <details v-if="d.costeo_proyecto?.desglose?.length" class="p-panel group/cp">
+            <summary class="px-4 h-11 flex items-center justify-between gap-3 cursor-pointer list-none text-[13px] font-medium">
+              <span class="min-w-0 truncate">Costeo del proyecto<span class="text-ink-light font-normal"> · {{ d.costeo_proyecto.titulo }}</span></span>
+              <span class="text-ink-light group-open/cp:rotate-90 transition">›</span>
+            </summary>
+            <div class="border-t border-surface-border p-3 space-y-3 bg-surface">
+              <DesgloseProducto v-for="(p, i) in d.costeo_proyecto.desglose" :key="`cp-${i}`" :p="p" :movil="movil" />
             </div>
-            <!-- Costo unitario por concepto -->
-            <div class="px-4 py-2.5 space-y-1">
-              <div v-for="c in p.costos" :key="c.concepto" class="flex items-center gap-3 text-[12.5px]">
-                <span class="text-ink-muted flex-1">{{ c.concepto }}</span>
-                <span class="w-16 h-1 bg-zinc-100 rounded hidden sm:block"><span class="block h-1 rounded bg-brand-400" :style="`width:${Math.min(100, (c.monto / (p.costo_unitario || 1)) * 100)}%`"></span></span>
-                <span class="tabular-nums w-20 text-right">{{ dinero(c.monto, p.moneda) }}</span>
-              </div>
-              <div class="flex items-center gap-3 text-[12.5px] font-semibold border-t border-surface-border pt-1.5 mt-1">
-                <span class="flex-1">Costo por prenda</span><span class="tabular-nums">{{ dinero(p.costo_unitario, p.moneda) }}</span>
-              </div>
-            </div>
-            <!-- Materiales -->
-            <details v-if="p.materiales.length" class="border-t border-surface-border group/m" :open="!movil">
-              <summary class="px-4 h-10 flex items-center justify-between cursor-pointer list-none text-[12.5px] font-medium">
-                Materiales ({{ p.materiales.length }})<span class="text-ink-light group-open/m:rotate-90 transition">›</span>
-              </summary>
-              <div class="px-4 pb-2">
-                <div v-for="(m, j) in p.materiales" :key="j" class="py-1.5 border-t border-surface-border/70 first:border-0">
-                  <div class="flex justify-between gap-3 text-[12.5px]">
-                    <span class="font-medium min-w-0">{{ m.descripcion }}<span v-if="m.tipo" class="text-ink-light font-normal"> · {{ m.tipo }}</span></span>
-                    <span class="tabular-nums whitespace-nowrap">{{ dinero(m.total, p.moneda) }}</span>
-                  </div>
-                  <p class="text-[11.5px] text-ink-muted tabular-nums">
-                    {{ numero(m.cantidad, 4) }} {{ m.unidad }} × {{ dinero(m.precio_unitario, p.moneda) }}<template v-if="m.proveedor"> · {{ m.proveedor }}</template><template v-if="m.pieza"> · {{ m.pieza }}</template>
-                  </p>
-                </div>
-              </div>
-            </details>
-            <!-- Servicios por etapa -->
-            <details v-if="p.servicios.length" class="border-t border-surface-border group/s" :open="!movil">
-              <summary class="px-4 h-10 flex items-center justify-between cursor-pointer list-none text-[12.5px] font-medium">
-                Servicios ({{ p.servicios.length }})<span class="text-ink-light group-open/s:rotate-90 transition">›</span>
-              </summary>
-              <div class="px-4 pb-2">
-                <div v-for="(s, j) in p.servicios" :key="j" class="py-1.5 border-t border-surface-border/70 first:border-0">
-                  <div class="flex justify-between gap-3 text-[12.5px]">
-                    <span class="font-medium min-w-0"><span class="text-ink-light font-normal">Etapa {{ s.etapa }} · </span>{{ s.descripcion }}</span>
-                    <span class="tabular-nums whitespace-nowrap">{{ dinero(s.total, p.moneda) }}</span>
-                  </div>
-                  <p class="text-[11.5px] text-ink-muted">{{ s.proveedor || "Sin taller" }}<template v-if="s.pieza"> · {{ s.pieza }}</template></p>
-                </div>
-              </div>
-            </details>
-          </div>
+          </details>
 
           <details v-if="d.renglones.length" class="p-panel group" :open="!movil">
             <summary class="px-4 h-11 flex items-center justify-between cursor-pointer list-none text-[13px] font-medium">
@@ -129,7 +84,6 @@
           <div>
             <div class="flex items-center justify-between mb-3">
               <p class="p-eyebrow">Actividad</p>
-              <RouterLink v-if="rutaSpa" :to="rutaSpa" class="text-[12px] text-brand-600 font-medium" @click="asegurarCompania(d.compania)">Abrir el documento completo ›</RouterLink>
             </div>
             <div class="p-panel p-4">
               <ActividadDocumento ref="actividad" :doctype="fila.doctype" :name="fila.name" :ultimos="movil ? 3 : 6" />
@@ -179,11 +133,10 @@
 
 <script setup>
 import { computed, ref, watch } from "vue";
-import { RouterLink } from "vue-router";
 import ActividadDocumento from "@/components/aprobacion/ActividadDocumento.vue";
 import DialogoMotivo from "@/components/aprobacion/DialogoMotivo.vue";
+import DesgloseProducto from "@/components/direccion/DesgloseProducto.vue";
 import Icono from "@/components/Icono.vue";
-import { asegurarCompania } from "@/composables/useCompany.js";
 import { call } from "@/utils/frappe.js";
 import { TIPOS_DOC, colorAvatar, dinero, fecha, haceCuanto, iniciales, numero } from "@/utils/formato.js";
 
@@ -210,7 +163,6 @@ const est = computed(() => d.value?.estado || {});
 const esRevision = computed(() => !esPrecio.value && est.value.puede_revisar && !est.value.puede_aprobar);
 const puedeDecidir = computed(() => est.value.puede_aprobar || esRevision.value);
 const puedeRegresar = computed(() => !!est.value.puede_regresar);
-const rutaSpa = computed(() => (d.value?.ruta || "").replace(/^\/costeo-yelke/, "") || null);
 
 function valor(r) {
   if (r.tipo === "moneda") return dinero(r.valor, r.moneda);

@@ -131,6 +131,18 @@ def _desglose_costeo(costeo, moneda):
     return salida
 
 
+def _costeo_proyecto(doc):
+    """Para cotización, OV, OC y factura en aprobación: el costeo de su proyecto (el
+    desplegable «Costeo del proyecto» del panel), para ver de qué se trata ahí mismo."""
+    if doc.doctype == "Costeo" or not doc.meta.has_field("costeo") or not doc.get("costeo"):
+        return None
+    c = frappe.db.get_value("Costeo", doc.costeo, ["name", "titulo", "compañia"], as_dict=True)
+    if not c:
+        return None
+    moneda = frappe.db.get_value("Company", c.get("compañia"), "default_currency") or "MXN"
+    return {"name": c.name, "titulo": c.titulo or c.name, "desglose": _desglose_costeo(c.name, moneda)}
+
+
 def _resumen_costeo(doc):
     moneda = frappe.db.get_value("Company", doc.get("compañia") or doc.get("company"), "default_currency") or "MXN"
     productos = doc.get("costeo_producto") or []
@@ -270,6 +282,7 @@ def get_resumen_documento(doctype: str, name: str, tipo: str = None) -> dict:
     return {**tarjeta, "compania": compania, "resumen": [_t(_("Compañía"), compania), *resumen],
             "renglones": renglones, "adjuntos": adjuntos, "alertas": alertas,
             "desglose": _desglose_costeo(name, moneda) if doctype == "Costeo" else [],
+            "costeo_proyecto": _costeo_proyecto(doc),
             "moneda": moneda, "ruta": _ruta_doc(doctype, name), "estado": estado_aprobacion(doctype, name)}
 
 
