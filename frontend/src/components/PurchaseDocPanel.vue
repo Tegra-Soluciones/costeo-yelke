@@ -177,7 +177,7 @@
               />
               <span v-else class="text-ink-muted text-xs">{{ it.uom }}</span>
             </td>
-            <td v-if="hasRate" class="py-1.5 pr-2"><input v-if="!isValidated && it.has_rate && !agrupaPiezas" v-model.number="it.rate" type="number" min="0" step="0.01" class="field-input text-right" /><span v-else class="block text-right">{{ it.rate }}</span></td>
+            <td v-if="hasRate" class="py-1.5 pr-2"><input v-if="!isValidated && it.has_rate && !agrupaPiezas" v-model.number="it.rate" type="number" min="0" step="0.01" class="field-input text-right" /><span v-else class="block text-right">{{ it.rate }}</span><span v-if="enPesos(it.rate) !== null" class="block text-right text-[11px] text-ink-muted tabular-nums" title="Solo de referencia: el precio en pesos al tipo de cambio de la orden">≈ {{ enPesos(it.rate) }}</span></td>
             <td v-if="conImportes" class="py-1.5 pr-2 text-right tabular-nums font-medium">{{ dinero(importe(it)) }}</td>
             <td v-if="showWarehouse && !conImportes" class="py-1.5 pr-2 text-ink-muted text-xs">{{ it.warehouse }}</td>
           </tr>
@@ -433,6 +433,14 @@ watch(() => props.items, (items) => {
 function tipoCambioVigente() {
   const moneda = props.form.currency || props.doc.currency;
   return props.form.conversion_rate || (moneda === props.doc.currency ? props.doc.conversion_rate : null) || null;
+}
+// Referencia en pesos de un precio en otra moneda (al tipo de cambio de la orden).
+const pesosFmt = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
+function enPesos(precio) {
+  const mc = props.doc?.company_currency;
+  if (!mc || !monedaActual.value || monedaActual.value === mc || !precio) return null;
+  const tc = Number(tipoCambioVigente());
+  return tc > 0 ? `${pesosFmt.format(Number(precio) * tc)} ${mc}` : null;
 }
 async function aplicarPreviewUom(row, nuevoUom) {
   row.uom = nuevoUom; // se ve el cambio de inmediato; se corrige abajo si hace falta
