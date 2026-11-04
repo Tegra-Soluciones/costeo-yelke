@@ -12,7 +12,12 @@
       </label>
       <div>
         <span class="p-field-label">Cliente <span class="text-red-400">*</span></span>
-        <LinkInput v-model="form.cliente" doctype="Customer" placeholder="Buscar cliente…" />
+        <input v-if="nuevo" v-model="form.cliente_nuevo" v-mayus class="p-field" placeholder="Nombre del cliente (aún sin alta)" />
+        <LinkInput v-else v-model="form.cliente" doctype="Customer" placeholder="Buscar cliente…" />
+        <button type="button" class="mt-1 text-[12px] text-brand-600 font-medium" @click="nuevo = !nuevo; form.cliente = ''; form.cliente_nuevo = ''">
+          {{ nuevo ? "Elegir un cliente dado de alta" : "¿Aún no está dado de alta? Escribe su nombre" }}
+        </button>
+        <p v-if="nuevo" class="p-meta mt-0.5">Se da de alta antes de cotizar.</p>
       </div>
       <div>
         <span class="p-field-label">Compañía</span>
@@ -37,7 +42,7 @@
       <p v-if="error" class="text-[12px] text-red-700">{{ error }}</p>
       <div class="flex justify-end gap-2 pt-1">
         <button type="button" class="p-btn-ghost" @click="emit('cerrar')">Cancelar</button>
-        <button type="button" class="p-btn-primary" :disabled="ocupado || !form.titulo.trim() || !form.cliente || !form.usuario" @click="crear">
+        <button type="button" class="p-btn-primary" :disabled="ocupado || !form.titulo.trim() || !(form.cliente || form.cliente_nuevo.trim()) || !form.usuario" @click="crear">
           {{ ocupado ? "Creando…" : "Crear y asignar" }}
         </button>
       </div>
@@ -56,14 +61,16 @@ const props = defineProps({ abierto: { type: Boolean, default: false } });
 const emit = defineEmits(["cerrar", "creado"]);
 const { state: companyState } = useCompany();
 
-const form = reactive({ titulo: "", cliente: "", compania: "", usuario: "", mensaje: "", fecha: "" });
+const form = reactive({ titulo: "", cliente: "", cliente_nuevo: "", compania: "", usuario: "", mensaje: "", fecha: "" });
+const nuevo = ref(false);
 const candidatos = ref([]);
 const ocupado = ref(false);
 const error = ref("");
 
 watch(() => props.abierto, async (a) => {
   if (!a) return;
-  Object.assign(form, { titulo: "", cliente: "", compania: companyState.selected || "", usuario: "", mensaje: "", fecha: "" });
+  nuevo.value = false;
+  Object.assign(form, { titulo: "", cliente: "", cliente_nuevo: "", compania: companyState.selected || "", usuario: "", mensaje: "", fecha: "" });
   error.value = "";
   try {
     const op = await getOpciones();

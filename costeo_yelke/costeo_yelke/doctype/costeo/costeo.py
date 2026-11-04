@@ -52,6 +52,11 @@ PP_TABLE_DOCTYPES = {
 }
 
 
+def _token_texto(texto):
+    t = "".join(ch for ch in unicodedata.normalize("NFD", (texto or "").upper()) if unicodedata.category(ch) != "Mn")
+    return re.sub(r"[^A-Za-z0-9]+", "-", t).strip("-")[:16]
+
+
 def _build_costeo_customer_token(customer):
     if not customer:
         return "SINCLIENTE"
@@ -82,7 +87,8 @@ class Costeo(Document):
             self.name = make_autoname(f"PLANTILLA-{token[:16]}-.####", doc=self)
             return
 
-        customer_token = _build_costeo_customer_token(self.cliente)
+        customer_token = _build_costeo_customer_token(self.cliente) if self.cliente else \
+            (_token_texto(self.get("cliente_nuevo")) or "SINCLIENTE")
         self.name = make_autoname(f"CST-{customer_token}-.YYYY.-.#####", doc=self)
 
     def validate(self):
@@ -133,6 +139,8 @@ class Costeo(Document):
         (validate() ya no lo bloquea); solo pasar a Validado lo exige."""
         faltantes = []
         if not self.get("cliente"):
+            if self.get("cliente_nuevo"):
+                frappe.throw(_("Da de alta al cliente {0} antes de pasar a cotizar.").format(self.cliente_nuevo))
             faltantes.append(_("Cliente"))
         if not self.get("fecha"):
             faltantes.append(_("Fecha"))

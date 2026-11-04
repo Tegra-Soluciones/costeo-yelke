@@ -276,7 +276,21 @@
               <label class="p-field-label">Título <span class="text-ink-light font-normal">(opcional, para identificarlo más fácil)</span></label>
               <input v-model="form.titulo" v-mayus type="text" class="p-field" placeholder="Ej: Playeras Polo Ferromex 2026" />
             </div>
-            <div><label class="p-field-label">Cliente <span class="text-red-400">*</span></label><LinkInput v-model="form.cliente" doctype="Customer" placeholder="Buscar cliente…" :error="!!errors.cliente" /></div>
+            <div>
+              <label class="p-field-label">Cliente <span class="text-red-400">*</span></label>
+              <template v-if="clienteNuevoModo">
+                <input v-model="form.cliente_nuevo" v-mayus type="text" class="p-field" :class="errors.cliente ? 'border-red-400' : ''" placeholder="Nombre del cliente (aún sin alta)" :disabled="docState !== 0" />
+                <div class="flex items-center gap-3 mt-1">
+                  <button v-if="docState === 0 && !isNew" type="button" class="text-[12px] text-brand-600 font-medium" @click="abrirAltaCliente">Dar de alta</button>
+                  <button v-if="docState === 0" type="button" class="text-[12px] text-ink-muted" @click="clienteNuevoModo = false; form.cliente_nuevo = ''">Elegir uno dado de alta</button>
+                </div>
+                <p class="p-meta mt-0.5">Sin alta todavía: se da de alta antes de cotizar.</p>
+              </template>
+              <template v-else>
+                <LinkInput v-model="form.cliente" doctype="Customer" placeholder="Buscar cliente…" :error="!!errors.cliente" />
+                <button v-if="docState === 0 && !form.cliente" type="button" class="mt-1 text-[12px] text-brand-600 font-medium" @click="clienteNuevoModo = true">¿Aún no está dado de alta? Escribe su nombre</button>
+              </template>
+            </div>
             <div><label class="p-field-label">Fecha <span class="text-red-400">*</span></label><input v-model="form.fecha" type="date" class="p-field" :class="errors.fecha ? 'border-red-400' : ''" /></div>
             <div><label class="p-field-label">Compañía <span class="text-red-400">*</span></label><LinkInput v-model="form.compania" doctype="Company" placeholder="Compañía…" :error="!!errors.compania" /></div>
             <div class="md:col-span-1 xl:col-span-3 flex items-end pb-2">
@@ -3612,6 +3626,29 @@
 
     <HistorialModal :open="showHistorialModal" :costeo="docName" @close="showHistorialModal = false" />
 
+    <!-- Alta rápida del cliente nuevo (costeo_api.alta_cliente_costeo) -->
+    <div v-if="altaCli.abierto" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" @click.self="altaCli.abierto = false">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-3">
+        <div>
+          <p class="text-sm font-semibold text-ink">Dar de alta al cliente</p>
+          <p class="text-[12.5px] text-ink-muted mt-1">Para cotizar, el cliente debe estar dado de alta. Captura sus datos iniciales; lo demás (dirección, contacto) se completa después en su ficha.</p>
+        </div>
+        <div><label class="field-label">Nombre o razón social *</label><input v-model="altaCli.customer_name" v-mayus class="field-input" /></div>
+        <div><label class="field-label">RFC *</label><input v-model="altaCli.tax_id" v-mayus class="field-input" placeholder="Extranjero: XEXX010101000" /></div>
+        <div><label class="field-label">Confirma el RFC *</label><input v-model="altaCli.confirmar_rfc" v-mayus class="field-input" /></div>
+        <div class="grid grid-cols-2 gap-2">
+          <div><label class="field-label">Correo</label><input v-model="altaCli.email_id" type="email" class="field-input" /></div>
+          <div><label class="field-label">Teléfono</label><input v-model="altaCli.mobile_no" class="field-input" /></div>
+        </div>
+        <div class="flex justify-end gap-2 pt-1">
+          <button class="px-3 py-1.5 text-[13px] text-ink-muted hover:bg-surface-raised rounded-lg" @click="altaCli.abierto = false">Cancelar</button>
+          <button :disabled="altaCli.ocupado || !altaCli.customer_name.trim() || !altaCli.tax_id.trim()" class="px-4 py-1.5 text-[13px] font-medium text-white bg-brand-500 hover:bg-brand-600 disabled:opacity-50 rounded-lg" @click="guardarAltaCliente">
+            {{ altaCli.ocupado ? "Dando de alta…" : "Dar de alta" }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Editar costeo (lo regresa a borrador, ver costeo_api.reabrir_costeo) -->
     <div v-if="showRevisionModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" @click.self="showRevisionModal = false">
       <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
@@ -4815,7 +4852,7 @@ const cotDefaults = reactive({ payment_terms_templates: [], terms: [], users: []
   oc_cliente_archivo_disponible: false });
 const prepSteps = ref([]);
 
-const form = reactive({ titulo: "", cliente: "", fecha: today(), compania: "", proyecto: "", guardar_como_plantilla: false, centro_de_costos: "", almacen_materias_primas: "", almacen_trabajo_en_proceso: "" });
+const form = reactive({ titulo: "", cliente: "", cliente_nuevo: "", fecha: today(), compania: "", proyecto: "", guardar_como_plantilla: false, centro_de_costos: "", almacen_materias_primas: "", almacen_trabajo_en_proceso: "" });
 // Centro de costos y almacenes ya no se capturan a mano -- se derivan solos de
 // la compañía (mismo criterio en costeo_api.get_company_defaults), para no
 // pedirle al usuario que repita en cada costeo algo que siempre es igual.
@@ -7453,6 +7490,27 @@ const acordadoValidUpto = ref("");
 const precioAcordadoStatus = reactive({ items: [], todos_validados: false, es_ceo: false });
 const showRechazarModal = ref(false);
 const rechazarMotivo = ref("");
+// ── Cliente nuevo (aún sin alta) ──
+const clienteNuevoModo = ref(false);
+const altaCli = reactive({ abierto: false, ocupado: false, customer_name: "", tax_id: "", confirmar_rfc: "", email_id: "", mobile_no: "" });
+async function abrirAltaCliente() {
+  if (isNew.value) { showToast("Guarda el costeo primero", "error"); return; }
+  Object.assign(altaCli, { abierto: true, ocupado: false, customer_name: form.cliente_nuevo || "", tax_id: "", confirmar_rfc: "", email_id: "", mobile_no: "" });
+}
+async function guardarAltaCliente() {
+  altaCli.ocupado = true;
+  try {
+    if (!(await saveDoc())) return;
+    const r = await call("costeo_yelke.api.costeo_api.alta_cliente_costeo", {
+      costeo: docName.value, customer_name: altaCli.customer_name.trim(), tax_id: altaCli.tax_id.trim(),
+      confirmar_rfc: altaCli.confirmar_rfc.trim(), email_id: altaCli.email_id.trim() || null, mobile_no: altaCli.mobile_no.trim() || null,
+    });
+    form.cliente = r.cliente; form.cliente_nuevo = ""; clienteNuevoModo.value = false;
+    altaCli.abierto = false;
+    showToast(`Cliente ${r.customer_name} dado de alta`);
+  } catch (e) { showToast(e.message || "No se pudo dar de alta al cliente", "error"); }
+  finally { altaCli.ocupado = false; }
+}
 const showRevisionModal = ref(false);
 const revisionMotivo = ref("");
 const revisionCreating = ref(false);
@@ -8510,7 +8568,8 @@ async function hydrateSupplierOptions() {
 function validate() {
   Object.keys(errors).forEach(k => delete errors[k]);
   let ok = true;
-  for (const f of ["cliente", "fecha", "compania"]) { if (!form[f]) { errors[f] = "Requerido"; ok = false; } }
+  for (const f of ["fecha", "compania"]) { if (!form[f]) { errors[f] = "Requerido"; ok = false; } }
+  if (!form.cliente && !(clienteNuevoModo.value && form.cliente_nuevo.trim())) { errors.cliente = "Requerido"; ok = false; }
   const warehouseFields = ["centro_de_costos", "almacen_materias_primas", "almacen_trabajo_en_proceso"];
   const missingWarehouse = warehouseFields.some(f => !form[f]);
   if (missingWarehouse) {
@@ -8528,7 +8587,8 @@ function validate() {
 function stripLocal(obj) { const out = {}; for (const k in obj) { if (!k.startsWith("_")) out[k] = obj[k]; } return out; }
 function buildPayload() {
   return {
-    doctype: "Costeo", titulo: form.titulo || "", cliente: form.cliente, fecha: form.fecha, "compañia": form.compania,
+    doctype: "Costeo", titulo: form.titulo || "", cliente: form.cliente || null,
+    cliente_nuevo: !form.cliente && clienteNuevoModo.value ? form.cliente_nuevo.trim() : "", fecha: form.fecha, "compañia": form.compania,
     proyecto: form.proyecto || "", guardar_como_plantilla: form.guardar_como_plantilla ? 1 : 0, centro_de_costos: form.centro_de_costos,
     almacen_materias_primas: form.almacen_materias_primas, almacen_trabajo_en_proceso: form.almacen_trabajo_en_proceso,
     costeo_status: docStatus.value || "Borrador",
@@ -8549,7 +8609,8 @@ async function fillFromDoc(data) {
   docStatus.value = data.costeo_status || "Borrador";
   docState.value = data.docstatus || 0;
   form.titulo = data.titulo || "";
-  form.cliente = data.cliente || ""; form.fecha = data.fecha || today(); form.compania = data["compañia"] || "";
+  form.cliente = data.cliente || ""; form.cliente_nuevo = data.cliente_nuevo || "";
+  clienteNuevoModo.value = !form.cliente && !!form.cliente_nuevo; form.fecha = data.fecha || today(); form.compania = data["compañia"] || "";
   form.proyecto = data.proyecto || "";
   form.guardar_como_plantilla = (data.guardar_como_plantilla === undefined || data.guardar_como_plantilla === null)
     ? false : !!Number(data.guardar_como_plantilla);
@@ -9610,6 +9671,8 @@ async function recargarFormulariosOV(name) {
 // ── Validar / borrador ──
 async function validarCosteo() {
   if (isNew.value) { showToast("Guarda el costeo primero", "error"); return; }
+  // Cliente nuevo (sin alta): antes de pasar a cotizar se da de alta.
+  if (!form.cliente && clienteNuevoModo.value && form.cliente_nuevo.trim()) { abrirAltaCliente(); return; }
   if (!validate()) return;
   advancing.value = true;
   try {

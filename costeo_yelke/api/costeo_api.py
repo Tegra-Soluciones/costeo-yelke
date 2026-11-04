@@ -12618,3 +12618,34 @@ def marcar_enviado_whatsapp(doctype: str, name: str, telefono: str = None) -> di
     frappe.get_doc(doctype, name).check_permission("read")
     _marcar_enviado(doctype, name, _("Enviado por WhatsApp{0}").format(f" a {telefono}" if telefono else ""))
     return {"ok": True, "enviado_el": str(frappe.db.get_value(doctype, name, "enviado_el") or "") if doctype == "Purchase Order" else ""}
+
+
+@frappe.whitelist()
+def alta_cliente_costeo(costeo: str, customer_name: str, tax_id: str = None, confirmar_rfc: str = None,
+                        email_id: str = None, mobile_no: str = None) -> dict:
+    """Alta rápida (datos iniciales) del cliente nuevo de un costeo: el costeo se capturó
+    con `cliente_nuevo` (aún sin alta) y antes de cotizar hay que darlo de alta. Crea el
+    Customer con las reglas de captura de siempre (RFC confirmado) y lo pone en el costeo."""
+    c = frappe.get_doc("Costeo", costeo)
+    if not frappe.has_permission("Costeo", "write", c):
+        frappe.throw(_("No puedes modificar este costeo."), frappe.PermissionError)
+    if c.docstatus != 0:
+        frappe.throw(_("El costeo ya está validado."))
+    nombre = (customer_name or c.get("cliente_nuevo") or "").strip()
+    if not nombre:
+        frappe.throw(_("Escribe el nombre del cliente."))
+    # El grupo y territorio de la mayoría de los clientes (los de Selling Settings no son
+    # los que usa Yelke).
+    comun = frappe.db.sql("""select customer_group, territory from tabCustomer
+        where ifnull(customer_group, '') != '' and ifnull(territory, '') != ''
+        group by customer_group, territory order by count(*) desc limit 1""")
+    grupo, territorio = comun[0] if comun else (
+        frappe.db.get_single_value("Selling Settings", "customer_group"),
+        frappe.db.get_single_value("Selling Settings", "territory"))
+    cust = frappe.get_doc({"doctype": "Customer", "customer_name": nombre, "customer_type": "Company",
+                           "customer_group": grupo, "territory": territorio, "tax_id": tax_id,
+                           "confirmar_rfc": confirmar_rfc, "email_id": email_id or None,
+                           "mobile_no": mobile_no or None})
+    cust.insert()
+    frappe.db.set_value("Costeo", costeo, {"cliente": cust.name, "cliente_nuevo": None})
+    return {"cliente": cust.name, "customer_name": cust.customer_name}

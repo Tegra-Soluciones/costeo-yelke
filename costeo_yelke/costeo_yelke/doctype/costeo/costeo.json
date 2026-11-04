@@ -7,6 +7,7 @@
   "field_order": [
     "section_break_gusc",
     "cliente",
+    "cliente_nuevo",
     "fecha",
     "column_break_jtie",
     "compañia",
@@ -104,8 +105,15 @@
       "fieldtype": "Link",
       "in_list_view": 1,
       "label": "Cliente",
-      "mandatory_depends_on": "eval:!doc.es_plantilla",
+      "mandatory_depends_on": "eval:!doc.es_plantilla && !doc.cliente_nuevo",
       "options": "Customer"
+    },
+    {
+      "fieldname": "cliente_nuevo",
+      "fieldtype": "Data",
+      "label": "Cliente nuevo (sin alta)",
+      "description": "Cliente que aún no está dado de alta. Se da de alta antes de cotizar.",
+      "depends_on": "eval:!doc.cliente"
     },
     {
       "fieldname": "fecha",
@@ -642,7 +650,7 @@
   "index_web_pages_for_search": 1,
   "is_submittable": 1,
   "links": [],
-  "modified": "2026-10-19 12:00:00.000000",
+  "modified": "2026-11-04 14:00:00.000000",
   "modified_by": "Administrator",
   "module": "Costeo Yelke",
   "name": "Costeo",

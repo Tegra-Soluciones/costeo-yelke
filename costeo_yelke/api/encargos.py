@@ -589,19 +589,24 @@ def crear(costeo: str, vista: str, usuario: str, mensaje: str = None, fecha: str
 
 
 @frappe.whitelist()
-def crear_proyecto(titulo: str, cliente: str, usuario: str, compania: str = None, mensaje: str = None, fecha: str = None) -> dict:
-    """Proyecto nuevo encargado: crea el costeo en borrador y el encargo de Costear."""
+def crear_proyecto(titulo: str, cliente: str, usuario: str, compania: str = None, mensaje: str = None, fecha: str = None,
+                   cliente_nuevo: str = None) -> dict:
+    """Proyecto nuevo encargado: crea el costeo en borrador y el encargo de Costear.
+    `cliente_nuevo`: el nombre de un cliente que aún no está dado de alta; se da de
+    alta antes de cotizar (Costeo.before_submit)."""
     if not _puede_encargar("costear"):
         frappe.throw(_("No puedes asignar proyectos nuevos."), frappe.PermissionError)
     titulo = (titulo or "").strip()
-    if not titulo or not cliente:
+    cliente_nuevo = (cliente_nuevo or "").strip().upper() if not cliente else ""
+    if not titulo or not (cliente or cliente_nuevo):
         frappe.throw(_("Escribe el nombre del proyecto y elige el cliente."))
     from costeo_yelke.api.costeo_api import get_company_defaults
 
     compania = compania or frappe.defaults.get_user_default("Company")
     # Los almacenes y el centro de costos de la compañía, como al crearlo en pantalla.
     defaults = {k: v for k, v in (get_company_defaults(compania) or {}).items() if v} if compania else {}
-    doc = frappe.get_doc({"doctype": "Costeo", "titulo": titulo, "cliente": cliente, "fecha": nowdate(),
+    doc = frappe.get_doc({"doctype": "Costeo", "titulo": titulo, "cliente": cliente or None,
+                          "cliente_nuevo": cliente_nuevo, "fecha": nowdate(),
                           "compañia": compania, **defaults})
     doc.insert()
     r = crear(doc.name, "costear", usuario, mensaje=mensaje, fecha=fecha)

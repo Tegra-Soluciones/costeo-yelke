@@ -446,6 +446,9 @@ def enviar_a_aprobacion(doctype: str, name: str, comentario: str = None) -> dict
     doc = frappe.get_doc(doctype, name)
     if doc.docstatus != 0:
         frappe.throw(_("El documento ya está validado o cancelado."))
+    if doctype == "Costeo" and not doc.get("cliente") and doc.get("cliente_nuevo"):
+        frappe.throw(_("Da de alta al cliente {0} antes de enviarlo (botón «Dar de alta» junto al cliente).")
+                     .format(doc.cliente_nuevo))
     estado = _estado(doc)
     if estado in EN_APROBACION:
         frappe.throw(_("Ya está en aprobación."))
