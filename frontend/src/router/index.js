@@ -53,7 +53,9 @@ router.beforeEach(async (to) => {
   // usuario no tiene lo regresa a Inicio con el aviso. Crear ("…Nueva/Nuevo") pide editar.
   await cargarAccesos();
   const nivel = /Nuev[ao]$/.test(String(to.name || "")) ? "editar" : "ver";
-  if (to.name && !rutaPermitida(String(to.name), nivel)) {
+  // Dirección también es la bandeja de quien revisa o aprueba sin tener la vista: la
+  // pantalla decide sola (DireccionPage › accede).
+  if (to.name && to.name !== "Direccion" && !rutaPermitida(String(to.name), nivel)) {
     const v = vistasDeRuta(String(to.name))[0];
     return { name: "Dashboard", query: { sin_acceso: etiquetaVista(v) } };
   }
