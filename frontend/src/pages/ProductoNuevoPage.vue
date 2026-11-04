@@ -149,6 +149,21 @@
                 <textarea v-model="form.description" rows="4" class="field-input resize-none" placeholder="Descripción detallada del artículo…" />
               </div>
 
+              <div class="mt-5">
+                <FieldLabel>Imagen</FieldLabel>
+                <div class="flex items-center gap-4">
+                  <div class="w-28 h-28 rounded-xl border border-gray-200 bg-gray-50 overflow-hidden flex items-center justify-center flex-shrink-0">
+                    <img v-if="imagenPrevia" :src="imagenPrevia" alt="Imagen del producto" class="w-full h-full object-cover" />
+                    <Icono v-else nombre="paquete" class="w-8 h-8 text-ink-xlight" :grosor="1.4" />
+                  </div>
+                  <div class="space-y-1.5">
+                    <button type="button" class="p-btn-secondary h-8 text-[12.5px]" @click="elegirImagen">{{ imagen ? "Cambiar imagen" : "Subir imagen" }}</button>
+                    <button v-if="imagen" type="button" class="block text-[12px] text-ink-muted hover:text-red-600" @click="quitarImagen">Quitar</button>
+                    <p class="text-[11.5px] text-ink-light">Foto de la prenda o del artículo (opcional).</p>
+                  </div>
+                </div>
+              </div>
+
               <SectionTitle class="mt-6">Precio y Peso</SectionTitle>
               <div class="grid grid-cols-3 gap-4">
                 <div>
@@ -692,7 +707,7 @@ import PageHeader     from "@/components/PageHeader.vue";
 import Icono from "@/components/Icono.vue";
 import LinkInput      from "@/components/LinkInput.vue";
 import ItemPricesForm from "@/components/ItemPricesForm.vue";
-import { call }       from "@/utils/frappe.js";
+import { call, uploadFile } from "@/utils/frappe.js";
 import { useCompany } from "@/composables/useCompany.js";
 
 const { state: companyState } = useCompany();
@@ -861,6 +876,26 @@ function validate() {
   return ok;
 }
 
+// ── Imagen (se sube al crear el artículo, al campo Item.image) ─────────────────
+const imagen = ref(null);
+const imagenPrevia = ref("");
+function elegirImagen() {
+  const input = document.createElement("input");
+  input.type = "file"; input.accept = "image/*";
+  input.onchange = () => {
+    const f = input.files?.[0];
+    if (!f) return;
+    quitarImagen();
+    imagen.value = f;
+    imagenPrevia.value = URL.createObjectURL(f);
+  };
+  input.click();
+}
+function quitarImagen() {
+  if (imagenPrevia.value) URL.revokeObjectURL(imagenPrevia.value);
+  imagen.value = null; imagenPrevia.value = "";
+}
+
 // ── Save ──────────────────────────────────────────────────────────────────────
 async function saveItem() {
   if (!validate()) {
@@ -870,6 +905,12 @@ async function saveItem() {
   saving.value = true;
   try {
     const result = await call("costeo_yelke.api.item_api.create_item", { data: JSON.stringify(form) });
+    if (imagen.value && result?.item_code) {
+      try {
+        const f = await uploadFile(imagen.value, { doctype: "Item", docname: result.item_code, fieldname: "image", isPrivate: 0 });
+        if (f?.file_url) await call("frappe.client.set_value", { doctype: "Item", name: result.item_code, fieldname: "image", value: f.file_url });
+      } catch (e) { showToast(`Artículo creado, pero la imagen no se subió: ${e.message || e}`, "error"); }
+    }
     created.value = result;
   } catch (e) {
     showToast(e.message || "Error al crear artículo", "error");
@@ -886,6 +927,7 @@ function resetForm() {
   const blank = blankForm();
   Object.keys(blank).forEach(k => { form[k] = blank[k]; });
   created.value = null;
+  quitarImagen();
   step.value = 1;
   selectedTipo.value = null;
   activeTab.value = "general";

@@ -630,6 +630,9 @@
             <Icono v-if="tipoFor(item.item_group)?.icon" :nombre="tipoFor(item.item_group).icon" class="w-16 h-16 text-ink-xlight" :grosor="1.2" />
           </div>
         </div>
+        <button v-if="!soloLecturaDoc" type="button" class="-mt-2 w-full text-[12.5px] font-medium text-brand-600 disabled:opacity-50" :disabled="subiendoImagen" @click="cambiarImagen">
+          {{ subiendoImagen ? "Subiendo…" : item.image ? "Cambiar imagen" : "Subir imagen" }}
+        </button>
 
         <!-- Key info -->
         <div class="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
@@ -720,7 +723,7 @@ import { ref, reactive, computed, onMounted, defineComponent, h } from "vue";
 import PageHeader     from "@/components/PageHeader.vue";
 import Icono from "@/components/Icono.vue";
 import ItemPricesForm from "@/components/ItemPricesForm.vue";
-import { call }       from "@/utils/frappe.js";
+import { call, uploadFile } from "@/utils/frappe.js";
 
 const props = defineProps({ name: { type: String, required: true } });
 
@@ -936,6 +939,26 @@ async function saveAll() {
   } finally {
     savingPrices.value = false;
   }
+}
+
+// Imagen del producto (Item.image): se sube y se pone en el campo al momento.
+const subiendoImagen = ref(false);
+function cambiarImagen() {
+  const input = document.createElement("input");
+  input.type = "file"; input.accept = "image/*";
+  input.onchange = async () => {
+    const f = input.files?.[0];
+    if (!f || !item.value?.name) return;
+    subiendoImagen.value = true;
+    try {
+      const r = await uploadFile(f, { doctype: "Item", docname: item.value.name, fieldname: "image", isPrivate: 0 });
+      await call("frappe.client.set_value", { doctype: "Item", name: item.value.name, fieldname: "image", value: r.file_url });
+      item.value.image = r.file_url;
+      showToast("Imagen actualizada");
+    } catch (e) { showToast(e.message || "No se pudo subir la imagen", "error"); }
+    finally { subiendoImagen.value = false; }
+  };
+  input.click();
 }
 
 function showToast(msg, type = "success") {
