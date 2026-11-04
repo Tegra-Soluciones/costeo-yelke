@@ -2489,46 +2489,46 @@
                   </template>
                 </div>
 
-                <div v-else class="space-y-4">
-                  <div v-for="track in tracksLote" :key="track.finished_item">
-                    <p class="text-[12px] font-semibold text-ink mb-1.5 flex items-center gap-1.5">
-                      <svg class="w-3.5 h-3.5 text-ink-light" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M16 4l4 4-3 1v11H7V9L4 8l4-4 2 2h4l2-2z"/></svg>
-                      {{ track.item_name }}<span class="font-normal text-ink-muted">· {{ track.qty }} pza(s)</span>
-                    </p>
-                    <div class="overflow-x-auto -mx-1 px-1">
-                      <div class="flex items-stretch gap-2 w-max">
-                        <template v-for="(pa, i) in track.paradas" :key="pa.parada_id">
-                          <svg v-if="i > 0" class="w-4 h-4 text-ink-xlight self-center flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-                          <button data-nav
-                            class="text-left w-48 rounded-lg border px-2.5 py-2 transition-colors flex-shrink-0"
-                            :class="paradaBtnClass(pa)"
-                            @click="irAParada(pa)"
-                          >
-                            <div class="flex items-center gap-1.5 mb-0.5">
-                              <span class="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0" :class="paradaDotClass(pa)">
-                                <svg v-if="pa.receipt_validated" class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="4"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-                              </span>
-                              <span class="text-[12px] font-semibold text-ink truncate">{{ pa.titulo }}</span>
-                            </div>
-                            <p class="text-[11px] text-ink-muted truncate">{{ pa.supplier }}</p>
-                            <p class="text-[10.5px] text-ink-light">{{ (pa.productos.find((x) => x.finished_item === track.finished_item) || {}).qty }} pza(s)</p>
-                            <p class="text-[10.5px] mt-0.5" :class="paradaEstadoColor(pa)">{{ paradaEstadoTexto(pa) }}</p>
-                          </button>
-                        </template>
-                        <!-- Producto terminado -->
-                        <svg class="w-4 h-4 text-ink-xlight self-center flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-                        <div
-                          class="w-40 rounded-lg border-2 px-2.5 py-2.5 flex-shrink-0 flex flex-col items-center text-center"
-                          :class="track.done ? 'border-green-400 bg-green-50' : 'border-surface-border bg-white'"
-                        >
-                          <img v-if="track.image" :src="track.image" :alt="track.item_name" class="w-16 h-16 object-cover rounded mb-1.5" />
-                          <div v-else class="w-16 h-16 rounded bg-surface-raised flex items-center justify-center mb-1.5">
-                            <svg class="w-8 h-8 text-ink-xlight" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.4"><path stroke-linecap="round" stroke-linejoin="round" d="M16 4l4 4-3 1v11H7V9L4 8l4-4 2 2h4l2-2z"/></svg>
-                          </div>
-                          <span class="text-[11.5px] font-semibold text-ink leading-tight">{{ track.item_name }}</span>
-                          <span class="text-[10.5px] text-ink-muted mt-0.5">{{ track.qty }} pza(s)</span>
-                          <span class="text-[10px] mt-0.5 font-medium" :class="track.done ? 'text-green-700' : 'text-ink-light'">{{ track.done ? 'Terminado' : 'En proceso' }}</span>
+                <!-- Flujo LINEAL (sin piezas declaradas): el mismo tablero que el de
+                     piezas, más sencillo -- una sola fila (la prenda) y una columna por
+                     taller, en orden. Las tallas extra siguen el mismo recorrido, así
+                     que no se repite un carril por cada una: se dibuja solo el producto
+                     principal y la cantidad del lote ya las incluye. -->
+                <div v-else-if="diagramaLineal" class="space-y-3">
+                  <div class="p-panel overflow-x-auto">
+                    <div class="w-max min-w-full p-3">
+                      <div class="flex gap-2 items-start pb-2 border-b border-surface-border">
+                        <div class="w-32 flex-shrink-0 px-1 pt-0.5 text-[11px] font-medium text-ink-light">Prenda</div>
+                        <div v-for="(pa, i) in diagramaLineal.paradas" :key="pa.parada_id" class="w-48 flex-shrink-0 px-1">
+                          <span class="flex items-start gap-2 min-w-0">
+                            <span class="w-5 h-5 rounded-full bg-zinc-100 text-ink-muted text-[11px] font-semibold flex items-center justify-center flex-shrink-0">{{ i + 1 }}</span>
+                            <span class="text-[12.5px] font-semibold text-ink leading-snug line-clamp-2">{{ pa.titulo }}</span>
+                          </span>
+                          <span class="block pl-7 mt-0.5 text-[11.5px] text-ink-muted truncate" :title="pa.supplier">{{ pa.supplier }}</span>
                         </div>
+                        <div class="w-36 flex-shrink-0 px-1 pt-0.5 text-[11px] font-medium text-ink-light">Producto terminado</div>
+                      </div>
+                      <div class="flex gap-2 items-center py-1.5">
+                        <div class="w-32 flex-shrink-0 px-1">
+                          <p class="text-[13px] font-semibold text-ink leading-tight line-clamp-2">{{ diagramaLineal.principal.item_name }}</p>
+                          <p class="text-[11px] text-ink-light tabular-nums">{{ diagramaLineal.total.toLocaleString('es-MX') }} pzas</p>
+                          <p v-if="diagramaLineal.extras" class="text-[10.5px] text-ink-light">incluye {{ diagramaLineal.extras === 1 ? 'la talla extra' : `${diagramaLineal.extras} tallas extra` }}</p>
+                        </div>
+                        <button
+                          v-for="pa in diagramaLineal.paradas" :key="pa.parada_id" data-nav type="button"
+                          class="w-48 flex-shrink-0 h-12 rounded-xl px-3 flex items-center gap-2.5 text-left transition-colors"
+                          :class="celdaLinealClass(pa)"
+                          :title="`${pa.titulo} · ${pa.supplier}: ${paradaEstadoTexto(pa)}`"
+                          @click="irAParada(pa)"
+                        >
+                          <svg v-if="pa.receipt_validated" class="w-[18px] h-[18px] flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.7-9.3a1 1 0 00-1.4-1.4L9 10.6 7.7 9.3a1 1 0 00-1.4 1.4l2 2a1 1 0 001.4 0l4-4z" clip-rule="evenodd"/></svg>
+                          <span class="min-w-0 flex-1 text-[12.5px] font-medium leading-tight truncate">{{ paradaEstadoTexto(pa) }}</span>
+                          <span class="flex-shrink-0 opacity-50 text-[15px] leading-none">›</span>
+                        </button>
+                        <div
+                          class="w-36 flex-shrink-0 h-12 rounded-xl px-3 flex items-center gap-2 text-[12.5px] font-medium"
+                          :class="diagramaLineal.done ? 'bg-emerald-50 text-emerald-700' : 'bg-zinc-50 text-ink-light'"
+                        >{{ diagramaLineal.done ? 'Terminado' : 'En proceso' }}</div>
                       </div>
                     </div>
                   </div>
@@ -5343,7 +5343,7 @@ function ayudaPasoLote(paso) {
     return "Encargo → envío de material → recibo → factura. Arriba, las piezas que lleva este taller.";
   }
   if (paso === "talleres" && !loteTienePiezas.value) {
-    return "El recorrido de cada producto por sus talleres. Clic en una tarjeta para abrir ese taller.";
+    return "El recorrido de la prenda por sus talleres (las tallas extra van igual). Clic en un taller para abrirlo.";
   }
   return AYUDA_PASO_LOTE[paso] || "";
 }
@@ -7321,23 +7321,30 @@ function pasoEstadoColor(p) {
     bloqueado: "text-ink-light",
   }[p.estado] || "text-ink-light";
 }
-function paradaBtnClass(p) {
-  if (p.receipt_validated) return "border-green-500 bg-green-50";
-  if (loteParadaActiva.value === p.parada_id) return "border-brand-500 bg-brand-50";
-  if (p.sco) return "border-brand-200 bg-white hover:bg-surface-raised";
-  return "border-surface-border bg-white hover:bg-surface-raised";
-}
-function paradaDotClass(p) {
-  if (p.receipt_validated) return "bg-green-500 text-white";
-  if (p.transfer_done) return "bg-brand-500 text-white";
-  if (p.sco) return "bg-brand-200";
-  return "bg-surface-raised";
+/** Flujo lineal: un solo carril (el producto con más piezas; las tallas extra van por
+ *  los mismos talleres) con la cantidad total del lote. */
+const diagramaLineal = computed(() => {
+  const tracks = tracksLote.value || [];
+  if (!tracks.length) return null;
+  const principal = tracks.reduce((a, t) => (Number(t.qty) > Number(a.qty) ? t : a), tracks[0]);
+  return {
+    principal,
+    paradas: principal.paradas || [],
+    total: tracks.reduce((n, t) => n + (Number(t.qty) || 0), 0),
+    extras: tracks.length - 1,
+    done: tracks.every((t) => t.done),
+  };
+});
+// Mismos colores que las celdas del tablero de piezas.
+function celdaLinealClass(p) {
+  if (loteParadaActiva.value === p.parada_id) return "bg-brand-50 text-brand-700 ring-2 ring-brand-400";
+  const e = paradaEstado(p);
+  if (e === "done") return "bg-emerald-50 text-emerald-700 hover:bg-emerald-100";
+  if (e === "pending") return "bg-white text-ink ring-1 ring-brand-200 hover:ring-brand-400 hover:bg-brand-50/40";
+  return "bg-amber-50 text-amber-800 hover:bg-amber-100";
 }
 function paradaEstadoTexto(p) {
   return { done: "Recibido", transfer: "Material enviado", sco: "Encargo creado", pending: "Pendiente de encargar" }[paradaEstado(p)];
-}
-function paradaEstadoColor(p) {
-  return { done: "text-green-700", transfer: "text-brand-700", sco: "text-brand-700", pending: "text-ink-light" }[paradaEstado(p)];
 }
 // Cantidad por producto de una parada, en corto: "Playera 1500 · Camisa 1000".
 // Usa la 1ª palabra del nombre (el tipo de prenda) -- si dos productos empiezan
