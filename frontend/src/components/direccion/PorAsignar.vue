@@ -72,12 +72,10 @@ import VacioEstado from "@/components/produccion/VacioEstado.vue";
 import FilaLista from "@/components/produccion/FilaLista.vue";
 import PanelEncargos from "@/components/encargos/PanelEncargos.vue";
 import { version } from "@/composables/useEncargos.js";
-import { useCompany } from "@/composables/useCompany.js";
 import { haceCuanto } from "@/utils/formato.js";
 
 const emit = defineEmits(["cuenta"]);
 const router = useRouter();
-const { state: companyState } = useCompany();
 
 const FILTROS = [["sin", "Sin asignar"], ["con", "Asignados"], ["todo", "Todo"]];
 const filtro = ref("sin");
@@ -114,7 +112,9 @@ function notaAsignado(a) {
 async function cargar() {
   cargando.value = true; error.value = "";
   try {
-    const r = await call("costeo_yelke.api.encargos.get_por_asignar", { company: companyState.selected || undefined });
+    // Todas las compañías, como el resto del panel: con el filtro, en un celular con
+    // otra compañía elegida (la de por omisión) no salía nada.
+    const r = await call("costeo_yelke.api.encargos.get_por_asignar");
     grupos.value = r.grupos || [];
     emit("cuenta", r.sin_asignar || 0);
   } catch (e) { error.value = e.message || "No se pudo cargar."; }
@@ -126,6 +126,5 @@ function asignar(g) { sel.value = g; }
 onMounted(cargar);
 // Al asignar (PanelEncargos sube `version`) o cambiar de compañía, se recarga.
 watch(version, cargar);
-watch(() => companyState.selected, cargar);
 defineExpose({ cargar });
 </script>
