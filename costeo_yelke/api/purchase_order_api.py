@@ -273,13 +273,17 @@ def sugerir_precios_oc(po, supplier=None):
         return {}
     costeo = doc.get("costeo") if doc.meta.get_field("costeo") else None
 
+    from costeo_yelke.api.costeo_api import _moneda_compania
+
+    # Los precios salen en pesos; una OC en dólares los lleva a su tipo de cambio.
+    tc = (frappe.utils.flt(doc.conversion_rate) or 1.0) if doc.currency != _moneda_compania(doc.company) else 1.0
     sugerencias = {}
     for it in doc.items:
         if not it.item_code:
             continue
         precio = _precio_para_oc(it.item_code, supplier, doc.company, costeo=costeo, uom=it.uom)
         if precio is not None:
-            sugerencias[it.item_code] = float(precio)
+            sugerencias[it.item_code] = float(precio) / tc
     return sugerencias
 
 

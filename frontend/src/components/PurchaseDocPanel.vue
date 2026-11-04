@@ -428,13 +428,19 @@ watch(() => props.items, (items) => {
 // múltiplo que la fila YA tiene seleccionado también debe recalcular, aunque la
 // UDM en sí no haya cambiado de nombre -- si no, la fila se quedaba con la
 // cantidad vieja calculada con el factor equivocado).
+// Tipo de cambio con el que van los precios de la orden (los sugeridos salen en pesos):
+// el capturado, o el del documento si no se ha cambiado de moneda. En pesos es 1.
+function tipoCambioVigente() {
+  const moneda = props.form.currency || props.doc.currency;
+  return props.form.conversion_rate || (moneda === props.doc.currency ? props.doc.conversion_rate : null) || null;
+}
 async function aplicarPreviewUom(row, nuevoUom) {
   row.uom = nuevoUom; // se ve el cambio de inmediato; se corrige abajo si hace falta
   try {
     const r = await call("costeo_yelke.api.costeo_api.preview_conversion_uom_oc", {
       item_code: row.item_code, qty: row.qty, conversion_factor_actual: row.conversion_factor || 1,
       nuevo_uom: nuevoUom, supplier: props.form.supplier || props.doc.supplier,
-      company: props.doc.company, costeo: props.doc.costeo,
+      company: props.doc.company, costeo: props.doc.costeo, conversion_rate: tipoCambioVigente(),
     });
     row.qty = r.qty;
     row.conversion_factor = r.conversion_factor;
@@ -458,6 +464,7 @@ async function onSupplierChange(nuevoSupplier) {
       const r = await call("costeo_yelke.api.costeo_api.preview_conversion_uom_oc", {
         item_code: row.item_code, qty: row.qty, conversion_factor_actual: row.conversion_factor || 1,
         nuevo_uom: row.uom, supplier: nuevoSupplier, company: props.doc.company, costeo: props.doc.costeo,
+        conversion_rate: tipoCambioVigente(),
       });
       if (r.rate !== null && r.rate !== undefined) row.rate = r.rate;
     } catch { /* se recalcula igual de bien al Guardar */ }

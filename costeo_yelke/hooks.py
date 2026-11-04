@@ -515,7 +515,12 @@ after_migrate = ["costeo_yelke.install.after_migrate"]
 # cada pago, la cuenta del tercero en la moneda del dinero. Se SUMAN a lo de arriba.
 # La cuenta del tercero va en before_validate: ERPNext revisa en su validate que la cuenta
 # por pagar/cobrar sea de la moneda del tercero, y tiene que encontrarla ya ajustada.
+# Lo mismo con la moneda de los documentos de compra de un proveedor en dólares.
 for _dt, _evento, _fn in (("Supplier", "before_validate", "cuentas_por_moneda"),
+                          ("Supplier Quotation", "before_validate", "documento_en_moneda_del_proveedor"),
+                          ("Purchase Order", "before_validate", "documento_en_moneda_del_proveedor"),
+                          ("Purchase Receipt", "before_validate", "documento_en_moneda_del_proveedor"),
+                          ("Purchase Invoice", "before_validate", "documento_en_moneda_del_proveedor"),
                           ("Customer", "before_validate", "cuentas_por_moneda"),
                           ("Bank Account", "validate", "moneda_cuenta_bancaria"),
                           ("Payment Entry", "validate", "cuenta_del_tercero_por_moneda")):

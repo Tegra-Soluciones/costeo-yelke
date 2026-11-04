@@ -6310,7 +6310,7 @@ def _ultimo_precio_proveedor(item_code, supplier, uom=None):
     sqi = frappe.qb.DocType("Supplier Quotation Item")
     filas_sq = (
         frappe.qb.from_(sqi).join(sq).on(sqi.parent == sq.name)
-        .select(sqi.rate, sqi.uom, sqi.conversion_factor, sq.modified)
+        .select(sqi.base_rate.as_("rate"), sqi.uom, sqi.conversion_factor, sq.modified)  # en pesos
         .where((sqi.item_code == item_code) & (sq.supplier == supplier) & (sq.docstatus == 1))
     ).run(as_dict=True)
     for r in filas_sq:
@@ -6429,11 +6429,13 @@ def _aplicar_precios_oc(po_names):
         if po.docstatus != 0:
             continue
         costeo = po.get("costeo") if po.meta.get_field("costeo") else None
+        # Los precios salen en pesos; una OC en dólares los lleva a su tipo de cambio.
+        tc = (flt(po.conversion_rate) or 1.0) if po.currency != _moneda_compania(po.company) else 1.0
         changed = False
         for it in po.items:
             precio = _precio_para_oc(it.item_code, po.supplier, po.company, costeo=costeo, uom=it.uom)
-            if precio is not None and flt(precio) != flt(it.rate):
-                it.rate = flt(precio)
+            if precio is not None and abs(flt(precio) / tc - flt(it.rate)) > 0.000001:
+                it.rate = flt(precio) / tc
                 changed = True
         if _aplicar_impuestos_doc(po):
             changed = True
@@ -11567,7 +11569,8 @@ def _envio_taller_doc(doc):
 
 @frappe.whitelist()
 def preview_conversion_uom_oc(item_code: str, qty, conversion_factor_actual, nuevo_uom: str,
-                              supplier: str = None, company: str = None, costeo: str = None) -> dict:
+                              supplier: str = None, company: str = None, costeo: str = None,
+                              conversion_rate=None) -> dict:
     """Recálculo instantáneo (solo lectura, no guarda nada) al cambiar la UDM de una
     línea de OC en el navegador -- para que se vea la cantidad y el precio nuevos
     de inmediato, sin tener que dar clic en Guardar primero. Usa exactamente la
@@ -11576,6 +11579,8 @@ def preview_conversion_uom_oc(item_code: str, qty, conversion_factor_actual, nue
     al guardar de verdad."""
     qty_nueva, factor_nuevo, _stock_uom = _convertir_uom_compra(item_code, qty, conversion_factor_actual, nuevo_uom)
     precio = _precio_para_oc(item_code, supplier, company, costeo=costeo, uom=nuevo_uom) if supplier else None
+    if precio is not None and flt(conversion_rate) > 0:
+        precio = flt(precio) / flt(conversion_rate)  # OC en dólares: el precio (en pesos) a su tipo de cambio
     return {"qty": qty_nueva, "conversion_factor": factor_nuevo, "rate": precio}
 
 

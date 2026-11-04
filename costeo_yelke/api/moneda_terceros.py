@@ -87,6 +87,25 @@ def cuentas_por_moneda(doc, method=None):
                 doc.remove(fila)
 
 
+def documento_en_moneda_del_proveedor(doc, method=None):
+    """before_validate de OC / presupuesto / recepción / factura de compra en borrador:
+    con un proveedor cuya cuenta por pagar está en otra moneda (dólares), el documento
+    va en esa moneda -- ERPNext no deja otra («sólo puede realizarse con la divisa»).
+    Los documentos nacen en pesos (el mapeo desde la solicitud de material no mira al
+    proveedor); aquí se pasan a su moneda con el tipo de cambio del día, conservando
+    el valor de cada precio."""
+    if doc.docstatus != 0 or not doc.get("supplier") or not doc.get("company"):
+        return
+    from erpnext.accounts.party import get_party_account_currency
+
+    moneda = get_party_account_currency("Supplier", doc.supplier, doc.company)
+    if not moneda or moneda == doc.get("currency") or moneda == _moneda_compania(doc.company):
+        return
+    from costeo_yelke.api.costeo_api import _aplicar_moneda
+
+    _aplicar_moneda(doc, moneda)
+
+
 def moneda_cuenta_bancaria(doc, method=None):
     """validate de Bank Account: la de la empresa toma la moneda de su cuenta contable;
     la de un tercero, la que se capture (pesos si nadie dice otra)."""

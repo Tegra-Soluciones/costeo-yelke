@@ -18,10 +18,14 @@ def registrar_precios_oficiales(doc, method=None):
     )
     if not price_list:
         return
+    # El precio se guarda en la moneda de la lista (pesos): de una OC en dólares va
+    # su precio ya convertido, para no mezclar dólares con pesos en la misma lista.
+    en_base = (frappe.db.get_value("Price List", price_list, "currency") or doc.currency) != doc.currency
 
     for it in doc.items:
         if not it.item_code or not flt(it.rate):
             continue
+        precio = flt(it.base_rate) if en_base else flt(it.rate)
         uom = it.uom or frappe.db.get_value("Item", it.item_code, "stock_uom")
         if not uom:
             continue
@@ -36,14 +40,14 @@ def registrar_precios_oficiales(doc, method=None):
             "name",
         )
         if existing:
-            frappe.db.set_value("Item Price", existing, "price_list_rate", flt(it.rate))
+            frappe.db.set_value("Item Price", existing, "price_list_rate", precio)
             continue
         price_doc = frappe.new_doc("Item Price")
         price_doc.item_code = it.item_code
         price_doc.price_list = price_list
         price_doc.supplier = doc.supplier
         price_doc.uom = uom
-        price_doc.price_list_rate = flt(it.rate)
+        price_doc.price_list_rate = precio
         price_doc.flags.ignore_permissions = True
         try:
             price_doc.insert()
