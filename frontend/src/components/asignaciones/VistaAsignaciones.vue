@@ -10,9 +10,15 @@
   <div class="space-y-5">
     <div class="flex gap-5 items-start" :class="movil ? 'flex-col' : ''">
       <!-- Menú -->
-      <select v-if="movil" v-model="grupo" class="p-field">
-        <option v-for="g in grupos" :key="g.clave" :value="g.clave">{{ g.nombre }}{{ g.abiertas ? ` (${g.abiertas})` : "" }}</option>
-      </select>
+      <div v-if="movil" class="w-full flex gap-2">
+        <select v-if="modo === 'equipo'" v-model="agrupar" class="p-field w-auto flex-shrink-0">
+          <option value="persona">Por persona</option>
+          <option value="proyecto">Por proyecto</option>
+        </select>
+        <select v-model="grupo" class="p-field flex-1 min-w-0">
+          <option v-for="g in grupos" :key="g.clave" :value="g.clave">{{ g.nombre }}{{ g.abiertas ? ` (${g.abiertas})` : "" }}</option>
+        </select>
+      </div>
       <aside v-else class="w-[248px] flex-shrink-0 sticky top-0">
         <select v-if="modo === 'equipo'" v-model="agrupar" class="p-field h-8 text-[12.5px] mb-3">
           <option value="persona">Por persona</option>
@@ -39,9 +45,9 @@
             <p class="text-[15px] font-semibold text-ink truncate">{{ actual?.nombre }}</p>
             <p v-if="actual?.detalle" class="p-meta truncate">{{ actual.detalle }}</p>
           </div>
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2" :class="movil ? 'w-full' : ''">
             <RouterLink v-if="actual?.ruta" :to="actual.ruta" class="p-btn-ghost h-7 px-2 text-[12.5px]">Abrir proyecto ›</RouterLink>
-            <select v-model="filtro" class="p-field h-8 w-auto text-[12.5px]">
+            <select v-model="filtro" class="p-field h-8 text-[12.5px]" :class="movil ? 'flex-1 min-w-0' : 'w-auto'">
               <option v-for="[k, l] in FILTROS" :key="k" :value="k">{{ l }} ({{ cuenta(k) }})</option>
             </select>
             <button type="button" class="p-btn-ghost h-7 px-2" :disabled="cargando" title="Actualizar" @click="cargar">
