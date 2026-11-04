@@ -1,5 +1,7 @@
 <!--
-  Precio de venta escrito dos veces (pedido de Yelke), las dos a la vista. El precio
+  Precio de venta escrito dos veces (pedido de Yelke): la primera captura se ve mientras
+  se escribe y se oculta (como contraseña) al pasar a la segunda, para que la segunda
+  se teclee y no se copie. Volver a la primera la muestra y borra la segunda. El precio
   solo se aplica cuando las dos coinciden.
 -->
 <template>
@@ -12,14 +14,16 @@
         <label class="text-[12px] font-medium text-ink-muted block mt-4 mb-1">Precio unitario</label>
         <div class="relative">
           <span class="absolute left-3 top-1/2 -translate-y-1/2 text-ink-light text-[14px]">$</span>
-          <input ref="primero" v-model="uno" type="text" inputmode="decimal" autocomplete="off"
+          <input ref="primero" v-model="uno" :type="oculto ? 'password' : 'text'" inputmode="decimal" autocomplete="new-password"
+                 @focus="oculto = false; dos = ''"
                  class="w-full h-10 pl-7 pr-3 text-[15px] tabular-nums border border-surface-border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/25 focus:border-brand-400" />
         </div>
+        <p class="text-[11px] text-ink-light mt-1">Se oculta al pasar a la segunda captura.</p>
 
         <label class="text-[12px] font-medium text-ink-muted block mt-3 mb-1">Escríbelo otra vez</label>
         <div class="relative">
           <span class="absolute left-3 top-1/2 -translate-y-1/2 text-ink-light text-[14px]">$</span>
-          <input v-model="dos" type="text" inputmode="decimal" autocomplete="off"
+          <input v-model="dos" type="text" inputmode="decimal" autocomplete="off" @focus="oculto = true"
                  class="w-full h-10 pl-7 pr-3 text-[15px] tabular-nums border rounded-lg focus:outline-none focus:ring-2"
                  :class="estado === 'no' ? 'border-red-300 focus:ring-red-500/20' : estado === 'si' ? 'border-emerald-300 focus:ring-emerald-500/20' : 'border-surface-border focus:ring-brand-500/25'" />
         </div>
@@ -51,6 +55,7 @@ const emit = defineEmits(["cerrar", "confirmar"]);
 const uno = ref("");
 const dos = ref("");
 const primero = ref(null);
+const oculto = ref(false);
 
 /** "1,250.50" / "1250.5" / "$385" -> número (redondeado a centavos), o null. */
 function valor(txt) {
@@ -69,6 +74,7 @@ watch(() => props.abierto, async (v) => {
   if (!v) return;
   uno.value = "";
   dos.value = "";
+  oculto.value = false;
   await nextTick();
   primero.value?.focus();
 });
