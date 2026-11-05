@@ -8,6 +8,9 @@
     "section_break_gusc",
     "cliente",
     "cliente_nuevo",
+    "contacto_nombre",
+    "contacto_correo",
+    "contacto_telefono",
     "fecha",
     "column_break_jtie",
     "compañia",
@@ -114,6 +117,23 @@
       "label": "Cliente nuevo (sin alta)",
       "description": "Cliente que aún no está dado de alta. Se da de alta antes de cotizar.",
       "depends_on": "eval:!doc.cliente"
+    },
+    {
+      "fieldname": "contacto_nombre",
+      "fieldtype": "Data",
+      "label": "Contacto del cliente",
+      "description": "Del levantamiento (Panel de Dirección): con quién se habla del pedido."
+    },
+    {
+      "fieldname": "contacto_correo",
+      "fieldtype": "Data",
+      "options": "Email",
+      "label": "Correo del contacto"
+    },
+    {
+      "fieldname": "contacto_telefono",
+      "fieldtype": "Data",
+      "label": "Teléfono del contacto"
     },
     {
       "fieldname": "fecha",
@@ -650,7 +670,7 @@
   "index_web_pages_for_search": 1,
   "is_submittable": 1,
   "links": [],
-  "modified": "2026-11-04 14:00:00.000000",
+  "modified": "2026-11-05 12:00:00.000000",
   "modified_by": "Administrator",
   "module": "Costeo Yelke",
   "name": "Costeo",

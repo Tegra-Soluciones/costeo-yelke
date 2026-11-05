@@ -1,7 +1,8 @@
 <!--
   Asignaciones: quién está haciendo qué (docs/plan-encargos.md). Dirección y quien tiene
   acceso total ven las de todo el equipo; los demás, las que les asignaron y las que
-  asignaron ellos.
+  asignaron ellos. Solo para verlas: los proyectos nuevos se levantan y asignan en el
+  Panel de Dirección › Levantamiento.
 -->
 <template>
   <div class="flex flex-col min-h-0 bg-surface">
@@ -18,25 +19,17 @@
               <option value="equipo">Todo el equipo</option>
               <option value="mias">Solo las mías</option>
             </select>
-            <button v-if="puedeEditar('costear') || puede('direccion')" type="button" class="p-btn-primary" @click="nuevo = true">
-              <Icono nombre="persona" class="w-4 h-4" :grosor="2" /> Asignar proyecto
-            </button>
           </div>
         </div>
-        <p v-if="aviso" class="text-[12.5px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{{ aviso }}</p>
         <VistaAsignaciones :key="modo" :modo="modo" :movil="esMovil" />
       </div>
     </div>
-    <EncargarProyecto :abierto="nuevo" @cerrar="nuevo = false" @creado="(r) => (aviso = `${r.titulo}: asignado a ${r.para}. Ya le llegó el aviso.`)" />
   </div>
 </template>
 
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
-import Icono from "@/components/Icono.vue";
-import EncargarProyecto from "@/components/encargos/EncargarProyecto.vue";
 import VistaAsignaciones from "@/components/asignaciones/VistaAsignaciones.vue";
-import { puede, puedeEditar } from "@/composables/useAccesos.js";
 import { cuenta, refrescarCuenta } from "@/composables/useEncargos.js";
 
 // Celular: menú como selector arriba y la lista a todo el ancho (VistaAsignaciones › movil).
@@ -46,8 +39,7 @@ const alCambiarAncho = (e) => { esMovil.value = e.matches; };
 mq.addEventListener("change", alCambiarAncho);
 onBeforeUnmount(() => mq.removeEventListener("change", alCambiarAncho));
 const modo = ref("mias");
-const nuevo = ref(false);
-const aviso = ref("");
-onMounted(async () => { await refrescarCuenta(); if (cuenta.value.ve_equipo) modo.value = "equipo"; });
+// Primero lo de cada quien; el equipo completo se elige arriba (o en Dirección › Asignaciones).
+onMounted(refrescarCuenta);
 watch(() => cuenta.value.ve_equipo, (v) => { if (!v) modo.value = "mias"; });
 </script>

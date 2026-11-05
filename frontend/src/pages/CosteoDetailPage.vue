@@ -293,6 +293,10 @@
               </div>
               <LinkInput v-model="form.cliente" doctype="Customer" :placeholder="clienteNuevoModo ? 'Buscar si ya está dado de alta…' : 'Buscar cliente…'" :error="!!errors.cliente" @update:model-value="(v) => { if (v) { clienteNuevoModo = false; form.cliente_nuevo = ''; } }" />
               <button v-if="docState === 0 && !form.cliente && !clienteNuevoModo" type="button" class="mt-1 text-[12px] text-brand-600 font-medium" @click="clienteNuevoModo = true">¿Aún no está dado de alta? Escribe su nombre</button>
+              <!-- Del levantamiento de Dirección: con quién se habla del pedido. -->
+              <p v-if="form.contacto_nombre || form.contacto_correo || form.contacto_telefono" class="mt-1 text-[12px] text-ink-muted truncate" title="Contacto del levantamiento">
+                Contacto: {{ [form.contacto_nombre, form.contacto_correo, form.contacto_telefono].filter(Boolean).join(" · ") }}
+              </p>
             </div>
             <div><label class="p-field-label">Fecha <span class="text-red-400">*</span></label><input v-model="form.fecha" type="date" class="p-field" :class="errors.fecha ? 'border-red-400' : ''" /></div>
             <div><label class="p-field-label">Compañía <span class="text-red-400">*</span></label><LinkInput v-model="form.compania" doctype="Company" placeholder="Compañía…" :error="!!errors.compania" /></div>
@@ -4863,7 +4867,7 @@ const cotDefaults = reactive({ payment_terms_templates: [], terms: [], users: []
   oc_cliente_archivo_disponible: false });
 const prepSteps = ref([]);
 
-const form = reactive({ titulo: "", cliente: "", cliente_nuevo: "", fecha: today(), compania: "", proyecto: "", guardar_como_plantilla: false, centro_de_costos: "", almacen_materias_primas: "", almacen_trabajo_en_proceso: "" });
+const form = reactive({ titulo: "", cliente: "", cliente_nuevo: "", contacto_nombre: "", contacto_correo: "", contacto_telefono: "", fecha: today(), compania: "", proyecto: "", guardar_como_plantilla: false, centro_de_costos: "", almacen_materias_primas: "", almacen_trabajo_en_proceso: "" });
 // Centro de costos y almacenes ya no se capturan a mano -- se derivan solos de
 // la compañía (mismo criterio en costeo_api.get_company_defaults), para no
 // pedirle al usuario que repita en cada costeo algo que siempre es igual.
@@ -7506,7 +7510,7 @@ const clienteNuevoModo = ref(false);
 const altaCli = reactive({ abierto: false, ocupado: false, customer_name: "", tax_id: "", confirmar_rfc: "", email_id: "", mobile_no: "" });
 async function abrirAltaCliente() {
   if (isNew.value) { showToast("Guarda el costeo primero", "error"); return; }
-  Object.assign(altaCli, { abierto: true, ocupado: false, customer_name: form.cliente_nuevo || "", tax_id: "", confirmar_rfc: "", email_id: "", mobile_no: "" });
+  Object.assign(altaCli, { abierto: true, ocupado: false, customer_name: form.cliente_nuevo || "", tax_id: "", confirmar_rfc: "", email_id: form.contacto_correo || "", mobile_no: form.contacto_telefono || "" });
 }
 async function guardarAltaCliente() {
   altaCli.ocupado = true;
@@ -8620,6 +8624,7 @@ function buildPayload() {
   return {
     doctype: "Costeo", titulo: form.titulo || "", cliente: form.cliente || null,
     cliente_nuevo: !form.cliente && clienteNuevoModo.value ? form.cliente_nuevo.trim() : "", fecha: form.fecha, "compañia": form.compania,
+    contacto_nombre: form.contacto_nombre || null, contacto_correo: form.contacto_correo || null, contacto_telefono: form.contacto_telefono || null,
     proyecto: form.proyecto || "", guardar_como_plantilla: form.guardar_como_plantilla ? 1 : 0, centro_de_costos: form.centro_de_costos,
     almacen_materias_primas: form.almacen_materias_primas, almacen_trabajo_en_proceso: form.almacen_trabajo_en_proceso,
     costeo_status: docStatus.value || "Borrador",
@@ -8641,6 +8646,7 @@ async function fillFromDoc(data) {
   docState.value = data.docstatus || 0;
   form.titulo = data.titulo || "";
   form.cliente = data.cliente || ""; form.cliente_nuevo = data.cliente_nuevo || "";
+  form.contacto_nombre = data.contacto_nombre || ""; form.contacto_correo = data.contacto_correo || ""; form.contacto_telefono = data.contacto_telefono || "";
   clienteNuevoModo.value = !form.cliente && !!form.cliente_nuevo; form.fecha = data.fecha || today(); form.compania = data["compañia"] || "";
   form.proyecto = data.proyecto || "";
   form.guardar_como_plantilla = (data.guardar_como_plantilla === undefined || data.guardar_como_plantilla === null)

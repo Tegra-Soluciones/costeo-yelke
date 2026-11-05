@@ -590,16 +590,28 @@ def crear(costeo: str, vista: str, usuario: str, mensaje: str = None, fecha: str
 
 @frappe.whitelist()
 def crear_proyecto(titulo: str, cliente: str, usuario: str, compania: str = None, mensaje: str = None, fecha: str = None,
-                   cliente_nuevo: str = None) -> dict:
+                   cliente_nuevo: str = None, levantamiento=None, contacto: str = None, correo: str = None,
+                   telefono: str = None, cantidad=None, fecha_entrega: str = None) -> dict:
     """Proyecto nuevo encargado: crea el costeo en borrador y el encargo de Costear.
     `cliente_nuevo`: el nombre de un cliente que aún no está dado de alta; se da de
-    alta antes de cotizar (Costeo.before_submit)."""
+    alta antes de cotizar (Costeo.before_submit).
+
+    `levantamiento` (Panel de Dirección › Levantamiento): Juan toma los datos con el
+    cliente enfrente -- el correo es obligatorio; contacto, correo y teléfono quedan en
+    el costeo (y llenan el alta del cliente nuevo), y la cantidad y la fecha de entrega
+    que pide van en el mensaje del encargo junto con sus notas. A un cliente ya dado de
+    alta se le guarda el correo/teléfono solo si no tenía."""
     if not _puede_encargar("costear"):
         frappe.throw(_("No puedes asignar proyectos nuevos."), frappe.PermissionError)
     titulo = (titulo or "").strip()
     cliente_nuevo = (cliente_nuevo or "").strip().upper() if not cliente else ""
     if not titulo or not (cliente or cliente_nuevo):
         frappe.throw(_("Escribe el nombre del proyecto y elige el cliente."))
+    contacto, correo, telefono = ((x or "").strip() for x in (contacto, correo, telefono))
+    if cint(levantamiento) and not correo:
+        frappe.throw(_("Escribe el correo del cliente."))
+    if correo:
+        frappe.utils.validate_email_address(correo, throw=True)
     from costeo_yelke.api.costeo_api import get_company_defaults
 
     compania = compania or frappe.defaults.get_user_default("Company")
@@ -607,9 +619,25 @@ def crear_proyecto(titulo: str, cliente: str, usuario: str, compania: str = None
     defaults = {k: v for k, v in (get_company_defaults(compania) or {}).items() if v} if compania else {}
     doc = frappe.get_doc({"doctype": "Costeo", "titulo": titulo, "cliente": cliente or None,
                           "cliente_nuevo": cliente_nuevo, "fecha": nowdate(),
+                          "contacto_nombre": contacto or None, "contacto_correo": correo or None,
+                          "contacto_telefono": telefono or None,
                           "compañia": compania, **defaults})
     doc.insert()
-    r = crear(doc.name, "costear", usuario, mensaje=mensaje, fecha=fecha)
+    if cliente and (correo or telefono):
+        actual = frappe.db.get_value("Customer", cliente, ["email_id", "mobile_no"], as_dict=True) or {}
+        nuevos = {k: v for k, v in (("email_id", correo), ("mobile_no", telefono)) if v and not actual.get(k)}
+        if nuevos and frappe.has_permission("Customer", "write", cliente):
+            frappe.db.set_value("Customer", cliente, nuevos)
+    lineas = []
+    if contacto or correo or telefono:
+        lineas.append("Contacto: " + " · ".join(x for x in (contacto, correo, telefono) if x))
+    if cint(cantidad):
+        lineas.append(f"Cantidad aproximada: {cint(cantidad):,} prendas")
+    if fecha_entrega:
+        lineas.append(f"Entrega que pide: {frappe.utils.formatdate(fecha_entrega)}")
+    if (mensaje or "").strip():
+        lineas.append(mensaje.strip())
+    r = crear(doc.name, "costear", usuario, mensaje="\n".join(lineas) or None, fecha=fecha)
     return {"costeo": doc.name, "encargo": r["name"]}
 
 
