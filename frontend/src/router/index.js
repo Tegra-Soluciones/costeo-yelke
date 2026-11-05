@@ -1,14 +1,21 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { cargarPermisosAprobacion } from "@/composables/useAprobacion.js";
 import { asegurarCompania } from "@/composables/useCompany.js";
-import { cargarAccesos, rutaPermitida, vistasDeRuta, etiquetaVista } from "@/composables/useAccesos.js";
+import { cargarAccesos, rutaPermitida, vistasDeRuta, etiquetaVista, useAccesos } from "@/composables/useAccesos.js";
 
 const routes = [
-  // El Director aterriza en su panel; los demás, en Inicio.
+  // El Director aterriza en su panel; quien solo levanta pedidos, en Levantamiento; los
+  // demás, en Inicio.
   { path: "/", component: { render: () => null },
-    beforeEnter: async () => ((await cargarPermisosAprobacion()).es_director ? "/direccion" : "/inicio") },
+    beforeEnter: async () => {
+      if ((await cargarPermisosAprobacion()).es_director) return "/direccion";
+      await cargarAccesos();
+      const vistas = Object.keys(useAccesos().estado.accesos || {});
+      return vistas.length === 1 && vistas[0] === "levantamiento" ? "/levantamiento" : "/inicio";
+    } },
   // `movil`: en celular se pinta sin el menú ni la barra de la app (App.vue).
   { path: "/direccion", name: "Direccion", component: () => import("@/pages/DireccionPage.vue"), meta: { movil: true } },
+  { path: "/levantamiento", name: "Levantamiento", component: () => import("@/pages/LevantamientoPage.vue"), meta: { movil: true } },
   { path: "/inicio", name: "Dashboard", component: () => import("@/pages/DashboardPage.vue") },
   { path: "/asignaciones", name: "Asignaciones", component: () => import("@/pages/AsignacionesPage.vue") },
   { path: "/encargos", redirect: "/asignaciones" },

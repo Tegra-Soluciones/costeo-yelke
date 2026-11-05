@@ -398,6 +398,9 @@ def al_cambiar_todo(doc, method=None):
 def _puede_encargar(vista):
     if puede_ver_panel_direccion() or _pase_libre():
         return True
+    # Levantamiento (crear_proyecto): quien levanta asigna el Costear sin tenerlo.
+    if vista == "costear" and frappe.flags.get("levantamiento_yelke"):
+        return True
     if vista == GENERAL:
         return any(puede(v, "editar") for v in ENCARGABLES)
     return puede(vista, "editar")
@@ -601,7 +604,8 @@ def crear_proyecto(titulo: str, cliente: str, usuario: str, compania: str = None
     el costeo (y llenan el alta del cliente nuevo), y la cantidad y la fecha de entrega
     que pide van en el mensaje del encargo junto con sus notas. A un cliente ya dado de
     alta se le guarda el correo/teléfono solo si no tenía."""
-    if not _puede_encargar("costear"):
+    levanta = cint(levantamiento) and puede("levantamiento", "editar")
+    if not (_puede_encargar("costear") or levanta):
         frappe.throw(_("No puedes asignar proyectos nuevos."), frappe.PermissionError)
     titulo = (titulo or "").strip()
     cliente_nuevo = (cliente_nuevo or "").strip().upper() if not cliente else ""
@@ -637,8 +641,20 @@ def crear_proyecto(titulo: str, cliente: str, usuario: str, compania: str = None
         lineas.append(f"Entrega que pide: {frappe.utils.formatdate(fecha_entrega)}")
     if (mensaje or "").strip():
         lineas.append(mensaje.strip())
-    r = crear(doc.name, "costear", usuario, mensaje="\n".join(lineas) or None, fecha=fecha)
+    frappe.flags.levantamiento_yelke = bool(levanta)
+    try:
+        r = crear(doc.name, "costear", usuario, mensaje="\n".join(lineas) or None, fecha=fecha)
+    finally:
+        frappe.flags.levantamiento_yelke = False
     return {"costeo": doc.name, "encargo": r["name"]}
+
+
+@frappe.whitelist()
+def get_candidatos_levantamiento() -> list:
+    """Levantamiento: a quién se le puede asignar el Costear (lo tienen en Editar)."""
+    if not (puede("levantamiento", "editar") or _puede_encargar("costear")):
+        frappe.throw(_("No tienes acceso a Levantamiento."), frappe.PermissionError)
+    return _candidatos("costear")
 
 
 @frappe.whitelist()

@@ -1,12 +1,12 @@
 <!--
-  Levantamiento (Panel de Dirección): Juan toma los datos del pedido con el cliente
+  Levantamiento (pages/LevantamientoPage.vue): Juan, o quien tenga la vista, toma los datos del pedido con el cliente
   enfrente -- cliente nuevo o ya dado de alta, su nombre y correo (obligatorios), qué
   pide, fotos y adjuntos -- y se lo asigna a quien va a costear. Crea el costeo en
   borrador y la asignación de Costear (api/encargos.crear_proyecto con levantamiento).
   La pantalla de Asignaciones queda solo para ver lo que a cada quien le asignaron.
 -->
 <template>
-  <div ref="raiz" class="px-4 lg:px-0 py-3 max-w-[760px] space-y-4">
+  <div ref="raiz" class="px-4 lg:px-0 py-3 space-y-4">
     <p v-if="aviso" class="text-[12.5px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
       {{ aviso }}
       <RouterLink v-if="ultimo" :to="`/costeo/${encodeURIComponent(ultimo)}`" class="ml-1 font-medium underline">Abrir proyecto</RouterLink>
@@ -100,7 +100,7 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import LinkInput from "@/components/LinkInput.vue";
 import ArchivosAsignacion from "@/components/asignaciones/ArchivosAsignacion.vue";
-import { crearProyecto, getOpciones, subirArchivosAsignacion } from "@/composables/useEncargos.js";
+import { crearProyecto, subirArchivosAsignacion } from "@/composables/useEncargos.js";
 import { useCompany } from "@/composables/useCompany.js";
 import { call } from "@/utils/frappe.js";
 
@@ -164,8 +164,7 @@ async function guardar() {
 
 onMounted(async () => {
   try {
-    const op = await getOpciones();
-    candidatos.value = (op.pasos || []).find((p) => p.clave === "costear")?.candidatos || [];
+    candidatos.value = (await call("costeo_yelke.api.encargos.get_candidatos_levantamiento")) || [];
     if (candidatos.value.length === 1) form.usuario = candidatos.value[0].usuario;
   } catch { candidatos.value = []; }
 });

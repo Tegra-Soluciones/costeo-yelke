@@ -25,6 +25,8 @@
           <span class="truncate flex-1">Asignaciones</span>
           <span v-if="cuentaEncargos.para_mi" class="ml-auto text-[10.5px] font-semibold text-white bg-brand-500 rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center">{{ cuentaEncargos.para_mi }}</span>
         </RouterLink>
+        <!-- Levantamiento de pedidos nuevos (vista «levantamiento»; Dirección la tiene sola). -->
+        <NavItem v-if="puede('levantamiento', 'editar')" to="/levantamiento" :icon="IconLevantar" label="Levantamiento" :activeRoutes="['Levantamiento']" />
         <!-- Panel de Dirección / bandeja de aprobación (api/aprobaciones.py) -->
         <RouterLink
           v-if="etiquetaAprobaciones" to="/direccion"
@@ -201,6 +203,7 @@ const IconShip     = svgIcon("M12 19l9 2-9-18-9 18 9-2zm0 0v-8");
 const IconInvoice  = svgIcon("M9 14l2 2 4-4m4 9V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z");
 const IconInvoiceIn = svgIcon("M3 10h18M7 15h1m4 0h1m-9 4h16a1 1 0 001-1V6a1 1 0 00-1-1H4a1 1 0 00-1 1v12a1 1 0 001 1z");
 const IconExternal = svgIcon("M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14");
+const IconLevantar = svgIcon("M9 4h6l1 2h3a1 1 0 011 1v12a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h3zM12 10v6M9 13h6");
 const IconEncargos = svgIcon("M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7zM19 8v6M22 11h-6");
 const IconAprobar  = svgIcon("M9 12l2 2 4-4M7 4h10a3 3 0 013 3v10a3 3 0 01-3 3H7a3 3 0 01-3-3V7a3 3 0 013-3z");
 const IconBell     = svgIcon("M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9");

@@ -78,6 +78,9 @@ VISTAS = {
                   "paso": "vender", "rutas": ["SalesOrderList", "SalesOrderDetail", "SalesOrderNueva"],
                   "doctypes": {"Sales Order": "editar", "Customer": "editar", "Address": "editar", "Contact": "editar"},
                   "descripcion": "Convierte la cotización en orden de venta (OC del cliente, cancelación)."},
+    "levantamiento": {"etiqueta": "Levantamiento", "grupo": "Comercial", "rol": "Comercial Levantamiento Yelke",
+                  "rutas": ["Levantamiento"], "doctypes": {"Costeo": "editar", "Customer": "editar"},
+                  "descripcion": "Toma los datos de un pedido nuevo (cliente, fotos, detalles) y lo asigna a quien costea."},
     "precios":   {"etiqueta": "Precios", "grupo": "Comercial", "rol": "Comercial Precios Yelke",
                   "rutas": ["Precios", "RecordatoriosList"],
                   "doctypes": {"Item Price": "editar", "Pricing Rule": "editar", "Price List": "ver"},
@@ -378,6 +381,9 @@ def accesos(user=None):
         out["indicadores"] = "ver"
     if "direccion" not in out and ROL_DIRECTOR in roles:
         out["direccion"] = "editar"
+    # Dirección levanta pedidos nuevos (antes era una pestaña de su panel).
+    if out.get("direccion") == "editar":
+        out["levantamiento"] = "editar"
     return out
 
 
