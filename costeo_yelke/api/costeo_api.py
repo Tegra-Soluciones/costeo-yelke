@@ -12646,7 +12646,7 @@ def marcar_enviado_whatsapp(doctype: str, name: str, telefono: str = None) -> di
 
 @frappe.whitelist()
 def alta_cliente_costeo(costeo: str, customer_name: str, tax_id: str = None, confirmar_rfc: str = None,
-                        email_id: str = None, mobile_no: str = None) -> dict:
+                        email_id: str = None, mobile_no: str = None, contacto: str = None) -> dict:
     """Alta rápida (datos iniciales) del cliente nuevo de un costeo: el costeo se capturó
     con `cliente_nuevo` (aún sin alta) y antes de cotizar hay que darlo de alta. Crea el
     Customer con las reglas de captura de siempre (RFC confirmado) y lo pone en el costeo."""
@@ -12659,7 +12659,7 @@ def alta_cliente_costeo(costeo: str, customer_name: str, tax_id: str = None, con
     if not nombre:
         frappe.throw(_("Escribe el nombre del cliente."))
     cust = _nuevo_cliente(nombre, tax_id=tax_id, confirmar_rfc=confirmar_rfc, email_id=email_id, mobile_no=mobile_no,
-                          contacto=c.get("contacto_nombre"))
+                          contacto=(contacto or "").strip() or c.get("contacto_nombre"))
     frappe.db.set_value("Costeo", costeo, {"cliente": cust.name, "cliente_nuevo": None})
     return {"cliente": cust.name, "customer_name": cust.customer_name}
 
