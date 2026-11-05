@@ -36,6 +36,17 @@
       <!-- Divider -->
       <div class="w-px h-5 bg-gray-200 mx-1 hidden md:block" />
 
+      <!-- ── Manual (www/manual-costeo.html), en otra pestaña ── -->
+      <a
+        href="/manual-costeo" target="_blank" rel="noopener" title="Manual del sistema"
+        class="h-8 px-2 flex items-center gap-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+      >
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.25C10.4 5 8.2 4.5 5 4.5v13c3.2 0 5.4.5 7 1.75m0-13c1.6-1.25 3.8-1.75 7-1.75v13c-3.2 0-5.4.5-7 1.75m0-13v13"/>
+        </svg>
+        <span class="hidden md:inline text-[12.5px] font-medium">Manual</span>
+      </a>
+
       <!-- ── App launcher ───────────────────────────────────── -->
       <div class="relative" ref="appsRef">
         <button
