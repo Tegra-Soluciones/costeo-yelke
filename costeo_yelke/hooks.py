@@ -257,7 +257,10 @@ for _dt in ("Purchase Order", "Purchase Receipt", "Purchase Invoice"):
 
 # Préstamo de permisos: el Perfil de Rol reescribe los roles al guardar el usuario;
 # esto vuelve a poner los prestados mientras sigan vigentes (api/permisos_temporales.py).
-doc_events.setdefault("User", {})["validate"] = "costeo_yelke.api.permisos_temporales.conservar_roles_prestados"
+doc_events.setdefault("User", {})["validate"] = [
+	"costeo_yelke.api.permisos_temporales.conservar_roles_prestados",
+	"costeo_yelke.api.permisos_temporales.conservar_roles_adicionales",
+]
 
 # Tabla de precios por volumen: nunca por debajo del precio de venta del costeo.
 doc_events.setdefault("Pricing Rule", {})["validate"] = "costeo_yelke.overrides.pricing_rule.precio_minimo_del_costeo"

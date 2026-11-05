@@ -196,6 +196,19 @@ def procesar_permisos_temporales():
     frappe.db.commit()
 
 
+def conservar_roles_adicionales(doc, method=None):
+    """validate de User: «Roles adicionales» (campo roles_adicionales_yelke, uno por
+    renglón) son permisos propios de esa persona ADEMÁS de su Perfil de Rol, que
+    reescribe los roles en cada guardado y los borraría. Ej. Enrique: su perfil de
+    Captura y, aparte, Levantamiento."""
+    extra = [r.strip() for r in (doc.get("roles_adicionales_yelke") or "").splitlines() if r.strip()]
+    tiene = {r.role for r in doc.get("roles") or []}
+    for rol in extra:
+        if rol not in tiene and frappe.db.exists("Role", rol):
+            doc.append("roles", {"role": rol})
+            tiene.add(rol)
+
+
 def conservar_roles_prestados(doc, method=None):
     """validate de User (corre después de User.validate_roles): el Perfil de Rol
     reescribe los roles en cada guardado y borraría los prestados; aquí se vuelven a

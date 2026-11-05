@@ -12658,8 +12658,21 @@ def alta_cliente_costeo(costeo: str, customer_name: str, tax_id: str = None, con
     nombre = (customer_name or c.get("cliente_nuevo") or "").strip()
     if not nombre:
         frappe.throw(_("Escribe el nombre del cliente."))
-    # El grupo y territorio de la mayoría de los clientes (los de Selling Settings no son
-    # los que usa Yelke).
+    cust = _nuevo_cliente(nombre, tax_id=tax_id, confirmar_rfc=confirmar_rfc, email_id=email_id, mobile_no=mobile_no,
+                          contacto=c.get("contacto_nombre"))
+    frappe.db.set_value("Costeo", costeo, {"cliente": cust.name, "cliente_nuevo": None})
+    return {"cliente": cust.name, "customer_name": cust.customer_name}
+
+
+def _nuevo_cliente(nombre, tax_id=None, confirmar_rfc=None, email_id=None, mobile_no=None, automatico=False,
+                   contacto=None):
+    """Customer con el grupo y territorio de la mayoría de los clientes (los de Selling
+    Settings no son los que usa Yelke). `automatico`: lo da de alta el sistema (ver
+    alta_automatica_cliente), sin RFC y sin las confirmaciones de captura.
+
+    El correo y el teléfono van en un Contacto que se crea aquí con nombre (`contacto`,
+    o el del cliente): el que arma ERPNext con email_id/mobile_no para una empresa no
+    lleva nombre y la regla de captura (captura.contacto_completo) lo rechazaba."""
     comun = frappe.db.sql("""select customer_group, territory from tabCustomer
         where ifnull(customer_group, '') != '' and ifnull(territory, '') != ''
         group by customer_group, territory order by count(*) desc limit 1""")
@@ -12667,9 +12680,40 @@ def alta_cliente_costeo(costeo: str, customer_name: str, tax_id: str = None, con
         frappe.db.get_single_value("Selling Settings", "customer_group"),
         frappe.db.get_single_value("Selling Settings", "territory"))
     cust = frappe.get_doc({"doctype": "Customer", "customer_name": nombre, "customer_type": "Company",
-                           "customer_group": grupo, "territory": territorio, "tax_id": tax_id,
-                           "confirmar_rfc": confirmar_rfc, "email_id": email_id or None,
-                           "mobile_no": mobile_no or None})
+                           "customer_group": grupo, "territory": territorio, "tax_id": tax_id or None,
+                           "confirmar_rfc": confirmar_rfc})
+    if automatico:
+        cust.flags.ignore_confirmacion = True
+        cust.flags.ignore_permissions = True
     cust.insert()
-    frappe.db.set_value("Costeo", costeo, {"cliente": cust.name, "cliente_nuevo": None})
-    return {"cliente": cust.name, "customer_name": cust.customer_name}
+    if email_id or mobile_no:
+        c = frappe.get_doc({"doctype": "Contact", "first_name": (contacto or nombre).strip(), "company_name": nombre,
+                            "is_primary_contact": 1, "links": [{"link_doctype": "Customer", "link_name": cust.name}]})
+        if email_id:
+            c.add_email(email_id, is_primary=True)
+        if mobile_no:
+            c.add_phone(mobile_no, is_primary_mobile_no=True)
+        c.insert(ignore_permissions=automatico)
+        frappe.db.set_value("Customer", cust.name, {"customer_primary_contact": c.name, "email_id": email_id or None,
+                                                    "mobile_no": mobile_no or None}, update_modified=False)
+    return cust
+
+
+def alta_automatica_cliente(costeo_doc):
+    """Al pasar a cotizar (Costeo.before_submit) con un cliente nuevo que nadie ligó a un
+    cliente existente: se da de alta solo, con el correo y el teléfono del levantamiento.
+    Si ya hay un cliente con exactamente ese nombre se usa ése (no un duplicado
+    «- 1»). El RFC se completa después en su ficha, antes de facturar."""
+    nombre = (costeo_doc.get("cliente_nuevo") or "").strip().upper()
+    if not nombre:
+        return None
+    existente = frappe.db.get_value("Customer", {"customer_name": nombre, "disabled": 0}, "name")
+    if not existente:
+        existente = _nuevo_cliente(nombre, email_id=costeo_doc.get("contacto_correo"),
+                                   mobile_no=costeo_doc.get("contacto_telefono"), automatico=True,
+                                   contacto=costeo_doc.get("contacto_nombre")).name
+    costeo_doc.cliente = existente
+    costeo_doc.cliente_nuevo = None
+    frappe.msgprint(_("Se dio de alta al cliente {0}; su RFC se completa en su ficha antes de facturar.").format(nombre),
+                    alert=True, indicator="green")
+    return existente

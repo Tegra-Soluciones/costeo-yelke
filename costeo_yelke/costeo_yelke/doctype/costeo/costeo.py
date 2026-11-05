@@ -176,9 +176,12 @@ class Costeo(Document):
         directa no pedía nada. Guardar un borrador incompleto sigue permitido
         (validate() ya no lo bloquea); solo pasar a Validado lo exige."""
         faltantes = []
+        if not self.get("cliente") and self.get("cliente_nuevo"):
+            # Nadie lo ligó a un cliente existente: se da de alta solo.
+            from costeo_yelke.api.costeo_api import alta_automatica_cliente
+
+            alta_automatica_cliente(self)
         if not self.get("cliente"):
-            if self.get("cliente_nuevo"):
-                frappe.throw(_("Da de alta al cliente {0} antes de pasar a cotizar.").format(self.cliente_nuevo))
             faltantes.append(_("Cliente"))
         if not self.get("fecha"):
             faltantes.append(_("Fecha"))

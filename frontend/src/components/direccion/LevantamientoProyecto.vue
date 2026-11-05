@@ -1,7 +1,8 @@
 <!--
-  Levantamiento (pages/LevantamientoPage.vue): Juan, o quien tenga la vista, toma los datos del pedido con el cliente
-  enfrente -- cliente nuevo o ya dado de alta, su nombre y correo (obligatorios), qué
-  pide, fotos y adjuntos -- y se lo asigna a quien va a costear. Crea el costeo en
+  Levantamiento (pages/LevantamientoPage.vue): Juan, o quien tenga la vista, toma los
+  datos del pedido con el cliente enfrente -- su nombre (texto libre: quien costea lo
+  liga al cliente dado de alta, o se da de alta solo al cotizar) y correo
+  (obligatorios), qué pide, fotos y adjuntos -- y se lo asigna a quien va a costear. Crea el costeo en
   borrador y la asignación de Costear (api/encargos.crear_proyecto con levantamiento).
   La pantalla de Asignaciones queda solo para ver lo que a cada quien le asignaron.
 -->
@@ -14,16 +15,11 @@
 
     <section class="p-panel p-4 space-y-3">
       <p class="text-[14px] font-semibold">Cliente</p>
-      <div class="p-seg grid grid-cols-2 sm:inline-grid">
-        <button type="button" class="justify-center" :class="nuevo ? 'on' : ''" @click="cambiarTipo(true)">Cliente nuevo</button>
-        <button type="button" class="justify-center" :class="!nuevo ? 'on' : ''" @click="cambiarTipo(false)">Ya registrado</button>
-      </div>
       <label class="block">
-        <span class="p-field-label">{{ nuevo ? "Nombre o razón social" : "Cliente" }} <span class="text-red-400">*</span></span>
-        <input v-if="nuevo" v-model="form.cliente_nuevo" v-mayus class="p-field" placeholder="Nombre del cliente" />
-        <LinkInput v-else v-model="form.cliente" doctype="Customer" placeholder="Buscar cliente…" @update:model-value="alElegirCliente" />
+        <span class="p-field-label">Nombre o razón social <span class="text-red-400">*</span></span>
+        <input v-model="form.cliente_nuevo" v-mayus class="p-field" placeholder="Nombre del cliente" />
       </label>
-      <p v-if="nuevo" class="p-meta -mt-1">Se da de alta (RFC) antes de cotizar; el correo y teléfono ya quedan listos.</p>
+      <p class="p-meta -mt-1">Quien costea lo liga al cliente si ya está dado de alta; si no, se da de alta solo al pasar a cotizar, con este correo y teléfono.</p>
       <div class="grid sm:grid-cols-2 gap-3">
         <label class="block sm:col-span-2">
           <span class="p-field-label">Persona de contacto</span>
@@ -108,7 +104,6 @@ const { state: companyState } = useCompany();
 const VACIO = () => ({ titulo: "", cliente: "", cliente_nuevo: "", contacto: "", correo: "", telefono: "", cantidad: null,
   fecha_entrega: "", mensaje: "", usuario: "", fecha: "", compania: companyState.selected || "" });
 const form = reactive(VACIO());
-const nuevo = ref(true);
 const archivos = ref([]);
 const candidatos = ref([]);
 const ocupado = ref(false);
@@ -119,27 +114,13 @@ const raiz = ref(null);
 
 const CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const correoMal = computed(() => !!form.correo.trim() && !CORREO.test(form.correo.trim()));
-const listo = computed(() => form.titulo.trim() && (nuevo.value ? form.cliente_nuevo.trim() : form.cliente)
+const listo = computed(() => form.titulo.trim() && form.cliente_nuevo.trim()
   && CORREO.test(form.correo.trim()) && form.usuario);
-
-function cambiarTipo(v) {
-  nuevo.value = v;
-  form.cliente = ""; form.cliente_nuevo = "";
-}
-// Cliente ya dado de alta: su correo y teléfono, si los tiene, para no volver a pedirlos.
-async function alElegirCliente(v) {
-  if (!v) return;
-  try {
-    const c = await call("frappe.client.get_value", { doctype: "Customer", filters: { name: v }, fieldname: ["email_id", "mobile_no"] });
-    if (c?.email_id && !form.correo) form.correo = c.email_id;
-    if (c?.mobile_no && !form.telefono) form.telefono = c.mobile_no;
-  } catch { /* sin permiso de leer clientes: se captura a mano */ }
-}
 
 function limpiar() {
   const usuario = candidatos.value.length === 1 ? candidatos.value[0].usuario : "";
   Object.assign(form, VACIO(), { usuario });
-  nuevo.value = true; archivos.value = []; error.value = "";
+  archivos.value = []; error.value = "";
 }
 
 async function guardar() {
@@ -147,7 +128,7 @@ async function guardar() {
   try {
     const r = await crearProyecto({
       ...form, levantamiento: 1, titulo: form.titulo.trim(), correo: form.correo.trim(),
-      cliente: nuevo.value ? "" : form.cliente, cliente_nuevo: nuevo.value ? form.cliente_nuevo.trim() : "",
+      cliente: "", cliente_nuevo: form.cliente_nuevo.trim(),
       cantidad: form.cantidad || undefined, fecha_entrega: form.fecha_entrega || undefined,
       fecha: form.fecha || undefined, compania: form.compania || undefined,
     });

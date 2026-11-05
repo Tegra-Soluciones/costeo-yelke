@@ -284,8 +284,7 @@
                 <template v-if="docState === 0">
                   <span class="font-medium">Cliente nuevo:</span>
                   <input v-model="form.cliente_nuevo" v-mayus type="text" class="mt-1 w-full h-8 px-2 rounded-md border border-amber-200 bg-white text-[13px]" placeholder="Nombre del cliente (aún sin alta)" />
-                  <span class="block mt-1">Si ya está dado de alta, búscalo abajo; si no,
-                    <button v-if="!isNew" type="button" class="font-semibold text-brand-700 underline" @click="abrirAltaCliente">dalo de alta</button><template v-else>se da de alta al guardar y antes de cotizar</template>.
+                  <span class="block mt-1">Si ya está dado de alta, búscalo abajo y elígelo. Si no, se da de alta solo al pasar a cotizar<template v-if="!isNew"> (o <button type="button" class="font-semibold text-brand-700 underline" @click="abrirAltaCliente">dalo de alta ahora</button> con su RFC)</template>.
                     <button type="button" class="ml-1 text-amber-700/80 underline" @click="clienteNuevoModo = false; form.cliente_nuevo = ''">Quitar</button>
                   </span>
                 </template>
@@ -9712,8 +9711,8 @@ async function recargarFormulariosOV(name) {
 // ── Validar / borrador ──
 async function validarCosteo() {
   if (isNew.value) { showToast("Guarda el costeo primero", "error"); return; }
-  // Cliente nuevo (sin alta): antes de pasar a cotizar se da de alta.
-  if (!form.cliente && clienteNuevoModo.value && form.cliente_nuevo.trim()) { abrirAltaCliente(); return; }
+  // Cliente nuevo que nadie ligó a uno existente: el servidor lo da de alta solo al
+  // validar (Costeo.before_submit › alta_automatica_cliente).
   if (!validate()) return;
   advancing.value = true;
   try {
