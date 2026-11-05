@@ -23,8 +23,9 @@
           <p class="p-eyebrow">{{ soloRevisa ? "Revisión de documentos" : "Dirección" }}</p>
           <div class="flex items-center -mr-2">
           <!-- Levantamiento ya no es pestaña: es su propia pantalla (también para el celular). -->
-          <RouterLink v-if="permisos.ve_panel" to="/levantamiento" class="h-10 px-2 flex items-center text-[12px] text-brand-600 font-semibold">+ Levantar</RouterLink>
-          <RouterLink to="/inicio" class="h-10 px-2 flex items-center text-[12px] text-ink-light font-medium">App ›</RouterLink>
+          <RouterLink v-if="permisos.ve_panel" to="/levantamiento" class="h-8 px-3 mr-1 rounded-full bg-brand-500 text-white text-[12px] font-semibold flex items-center active:bg-brand-600">+ Levantar</RouterLink>
+          <!-- En el celular las demás pantallas son de computadora (router › esCelular). -->
+          <RouterLink v-if="!celular" to="/inicio" class="h-10 px-2 flex items-center text-[12px] text-ink-light font-medium">App ›</RouterLink>
           <button type="button" class="relative w-10 h-10 flex items-center justify-center text-ink-muted" @click="abrirNotificaciones">
             <svg class="w-[21px] h-[21px]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M6 8a6 6 0 1112 0c0 7 3 8 3 8H3s3-1 3-8M10 20a2 2 0 004 0"/></svg>
             <span v-if="noLeidas" class="absolute top-1.5 right-1.5 min-w-[17px] h-[17px] px-1 rounded-full bg-brand-500 text-white text-[10px] font-bold flex items-center justify-center">{{ noLeidas }}</span>
@@ -88,7 +89,8 @@
             {{ t.l }}<template v-if="t.k === 'aprobar'"> · {{ bandeja.items.length }}</template><template v-if="t.k === 'porasignar' && porAsignar"> · {{ porAsignar }}</template>
           </button>
         </div>
-        <button v-if="permisos.ve_panel && dlg && !dlg.activa && !dlg.programadas?.length" type="button" class="p-btn-secondary ml-auto h-8 text-[12.5px]" @click="hojaDelegar = true">Delegar…</button>
+        <RouterLink v-if="permisos.ve_panel" to="/levantamiento" class="p-btn-primary ml-auto h-8 text-[12.5px]">+ Levantamiento</RouterLink>
+        <button v-if="permisos.ve_panel && dlg && !dlg.activa && !dlg.programadas?.length" type="button" class="p-btn-secondary h-8 text-[12.5px]" @click="hojaDelegar = true">Delegar…</button>
       </div>
       <BannerDelegacion :propia="dlg?.activa" :recibida="permisos.delegacion" escritorio @terminar="terminarDelegacion" />
 
@@ -166,6 +168,7 @@ import ProyectosDireccion from "@/components/direccion/ProyectosDireccion.vue";
 import ResumenDireccion from "@/components/direccion/ResumenDireccion.vue";
 import VistaAsignaciones from "@/components/asignaciones/VistaAsignaciones.vue";
 import PorAsignar from "@/components/direccion/PorAsignar.vue";
+import { esCelular } from "@/utils/celular.js";
 import HojaDelegar from "@/components/direccion/HojaDelegar.vue";
 import { cargarPermisosAprobacion, refrescarCuentaBandeja, usePermisosAprobacion } from "@/composables/useAprobacion.js";
 import { call } from "@/utils/frappe.js";
@@ -194,6 +197,7 @@ const GRUPO = { "oc-mp": "compras", "oc-maq": "compras", fc: "compras", cot: "ve
 
 // ── Celular o escritorio ──────────────────────────────────────────────────────
 const mq = window.matchMedia("(max-width: 1023px)");
+const celular = esCelular();
 const esMovil = ref(mq.matches);
 const alCambiarAncho = (e) => { esMovil.value = e.matches; };
 

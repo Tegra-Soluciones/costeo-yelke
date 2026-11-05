@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from "vue-router";
 import { cargarPermisosAprobacion } from "@/composables/useAprobacion.js";
 import { asegurarCompania } from "@/composables/useCompany.js";
 import { cargarAccesos, rutaPermitida, vistasDeRuta, etiquetaVista, useAccesos } from "@/composables/useAccesos.js";
+import { esCelular } from "@/utils/celular.js";
 
 const routes = [
   // El Director aterriza en su panel; quien solo levanta pedidos, en Levantamiento; los
@@ -11,13 +12,17 @@ const routes = [
       if ((await cargarPermisosAprobacion()).es_director) return "/direccion";
       await cargarAccesos();
       const vistas = Object.keys(useAccesos().estado.accesos || {});
-      return vistas.length === 1 && vistas[0] === "levantamiento" ? "/levantamiento" : "/inicio";
+      if (vistas.length === 1 && vistas[0] === "levantamiento") return "/levantamiento";
+      // En el celular no hay Inicio (es de computadora): lo de celular que tenga.
+      if (esCelular()) return useAccesos().puede("levantamiento", "editar") ? "/levantamiento" : "/asignaciones";
+      return "/inicio";
     } },
   // `movil`: en celular se pinta sin el menú ni la barra de la app (App.vue).
   { path: "/direccion", name: "Direccion", component: () => import("@/pages/DireccionPage.vue"), meta: { movil: true } },
   { path: "/levantamiento", name: "Levantamiento", component: () => import("@/pages/LevantamientoPage.vue"), meta: { movil: true } },
   { path: "/inicio", name: "Dashboard", component: () => import("@/pages/DashboardPage.vue") },
-  { path: "/asignaciones", name: "Asignaciones", component: () => import("@/pages/AsignacionesPage.vue") },
+  { path: "/asignaciones", name: "Asignaciones", component: () => import("@/pages/AsignacionesPage.vue"), meta: { movil: true } },
+  { path: "/solo-computadora", name: "SoloComputadora", component: () => import("@/pages/SoloComputadoraPage.vue"), meta: { movil: true } },
   { path: "/encargos", redirect: "/asignaciones" },
   { path: "/costeo", name: "CosteoList", component: () => import("@/pages/CosteoListPage.vue") },
   { path: "/costeo/nuevo", name: "CosteoNuevo", component: () => import("@/pages/CosteoDetailPage.vue") },
@@ -55,6 +60,9 @@ const router = createRouter({
 // api/aprobaciones._ruta_doc): el filtro de compañía pasa a la del documento ANTES de
 // abrir la pantalla, para que una lista o un documento de otra compañía no salga vacío.
 router.beforeEach(async (to) => {
+  // En el celular solo las pantallas pensadas para él (meta.movil); las de computadora
+  // se verían mal.
+  if (esCelular() && !to.meta.movil && to.path !== "/") return { name: "SoloComputadora" };
   if (to.query.compania) await asegurarCompania(String(to.query.compania));
   // Accesos por vista (composables/useAccesos.js): una pantalla de una vista que el
   // usuario no tiene lo regresa a Inicio con el aviso. Crear ("…Nueva/Nuevo") pide editar.

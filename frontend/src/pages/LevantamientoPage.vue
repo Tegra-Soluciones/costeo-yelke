@@ -13,10 +13,7 @@
           <p class="p-lede mt-0.5">Datos del cliente, el pedido y sus fotos; se lo asignas a quien lo va a costear.</p>
         </div>
         <!-- En el celular no hay menú: la salida a lo demás que tenga. -->
-        <div class="lg:hidden flex items-center -mr-2 flex-shrink-0 self-start">
-          <RouterLink v-if="puede('direccion')" to="/direccion" class="h-10 px-2 flex items-center text-[12px] text-ink-light font-medium">Dirección ›</RouterLink>
-          <RouterLink v-else-if="otrasVistas" to="/inicio" class="h-10 px-2 flex items-center text-[12px] text-ink-light font-medium">App ›</RouterLink>
-        </div>
+        <EnlacesCelular actual="/levantamiento" class="lg:hidden -mr-2 flex-shrink-0 self-start justify-end" />
       </div>
       <div style="padding-bottom: max(24px, env(safe-area-inset-bottom))">
         <LevantamientoProyecto />
@@ -26,10 +23,6 @@
 </template>
 
 <script setup>
-import { computed } from "vue";
+import EnlacesCelular from "@/components/EnlacesCelular.vue";
 import LevantamientoProyecto from "@/components/direccion/LevantamientoProyecto.vue";
-import { useAccesos } from "@/composables/useAccesos.js";
-
-const { estado, puede } = useAccesos();
-const otrasVistas = computed(() => Object.keys(estado.accesos || {}).some((k) => k !== "levantamiento"));
 </script>
