@@ -1,7 +1,7 @@
 <!--
   Levantamiento (pages/LevantamientoPage.vue): Juan, o quien tenga la vista, toma los
   datos del pedido con el cliente enfrente -- su nombre (texto libre: quien costea lo
-  liga al cliente dado de alta, o se da de alta solo al cotizar) y correo
+  confirma -- elige el dado de alta o lo da de alta) y correo
   (obligatorios), qué pide, fotos y adjuntos -- y se lo asigna a quien va a costear. Crea el costeo en
   borrador y la asignación de Costear (api/encargos.crear_proyecto con levantamiento).
   La pantalla de Asignaciones queda solo para ver lo que a cada quien le asignaron.
@@ -19,7 +19,7 @@
         <span class="p-field-label">Nombre o razón social <span class="text-red-400">*</span></span>
         <input v-model="form.cliente_nuevo" v-mayus class="p-field" placeholder="Nombre del cliente" />
       </label>
-      <p class="p-meta -mt-1">Quien costea lo liga al cliente si ya está dado de alta; si no, se da de alta solo al pasar a cotizar, con este correo y teléfono.</p>
+      <p class="p-meta -mt-1">Quien costea confirma el cliente: lo elige si ya está dado de alta o lo da de alta con este correo y teléfono.</p>
       <div class="grid sm:grid-cols-2 gap-3">
         <label class="block sm:col-span-2">
           <span class="p-field-label">Persona de contacto</span>

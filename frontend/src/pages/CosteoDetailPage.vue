@@ -278,30 +278,28 @@
             </div>
             <div>
               <label class="p-field-label">Cliente <span class="text-red-400">*</span></label>
-              <!-- Cliente sin alta (p. ej. del Levantamiento): el nombre se edita ahí mismo;
-                   si nadie lo liga a uno existente, se da de alta solo al pasar a cotizar
-                   (Costeo.before_submit). Arriba de las acciones, los clientes dados de
-                   alta con nombre parecido, para ligarlo con un clic. -->
-              <template v-if="clienteNuevoModo && !form.cliente && !buscandoCliente">
+              <!-- Cliente sin alta (p. ej. del Levantamiento): hay que CONFIRMARLO -- elegir el
+                   que ya está dado de alta o darlo de alta, siempre en el modal «Confirmar
+                   cliente». Sin eso no se envía a revisión ni pasa a cotizar
+                   (aprobaciones.enviar_a_aprobacion, Costeo.before_submit). -->
+              <template v-if="clienteNuevoModo && !form.cliente">
                 <div class="relative">
-                  <input v-model="form.cliente_nuevo" v-mayus type="text" :readonly="docState !== 0" class="p-field pr-[68px] truncate" :class="errors.cliente ? 'border-red-400' : ''" placeholder="Nombre del cliente" @input="buscarCoincidencias" />
-                  <span class="absolute right-2 top-1/2 -translate-y-1/2 text-[10.5px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-px pointer-events-none" title="Aún no está dado de alta. Si no lo ligas a un cliente existente, se da de alta solo al pasar a cotizar.">Sin alta</span>
-                </div>
-                <div v-if="docState === 0 && coincidencias.length" class="mt-1.5 flex flex-wrap items-center gap-1.5">
-                  <span class="text-[11.5px] text-ink-light">¿Es este?</span>
-                  <button v-for="c in coincidencias" :key="c.name" type="button" class="h-6 px-2 rounded-md border border-surface-border bg-white text-[11.5px] text-ink hover:border-brand-300 hover:text-brand-700 transition-colors max-w-full truncate" :title="`Ligar a ${c.customer_name}`" @click="elegirCliente(c.name)">{{ c.customer_name }}</button>
+                  <input v-model="form.cliente_nuevo" v-mayus type="text" :readonly="docState !== 0" class="p-field pr-[104px] truncate" :class="errors.cliente ? 'border-red-400' : ''" placeholder="Nombre del cliente" @input="buscarCoincidencias" />
+                  <span class="absolute right-2 top-1/2 -translate-y-1/2 text-[10.5px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-px pointer-events-none" title="Confírmalo antes de enviar a revisión: elige el que ya está dado de alta o dalo de alta.">Sin confirmar</span>
                 </div>
                 <div v-if="docState === 0" class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] whitespace-nowrap">
-                  <button type="button" class="text-brand-600 font-medium hover:underline" @click="buscandoCliente = true">Buscar existente</button>
-                  <button v-if="!isNew" type="button" class="text-brand-600 font-medium hover:underline" title="Darlo de alta ya, con su RFC" @click="abrirAltaCliente">Dar de alta</button>
+                  <button type="button" class="text-brand-600 font-medium hover:underline" @click="abrirConfirmarCliente('existente')">Elegir existente</button>
+                  <button type="button" class="text-brand-600 font-medium hover:underline" @click="abrirConfirmarCliente('alta')">Dar de alta</button>
+                  <template v-if="coincidencias.length">
+                    <span class="text-ink-light">· ¿Es</span>
+                    <button v-for="c in coincidencias" :key="c.name" type="button" class="h-6 px-2 rounded-md border border-surface-border bg-white text-[11.5px] text-ink hover:border-brand-300 hover:text-brand-700 max-w-[180px] truncate" :title="c.customer_name" @click="abrirConfirmarCliente('existente', c.name)">{{ c.customer_name }}</button>
+                    <span class="text-ink-light -ml-2">?</span>
+                  </template>
                 </div>
               </template>
               <template v-else>
-                <LinkInput v-model="form.cliente" doctype="Customer" :placeholder="buscandoCliente ? 'Buscar cliente dado de alta…' : 'Buscar cliente…'" :error="!!errors.cliente" @update:model-value="(v) => { if (v) elegirCliente(v); }" />
-                <div v-if="docState === 0 && !form.cliente" class="mt-1.5 text-[12px]">
-                  <button v-if="buscandoCliente" type="button" class="text-ink-muted hover:text-ink font-medium" @click="buscandoCliente = false">‹ Volver a {{ form.cliente_nuevo || "cliente sin alta" }}</button>
-                  <button v-else type="button" class="text-brand-600 font-medium hover:underline" @click="clienteNuevoModo = true">¿Sin alta? Escribe su nombre</button>
-                </div>
+                <LinkInput v-model="form.cliente" doctype="Customer" placeholder="Buscar cliente…" :error="!!errors.cliente" @update:model-value="(v) => { if (v) { clienteNuevoModo = false; form.cliente_nuevo = ''; } }" />
+                <button v-if="docState === 0 && !form.cliente" type="button" class="mt-1.5 text-[12px] text-brand-600 font-medium hover:underline" @click="clienteNuevoModo = true">¿Sin alta? Escribe su nombre</button>
               </template>
               <!-- Del levantamiento: con quién se habla del pedido. -->
               <p v-if="form.contacto_nombre || form.contacto_correo || form.contacto_telefono" class="mt-1.5 flex items-start gap-1.5 text-[12px] text-ink-muted break-words" title="Contacto del levantamiento">
@@ -3657,23 +3655,50 @@
     <HistorialModal :open="showHistorialModal" :costeo="docName" @close="showHistorialModal = false" />
 
     <!-- Alta rápida del cliente nuevo (costeo_api.alta_cliente_costeo) -->
-    <div v-if="altaCli.abierto" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" @click.self="altaCli.abierto = false">
-      <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-3">
+    <!-- Confirmar cliente (obligatorio con un cliente sin alta): el que ya está dado de
+         alta o darlo de alta. -->
+    <div v-if="altaCli.abierto" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 sm:p-4" @click.self="altaCli.abierto = false">
+      <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-md p-5 space-y-4" style="padding-bottom: max(20px, env(safe-area-inset-bottom))">
         <div>
-          <p class="text-sm font-semibold text-ink">Dar de alta al cliente</p>
-          <p class="text-[12.5px] text-ink-muted mt-1">Para cotizar, el cliente debe estar dado de alta. Captura sus datos iniciales; lo demás (dirección, contacto) se completa después en su ficha.</p>
+          <p class="text-[15px] font-semibold text-ink">Confirmar cliente</p>
+          <p class="text-[12.5px] text-ink-muted mt-0.5">«{{ form.cliente_nuevo }}» · necesario para enviarlo a revisión</p>
         </div>
-        <div><label class="field-label">Nombre o razón social *</label><input v-model="altaCli.customer_name" v-mayus class="field-input" /></div>
-        <div><label class="field-label">RFC *</label><input v-model="altaCli.tax_id" v-mayus class="field-input" placeholder="Extranjero: XEXX010101000" /></div>
-        <div><label class="field-label">Confirma el RFC *</label><input v-model="altaCli.confirmar_rfc" v-mayus class="field-input" /></div>
-        <div class="grid grid-cols-2 gap-2">
-          <div><label class="field-label">Correo</label><input v-model="altaCli.email_id" type="email" class="field-input" /></div>
-          <div><label class="field-label">Teléfono</label><input v-model="altaCli.mobile_no" class="field-input" /></div>
+        <div class="p-seg grid grid-cols-2">
+          <button type="button" class="justify-center" :class="altaCli.modo === 'existente' ? 'on' : ''" @click="altaCli.modo = 'existente'">Ya está dado de alta</button>
+          <button type="button" class="justify-center" :class="altaCli.modo === 'alta' ? 'on' : ''" @click="altaCli.modo = 'alta'">Darlo de alta</button>
         </div>
+
+        <template v-if="altaCli.modo === 'existente'">
+          <div>
+            <label class="field-label">Cliente</label>
+            <LinkInput v-model="altaCli.cliente" doctype="Customer" placeholder="Buscar cliente…" @update:model-value="cargarFichaCliente" />
+          </div>
+          <div v-if="!altaCli.cliente && coincidencias.length" class="flex flex-wrap gap-1.5">
+            <button v-for="c in coincidencias" :key="c.name" type="button" class="h-7 px-2.5 rounded-md border border-surface-border text-[12px] hover:border-brand-300 hover:text-brand-700 max-w-full truncate" @click="altaCli.cliente = c.name; cargarFichaCliente(c.name)">{{ c.customer_name }}</button>
+          </div>
+          <div v-if="altaCli.ficha" class="rounded-xl bg-surface-raised px-3.5 py-2.5 text-[12.5px] space-y-0.5">
+            <p class="font-semibold text-ink">{{ altaCli.ficha.customer_name }}</p>
+            <p class="text-ink-muted">RFC {{ altaCli.ficha.tax_id || "—" }}<template v-if="altaCli.ficha.email_id"> · {{ altaCli.ficha.email_id }}</template></p>
+          </div>
+        </template>
+
+        <template v-else>
+          <div><label class="field-label">Nombre o razón social *</label><input v-model="altaCli.customer_name" v-mayus class="field-input" /></div>
+          <div class="grid grid-cols-2 gap-2">
+            <div><label class="field-label">RFC *</label><input v-model="altaCli.tax_id" v-mayus class="field-input" placeholder="XEXX010101000" /></div>
+            <div><label class="field-label">Confirma el RFC *</label><input v-model="altaCli.confirmar_rfc" v-mayus class="field-input" /></div>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div><label class="field-label">Correo</label><input v-model="altaCli.email_id" type="email" class="field-input" /></div>
+            <div><label class="field-label">Teléfono</label><input v-model="altaCli.mobile_no" type="tel" class="field-input" /></div>
+          </div>
+          <p class="text-[11.5px] text-ink-light">Dirección y demás datos se completan después en su ficha.</p>
+        </template>
+
         <div class="flex justify-end gap-2 pt-1">
-          <button class="px-3 py-1.5 text-[13px] text-ink-muted hover:bg-surface-raised rounded-lg" @click="altaCli.abierto = false">Cancelar</button>
-          <button :disabled="altaCli.ocupado || !altaCli.customer_name.trim() || !altaCli.tax_id.trim()" class="px-4 py-1.5 text-[13px] font-medium text-white bg-brand-500 hover:bg-brand-600 disabled:opacity-50 rounded-lg" @click="guardarAltaCliente">
-            {{ altaCli.ocupado ? "Dando de alta…" : "Dar de alta" }}
+          <button type="button" class="p-btn-ghost" @click="altaCli.abierto = false">Cancelar</button>
+          <button type="button" class="p-btn-primary" :disabled="altaCli.ocupado || !puedeConfirmarCliente" @click="confirmarCliente">
+            {{ altaCli.ocupado ? "Guardando…" : altaCli.modo === "existente" ? "Confirmar cliente" : "Dar de alta y confirmar" }}
           </button>
         </div>
       </div>
@@ -7518,12 +7543,7 @@ const showRechazarModal = ref(false);
 const rechazarMotivo = ref("");
 // ── Cliente nuevo (aún sin alta) ──
 const clienteNuevoModo = ref(false);
-const buscandoCliente = ref(false);
 const coincidencias = ref([]);
-function elegirCliente(name) {
-  form.cliente = name; form.cliente_nuevo = "";
-  clienteNuevoModo.value = false; buscandoCliente.value = false; coincidencias.value = [];
-}
 // Clientes dados de alta cuyo nombre contiene el escrito (hasta 3), para ligarlo con un clic.
 let tCoincidencias = null;
 function buscarCoincidencias() {
@@ -7537,11 +7557,35 @@ function buscarCoincidencias() {
     } catch { coincidencias.value = []; }
   }, 350);
 }
-const altaCli = reactive({ abierto: false, ocupado: false, customer_name: "", tax_id: "", confirmar_rfc: "", email_id: "", mobile_no: "" });
-async function abrirAltaCliente() {
-  if (isNew.value) { showToast("Guarda el costeo primero", "error"); return; }
-  Object.assign(altaCli, { abierto: true, ocupado: false, customer_name: form.cliente_nuevo || "", tax_id: "", confirmar_rfc: "", email_id: form.contacto_correo || "", mobile_no: form.contacto_telefono || "" });
+const altaCli = reactive({ abierto: false, ocupado: false, modo: "existente", cliente: "", ficha: null,
+  customer_name: "", tax_id: "", confirmar_rfc: "", email_id: "", mobile_no: "" });
+const puedeConfirmarCliente = computed(() => (altaCli.modo === "existente" ? !!altaCli.cliente
+  : !!(altaCli.customer_name.trim() && altaCli.tax_id.trim() && altaCli.confirmar_rfc.trim())));
+function abrirConfirmarCliente(modo = "existente", cliente = "") {
+  Object.assign(altaCli, { abierto: true, ocupado: false, modo, cliente, ficha: null,
+    customer_name: form.cliente_nuevo || "", tax_id: "", confirmar_rfc: "",
+    email_id: form.contacto_correo || "", mobile_no: form.contacto_telefono || "" });
+  if (cliente) cargarFichaCliente(cliente);
 }
+async function cargarFichaCliente(name) {
+  altaCli.ficha = null;
+  if (!name) return;
+  try {
+    altaCli.ficha = await call("frappe.client.get_value", { doctype: "Customer", filters: { name }, fieldname: ["customer_name", "tax_id", "email_id"] });
+  } catch { altaCli.ficha = null; }
+}
+async function confirmarCliente() {
+  if (altaCli.modo === "alta") return guardarAltaCliente();
+  altaCli.ocupado = true;
+  const antes = { cliente: form.cliente, cliente_nuevo: form.cliente_nuevo };
+  try {
+    form.cliente = altaCli.cliente; form.cliente_nuevo = ""; clienteNuevoModo.value = false; coincidencias.value = [];
+    if (!isNew.value && !(await saveDoc())) { Object.assign(form, antes); clienteNuevoModo.value = true; return; }
+    altaCli.abierto = false;
+    showToast(`Cliente confirmado: ${altaCli.ficha?.customer_name || altaCli.cliente}`);
+  } finally { altaCli.ocupado = false; }
+}
+function abrirAltaCliente() { abrirConfirmarCliente("alta"); }
 async function guardarAltaCliente() {
   altaCli.ocupado = true;
   try {
@@ -8677,7 +8721,7 @@ async function fillFromDoc(data) {
   form.titulo = data.titulo || "";
   form.cliente = data.cliente || ""; form.cliente_nuevo = data.cliente_nuevo || "";
   form.contacto_nombre = data.contacto_nombre || ""; form.contacto_correo = data.contacto_correo || ""; form.contacto_telefono = data.contacto_telefono || "";
-  clienteNuevoModo.value = !form.cliente && !!form.cliente_nuevo; buscandoCliente.value = false; if (clienteNuevoModo.value) buscarCoincidencias(); form.fecha = data.fecha || today(); form.compania = data["compañia"] || "";
+  clienteNuevoModo.value = !form.cliente && !!form.cliente_nuevo; if (clienteNuevoModo.value) buscarCoincidencias(); form.fecha = data.fecha || today(); form.compania = data["compañia"] || "";
   form.proyecto = data.proyecto || "";
   form.guardar_como_plantilla = (data.guardar_como_plantilla === undefined || data.guardar_como_plantilla === null)
     ? false : !!Number(data.guardar_como_plantilla);
@@ -9742,8 +9786,8 @@ async function recargarFormulariosOV(name) {
 // ── Validar / borrador ──
 async function validarCosteo() {
   if (isNew.value) { showToast("Guarda el costeo primero", "error"); return; }
-  // Cliente nuevo que nadie ligó a uno existente: el servidor lo da de alta solo al
-  // validar (Costeo.before_submit › alta_automatica_cliente).
+  // Cliente sin alta: confirmarlo es obligatorio antes de pasar a cotizar.
+  if (!form.cliente && clienteNuevoModo.value && form.cliente_nuevo.trim()) { abrirConfirmarCliente(); return; }
   if (!validate()) return;
   advancing.value = true;
   try {

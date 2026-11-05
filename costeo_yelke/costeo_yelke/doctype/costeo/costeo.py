@@ -177,10 +177,8 @@ class Costeo(Document):
         (validate() ya no lo bloquea); solo pasar a Validado lo exige."""
         faltantes = []
         if not self.get("cliente") and self.get("cliente_nuevo"):
-            # Nadie lo ligó a un cliente existente: se da de alta solo.
-            from costeo_yelke.api.costeo_api import alta_automatica_cliente
-
-            alta_automatica_cliente(self)
+            frappe.throw(_("Confirma el cliente {0}: elige el que ya está dado de alta o dalo de alta.")
+                         .format(self.cliente_nuevo))
         if not self.get("cliente"):
             faltantes.append(_("Cliente"))
         if not self.get("fecha"):
