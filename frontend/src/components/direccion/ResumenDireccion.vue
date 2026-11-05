@@ -1,7 +1,7 @@
 <!--
-  Resumen (solo Director): los indicadores del tablero de Inicio (mismo cálculo,
-  dashboard_metrics), lo que requiere atención, la delegación de aprobaciones y el
-  préstamo de permisos entre usuarios.
+  Indicadores (solo Director): los del tablero de Inicio (mismo cálculo,
+  dashboard_metrics) y lo que requiere atención. La delegación y el préstamo de
+  permisos están en PermisosDireccion.
 -->
 <template>
   <div class="px-4 lg:px-0 py-4 space-y-4">
@@ -28,27 +28,6 @@
       </div>
     </template>
 
-    <!-- Delegación de aprobaciones (vacaciones) -->
-    <div v-if="dlg" class="p-panel p-4">
-      <template v-if="dlg.activa">
-        <p class="text-[14px] font-semibold">Delegación activa</p>
-        <p class="p-meta mt-0.5">{{ dlg.activa.a_nombre }} aprueba por ti del {{ fecha(dlg.activa.desde) }} al {{ fecha(dlg.activa.hasta) }}. Termina sola.</p>
-        <button type="button" class="p-btn-secondary w-full h-11 mt-3" :disabled="ocupado" @click="terminar(dlg.activa)">Terminar ahora</button>
-      </template>
-      <template v-else-if="dlg.programadas.length">
-        <p class="text-[14px] font-semibold">Delegación programada</p>
-        <p class="p-meta mt-0.5">{{ dlg.programadas[0].a_nombre }} aprobará por ti del {{ fecha(dlg.programadas[0].desde) }} al {{ fecha(dlg.programadas[0].hasta) }}.</p>
-        <button type="button" class="p-btn-secondary w-full h-11 mt-3" :disabled="ocupado" @click="terminar(dlg.programadas[0])">Cancelarla</button>
-      </template>
-      <template v-else>
-        <p class="text-[14px] font-semibold">¿Vas a salir unos días?</p>
-        <p class="p-meta mt-0.5">Deja a alguien aprobando por ti. Se termina sola en la fecha que elijas.</p>
-        <button type="button" class="p-btn-primary w-full h-11 mt-3" @click="emit('delegar')">Delegar mis aprobaciones</button>
-      </template>
-      <p v-if="errorDlg" class="text-[12px] text-red-700 mt-2">{{ errorDlg }}</p>
-    </div>
-    <!-- Préstamo de permisos de un usuario a otro (api/permisos_temporales.py) -->
-    <PermisosPrestados />
     <p class="text-[11px] text-ink-light text-center pb-2">Año en curso, solo lo validado. Mismo cálculo que Inicio.</p>
   </div>
 </template>
@@ -56,22 +35,18 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import Icono from "@/components/Icono.vue";
-import PermisosPrestados from "@/components/direccion/PermisosPrestados.vue";
 import { call } from "@/utils/frappe.js";
-import { dineroCorto, fecha, numero } from "@/utils/formato.js";
+import { dineroCorto, numero } from "@/utils/formato.js";
 
 const props = defineProps({
   pendientes: { type: Number, default: 0 },
   bloqueadas: { type: Number, default: 0 },
-  dlg: { type: Object, default: null },
 });
-const emit = defineEmits(["ir", "delegar", "delegacion"]);
+const emit = defineEmits(["ir"]);
 
 const r = ref(null);
 const cargando = ref(false);
 const error = ref("");
-const ocupado = ref(false);
-const errorDlg = ref("");
 
 // Los mismos indicadores (y el mismo cálculo) que Inicio, del año en curso.
 const kpis = computed(() => {
@@ -106,18 +81,6 @@ async function cargar() {
     error.value = e.message || "No se pudo cargar el resumen.";
   } finally {
     cargando.value = false;
-  }
-}
-
-async function terminar(f) {
-  ocupado.value = true;
-  errorDlg.value = "";
-  try {
-    emit("delegacion", await call("costeo_yelke.api.delegacion.terminar_delegacion", { name: f.name }), "terminada");
-  } catch (e) {
-    errorDlg.value = e.message || "No se pudo terminar la delegación.";
-  } finally {
-    ocupado.value = false;
   }
 }
 
