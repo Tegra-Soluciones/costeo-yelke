@@ -79,6 +79,45 @@
   .role-card b{font-size:14px;color:var(--ink);display:block;margin-bottom:2px;}
   .role-card span{font-size:13.5px;color:var(--ink-muted);line-height:1.5;}
   .role-card.cross{border-color:var(--accent-border);background:var(--accent-bg);}
+
+  /* ── Exportar a PDF / imprimir: márgenes de página, una sección por hoja y nada
+     partido a la mitad (imágenes, tablas, recuadros, pasos, diagramas). ── */
+  @page{size:letter;margin:18mm 16mm 20mm 16mm;}
+  @page :first{margin:0;}
+  @media print{
+    html,body{background:#fff;}
+    body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .page{max-width:none;margin:0;padding:0;}
+    .page.cover{padding:30mm 22mm 0;break-after:page;}
+    .cover h1{font-size:34px;}
+    .meta{line-height:1.7;font-size:12.5px;}
+    nav.toc{padding:0;break-after:page;}
+    nav.toc li{padding:7px 0;}
+    nav.toc a{font-size:13.5px;}
+    section{padding:0;border-top:none;break-before:page;}
+    .sec-title{font-size:24px;}
+    p,ul.plain li{font-size:12.5px;line-height:1.6;orphans:3;widows:3;}
+    p{max-width:none;}
+    h2,h3,h4,.sec-title,.sec-dek{break-after:avoid;page-break-after:avoid;}
+    h3{font-size:16.5px;margin:24px 0 8px;}
+    h4{font-size:14px;margin:18px 0 8px;}
+    figure,.callout,ol.steps li,.role-card,svg,tr,.footer-note{break-inside:avoid;page-break-inside:avoid;}
+    figure{margin:14px 0;}
+    figure img{width:auto;max-width:100%;max-height:150mm;margin:0 auto;box-shadow:none;}
+    figcaption{font-size:11px;}
+    .two-col{gap:12px;}
+    .two-col figure img{max-height:120mm;}
+    .callout{font-size:12px;padding:10px 14px;margin:12px 0;}
+    ol.steps li{margin-bottom:12px;}
+    ol.steps li .step-body b{font-size:13px;}
+    ol.steps li .step-body span{font-size:12px;}
+    table{font-size:11.5px;margin:12px 0;}
+    thead{display:table-header-group;}
+    table td{padding:7px 10px 7px 0;}
+    table td:first-child,table th:first-child{white-space:normal;}
+    code{font-size:.88em;word-break:break-word;}
+    a{color:inherit;text-decoration:none;}
+  }
 </style>
 </head>
 <body>
