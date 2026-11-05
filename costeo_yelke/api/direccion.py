@@ -109,7 +109,7 @@ def _desglose_costeo(costeo, moneda):
     for p in productos:
         costos = [(_("Materia prima"), p.material_cost), (_("Servicios (maquila)"), p.services_cost),
                   (_("Envío"), p.shipping_cost), (_("Etiquetado"), p.labeling_cost), (_("Empaque"), p.packaging_cost),
-                  (_("Overhead {0} %").format(round(flt(p.overhead_pct), 2)), p.overhead_amt)]
+                  (_("Gastos {0} %").format(round(flt(p.overhead_pct), 2)), p.overhead_amt)]
         materiales = [{
             "descripcion": nombre(d.item), "tipo": d.tipo_material or (_("Envío") if d.concept_type == "Envío" else ""),
             "cantidad": flt(d.internal_qty), "unidad": _uom(d.internal_uom), "precio_unitario": flt(d.unit_price),

@@ -442,7 +442,7 @@
                     <div>
                       <p class="p-eyebrow mb-2">Costo y margen</p>
                       <div class="grid grid-cols-3 gap-x-2.5 gap-y-2.5">
-                        <div><label class="p-field-label">Overhead</label><div class="relative"><input v-model.number="prod.overhead_pct" type="number" min="0" max="100" class="p-field pr-7 tabular-nums" @input="recalcProducto(prod)" /><span class="suffix">%</span></div></div>
+                        <div><label class="p-field-label">Gastos</label><div class="relative"><input v-model.number="prod.overhead_pct" type="number" min="0" max="100" class="p-field pr-7 tabular-nums" @input="recalcProducto(prod)" /><span class="suffix">%</span></div></div>
                         <div><label class="p-field-label">Margen</label><div class="relative"><input v-model.number="prod.margin_pct" type="number" min="0" max="99" class="p-field pr-7 tabular-nums" @input="onMarginChange(prod)" /><span class="suffix">%</span></div></div>
                         <div><label class="p-field-label">Flete / envío</label><div class="relative"><span class="prefix">$</span><input v-model.number="prod.shipping_cost" type="number" min="0" class="p-field pl-6 tabular-nums" @input="recalcProducto(prod)" /></div></div>
                         <div><label class="p-field-label">Etiquetado</label><div class="relative"><span class="prefix">$</span><input v-model.number="prod.labeling_cost" type="number" min="0" class="p-field pl-6 tabular-nums" @input="recalcProducto(prod)" /></div></div>
@@ -492,7 +492,7 @@
                               <td class="py-1 text-right text-ink">{{ fmtC(directCost(prod) * (prod.qty || 0)) }}</td>
                             </tr>
                             <tr>
-                              <td class="py-1 text-ink-muted">Overhead</td>
+                              <td class="py-1 text-ink-muted">Gastos</td>
                               <td class="py-1 text-right text-ink">{{ fmtC(prod.overhead_amt) }}</td>
                               <td class="py-1 text-right text-ink">{{ fmtC((prod.overhead_amt || 0) * (prod.qty || 0)) }}</td>
                             </tr>

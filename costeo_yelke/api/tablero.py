@@ -161,7 +161,7 @@ def _composicion(desde, hasta, company):
         where cp.parent in (select distinct costeo from `tabSales Order` where {cond} and ifnull(costeo, '') != '')""",
                       vals, as_dict=True)[0]
     partes = [("material", _("Materia prima")), ("maquila", _("Maquila")), ("otros", _("Envío, etiquetas y empaque")),
-              ("overhead", _("Overhead")), ("utilidad", _("Utilidad"))]
+              ("overhead", _("Gastos")), ("utilidad", _("Utilidad"))]
     return {"venta": flt(r.venta), "partes": [{"clave": k, "etiqueta": e, "monto": flt(r[k])} for k, e in partes]}
 
 

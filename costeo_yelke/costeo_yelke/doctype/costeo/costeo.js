@@ -2855,7 +2855,7 @@ function render_product_card(prod, finished, detalles, etapas, costo_materiales,
                                min="0">
                         <span class="tree-field-suffix">%</span>
                     </div>
-                    <div class="tree-field-help">Overhead: $ ${format_currency(overhead_amt)}</div>
+                    <div class="tree-field-help">Gastos: $ ${format_currency(overhead_amt)}</div>
                 </div>
                 
                 <div class="tree-field-group">

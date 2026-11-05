@@ -36,7 +36,7 @@ def reporte_final_impresion(doc):
                   if flt(real.get("material_sobrante")) else "")},
         {"label": "Maquila", "plan": flt(e["servicios_total"]), "real": flt(real["servicio_directo"]), "nota": ""},
         {"label": "Fletes", "plan": flt(e["shipping_total"]), "real": fletes, "nota": ""},
-        {"label": "Gastos indirectos", "plan": flt(e["overhead_total"]), "real": flt(real["overhead"]),
+        {"label": "Gastos", "plan": flt(e["overhead_total"]), "real": flt(real["overhead"]),
          "nota": _("{0}% del costo directo").format(round(flt(e.get("overhead_pct_promedio")), 1))},
     ]
     for c in costos:
@@ -52,7 +52,7 @@ def reporte_final_impresion(doc):
         {"label": "Materia prima", "v": flt(e["materiales_total"]) - materia},
         {"label": "Maquila", "v": flt(e["servicios_total"]) - flt(real["servicio_directo"])},
         {"label": "Fletes", "v": flt(e["shipping_total"]) - fletes},
-        {"label": "Gastos indirectos", "v": flt(e["overhead_total"]) - flt(real["overhead"])},
+        {"label": "Gastos", "v": flt(e["overhead_total"]) - flt(real["overhead"])},
     ]
     max_puente = max([1.0] + [abs(p["v"]) for p in puente])
     for p in puente:

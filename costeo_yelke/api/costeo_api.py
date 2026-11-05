@@ -3502,7 +3502,7 @@ def _crear_poliza_overhead_venta(si_doc, costeo):
         frappe.throw(_(
             "No se encontró la cuenta 'GASTOS INDIRECTOS ABSORBIDOS' para la compañía {0}. "
             "Créala en el catálogo de cuentas (tipo Gasto, de preferencia bajo el mismo grupo "
-            "que 'COSTO DE VENTAS') para poder registrar el overhead de esta factura."
+            "que 'COSTO DE VENTAS') para poder registrar los gastos de esta factura."
         ).format(si_doc.company))
     cost_center = frappe.get_cached_value("Company", si_doc.company, "cost_center")
 
@@ -3510,7 +3510,7 @@ def _crear_poliza_overhead_venta(si_doc, costeo):
     je.voucher_type = "Journal Entry"
     je.company = si_doc.company
     je.posting_date = si_doc.posting_date
-    je.user_remark = _("Overhead absorbido — Factura de venta {0} ({1}% de costo directo real)").format(
+    je.user_remark = _("Gastos absorbidos — Factura de venta {0} ({1}% de costo directo real)").format(
         si_doc.name, round(overhead_pct, 1)
     )
     je.append("accounts", {

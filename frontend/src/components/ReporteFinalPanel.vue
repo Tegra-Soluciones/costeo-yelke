@@ -252,7 +252,7 @@
       <div class="flex items-center justify-between gap-3 flex-wrap pt-1">
         <p class="p-meta">
           <template v-if="r.real.sales_invoice">Venta real de la factura {{ r.real.sales_invoice }}. </template>
-          Gastos indirectos al {{ (r.estimado.overhead_pct_promedio || 0).toFixed(1) }}% del costo directo real.
+          Gastos al {{ (r.estimado.overhead_pct_promedio || 0).toFixed(1) }}% del costo directo real.
         </p>
         <!-- PDF formal (formato "Reporte Final Yelke": membrete, uso interno, firmas). -->
         <a v-if="costeo" class="p-btn-secondary no-underline hover:no-underline" :href="urlPdf" download>
@@ -346,7 +346,7 @@ const costos = computed(() => {
       nota: real.material_sobrante ? `comprado ${fmtC(real.material_directo)} − sobrante ${fmtC(real.material_sobrante)}` : "" },
     { label: "Maquila", plan: e.servicios_total, real: real.servicio_directo },
     { label: "Fletes", plan: e.shipping_total, real: fleteReal.value },
-    { label: "Gastos indirectos", plan: e.overhead_total, real: real.overhead,
+    { label: "Gastos", plan: e.overhead_total, real: real.overhead,
       nota: `${(e.overhead_pct_promedio || 0).toFixed(1)}% del costo directo` },
   ];
 });
@@ -361,7 +361,7 @@ const puente = computed(() => {
     { label: "Materia prima", v: e.materiales_total - materiaReal.value },
     { label: "Maquila", v: e.servicios_total - real.servicio_directo },
     { label: "Fletes", v: e.shipping_total - fleteReal.value },
-    { label: "Gastos indirectos", v: e.overhead_total - real.overhead },
+    { label: "Gastos", v: e.overhead_total - real.overhead },
   ];
 });
 const maxPuente = computed(() => Math.max(1, ...puente.value.map((p) => Math.abs(p.v))));

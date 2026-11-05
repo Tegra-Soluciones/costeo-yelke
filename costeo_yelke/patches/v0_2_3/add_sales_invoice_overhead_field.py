@@ -12,7 +12,7 @@ def execute():
             "Sales Invoice": [
                 {
                     "fieldname": "overhead_journal_entry",
-                    "label": "Póliza de overhead",
+                    "label": "Póliza de gastos",
                     "fieldtype": "Link",
                     "options": "Journal Entry",
                     "insert_after": "due_date",
