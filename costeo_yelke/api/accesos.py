@@ -21,8 +21,10 @@ PERFILES_ERPNEXT = ("HR", "Purchase", "Sales", "Accounts", "Manufacturing", "Inv
 
 
 def _exigir():
-    if not puede("accesos", "editar"):
-        frappe.throw(_("Necesitas la vista Accesos para administrar los accesos."), frappe.PermissionError)
+    from costeo_yelke.roles import administra_accesos
+
+    if not administra_accesos():
+        frappe.throw(_("Los accesos solo los administra el administrador del sistema."), frappe.PermissionError)
 
 
 def _niveles(roles):

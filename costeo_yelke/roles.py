@@ -361,6 +361,19 @@ def puede_revisar_documentos(user=None):
 
 
 # ── Permisos por vista de Producción ─────────────────────────────────────────
+# La pantalla Accesos es solo del administrador del sistema (Tegra), no de quien tenga
+# rol de administrador en la empresa. Se puede cambiar sin código con
+# "accesos_administradores" (lista de correos) en site_config.json.
+ADMINISTRADORES_ACCESOS = ("Administrator", "daniel@tegra.mx")
+
+
+def administra_accesos(user=None):
+    import frappe
+
+    user = user or frappe.session.user
+    return user in (frappe.conf.get("accesos_administradores") or ADMINISTRADORES_ACCESOS)
+
+
 def accesos(user=None):
     """{clave: "editar" | "ver"} de las vistas que `user` (o el actual) puede abrir.
     Editar gana sobre ver. Con pase libre, todas en editar. Los préstamos de permisos
@@ -369,7 +382,10 @@ def accesos(user=None):
 
     roles = set(frappe.get_roles(user))
     if roles & set(PASE_LIBRE):
-        return {c: "editar" for c in VISTAS}
+        out = {c: "editar" for c in VISTAS}
+        if not administra_accesos(user):
+            out.pop("accesos", None)
+        return out
     out = {}
     for clave, v in VISTAS.items():
         if v["rol"] in roles:
@@ -384,6 +400,8 @@ def accesos(user=None):
     # Dirección levanta pedidos nuevos (antes era una pestaña de su panel).
     if out.get("direccion") == "editar":
         out["levantamiento"] = "editar"
+    if not administra_accesos(user):
+        out.pop("accesos", None)
     return out
 
 
