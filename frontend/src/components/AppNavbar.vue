@@ -298,7 +298,7 @@ const data = reactive({
 // ── Breadcrumb mapping ────────────────────────────────────────────────────────
 const ROUTE_MAP = {
   Dashboard:      { group: "Inicio",    page: "Panel de control" },
-  CosteoList:     { group: "Costeo",    page: "Pipeline" },
+  CosteoList:     { group: "Costeo",    page: "Proyectos" },
   CosteoNuevo:    { group: "Costeo",    page: "Nuevo Costeo" },
   CosteoDetail:   { group: "Costeo",    page: "Detalle" },
   ProductoList:   { group: "Catálogo",  page: "Productos" },

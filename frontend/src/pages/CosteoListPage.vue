@@ -15,128 +15,118 @@
     <EncargarProyecto :abierto="encargarAbierto" @cerrar="encargarAbierto = false"
                       @creado="(r) => { showToast(`${r.titulo}: asignado a ${r.para}. Le llegó el aviso.`); load(); }" />
 
-    <PageHeader title="Costeos" subtitle="Lista de costeos de manufactura">
-      <!-- Proyecto nuevo que lo costea otra persona (asignación, api/encargos.crear_proyecto). -->
-      <button v-if="puedeEditar('costear') || puede('direccion')"
-        class="px-3 py-1.5 border border-gray-200 text-gray-600 text-sm font-medium rounded-md hover:bg-gray-50 flex items-center gap-1.5"
-        @click="encargarAbierto = true"
-      >
-        <Icono nombre="persona" class="w-4 h-4" :grosor="2" />
-        Asignar proyecto
-      </button>
-      <button v-if="rutaPermitida('CosteoNuevo', 'editar')"
-        class="px-3 py-1.5 bg-brand-500 text-white text-sm font-medium rounded-md hover:bg-brand-600 transition-colors flex items-center gap-1.5"
-        @click="$router.push('/costeo/nuevo')"
-      >
-        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
-        </svg>
-        Nuevo Costeo
-      </button>
-    </PageHeader>
+    <!-- Proyectos en tarjetas (api/direccion.get_lista_proyectos): la foto del primer
+         producto que se costea, el cliente con su imagen, la etapa del ciclo y lo
+         esencial de la venta -- el mismo lenguaje que ve Dirección. -->
+    <div class="flex-1 overflow-y-auto bg-surface">
+      <div class="max-w-[1320px] mx-auto px-6 py-5 space-y-4">
+        <div class="flex items-end justify-between gap-4 flex-wrap">
+          <div>
+            <p class="p-eyebrow">{{ companyState.selected || "Todas las compañías" }}</p>
+            <h1 class="p-h1 mt-1">Proyectos</h1>
+            <p class="p-lede mt-0.5">{{ items.length }} proyecto{{ items.length === 1 ? "" : "s" }} · los más recientes primero</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <!-- Proyecto nuevo que lo costea otra persona (asignación, api/encargos.crear_proyecto). -->
+            <button v-if="puedeEditar('costear') || puede('direccion')" type="button" class="p-btn-secondary" @click="encargarAbierto = true">
+              <Icono nombre="persona" class="w-4 h-4" :grosor="2" /> Asignar proyecto
+            </button>
+            <button v-if="rutaPermitida('CosteoNuevo', 'editar')" type="button" class="p-btn-primary" @click="$router.push('/costeo/nuevo')">
+              <Icono nombre="mas" class="w-4 h-4" :grosor="2.2" /> Nuevo costeo
+            </button>
+          </div>
+        </div>
 
-    <!-- View toggle + search -->
-    <div class="bg-white border-b border-gray-200 px-6 py-2.5 flex items-center gap-3">
-      <div class="relative flex-1 max-w-xs">
-        <svg class="absolute left-2.5 top-2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg>
-        <input
-          v-model="search"
-          type="text"
-          placeholder="Buscar por título, cliente o ID..."
-          class="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-        />
-      </div>
+        <div class="flex items-center gap-3 flex-wrap">
+          <div class="relative w-full sm:w-72">
+            <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-light" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            <input v-model="search" type="text" placeholder="Buscar proyecto, cliente o folio…" class="p-field pl-9" />
+          </div>
+          <div class="p-seg inline-flex flex-wrap">
+            <button v-for="f in filtrosEtapa" :key="f.k" type="button" :class="filterStatus === f.k ? 'on' : ''" @click="filterStatus = f.k">
+              {{ f.l }}<span class="ml-1 text-ink-light tabular-nums">{{ f.n }}</span>
+            </button>
+          </div>
+        </div>
 
-      <select
-        v-model="filterStatus"
-        class="text-sm border border-gray-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
-      >
-        <option value="">Todos los estatus</option>
-        <option v-for="s in statuses" :key="s" :value="s">{{ s }}</option>
-      </select>
-    </div>
+        <div v-if="loading" class="py-20 text-center p-meta">Cargando proyectos…</div>
 
-    <!-- Loading -->
-    <div v-if="loading" class="flex-1 flex items-center justify-center">
-      <div class="flex flex-col items-center gap-3 text-gray-400">
-        <svg class="w-8 h-8 animate-spin" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-        </svg>
-        <span class="text-sm">Cargando costeos...</span>
-      </div>
-    </div>
+        <div v-else-if="!filteredItems.length" class="p-panel py-14 text-center">
+          <Icono nombre="paquete" class="w-10 h-10 mx-auto text-ink-xlight" :grosor="1.3" />
+          <p class="text-[14px] font-semibold mt-3">No hay proyectos aquí</p>
+          <p class="p-meta mt-1">Prueba con otro filtro o búsqueda.</p>
+          <button v-if="rutaPermitida('CosteoNuevo', 'editar')" type="button" class="mt-3 text-[13px] text-brand-600 font-medium" @click="$router.push('/costeo/nuevo')">Crear un costeo →</button>
+        </div>
 
-    <!-- ── List view ─────────────────────────────────────────────── -->
-    <div v-else class="flex-1 overflow-y-auto p-4">
-      <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="border-b border-gray-100">
-              <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Título</th>
-              <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Cliente</th>
-              <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Compañía</th>
-              <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Fecha</th>
-              <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Estatus</th>
-              <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Asignado a</th>
-              <th class="px-4 py-3 w-10"></th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-gray-50">
-            <tr
-              v-for="item in filteredItems"
-              :key="item.name"
-              class="hover:bg-gray-50 cursor-pointer transition-colors group"
-              @click="$router.push(`/costeo/${item.name}`)"
-            >
-              <td class="px-4 py-3">
-                <p class="font-medium text-gray-900">{{ item.titulo || item.name }}</p>
-                <p v-if="item.titulo" class="font-mono text-[11px] text-gray-400 mt-0.5">{{ item.name }}</p>
-              </td>
-              <td class="px-4 py-3 font-medium text-gray-900">{{ nombreCliente(item.cliente) }}</td>
-              <td class="px-4 py-3 text-gray-600">{{ item["compañia"] }}</td>
-              <td class="px-4 py-3 text-gray-500">{{ formatDate(item.fecha) }}</td>
-              <td class="px-4 py-3"><StatusBadge :model-value="item.costeo_status || 'Borrador'" /></td>
-              <!-- Asignaciones abiertas del proyecto (api/encargos.get_por_proyecto). -->
-              <td class="px-4 py-3">
-                <p v-for="(e, i) in (encargosDe[item.name] || []).slice(0, 2)" :key="i" class="text-[12.5px] leading-snug whitespace-nowrap"
-                   :class="e.vencido || e.vence_hoy ? 'text-red-700' : 'text-gray-700'">
-                  {{ e.etiqueta }}{{ e.lote ? ` · ${e.lote}` : "" }} → <b class="font-medium">{{ e.para_nombre }}</b>
-                </p>
-                <p v-if="(encargosDe[item.name] || []).length > 2" class="text-[11.5px] text-gray-400">y {{ encargosDe[item.name].length - 2 }} más</p>
-                <span v-if="!(encargosDe[item.name] || []).length" class="text-gray-300">—</span>
-              </td>
-              <td class="px-4 py-3 text-right" @click.stop>
-                <div class="relative flex justify-end">
-                  <button
-                    class="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-                    :class="openMenu === item.name ? 'text-gray-700 bg-gray-100' : ''"
-                    @click.stop="toggleMenu(item.name, $event)"
-                  >
-                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                      <circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>
-                    </svg>
-                  </button>
+        <div v-else class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          <RouterLink
+            v-for="p in filteredItems" :key="p.name" :to="`/costeo/${encodeURIComponent(p.name)}`"
+            class="group p-panel overflow-hidden flex flex-col hover:border-brand-200 hover:shadow-md transition-all"
+          >
+            <!-- Foto del primer producto -->
+            <div class="relative aspect-[16/10] bg-zinc-50 border-b border-surface-border">
+              <img v-if="p.imagen" :src="p.imagen" :alt="p.producto || p.titulo" loading="lazy" class="absolute inset-0 w-full h-full object-contain p-4" />
+              <div v-else class="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-ink-xlight">
+                <Icono nombre="paquete" class="w-10 h-10" :grosor="1.2" />
+                <span class="text-[11px]">{{ p.productos ? "Sin foto" : "Sin productos todavía" }}</span>
+              </div>
+              <span class="absolute top-3 left-3 text-[11px] font-semibold rounded-full px-2.5 py-0.5 border" :class="claseEstado(p)">{{ textoEstado(p) }}</span>
+              <span v-if="p.productos > 1" class="absolute bottom-3 left-3 text-[11px] font-medium bg-white/90 border border-surface-border rounded-full px-2 py-0.5 text-ink-muted">+{{ p.productos - 1 }} producto{{ p.productos > 2 ? "s" : "" }}</span>
+              <button
+                type="button" title="Más acciones"
+                class="absolute top-2 right-2 w-8 h-8 flex items-center justify-center rounded-lg bg-white/90 border border-surface-border text-ink-muted opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity hover:text-ink"
+                :class="openMenu === p.name ? 'opacity-100' : ''"
+                @click.prevent.stop="toggleMenu(p.name, $event)"
+              >
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+              </button>
+            </div>
 
+            <div class="p-4 flex-1 flex flex-col">
+              <p v-if="p.compania" class="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-ink-light truncate">{{ p.compania }}</p>
+              <p class="text-[15px] font-semibold leading-snug mt-0.5 line-clamp-2 group-hover:text-brand-700 transition-colors">{{ p.titulo }}</p>
+              <div class="flex items-center gap-2 mt-2 min-w-0">
+                <img v-if="p.cliente_imagen" :src="p.cliente_imagen" alt="" class="w-6 h-6 rounded-full object-cover border border-surface-border flex-shrink-0" />
+                <span v-else class="w-6 h-6 rounded-full flex items-center justify-center text-[9.5px] font-semibold flex-shrink-0" :class="colorAvatar(p.cliente_nombre || p.name)">{{ iniciales(p.cliente_nombre || "?") }}</span>
+                <span class="text-[12.5px] text-ink-muted truncate">{{ p.cliente_nombre || "Sin cliente" }}</span>
+                <span v-if="p.cliente_sin_alta" class="text-[10px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 flex-shrink-0">Sin confirmar</span>
+              </div>
+
+              <!-- Etapa del ciclo (las mismas 6 que el panel de Dirección) -->
+              <div class="mt-3.5">
+                <div class="flex items-center gap-1">
+                  <span v-for="(e, i) in ETAPAS" :key="e" class="h-1.5 flex-1 rounded-full" :class="colorEtapa(p, i + 1)" :title="e"></span>
                 </div>
-              </td>
-            </tr>
-            <tr v-if="filteredItems.length === 0">
-              <td colspan="7" class="px-4 py-12 text-center text-gray-400">
-                <svg class="w-10 h-10 mx-auto mb-3 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <p class="text-sm">No se encontraron costeos</p>
-                <button v-if="rutaPermitida('CosteoNuevo', 'editar')"
-                  class="mt-3 text-sm text-brand-600 hover:text-brand-700 font-medium"
-                  @click="$router.push('/costeo/nuevo')"
-                >Crear el primero →</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+                <p class="text-[11.5px] text-ink-muted mt-1.5">
+                  <template v-if="p.estado === 'Cancelado'">Cancelado</template>
+                  <template v-else-if="p.etapa >= 6">Completado · entregado y facturado</template>
+                  <template v-else>Va en <b class="text-ink font-medium">{{ ETAPAS[p.etapa - 1] }}</b> · paso {{ p.etapa }} de 6</template>
+                </p>
+              </div>
+
+              <div class="mt-auto pt-3.5 grid grid-cols-3 gap-2 border-t border-surface-border mt-3.5">
+                <div class="min-w-0">
+                  <p class="text-[10.5px] text-ink-light">{{ p.documento ? "Venta" : "Fecha" }}</p>
+                  <p class="text-[13px] font-semibold tabular-nums truncate">{{ p.monto != null ? dineroCorto(p.monto, p.moneda) : formatDate(p.fecha) }}</p>
+                </div>
+                <div class="min-w-0">
+                  <p class="text-[10.5px] text-ink-light">Prendas</p>
+                  <p class="text-[13px] font-semibold tabular-nums">{{ p.piezas ? numero(p.piezas) : "—" }}</p>
+                </div>
+                <div class="min-w-0">
+                  <p class="text-[10.5px] text-ink-light">Entrega</p>
+                  <p class="text-[13px] font-semibold tabular-nums truncate">{{ p.entrega ? fecha(p.entrega) : "—" }}</p>
+                </div>
+              </div>
+              <!-- Asignaciones abiertas del proyecto (api/encargos.get_por_proyecto). -->
+              <p v-for="(e, i) in (encargosDe[p.name] || []).slice(0, 1)" :key="i" class="mt-2.5 text-[11.5px] truncate flex items-center gap-1.5"
+                 :class="e.vencido || e.vence_hoy ? 'text-red-700' : 'text-ink-muted'">
+                <Icono nombre="persona" class="w-3.5 h-3.5 flex-shrink-0" />
+                <span class="truncate">{{ e.etiqueta }}{{ e.lote ? ` · ${e.lote}` : "" }} → <b class="font-medium">{{ e.para_nombre }}</b><template v-if="(encargosDe[p.name] || []).length > 1"> · y {{ encargosDe[p.name].length - 1 }} más</template></span>
+              </p>
+            </div>
+          </RouterLink>
+        </div>
       </div>
     </div>
 
@@ -191,8 +181,8 @@ import { getPorProyecto } from "@/composables/useEncargos.js";
 import Icono from "@/components/Icono.vue";
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
 import { useRouter } from "vue-router";
-import PageHeader from "@/components/PageHeader.vue";
-import StatusBadge from "@/components/StatusBadge.vue";
+import { RouterLink } from "vue-router";
+import { colorAvatar, dineroCorto, fecha, iniciales, numero } from "@/utils/formato.js";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import { db, call } from "@/utils/frappe.js";
 import { useCompany } from "@/composables/useCompany.js";
@@ -215,19 +205,43 @@ const toast = reactive({ show: false, msg: "", type: "success" });
 
 const confirmDelete = reactive({ open: false, name: "", loading: false });
 
-const statuses = ["Borrador", "Cotizado", "Orden de Venta", "En Producción", "Entregado", "Completado", "Cancelado"];
+// Las 6 etapas del ciclo, igual que el panel de Dirección (direccion._ETAPA).
+const ETAPAS = ["Costeo", "Cotización", "OV", "Producción", "Entrega", "Factura"];
+const claveFiltro = (p) => (p.estado === "Cancelado" ? "cancelado" : p.etapa >= 6 ? "completado" : `e${p.etapa}`);
+const filtrosEtapa = computed(() => {
+  const n = (k) => items.value.filter((p) => claveFiltro(p) === k).length;
+  const base = [{ k: "", l: "Todos", n: items.value.length },
+    ...ETAPAS.slice(0, 5).map((e, i) => ({ k: `e${i + 1}`, l: e, n: n(`e${i + 1}`) })),
+    { k: "completado", l: "Completados", n: n("completado") }];
+  if (n("cancelado")) base.push({ k: "cancelado", l: "Cancelados", n: n("cancelado") });
+  return base;
+});
+function colorEtapa(p, n) {
+  if (p.estado === "Cancelado") return "bg-zinc-200";
+  if (n < p.etapa || p.etapa >= 6) return "bg-emerald-500";
+  return n === p.etapa ? "bg-brand-500" : "bg-zinc-200";
+}
+function textoEstado(p) {
+  if (p.estado === "Borrador") return p.docstatus === 0 ? "En costeo" : "Costeo validado";
+  return p.estado;
+}
+function claseEstado(p) {
+  if (p.estado === "Cancelado") return "bg-zinc-100 text-ink-muted border-zinc-200";
+  if (p.etapa >= 6) return "bg-emerald-50 text-emerald-800 border-emerald-200";
+  if (p.etapa === 1) return "bg-white/90 text-ink-muted border-surface-border";
+  return "bg-brand-50 text-brand-700 border-brand-200";
+}
 
 // ── Computed ──────────────────────────────────────────────────────────────────
 const filteredItems = computed(() =>
   items.value.filter(i => {
     const q = search.value.toLowerCase();
     const matchSearch = !q ||
-      (i.cliente || "").toLowerCase().includes(q) ||
-      (nombreCliente(i.cliente) || "").toLowerCase().includes(q) ||
+      (i.cliente_nombre || "").toLowerCase().includes(q) ||
       (i.titulo  || "").toLowerCase().includes(q) ||
-      (i.name    || "").toLowerCase().includes(q);
-    const matchStatus = !filterStatus.value || i.costeo_status === filterStatus.value;
-    return matchSearch && matchStatus;
+      (i.name    || "").toLowerCase().includes(q) ||
+      (i.documento || "").toLowerCase().includes(q);
+    return matchSearch && (!filterStatus.value || claveFiltro(i) === filterStatus.value);
   })
 );
 
@@ -280,7 +294,7 @@ async function duplicateItem(name) {
     // Add the copy to the list immediately
     const original = items.value.find(i => i.name === name);
     if (original) {
-      items.value.unshift({ ...original, name: res.name, costeo_status: "Borrador" });
+      items.value.unshift({ ...original, name: res.name, estado: "Borrador", docstatus: 0, etapa: 1, documento: null, monto: null, entrega: null });
     }
     router.push(`/costeo/${res.name}`);
   } catch (e) {
@@ -309,47 +323,17 @@ async function doDelete() {
 }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
-// Nombre Comercial del cliente en vez de su nombre real (id) -- ver patch
-// v0_2_31. db.getList de Costeo solo trae el Link crudo (cliente); se resuelve
-// aparte en un segundo query batched, igual que hace PlantillasPage con esto mismo.
-const clienteNombres = ref({});
-async function loadClienteNombres() {
-  const ids = [...new Set(items.value.map(i => i.cliente).filter(Boolean))];
-  if (!ids.length) { clienteNombres.value = {}; return; }
-  try {
-    const rows = await db.getList("Customer", {
-      fields: ["name", "customer_name", "nombre_comercial"],
-      filters: [["name", "in", ids]],
-      limit: 0,
-    });
-    const map = {};
-    rows.forEach(r => { map[r.name] = r.nombre_comercial || r.customer_name || r.name; });
-    clienteNombres.value = map;
-  } catch { /* ignore */ }
-}
 const encargosDe = ref({});
 async function loadEncargos() {
   try { encargosDe.value = await getPorProyecto(items.value.map((i) => i.name)); } catch { encargosDe.value = {}; }
-}
-function nombreCliente(id) {
-  return clienteNombres.value[id] || id;
 }
 
 async function load() {
   loading.value = true;
   try {
-    items.value = await db.getList("Costeo", {
-      fields: ["name", "titulo", "cliente", "fecha", "compañia", "costeo_status"],
-      // Una plantilla (es_plantilla=1) es un Costeo de verdad por dentro, pero no es
-      // un proyecto/pedido -- no debe aparecer mezclada aquí, solo en "Plantillas".
-      filters: [
-        ["es_plantilla", "!=", 1],
-        ...(companyState.selected ? [["compañia", "=", companyState.selected]] : []),
-      ],
-      orderBy: "modified desc",
-      limit: 200,
-    });
-    await Promise.all([loadClienteNombres(), loadEncargos()]);
+    // Sin plantillas (son costeos por dentro, pero viven en «Plantillas»).
+    items.value = await call("costeo_yelke.api.direccion.get_lista_proyectos", { company: companyState.selected || null }) || [];
+    await loadEncargos();
   } catch (e) {
     console.error(e);
   } finally {

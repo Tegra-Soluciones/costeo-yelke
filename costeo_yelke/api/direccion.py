@@ -376,3 +376,70 @@ def get_resumen(company: str = None) -> dict:
         "tablero": get_tablero(company=company, periodo="anio"),
         "atrasados": sum(1 for p in proyectos if p["grupo"] == "atrasados"),
     }
+
+
+@frappe.whitelist()
+def get_lista_proyectos(company: str = None) -> list:
+    """La lista de Proyectos (CosteoListPage) en tarjetas, para todo el equipo: la imagen
+    del primer producto que se costea, la del cliente, la etapa del ciclo (la misma de
+    get_proyectos) y lo esencial de su venta. Respeta los permisos de lectura de Costeo."""
+    filtros = [["es_plantilla", "!=", 1]]
+    if company:
+        filtros.append(["compañia", "=", company])
+    costeos = frappe.get_list("Costeo", filters=filtros, order_by="modified desc", limit_page_length=200,
+                              fields=["name", "titulo", "cliente", "cliente_nuevo", "fecha", "compañia",
+                                      "costeo_status", "docstatus", "modified"])
+    nombres = [c.name for c in costeos]
+    if not nombres:
+        return []
+    # Primer producto (el de menor idx) de cada costeo, con su imagen o la del artículo.
+    productos = {}
+    for p in frappe.get_all("Costeo Producto", filters={"parent": ["in", nombres], "parenttype": "Costeo"},
+                            fields=["parent", "idx", "finished_item", "image", "qty", "variante_talla_de"],
+                            order_by="parent, idx asc"):
+        d = productos.setdefault(p.parent, {"primero": None, "n": 0, "piezas": 0})
+        d["piezas"] += flt(p.qty)
+        if p.variante_talla_de:
+            continue
+        d["n"] += 1
+        if not d["primero"]:
+            d["primero"] = p
+    sin_imagen = [d["primero"].finished_item for d in productos.values()
+                  if d["primero"] and not d["primero"].image and d["primero"].finished_item]
+    imagen_item = dict(frappe.get_all("Item", filters={"name": ["in", sin_imagen or [""]]}, fields=["name", "image"],
+                                      as_list=True))
+    clientes = {c.name: c for c in frappe.get_all(
+        "Customer", filters={"name": ["in", list({c.cliente for c in costeos if c.cliente}) or [""]]},
+        fields=["name", "customer_name", "nombre_comercial", "image"])}
+    ovs, cots = {}, {}
+    for so in frappe.get_all("Sales Order", filters={"costeo": ["in", nombres], "docstatus": 1},
+                             fields=["name", "costeo", "grand_total", "currency", "delivery_date", "per_delivered",
+                                     "total_qty"], order_by="creation desc"):
+        ovs.setdefault(so.costeo, so)
+    for q in frappe.get_all("Quotation", filters={"costeo": ["in", nombres], "docstatus": ["<", 2]},
+                            fields=["name", "costeo", "grand_total", "currency"], order_by="creation desc"):
+        cots.setdefault(q.costeo, q)
+
+    salida = []
+    for c in costeos:
+        prod = productos.get(c.name) or {"primero": None, "n": 0, "piezas": 0}
+        primero = prod["primero"]
+        cli = clientes.get(c.cliente) if c.cliente else None
+        ov, cot = ovs.get(c.name), cots.get(c.name)
+        venta = ov or cot
+        salida.append({
+            "name": c.name, "titulo": c.titulo or c.name, "compania": c.get("compañia"), "fecha": c.fecha,
+            "estado": c.costeo_status or "Borrador", "docstatus": c.docstatus,
+            "etapa": _ETAPA.get(c.costeo_status or "Borrador", 1),
+            "cliente": c.cliente, "cliente_sin_alta": not c.cliente and bool(c.cliente_nuevo),
+            "cliente_nombre": (cli.nombre_comercial or cli.customer_name) if cli else (c.cliente_nuevo or ""),
+            "cliente_imagen": cli.image if cli else None,
+            "imagen": (primero.image or imagen_item.get(primero.finished_item)) if primero else None,
+            "producto": primero.finished_item if primero else None, "productos": prod["n"],
+            "piezas": flt(ov.total_qty) if ov else prod["piezas"],
+            "documento": venta.name if venta else None,
+            "monto": flt(venta.grand_total) if venta else None, "moneda": venta.currency if venta else "MXN",
+            "entrega": ov.delivery_date if ov else None,
+            "entregado_pct": round(flt(ov.per_delivered)) if ov else 0,
+        })
+    return salida
