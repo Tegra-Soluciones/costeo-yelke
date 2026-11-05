@@ -3687,14 +3687,10 @@
           <div><label class="field-label">Nombre o razón social *</label><input v-model="altaCli.customer_name" v-mayus class="field-input" /></div>
           <div><label class="field-label">Persona de contacto</label><input v-model="altaCli.contacto" class="field-input" /></div>
           <div class="grid grid-cols-2 gap-2">
-            <div><label class="field-label">RFC *</label><input v-model="altaCli.tax_id" v-mayus class="field-input" placeholder="XEXX010101000" /></div>
-            <div><label class="field-label">Confirma el RFC *</label><input v-model="altaCli.confirmar_rfc" v-mayus class="field-input" /></div>
-          </div>
-          <div class="grid grid-cols-2 gap-2">
             <div><label class="field-label">Correo</label><input v-model="altaCli.email_id" type="email" class="field-input" /></div>
             <div><label class="field-label">Teléfono</label><input v-model="altaCli.mobile_no" type="tel" class="field-input" /></div>
           </div>
-          <p class="text-[11.5px] text-ink-light">Dirección y demás datos se completan después en su ficha.</p>
+          <p class="text-[11.5px] text-ink-light">Son datos iniciales: el RFC y la dirección se completan después en su ficha.</p>
         </template>
 
         <div class="flex justify-end gap-2 pt-1">
@@ -7562,12 +7558,12 @@ function buscarCoincidencias() {
 // «Confirmar cliente»: se abre sin opción elegida; quien costea dice si ya está dado de
 // alta o si es nuevo. Al darlo de alta, lo capturado en el Levantamiento ya viene puesto.
 const altaCli = reactive({ abierto: false, ocupado: false, modo: "", cliente: "", ficha: null,
-  customer_name: "", contacto: "", tax_id: "", confirmar_rfc: "", email_id: "", mobile_no: "" });
+  customer_name: "", contacto: "", email_id: "", mobile_no: "" });
 const puedeConfirmarCliente = computed(() => (altaCli.modo === "existente" ? !!altaCli.cliente
-  : altaCli.modo === "alta" && !!(altaCli.customer_name.trim() && altaCli.tax_id.trim() && altaCli.confirmar_rfc.trim())));
+  : altaCli.modo === "alta" && !!altaCli.customer_name.trim()));
 function abrirConfirmarCliente(modo = "", cliente = "") {
   Object.assign(altaCli, { abierto: true, ocupado: false, modo, cliente, ficha: null,
-    customer_name: form.cliente_nuevo || "", contacto: form.contacto_nombre || "", tax_id: "", confirmar_rfc: "",
+    customer_name: form.cliente_nuevo || "", contacto: form.contacto_nombre || "",
     email_id: form.contacto_correo || "", mobile_no: form.contacto_telefono || "" });
   if (cliente) cargarFichaCliente(cliente);
 }
@@ -7595,8 +7591,8 @@ async function guardarAltaCliente() {
   try {
     if (!(await saveDoc())) return;
     const r = await call("costeo_yelke.api.costeo_api.alta_cliente_costeo", {
-      costeo: docName.value, customer_name: altaCli.customer_name.trim(), tax_id: altaCli.tax_id.trim(),
-      confirmar_rfc: altaCli.confirmar_rfc.trim(), email_id: altaCli.email_id.trim() || null, mobile_no: altaCli.mobile_no.trim() || null,
+      costeo: docName.value, customer_name: altaCli.customer_name.trim(),
+      email_id: altaCli.email_id.trim() || null, mobile_no: altaCli.mobile_no.trim() || null,
       contacto: altaCli.contacto.trim() || null,
     });
     form.cliente = r.cliente; form.cliente_nuevo = ""; clienteNuevoModo.value = false;

@@ -12645,11 +12645,11 @@ def marcar_enviado_whatsapp(doctype: str, name: str, telefono: str = None) -> di
 
 
 @frappe.whitelist()
-def alta_cliente_costeo(costeo: str, customer_name: str, tax_id: str = None, confirmar_rfc: str = None,
-                        email_id: str = None, mobile_no: str = None, contacto: str = None) -> dict:
-    """Alta rápida (datos iniciales) del cliente nuevo de un costeo: el costeo se capturó
-    con `cliente_nuevo` (aún sin alta) y antes de cotizar hay que darlo de alta. Crea el
-    Customer con las reglas de captura de siempre (RFC confirmado) y lo pone en el costeo."""
+def alta_cliente_costeo(costeo: str, customer_name: str, email_id: str = None, mobile_no: str = None,
+                        contacto: str = None) -> dict:
+    """Alta del cliente nuevo de un costeo («Confirmar cliente › Es nuevo»): solo datos
+    iniciales -- nombre, contacto, correo y teléfono, sin RFC. El RFC y la dirección se
+    completan después en su ficha (ahí sí aplican las reglas de captura)."""
     c = frappe.get_doc("Costeo", costeo)
     if not frappe.has_permission("Costeo", "write", c):
         frappe.throw(_("No puedes modificar este costeo."), frappe.PermissionError)
@@ -12658,7 +12658,10 @@ def alta_cliente_costeo(costeo: str, customer_name: str, tax_id: str = None, con
     nombre = (customer_name or c.get("cliente_nuevo") or "").strip()
     if not nombre:
         frappe.throw(_("Escribe el nombre del cliente."))
-    cust = _nuevo_cliente(nombre, tax_id=tax_id, confirmar_rfc=confirmar_rfc, email_id=email_id, mobile_no=mobile_no,
+    email_id = (email_id or "").strip()
+    if email_id:
+        frappe.utils.validate_email_address(email_id, throw=True)
+    cust = _nuevo_cliente(nombre, email_id=email_id, mobile_no=(mobile_no or "").strip(), automatico=True,
                           contacto=(contacto or "").strip() or c.get("contacto_nombre"))
     frappe.db.set_value("Costeo", costeo, {"cliente": cust.name, "cliente_nuevo": None})
     return {"cliente": cust.name, "customer_name": cust.customer_name}
@@ -12667,8 +12670,8 @@ def alta_cliente_costeo(costeo: str, customer_name: str, tax_id: str = None, con
 def _nuevo_cliente(nombre, tax_id=None, confirmar_rfc=None, email_id=None, mobile_no=None, automatico=False,
                    contacto=None):
     """Customer con el grupo y territorio de la mayoría de los clientes (los de Selling
-    Settings no son los que usa Yelke). `automatico`: lo da de alta el sistema, sin RFC
-    y sin las confirmaciones de captura.
+    Settings no son los que usa Yelke). `automatico`: datos iniciales sin RFC, sin las
+    confirmaciones de captura (el permiso ya se revisó sobre el costeo).
 
     El correo y el teléfono van en un Contacto que se crea aquí con nombre (`contacto`,
     o el del cliente): el que arma ERPNext con email_id/mobile_no para una empresa no
