@@ -12,6 +12,7 @@
   "image",
   "description",
   "qty",
+  "qty_total",
   "material_cost",
   "services_cost",
   "shipping_cost",
@@ -42,6 +43,12 @@
    "in_list_view": 1,
    "label": "Cant. a Producir",
    "reqd": 1
+  },
+  {
+   "description": "Total de prendas del producto base contando sus tallas extra: cada variante de talla se resta de aqu\u00ed (una sin cantidad resta 1) y \"Cant. a Producir\" del base es lo que queda.",
+   "fieldname": "qty_total",
+   "fieldtype": "Int",
+   "label": "Cantidad total"
   },
   {
    "allow_on_submit": 1,
@@ -148,7 +155,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-11-04 15:00:00.000000",
+ "modified": "2026-11-05 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Costeo Yelke",
  "name": "Costeo Producto",

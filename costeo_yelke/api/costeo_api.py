@@ -544,6 +544,13 @@ def crear_variante_talla(costeo: str, producto_base: str, genero: str = None, ta
         if any(p.finished_item == nuevo_codigo for p in doc.costeo_producto):
             frappe.throw(_("Este costeo ya tiene un producto llamado «{0}».").format(nuevo_codigo))
 
+    # La variante sale del total del base, no se suma (Costeo.repartir_total_con_tallas_extra):
+    # se fija el total ANTES de agregarla, o un costeo de antes (sin cantidad total)
+    # la contaría como parte de un total más grande y el base no bajaría.
+    if not cint(base.get("qty_total")):
+        base.qty_total = cint(base.qty) + sum(cint(v.qty) if cint(v.qty) > 0 else 1 for v in doc.costeo_producto
+                                              if v.get("variante_talla_de") == base.finished_item)
+
     nueva = doc.append("costeo_producto", {})
     for f in ("shipping_cost", "labeling_cost", "packaging_cost", "overhead_pct", "margin_pct"):
         nueva.set(f, base.get(f))
@@ -12136,8 +12143,13 @@ def get_reporte_final(costeo: str, sales_order: str = None) -> dict:
     doc = frappe.get_doc("Costeo", costeo)
     company = doc.compañia
 
-    # Cantidad por producto: de la OV activa si se dio (sus propias líneas), si no la
-    # del costeo completo (comportamiento previo).
+    # El plan se compara POR PIEZA: costo y precio unitario de cada producto del costeo
+    # x las piezas reales. Las cantidades cambian siempre (el cliente pide 1000 en vez de
+    # 100, las tallas extra salen del total, se entrega de menos), así que el total del
+    # costeo no sirve de referencia; lo que se compara es el costeo de una pieza.
+    # Piezas: las ENTREGADAS cuando la OV ya terminó de entregarse (o se cerró); antes,
+    # las de la OV; sin OV, las del costeo (comportamiento previo).
+    base_cantidades = "costeo"
     if sales_order:
         # Un producto con tallas extra trae VARIOS renglones del mismo artículo: se suman
         # (antes el último sobrescribía a los demás).
@@ -12145,6 +12157,16 @@ def get_reporte_final(costeo: str, sales_order: str = None) -> dict:
         for r in frappe.get_all("Sales Order Item", filters={"parent": sales_order}, fields=["item_code", "qty"]):
             if r.item_code:
                 qty_por_producto[r.item_code] = qty_por_producto.get(r.item_code, 0) + flt(r.qty)
+        base_cantidades = "orden_venta"
+        so_estado = frappe.db.get_value("Sales Order", sales_order, ["status", "per_delivered"], as_dict=True) or {}
+        if flt(so_estado.get("per_delivered")) >= 100 or so_estado.get("status") in ("Completed", "Closed"):
+            entregado = {}
+            for r in frappe.get_all("Delivery Note Item", filters={"against_sales_order": sales_order, "docstatus": 1},
+                                    fields=["item_code", "qty"]):
+                entregado[r.item_code] = entregado.get(r.item_code, 0) + flt(r.qty)
+            if entregado:
+                qty_por_producto = {k: entregado.get(k, 0) for k in qty_por_producto}
+                base_cantidades = "entregado"
     else:
         qty_por_producto = {p.finished_item: flt(p.qty) for p in doc.costeo_producto}
 
@@ -12454,6 +12476,8 @@ def get_reporte_final(costeo: str, sales_order: str = None) -> dict:
             "materiales_total": materiales_estimado_total, "servicios_total": servicios_estimado_total,
             "shipping_total": shipping_estimado_total, "overhead_pct_promedio": overhead_pct_prom,
             "overhead_total": est_overhead_total, "overhead_unit": overhead_unit_estimado, "qty_total": est_qty_total,
+            # De dónde salen las piezas del plan: "entregado", "orden_venta" o "costeo".
+            "base_cantidades": base_cantidades,
             "costo_total": est_costo_total, "venta_total": est_venta_total,
             "rentabilidad_pct": rentabilidad_estimada_pct, "rentabilidad_monto": rentabilidad_estimada_monto,
         },

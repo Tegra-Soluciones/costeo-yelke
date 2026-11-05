@@ -402,7 +402,15 @@
                     </div>
                     <div class="flex-1 min-w-0 grid grid-cols-3 gap-x-3 gap-y-3">
                       <div class="col-span-2"><label class="p-field-label">Producto terminado <span class="text-red-400">*</span></label><LinkInput v-model="prod.finished_item" v-mayus doctype="Item" :filters="ITEM_FILTERS.terminado" placeholder="Producto terminado…" @update:model-value="onProductoItemChange(prod)" /></div>
-                      <div><label class="p-field-label">Cantidad <span class="text-red-400">*</span></label><input v-model.number="prod.qty" type="number" min="1" class="p-field tabular-nums" @input="onProdQtyChange(prod)" /></div>
+                      <div v-if="tieneVariantes(prod)">
+                        <label class="p-field-label">Cantidad total <span class="text-red-400">*</span></label>
+                        <input v-model.number="prod.qty_total" type="number" min="1" class="p-field tabular-nums" :class="faltanPiezas(prod) ? 'border-red-400' : ''" @input="repartirTotal(prod)" />
+                        <!-- Las tallas extra salen de este total (Costeo.repartir_total_con_tallas_extra). -->
+                        <p class="text-[11px] mt-1 tabular-nums" :class="faltanPiezas(prod) ? 'text-red-600' : 'text-ink-light'" :title="'Cada talla extra se resta del total; una sin cantidad todavía resta 1'">
+                          {{ faltanPiezas(prod) ? `Las tallas extra suman ${piezasExtra(prod.finished_item).toLocaleString("es-MX")}: no caben en el total` : `${Number(prod.qty || 0).toLocaleString("es-MX")} base + ${piezasExtra(prod.finished_item).toLocaleString("es-MX")} tallas extra` }}
+                        </p>
+                      </div>
+                      <div v-else><label class="p-field-label">Cantidad <span class="text-red-400">*</span></label><input v-model.number="prod.qty" type="number" :min="prod.variante_talla_de ? 0 : 1" class="p-field tabular-nums" @input="onProdQtyChange(prod)" /><p v-if="prod.variante_talla_de" class="text-[11px] mt-1 text-ink-light">Sale del total de {{ prod.variante_talla_de }}<template v-if="!(prod.qty > 0)"> · sin cantidad resta 1</template></p></div>
                       <div class="col-span-3"><label class="p-field-label">Descripción <span class="text-ink-light font-normal">(opcional)</span></label><textarea v-model="prod.description" v-mayus rows="2" class="p-field h-auto py-2 resize-none" placeholder="Descripción del producto…"></textarea></div>
                     </div>
                   </div>
@@ -780,6 +788,9 @@
                           <input v-model="varianteWizard.pendiente" type="checkbox" class="w-3.5 h-3.5 accent-brand-500" />
                           Cantidad pendiente por confirmar
                         </label>
+                        <p class="mt-1.5 text-[11.5px] text-ink-light tabular-nums">
+                          Sale del total de {{ prod.finished_item }}: quedan {{ Math.max(0, (Number(prod.qty) || 0) - (varianteWizard.pendiente ? 1 : (Number(varianteWizard.qty) || 0))).toLocaleString("es-MX") }} base de {{ Number(prod.qty_total || prod.qty || 0).toLocaleString("es-MX") }}<template v-if="varianteWizard.pendiente"> (pendiente resta 1)</template>.
+                        </p>
                       </div>
 
                       <div v-if="materialesBaseVariante(prod).length">
@@ -7952,7 +7963,7 @@ function genStageId() { return Math.random().toString(36).slice(2, 10) + Date.no
 
 
 // ── Product / detail / stage ──
-function addProducto() { const p = { _tid: uid(), _lastFinishedItem: "", image: "", description: "", finished_item: "", variante_talla_de: "", talla_grupo_label: "", qty: 1, shipping_cost: 0, labeling_cost: 0, packaging_cost: 0, overhead_pct: 0, margin_pct: 30, material_cost: 0, services_cost: 0, overhead_amt: 0, total_unit_cost: 0, unit_sales_price: 0, precio_manual: 0, total_sales_price: 0 }; productos.value.push(p); expandedTids.add(p._tid); }
+function addProducto() { const p = { _tid: uid(), _lastFinishedItem: "", image: "", description: "", finished_item: "", variante_talla_de: "", talla_grupo_label: "", qty: 1, qty_total: 1, shipping_cost: 0, labeling_cost: 0, packaging_cost: 0, overhead_pct: 0, margin_pct: 30, material_cost: 0, services_cost: 0, overhead_amt: 0, total_unit_cost: 0, unit_sales_price: 0, precio_manual: 0, total_sales_price: 0 }; productos.value.push(p); expandedTids.add(p._tid); }
 function directCost(prod) { return (prod.material_cost || 0) + (prod.services_cost || 0) + (prod.shipping_cost || 0) + (prod.labeling_cost || 0) + (prod.packaging_cost || 0); }
 // Desglose informativo de directCost por grupo -- telas y avíos son subconjuntos
 // de material_cost (según tipo_material de cada renglón), servicios agrupa todo
@@ -7985,7 +7996,7 @@ function totalEtapas(prod) {
   return round2(etapasDe(prod.finished_item).reduce((s, e) => s + precioPorPiezaEtapa(e), 0));
 }
 function expectedProfit(prod) { return (prod.unit_sales_price || 0) - (prod.total_unit_cost || 0); }
-function removeProducto(idx) { const prod = productos.value[idx]; if (!prod) return; const stageIdsDeProd = new Set(etapas.value.filter(e => e.producto_terminado === prod.finished_item).map(e => e.stage_id)); const materialIdsDeProd = new Set(detalles.value.filter(d => d.finished_item === prod.finished_item).map(d => d.material_id)); detalles.value = detalles.value.filter(d => d.finished_item !== prod.finished_item); etapas.value = etapas.value.filter(e => e.producto_terminado !== prod.finished_item); materialesEtapa.value = materialesEtapa.value.filter(r => !materialIdsDeProd.has(r.material_id) && !stageIdsDeProd.has(r.stage_id)); tallas.value = tallas.value.filter(t => t.finished_item !== prod.finished_item); productos.value.splice(idx, 1); expandedTids.delete(prod._tid); }
+function removeProducto(idx) { const prod = productos.value[idx]; if (!prod) return; const stageIdsDeProd = new Set(etapas.value.filter(e => e.producto_terminado === prod.finished_item).map(e => e.stage_id)); const materialIdsDeProd = new Set(detalles.value.filter(d => d.finished_item === prod.finished_item).map(d => d.material_id)); detalles.value = detalles.value.filter(d => d.finished_item !== prod.finished_item); etapas.value = etapas.value.filter(e => e.producto_terminado !== prod.finished_item); materialesEtapa.value = materialesEtapa.value.filter(r => !materialIdsDeProd.has(r.material_id) && !stageIdsDeProd.has(r.stage_id)); tallas.value = tallas.value.filter(t => t.finished_item !== prod.finished_item); productos.value.splice(idx, 1); expandedTids.delete(prod._tid); if (prod.variante_talla_de) repartirTotal(productos.value.find(p => !p.variante_talla_de && p.finished_item === prod.variante_talla_de)); }
 function toggleProduct(tid) { if (expandedTids.has(tid)) expandedTids.delete(tid); else expandedTids.add(tid); }
 // Materiales, etapas y tallas se vinculan al producto por el VALOR de finished_item
 // (son tablas hermanas, no anidadas -- Frappe no guarda tablas dentro de tablas), no
@@ -8160,6 +8171,26 @@ function onProdQtyChange(prod) {
     d.supplier_qty = round2((d.internal_qty || 0) * (prod.qty || 0));
   }
   recalcProducto(prod);
+  // Una talla extra sale del total de su producto base; el base sin tallas extra
+  // lleva su total igual a su cantidad.
+  if (prod.variante_talla_de) repartirTotal(productos.value.find(p => !p.variante_talla_de && p.finished_item === prod.variante_talla_de));
+  else if (!tieneVariantes(prod)) prod.qty_total = prod.qty || 0;
+}
+// Tallas extra: se costea un TOTAL y cada variante de talla se resta de él; el base
+// se queda con lo demás (500 total, 50 de talla extra -> 450 base). Una variante sin
+// cantidad todavía resta 1, la pieza de referencia de la OV. Mismo cálculo que el
+// servidor (Costeo.repartir_total_con_tallas_extra).
+function variantesDeBase(fi) { return fi ? productos.value.filter(v => v.variante_talla_de === fi) : []; }
+function tieneVariantes(prod) { return !prod.variante_talla_de && variantesDeBase(prod.finished_item).length > 0; }
+function piezasExtra(fi) { return variantesDeBase(fi).reduce((s, v) => s + ((Number(v.qty) || 0) > 0 ? Number(v.qty) : 1), 0); }
+function faltanPiezas(prod) { return (Number(prod.qty_total) || 0) - piezasExtra(prod.finished_item) < 0; }
+function repartirTotal(base) {
+  if (!base || base.variante_talla_de) return;
+  const q = Math.max(0, (Number(base.qty_total) || 0) - piezasExtra(base.finished_item));
+  if (q === base.qty) return;
+  base.qty = q;
+  for (const d of materialesDe(base.finished_item)) d.supplier_qty = round2((d.internal_qty || 0) * q);
+  recalcProducto(base);
 }
 function addEtapa(prod) {
   const next = etapasDe(prod.finished_item).length + 1;
@@ -8623,6 +8654,10 @@ async function fillFromDoc(data) {
   costeoEnPantalla = data.name;
   [...new Set((data.tabla_etapas_costeo || []).map((e) => e.proveedor).filter(Boolean))].forEach(cargarServiciosProveedor);
   productos.value = (data.costeo_producto || []).map(r => ({ _tid: uid(), image: "", description: "", precio_manual: 0, ...r, _lastFinishedItem: r.finished_item || "" }));
+  // Costeo de antes sin cantidad total: base + sus tallas extra (no se mueve nada).
+  for (const p of productos.value) {
+    if (!p.variante_talla_de && !p.qty_total) p.qty_total = (Number(p.qty) || 0) + (tieneVariantes(p) ? piezasExtra(p.finished_item) : 0);
+  }
   if (abiertosAntes.size) {
     expandedTids.clear();
     for (const p of productos.value) if (abiertosAntes.has(p.finished_item)) expandedTids.add(p._tid);

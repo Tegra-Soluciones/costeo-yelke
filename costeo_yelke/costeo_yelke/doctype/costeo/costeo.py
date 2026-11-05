@@ -96,6 +96,7 @@ class Costeo(Document):
         # (borrador incluido) y un Costeo a medio capturar debe poderse guardar tal
         # cual. Lo obligatorio se exige solo al validar (enviar), ver before_submit.
         self.cleanup_orphan_children()
+        self.repartir_total_con_tallas_extra()
         self.derivar_precio_unitario()
 
     def before_update_after_submit(self):
@@ -103,6 +104,43 @@ class Costeo(Document):
         # pieza llegaba tal cual lo mandó la pantalla (con más decimales que los que
         # guarda el campo) y Frappe lo rechazaba como "cambio después del envío".
         self.derivar_precio_unitario()
+
+    def repartir_total_con_tallas_extra(self):
+        """Las tallas extra salen del total, no se suman a él (pedido de Yelke).
+
+        Se costea un total (500 prendas); cada variante de talla se resta de ese total
+        y el producto base se queda con lo demás: 50 de talla extra -> 450 base + 50.
+        Una variante sin cantidad todavía («Pendiente por cliente», qty 0) resta 1, la
+        misma pieza de referencia con la que entra a la Orden de Venta.
+
+        `qty_total` solo manda cuando el producto tiene variantes; sin ellas la cantidad
+        es la de siempre y `qty_total` la copia. Un costeo de antes (variantes sumadas
+        encima, sin `qty_total`) arranca con total = base + variantes, sin mover nada.
+        Solo en borrador: ya validado, las cantidades reales las pone la Orden de Venta."""
+        if self.get("es_plantilla"):
+            return
+        productos = self.get("costeo_producto") or []
+        for base in productos:
+            if base.get("variante_talla_de") or not base.finished_item:
+                continue
+            variantes = [v for v in productos if v.get("variante_talla_de") == base.finished_item]
+            if not variantes:
+                base.qty_total = cint(base.qty)
+                continue
+            extras = sum(cint(v.qty) if cint(v.qty) > 0 else 1 for v in variantes)
+            if not cint(base.get("qty_total")):
+                base.qty_total = cint(base.qty) + extras
+            qty_base = cint(base.qty_total) - extras
+            if qty_base < 0:
+                frappe.throw(_("{0}: las tallas extra suman {1} piezas y el total es de {2}. Sube la cantidad total "
+                               "o baja la de las tallas extra.").format(base.finished_item, extras, cint(base.qty_total)))
+            if cint(base.qty) == qty_base:
+                continue
+            base.qty = qty_base
+            base.total_sales_price = flt(flt(base.unit_sales_price) * qty_base, 2)
+            for d in self.get("costeo_producto_detalle") or []:
+                if d.finished_item == base.finished_item:
+                    d.supplier_qty = flt(flt(d.internal_qty) * qty_base, 2)
 
     def derivar_precio_unitario(self):
         """`unit_price` SIEMPRE es el precio por UDM base; lo que se captura puede ser

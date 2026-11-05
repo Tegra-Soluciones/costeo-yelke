@@ -17,6 +17,7 @@
           <p class="p-eyebrow">Reporte final</p>
           <p class="p-h1 mt-0.5">{{ r.cliente }}</p>
           <p class="p-meta mt-0.5">Plan del costeo contra lo real de los documentos validados · montos sin IVA</p>
+          <p class="p-meta mt-0.5">{{ basePlanTexto }}</p>
         </div>
         <span :class="r.completo ? 'p-pill-ok' : 'p-pill-wait'">{{ r.completo ? 'Proceso cerrado' : 'Con pendientes' }}</span>
       </div>
@@ -442,6 +443,16 @@ const pendientesTexto = computed(() => {
 });
 
 /** De dónde sale el importe real. Vacío cuando ya todo viene de facturas. */
+// El plan es el costeo de UNA pieza por las piezas reales: las cantidades cambian
+// (pedido más grande, tallas extra, entrega de menos) y el total del costeo no sirve
+// de referencia.
+const basePlanTexto = computed(() => {
+  const e = props.r?.estimado || {};
+  const n = fmtN(e.qty_total || 0);
+  if (e.base_cantidades === "entregado") return `Plan = costo y precio por pieza del costeo × ${n} prendas entregadas`;
+  if (e.base_cantidades === "orden_venta") return `Plan = costo y precio por pieza del costeo × ${n} prendas de la orden de venta (al terminar de entregar se toma lo entregado)`;
+  return `Plan = costo y precio por pieza del costeo × ${n} prendas del costeo`;
+});
 const baseTexto = computed(() => {
   const b = props.r?.real?.bases || [];
   if (!b.length || (b.length === 1 && b[0] === "factura")) return "";
