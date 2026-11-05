@@ -278,23 +278,35 @@
             </div>
             <div>
               <label class="p-field-label">Cliente <span class="text-red-400">*</span></label>
-              <!-- Cliente nuevo (sin alta, p. ej. lo puso Juan al asignar): se puede buscar
-                   igual por si alguien ya lo dio de alta, o darlo de alta aquí. -->
-              <div v-if="clienteNuevoModo && !form.cliente" class="mb-1.5 rounded-lg bg-amber-50 border border-amber-200 px-2.5 py-1.5 text-[12px] text-amber-900">
-                <template v-if="docState === 0">
-                  <span class="font-medium">Cliente nuevo:</span>
-                  <input v-model="form.cliente_nuevo" v-mayus type="text" class="mt-1 w-full h-8 px-2 rounded-md border border-amber-200 bg-white text-[13px]" placeholder="Nombre del cliente (aún sin alta)" />
-                  <span class="block mt-1">Si ya está dado de alta, búscalo abajo y elígelo. Si no, se da de alta solo al pasar a cotizar<template v-if="!isNew"> (o <button type="button" class="font-semibold text-brand-700 underline" @click="abrirAltaCliente">dalo de alta ahora</button> con su RFC)</template>.
-                    <button type="button" class="ml-1 text-amber-700/80 underline" @click="clienteNuevoModo = false; form.cliente_nuevo = ''">Quitar</button>
-                  </span>
-                </template>
-                <template v-else><span class="font-medium">Cliente nuevo:</span> {{ form.cliente_nuevo }}</template>
-              </div>
-              <LinkInput v-model="form.cliente" doctype="Customer" :placeholder="clienteNuevoModo ? 'Buscar si ya está dado de alta…' : 'Buscar cliente…'" :error="!!errors.cliente" @update:model-value="(v) => { if (v) { clienteNuevoModo = false; form.cliente_nuevo = ''; } }" />
-              <button v-if="docState === 0 && !form.cliente && !clienteNuevoModo" type="button" class="mt-1 text-[12px] text-brand-600 font-medium" @click="clienteNuevoModo = true">¿Aún no está dado de alta? Escribe su nombre</button>
-              <!-- Del levantamiento de Dirección: con quién se habla del pedido. -->
-              <p v-if="form.contacto_nombre || form.contacto_correo || form.contacto_telefono" class="mt-1 text-[12px] text-ink-muted break-words" title="Contacto del levantamiento">
-                Contacto: {{ [form.contacto_nombre, form.contacto_correo, form.contacto_telefono].filter(Boolean).join(" · ") }}
+              <!-- Cliente sin alta (p. ej. del Levantamiento): el nombre se edita ahí mismo;
+                   si nadie lo liga a uno existente, se da de alta solo al pasar a cotizar
+                   (Costeo.before_submit). Arriba de las acciones, los clientes dados de
+                   alta con nombre parecido, para ligarlo con un clic. -->
+              <template v-if="clienteNuevoModo && !form.cliente && !buscandoCliente">
+                <div class="relative">
+                  <input v-model="form.cliente_nuevo" v-mayus type="text" :readonly="docState !== 0" class="p-field pr-[68px] truncate" :class="errors.cliente ? 'border-red-400' : ''" placeholder="Nombre del cliente" @input="buscarCoincidencias" />
+                  <span class="absolute right-2 top-1/2 -translate-y-1/2 text-[10.5px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-px pointer-events-none" title="Aún no está dado de alta. Si no lo ligas a un cliente existente, se da de alta solo al pasar a cotizar.">Sin alta</span>
+                </div>
+                <div v-if="docState === 0 && coincidencias.length" class="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  <span class="text-[11.5px] text-ink-light">¿Es este?</span>
+                  <button v-for="c in coincidencias" :key="c.name" type="button" class="h-6 px-2 rounded-md border border-surface-border bg-white text-[11.5px] text-ink hover:border-brand-300 hover:text-brand-700 transition-colors max-w-full truncate" :title="`Ligar a ${c.customer_name}`" @click="elegirCliente(c.name)">{{ c.customer_name }}</button>
+                </div>
+                <div v-if="docState === 0" class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] whitespace-nowrap">
+                  <button type="button" class="text-brand-600 font-medium hover:underline" @click="buscandoCliente = true">Buscar existente</button>
+                  <button v-if="!isNew" type="button" class="text-brand-600 font-medium hover:underline" title="Darlo de alta ya, con su RFC" @click="abrirAltaCliente">Dar de alta</button>
+                </div>
+              </template>
+              <template v-else>
+                <LinkInput v-model="form.cliente" doctype="Customer" :placeholder="buscandoCliente ? 'Buscar cliente dado de alta…' : 'Buscar cliente…'" :error="!!errors.cliente" @update:model-value="(v) => { if (v) elegirCliente(v); }" />
+                <div v-if="docState === 0 && !form.cliente" class="mt-1.5 text-[12px]">
+                  <button v-if="buscandoCliente" type="button" class="text-ink-muted hover:text-ink font-medium" @click="buscandoCliente = false">‹ Volver a {{ form.cliente_nuevo || "cliente sin alta" }}</button>
+                  <button v-else type="button" class="text-brand-600 font-medium hover:underline" @click="clienteNuevoModo = true">¿Sin alta? Escribe su nombre</button>
+                </div>
+              </template>
+              <!-- Del levantamiento: con quién se habla del pedido. -->
+              <p v-if="form.contacto_nombre || form.contacto_correo || form.contacto_telefono" class="mt-1.5 flex items-start gap-1.5 text-[12px] text-ink-muted break-words" title="Contacto del levantamiento">
+                <Icono nombre="persona" class="w-3.5 h-3.5 mt-px flex-shrink-0 text-ink-light" />
+                <span>{{ [form.contacto_nombre, form.contacto_correo, form.contacto_telefono].filter(Boolean).join(" · ") }}</span>
               </p>
             </div>
             <div><label class="p-field-label">Fecha <span class="text-red-400">*</span></label><input v-model="form.fecha" type="date" class="p-field" :class="errors.fecha ? 'border-red-400' : ''" /></div>
@@ -7506,6 +7518,25 @@ const showRechazarModal = ref(false);
 const rechazarMotivo = ref("");
 // ── Cliente nuevo (aún sin alta) ──
 const clienteNuevoModo = ref(false);
+const buscandoCliente = ref(false);
+const coincidencias = ref([]);
+function elegirCliente(name) {
+  form.cliente = name; form.cliente_nuevo = "";
+  clienteNuevoModo.value = false; buscandoCliente.value = false; coincidencias.value = [];
+}
+// Clientes dados de alta cuyo nombre contiene el escrito (hasta 3), para ligarlo con un clic.
+let tCoincidencias = null;
+function buscarCoincidencias() {
+  clearTimeout(tCoincidencias);
+  tCoincidencias = setTimeout(async () => {
+    const nombre = (form.cliente_nuevo || "").trim();
+    if (nombre.length < 3 || form.cliente) { coincidencias.value = []; return; }
+    try {
+      coincidencias.value = await call("frappe.client.get_list", { doctype: "Customer", fields: ["name", "customer_name"],
+        filters: [["customer_name", "like", `%${nombre}%`], ["disabled", "=", 0]], limit_page_length: 3 }) || [];
+    } catch { coincidencias.value = []; }
+  }, 350);
+}
 const altaCli = reactive({ abierto: false, ocupado: false, customer_name: "", tax_id: "", confirmar_rfc: "", email_id: "", mobile_no: "" });
 async function abrirAltaCliente() {
   if (isNew.value) { showToast("Guarda el costeo primero", "error"); return; }
@@ -8646,7 +8677,7 @@ async function fillFromDoc(data) {
   form.titulo = data.titulo || "";
   form.cliente = data.cliente || ""; form.cliente_nuevo = data.cliente_nuevo || "";
   form.contacto_nombre = data.contacto_nombre || ""; form.contacto_correo = data.contacto_correo || ""; form.contacto_telefono = data.contacto_telefono || "";
-  clienteNuevoModo.value = !form.cliente && !!form.cliente_nuevo; form.fecha = data.fecha || today(); form.compania = data["compañia"] || "";
+  clienteNuevoModo.value = !form.cliente && !!form.cliente_nuevo; buscandoCliente.value = false; if (clienteNuevoModo.value) buscarCoincidencias(); form.fecha = data.fecha || today(); form.compania = data["compañia"] || "";
   form.proyecto = data.proyecto || "";
   form.guardar_como_plantilla = (data.guardar_como_plantilla === undefined || data.guardar_como_plantilla === null)
     ? false : !!Number(data.guardar_como_plantilla);
