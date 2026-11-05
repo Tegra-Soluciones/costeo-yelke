@@ -530,3 +530,7 @@ for _dt, _evento, _fn in (("Supplier", "before_validate", "cuentas_por_moneda"),
 	_actual = doc_events.setdefault(_dt, {}).get(_evento)
 	_lista = [] if not _actual else ([_actual] if isinstance(_actual, str) else list(_actual))
 	doc_events[_dt][_evento] = [*_lista, f"costeo_yelke.api.moneda_terceros.{_fn}"]
+
+# Avisos al celular de Dirección (PWA, api/pwa.py): cada aviso nuevo de alguien que los
+# activó sale también como notificación del teléfono.
+doc_events.setdefault("Notification Log", {})["after_insert"] = "costeo_yelke.api.pwa.al_crear_aviso"

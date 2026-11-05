@@ -36,6 +36,8 @@
         <p v-if="subtitulo" class="p-lede mt-0.5">{{ subtitulo }}</p>
       </div>
       <BannerDelegacion :propia="dlg?.activa" :recibida="permisos.delegacion" @terminar="terminarDelegacion" />
+      <!-- La app en el celular de Juan: ícono en la pantalla de inicio y avisos del teléfono. -->
+      <AvisosCelular />
 
       <div :style="permisos.ve_panel ? 'padding-bottom: calc(76px + env(safe-area-inset-bottom))' : 'padding-bottom: 24px'">
         <template v-if="tab === 'aprobar'">
@@ -168,6 +170,8 @@ import ProyectosDireccion from "@/components/direccion/ProyectosDireccion.vue";
 import ResumenDireccion from "@/components/direccion/ResumenDireccion.vue";
 import VistaAsignaciones from "@/components/asignaciones/VistaAsignaciones.vue";
 import PorAsignar from "@/components/direccion/PorAsignar.vue";
+import AvisosCelular from "@/components/direccion/AvisosCelular.vue";
+import { ponerNumero, prepararPwa } from "@/composables/usePwa.js";
 import { esCelular } from "@/utils/celular.js";
 import HojaDelegar from "@/components/direccion/HojaDelegar.vue";
 import { cargarPermisosAprobacion, refrescarCuentaBandeja, usePermisosAprobacion } from "@/composables/useAprobacion.js";
@@ -334,6 +338,8 @@ async function cargarDelegacion() {
 async function contarNotificaciones() {
   try { noLeidas.value = (await call("costeo_yelke.api.item_api.get_navbar_data")).unread_notifications || 0; } catch { /* opcional */ }
 }
+// El número sobre el ícono de la app del celular: los avisos sin leer.
+watch(noLeidas, (n) => ponerNumero(n));
 
 // ── Navegación ────────────────────────────────────────────────────────────────
 function abrir(f) {
@@ -428,6 +434,7 @@ onMounted(async () => {
   cargarBandeja();
   cargarDelegacion();
   contarNotificaciones();
+  if (permisos.es_director) prepararPwa();
   // Para el número de la pestaña "Por asignar" aunque no se abra.
   if (permisos.ve_panel) {
     call("costeo_yelke.api.encargos.get_por_asignar").then((r) => { porAsignar.value = r.sin_asignar || 0; }).catch(() => {});

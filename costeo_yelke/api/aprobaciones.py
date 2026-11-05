@@ -213,6 +213,7 @@ def _avisar(usuarios, asunto, doctype, name, mensaje="", ruta=None, boton=None, 
     if not destino:
         return
     for user in destino:
+        _reemplazar_aviso_reciente(user, doctype, name)
         frappe.get_doc({
             "doctype": "Notification Log",
             "subject": asunto,
@@ -227,7 +228,10 @@ def _avisar(usuarios, asunto, doctype, name, mensaje="", ruta=None, boton=None, 
 
     if not correo:
         return
-    correos = frappe.get_all("User", filters={"name": ["in", list(destino)]}, pluck="email")
+    con_correo = _con_correo(destino)
+    if not con_correo:
+        return
+    correos = frappe.get_all("User", filters={"name": ["in", con_correo]}, pluck="email")
     correos = [c for c in correos if c]
     if not correos or not _hay_correo_saliente():
         return
@@ -241,6 +245,28 @@ def _avisar(usuarios, asunto, doctype, name, mensaje="", ruta=None, boton=None, 
         )
     except Exception:
         frappe.log_error(title="Aviso de aprobación: no se pudo encolar el correo")
+
+
+def _reemplazar_aviso_reciente(user, doctype, name):
+    """Un aviso por cada cosa: si la misma persona acaba de causar otro aviso sobre el
+    mismo documento (p. ej. al enviar el costeo a aprobación se cierra sola su
+    asignación: «terminó Costear» y «envió a aprobación» en el mismo segundo), el
+    nuevo reemplaza al anterior todavía sin leer."""
+    if not (doctype and name):
+        return
+    hace_poco = frappe.utils.add_to_date(now_datetime(), minutes=-2)
+    for log in frappe.get_all("Notification Log", pluck="name", filters={
+            "for_user": user, "document_type": doctype, "document_name": name, "read": 0,
+            "from_user": frappe.session.user, "creation": [">=", hace_poco]}):
+        frappe.delete_doc("Notification Log", log, ignore_permissions=True, force=True)
+
+
+def _con_correo(usuarios):
+    """A quién SÍ se le manda el aviso también por correo. Dirección (Juan) no: le
+    llegan solo como notificación (campana y celular, api/pwa.py); su único correo es
+    la copia de los documentos que se mandan a clientes y proveedores
+    (correos.enviar_documento)."""
+    return [u for u in usuarios if ROL_DIRECTOR not in frappe.get_roles(u)]
 
 
 def _hay_correo_saliente():
@@ -1042,7 +1068,8 @@ def recordatorio_pendientes():
         for user in usuarios:
             frappe.get_doc({"doctype": "Notification Log", "subject": asunto, "for_user": user,
                             "type": "Alert", "link": "/costeo-yelke/direccion"}).insert(ignore_permissions=True)
-        correos = [c for c in frappe.get_all("User", filters={"name": ["in", usuarios]}, pluck="email") if c]
+        con_correo = _con_correo(usuarios)
+        correos = [c for c in frappe.get_all("User", filters={"name": ["in", con_correo]}, pluck="email") if c] if con_correo else []
         if correos and _hay_correo_saliente():
             try:
                 frappe.sendmail(recipients=correos, subject=asunto,

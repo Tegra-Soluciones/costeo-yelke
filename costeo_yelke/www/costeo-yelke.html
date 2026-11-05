@@ -3,7 +3,16 @@
 {% block title %}Costeo Yelke{% endblock %}
 
 {% block head_include %}
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+{% if pwa %}
+<link rel="manifest" href="/api/method/costeo_yelke.api.pwa.manifest" />
+<link rel="apple-touch-icon" href="/assets/costeo_yelke/images/pwa-180.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="Yelke" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="theme-color" content="#ffffff" />
+{% endif %}
 <style>
   body > .navbar,
   body > nav.navbar,

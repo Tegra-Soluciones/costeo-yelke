@@ -48,3 +48,7 @@ def get_context(context):
 
     context.no_cache = 1
     context.spa_js, context.spa_css = _spa_assets()
+    # App instalable en el celular (PWA, api/pwa.py): solo para Dirección.
+    from costeo_yelke.api.pwa import es_direccion
+
+    context.pwa = es_direccion()
