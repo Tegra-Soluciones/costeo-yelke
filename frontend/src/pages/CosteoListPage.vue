@@ -22,8 +22,7 @@
       <div class="max-w-[1320px] mx-auto px-6 py-5 space-y-4">
         <div class="flex items-end justify-between gap-4 flex-wrap">
           <div>
-            <p class="p-eyebrow">{{ companyState.selected || "Todas las compañías" }}</p>
-            <h1 class="p-h1 mt-1">Proyectos</h1>
+            <h1 class="p-h1">Proyectos</h1>
             <p class="p-lede mt-0.5">{{ items.length }} proyecto{{ items.length === 1 ? "" : "s" }} · los más recientes primero</p>
           </div>
           <div class="flex items-center gap-2">
@@ -42,11 +41,9 @@
             <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-light" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
             <input v-model="search" type="text" placeholder="Buscar proyecto, cliente o folio…" class="p-field pl-9" />
           </div>
-          <div class="p-seg inline-flex flex-wrap">
-            <button v-for="f in filtrosEtapa" :key="f.k" type="button" :class="filterStatus === f.k ? 'on' : ''" @click="filterStatus = f.k">
-              {{ f.l }}<span class="ml-1 text-ink-light tabular-nums">{{ f.n }}</span>
-            </button>
-          </div>
+          <select v-model="filterStatus" class="p-field w-auto min-w-[200px]">
+            <option v-for="f in filtrosEtapa" :key="f.k" :value="f.k">{{ f.l }} ({{ f.n }})</option>
+          </select>
         </div>
 
         <div v-if="loading" class="py-20 text-center p-meta">Cargando proyectos…</div>
@@ -58,17 +55,19 @@
           <button v-if="rutaPermitida('CosteoNuevo', 'editar')" type="button" class="mt-3 text-[13px] text-brand-600 font-medium" @click="$router.push('/costeo/nuevo')">Crear un costeo →</button>
         </div>
 
-        <div v-else class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           <RouterLink
             v-for="p in filteredItems" :key="p.name" :to="`/costeo/${encodeURIComponent(p.name)}`"
             class="group p-panel overflow-hidden flex flex-col hover:border-brand-200 hover:shadow-md transition-all"
           >
             <!-- Foto del primer producto -->
-            <div class="relative aspect-[16/10] bg-zinc-50 border-b border-surface-border">
-              <img v-if="p.imagen" :src="p.imagen" :alt="p.producto || p.titulo" loading="lazy" class="absolute inset-0 w-full h-full object-contain p-4" />
-              <div v-else class="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-ink-xlight">
-                <Icono nombre="paquete" class="w-10 h-10" :grosor="1.2" />
-                <span class="text-[11px]">{{ p.productos ? "Sin foto" : "Sin productos todavía" }}</span>
+            <div class="relative aspect-[16/9] bg-zinc-50 border-b border-surface-border">
+              <img v-if="p.imagen" :src="p.imagen" :alt="p.producto || p.titulo" loading="lazy" class="absolute inset-0 w-full h-full object-contain p-3" />
+              <!-- Sin foto: una prenda genérica. -->
+              <div v-else class="absolute inset-0 flex items-center justify-center text-zinc-300">
+                <svg class="w-14 h-14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M8.5 3.5L4 5.8 2.5 10.2l3 1.3L6.3 10V20.5h11.4V10l.8 1.5 3-1.3L20 5.8l-4.5-2.3c-.6 1.6-1.9 2.5-3.5 2.5s-2.9-.9-3.5-2.5z"/>
+                </svg>
               </div>
               <span class="absolute top-3 left-3 text-[11px] font-semibold rounded-full px-2.5 py-0.5 border" :class="claseEstado(p)">{{ textoEstado(p) }}</span>
               <span v-if="p.productos > 1" class="absolute bottom-3 left-3 text-[11px] font-medium bg-white/90 border border-surface-border rounded-full px-2 py-0.5 text-ink-muted">+{{ p.productos - 1 }} producto{{ p.productos > 2 ? "s" : "" }}</span>
@@ -83,8 +82,7 @@
             </div>
 
             <div class="p-4 flex-1 flex flex-col">
-              <p v-if="p.compania" class="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-ink-light truncate">{{ p.compania }}</p>
-              <p class="text-[15px] font-semibold leading-snug mt-0.5 line-clamp-2 group-hover:text-brand-700 transition-colors">{{ p.titulo }}</p>
+              <p class="text-[14.5px] font-semibold leading-snug line-clamp-2 group-hover:text-brand-700 transition-colors">{{ p.titulo }}</p>
               <div class="flex items-center gap-2 mt-2 min-w-0">
                 <img v-if="p.cliente_imagen" :src="p.cliente_imagen" alt="" class="w-6 h-6 rounded-full object-cover border border-surface-border flex-shrink-0" />
                 <span v-else class="w-6 h-6 rounded-full flex items-center justify-center text-[9.5px] font-semibold flex-shrink-0" :class="colorAvatar(p.cliente_nombre || p.name)">{{ iniciales(p.cliente_nombre || "?") }}</span>
