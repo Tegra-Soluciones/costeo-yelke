@@ -294,7 +294,7 @@
               <LinkInput v-model="form.cliente" doctype="Customer" :placeholder="clienteNuevoModo ? 'Buscar si ya está dado de alta…' : 'Buscar cliente…'" :error="!!errors.cliente" @update:model-value="(v) => { if (v) { clienteNuevoModo = false; form.cliente_nuevo = ''; } }" />
               <button v-if="docState === 0 && !form.cliente && !clienteNuevoModo" type="button" class="mt-1 text-[12px] text-brand-600 font-medium" @click="clienteNuevoModo = true">¿Aún no está dado de alta? Escribe su nombre</button>
               <!-- Del levantamiento de Dirección: con quién se habla del pedido. -->
-              <p v-if="form.contacto_nombre || form.contacto_correo || form.contacto_telefono" class="mt-1 text-[12px] text-ink-muted truncate" title="Contacto del levantamiento">
+              <p v-if="form.contacto_nombre || form.contacto_correo || form.contacto_telefono" class="mt-1 text-[12px] text-ink-muted break-words" title="Contacto del levantamiento">
                 Contacto: {{ [form.contacto_nombre, form.contacto_correo, form.contacto_telefono].filter(Boolean).join(" · ") }}
               </p>
             </div>

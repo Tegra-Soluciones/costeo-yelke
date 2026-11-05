@@ -68,7 +68,7 @@
         <div class="flex flex-wrap gap-1 min-w-0"><slot name="enlaces" /></div>
         <!-- Un paso que pertenece a otra vista se ve, pero no se captura desde aquí. -->
         <p v-if="soloLectura" class="ml-auto text-[12.5px] text-ink-muted truncate">{{ soloLectura }}</p>
-        <div v-else class="ml-auto flex gap-2 flex-shrink-0">
+        <div v-else class="ml-auto flex flex-wrap justify-end gap-2 min-w-0">
           <button
             v-for="(a, i) in acciones" :key="i" type="button" class="whitespace-nowrap"
             :class="a.tipo === 'primaria' ? 'p-btn-primary' : 'p-btn-secondary'"

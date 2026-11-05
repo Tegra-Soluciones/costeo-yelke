@@ -6,7 +6,7 @@
   La pantalla de Asignaciones queda solo para ver lo que a cada quien le asignaron.
 -->
 <template>
-  <div class="px-4 lg:px-0 py-3 max-w-[760px] space-y-4">
+  <div ref="raiz" class="px-4 lg:px-0 py-3 max-w-[760px] space-y-4">
     <p v-if="aviso" class="text-[12.5px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
       {{ aviso }}
       <RouterLink v-if="ultimo" :to="`/costeo/${encodeURIComponent(ultimo)}`" class="ml-1 font-medium underline">Abrir proyecto</RouterLink>
@@ -115,6 +115,7 @@ const ocupado = ref(false);
 const error = ref("");
 const aviso = ref("");
 const ultimo = ref("");
+const raiz = ref(null);
 
 const CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const correoMal = computed(() => !!form.correo.trim() && !CORREO.test(form.correo.trim()));
@@ -155,7 +156,8 @@ async function guardar() {
     aviso.value = `${form.titulo.trim()}: asignado a ${quien}. Ya le llegó el aviso.`;
     ultimo.value = r.costeo;
     limpiar();
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    // La página se desplaza dentro de su contenedor, no la ventana.
+    raiz.value?.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) { error.value = e.message || "No se pudo guardar el levantamiento."; }
   finally { ocupado.value = false; }
 }
