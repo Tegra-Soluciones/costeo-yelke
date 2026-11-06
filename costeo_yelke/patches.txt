@@ -109,3 +109,4 @@ costeo_yelke.patches.v0_2_83.overhead_se_llama_gastos
 costeo_yelke.patches.v0_2_84.imagenes_ligadas_al_costeo
 costeo_yelke.patches.v0_2_85.imagenes_ligadas_copias
 costeo_yelke.patches.v0_2_86.completado_al_cobrar
+costeo_yelke.patches.v0_2_87.verificacion_dos_pasos
