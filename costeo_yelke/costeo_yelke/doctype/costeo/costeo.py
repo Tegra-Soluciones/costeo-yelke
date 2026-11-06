@@ -13,6 +13,31 @@ from frappe.model.naming import make_autoname
 from frappe.model.document import Document
 from frappe.utils import add_days, cint, flt, getdate, nowdate
 
+def ligar_imagenes_al_costeo(doc):
+    """Cada imagen de producto queda ligada (registro File) a ESTE costeo. Un archivo
+    privado solo lo ve quien puede ver el documento al que está ligado: al copiar la
+    imagen desde una plantilla, un duplicado o un respaldo se copia la ruta pero no el
+    registro, y la imagen dejaba de verse (o se iba al borrar el costeo de origen)."""
+    for url in {p.image for p in doc.get("costeo_producto") or [] if p.get("image")}:
+        if not url.startswith(("/private/files/", "/files/")):
+            continue
+        if frappe.db.exists("File", {"file_url": url, "attached_to_doctype": doc.doctype, "attached_to_name": doc.name}):
+            continue
+        origen = frappe.get_all("File", filters={"file_url": url}, fields=["file_name", "file_size", "content_hash"], limit=1)
+        if not origen:
+            continue  # el archivo ya no existe en el sistema
+        try:
+            frappe.get_doc({
+                "doctype": "File", "file_url": url, "file_name": origen[0].file_name,
+                "is_private": int(url.startswith("/private/")), "file_size": origen[0].file_size,
+                "content_hash": origen[0].content_hash,
+                "attached_to_doctype": doc.doctype, "attached_to_name": doc.name,
+            }).insert(ignore_permissions=True)
+        except Exception:
+            # Nunca impedir guardar el costeo por la imagen (p. ej. ya no está en disco).
+            frappe.log_error(title=f"Imagen de {doc.name} sin ligar: {url}")
+
+
 PP_SIMPLE_FIELDS = [
     "naming_series",
     "company",
@@ -202,10 +227,14 @@ class Costeo(Document):
         # no una plantilla -- ver sync_templates_if_enabled.
         self.sync_templates_if_enabled()
 
+    def on_update(self):
+        ligar_imagenes_al_costeo(self)
+
     def on_update_after_submit(self):
         # Costeo ya validado (docstatus 1): un guardado posterior ahí no dispara
         # on_update sino este método -- sin este segundo gancho, editar un Costeo
         # ya validado nunca actualizaría sus plantillas.
+        ligar_imagenes_al_costeo(self)
         self.sync_templates_if_enabled()
 
     def sync_templates_if_enabled(self):
