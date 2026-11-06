@@ -26,6 +26,16 @@ def ligar_imagenes_al_costeo(doc):
         origen = frappe.get_all("File", filters={"file_url": url}, fields=["file_name", "file_size", "content_hash"], limit=1)
         if not origen:
             continue  # el archivo ya no existe en el sistema
+        # El mismo contenido ya ligado con otro nombre (Frappe no liga duplicados): se usa ese.
+        hashes = [h for h in frappe.get_all("File", filters={"file_url": url}, pluck="content_hash") if h]
+        copia = hashes and frappe.db.get_value("File", {
+            "content_hash": ["in", hashes], "attached_to_doctype": doc.doctype,
+            "attached_to_name": doc.name}, "file_url")
+        if copia:
+            for p in doc.get("costeo_producto"):
+                if p.image == url:
+                    p.db_set("image", copia, update_modified=False)
+            continue
         try:
             frappe.get_doc({
                 "doctype": "File", "file_url": url, "file_name": origen[0].file_name,
