@@ -600,7 +600,8 @@ def crear_proyecto(titulo: str, cliente: str, usuario: str, compania: str = None
     alta antes de cotizar (Costeo.before_submit).
 
     `levantamiento` (Panel de Dirección › Levantamiento): Juan toma los datos con el
-    cliente enfrente -- el correo es obligatorio; contacto, correo y teléfono quedan en
+    cliente enfrente -- contacto y correo son obligatorios, la empresa no (sin ella, el
+    cliente por confirmar es el contacto); contacto, correo y teléfono quedan en
     el costeo (y llenan el alta del cliente nuevo), y la cantidad y la fecha de entrega
     que pide van en el mensaje del encargo junto con sus notas. A un cliente ya dado de
     alta se le guarda el correo/teléfono solo si no tenía."""
@@ -609,11 +610,19 @@ def crear_proyecto(titulo: str, cliente: str, usuario: str, compania: str = None
         frappe.throw(_("No puedes asignar proyectos nuevos."), frappe.PermissionError)
     titulo = (titulo or "").strip()
     cliente_nuevo = (cliente_nuevo or "").strip().upper() if not cliente else ""
+    contacto, correo, telefono = ((x or "").strip() for x in (contacto, correo, telefono))
+    if cint(levantamiento):
+        if not titulo:
+            frappe.throw(_("Escribe el nombre del proyecto."))
+        if not contacto:
+            frappe.throw(_("Escribe el nombre del contacto."))
+        if not correo:
+            frappe.throw(_("Escribe el correo del cliente."))
+        # Sin empresa (persona física): el cliente por confirmar es el propio contacto.
+        if not cliente and not cliente_nuevo:
+            cliente_nuevo = contacto.upper()
     if not titulo or not (cliente or cliente_nuevo):
         frappe.throw(_("Escribe el nombre del proyecto y elige el cliente."))
-    contacto, correo, telefono = ((x or "").strip() for x in (contacto, correo, telefono))
-    if cint(levantamiento) and not correo:
-        frappe.throw(_("Escribe el correo del cliente."))
     if correo:
         frappe.utils.validate_email_address(correo, throw=True)
     from costeo_yelke.api.costeo_api import get_company_defaults

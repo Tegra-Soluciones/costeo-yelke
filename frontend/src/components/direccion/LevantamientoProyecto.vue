@@ -1,8 +1,8 @@
 <!--
   Levantamiento (pages/LevantamientoPage.vue): Juan, o quien tenga la vista, toma los
-  datos del pedido con el cliente enfrente -- su nombre (texto libre: quien costea lo
-  confirma -- elige el dado de alta o lo da de alta) y correo
-  (obligatorios), qué pide, fotos y adjuntos -- y se lo asigna a quien va a costear. Crea el costeo en
+  datos del pedido con el cliente enfrente -- proyecto, contacto y correo (obligatorios),
+  teléfono, empresa (texto libre y opcional: sin ella el cliente es el contacto; quien
+  costea lo confirma), detalles, fotos y adjuntos -- y se lo asigna a quien va a costear. Crea el costeo en
   borrador y la asignación de Costear (api/encargos.crear_proyecto con levantamiento).
   La pantalla de Asignaciones queda solo para ver lo que a cada quien le asignaron.
 -->
@@ -14,17 +14,16 @@
     </p>
 
     <section class="p-panel p-4 space-y-3">
-      <p class="text-[14px] font-semibold">Cliente</p>
+      <p class="text-[14px] font-semibold">Proyecto y contacto</p>
       <label class="block">
-        <span class="p-field-label">Nombre o razón social <span class="text-red-400">*</span></span>
-        <input v-model="form.cliente_nuevo" v-mayus class="p-field" placeholder="Nombre del cliente" />
+        <span class="p-field-label">Nombre del proyecto <span class="text-red-400">*</span></span>
+        <input v-model="form.titulo" v-mayus class="p-field" placeholder="Ej. CAMISOLA GABARDINA FERROMEX" />
       </label>
-      <p class="p-meta -mt-1">Quien costea confirma el cliente: lo elige si ya está dado de alta o lo da de alta con este correo y teléfono.</p>
+      <label class="block">
+        <span class="p-field-label">Nombre del contacto <span class="text-red-400">*</span></span>
+        <input v-model="form.contacto" class="p-field" placeholder="Con quién se habla del pedido" />
+      </label>
       <div class="grid sm:grid-cols-2 gap-3">
-        <label class="block sm:col-span-2">
-          <span class="p-field-label">Persona de contacto</span>
-          <input v-model="form.contacto" class="p-field" placeholder="Con quién se habla del pedido" />
-        </label>
         <label class="block">
           <span class="p-field-label">Correo <span class="text-red-400">*</span></span>
           <input v-model="form.correo" type="email" inputmode="email" autocomplete="off" class="p-field" :class="correoMal ? 'border-red-400' : ''" placeholder="correo@cliente.com" />
@@ -35,27 +34,18 @@
           <input v-model="form.telefono" type="tel" inputmode="tel" class="p-field" placeholder="10 dígitos" />
         </label>
       </div>
+      <label class="block">
+        <span class="p-field-label">Nombre de la empresa</span>
+        <input v-model="form.cliente_nuevo" v-mayus class="p-field" placeholder="Razón social o nombre comercial" />
+      </label>
+      <p class="p-meta -mt-1">Si no es empresa, el cliente queda a nombre del contacto. Quien costea lo confirma: lo elige si ya está dado de alta o lo da de alta.</p>
     </section>
 
     <section class="p-panel p-4 space-y-3">
       <p class="text-[14px] font-semibold">Pedido</p>
       <label class="block">
-        <span class="p-field-label">Nombre del proyecto <span class="text-red-400">*</span></span>
-        <input v-model="form.titulo" v-mayus class="p-field" placeholder="Ej. CAMISOLA GABARDINA FERROMEX" />
-      </label>
-      <div class="grid grid-cols-2 gap-3">
-        <label class="block">
-          <span class="p-field-label">Cantidad aproximada</span>
-          <input v-model.number="form.cantidad" type="number" min="0" inputmode="numeric" class="p-field tabular-nums" placeholder="Prendas" />
-        </label>
-        <label class="block">
-          <span class="p-field-label">Entrega que pide</span>
-          <input v-model="form.fecha_entrega" type="date" class="p-field" />
-        </label>
-      </div>
-      <label class="block">
         <span class="p-field-label">Detalles</span>
-        <textarea v-model="form.mensaje" rows="5" class="p-field h-auto py-2" placeholder="Prenda, tela, colores, tallas, bordados, empaque…"></textarea>
+        <textarea v-model="form.mensaje" rows="5" class="p-field h-auto py-2" placeholder="Prenda, tela, colores, tallas, cantidad, fecha de entrega, bordados, empaque…"></textarea>
       </label>
       <ArchivosAsignacion v-model="archivos" />
     </section>
@@ -101,8 +91,8 @@ import { useCompany } from "@/composables/useCompany.js";
 import { call } from "@/utils/frappe.js";
 
 const { state: companyState } = useCompany();
-const VACIO = () => ({ titulo: "", cliente: "", cliente_nuevo: "", contacto: "", correo: "", telefono: "", cantidad: null,
-  fecha_entrega: "", mensaje: "", usuario: "", fecha: "", compania: companyState.selected || "" });
+const VACIO = () => ({ titulo: "", cliente: "", cliente_nuevo: "", contacto: "", correo: "", telefono: "",
+  mensaje: "", usuario: "", fecha: "", compania: companyState.selected || "" });
 const form = reactive(VACIO());
 const archivos = ref([]);
 const candidatos = ref([]);
@@ -114,7 +104,7 @@ const raiz = ref(null);
 
 const CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const correoMal = computed(() => !!form.correo.trim() && !CORREO.test(form.correo.trim()));
-const listo = computed(() => form.titulo.trim() && form.cliente_nuevo.trim()
+const listo = computed(() => form.titulo.trim() && form.contacto.trim()
   && CORREO.test(form.correo.trim()) && form.usuario);
 
 function limpiar() {
@@ -127,9 +117,8 @@ async function guardar() {
   ocupado.value = true; error.value = ""; aviso.value = "";
   try {
     const r = await crearProyecto({
-      ...form, levantamiento: 1, titulo: form.titulo.trim(), correo: form.correo.trim(),
+      ...form, levantamiento: 1, titulo: form.titulo.trim(), contacto: form.contacto.trim(), correo: form.correo.trim(),
       cliente: "", cliente_nuevo: form.cliente_nuevo.trim(),
-      cantidad: form.cantidad || undefined, fecha_entrega: form.fecha_entrega || undefined,
       fecha: form.fecha || undefined, compania: form.compania || undefined,
     });
     if (archivos.value.length) await subirArchivosAsignacion(r.encargo, archivos.value);
