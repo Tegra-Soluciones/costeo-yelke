@@ -29,6 +29,20 @@
           </div>
           <span v-if="existingSuggested" class="text-[10.5px] font-medium text-brand-600 bg-brand-50 rounded-full px-2 py-0.5 flex-shrink-0">Sugerido</span>
         </div>
+        <div v-if="existingPreview" class="mb-3">
+          <label class="field-label">Imagen del producto <span class="text-ink-light font-normal">(opcional)</span></label>
+          <div class="flex items-center gap-3">
+            <button type="button" class="w-16 h-16 flex-shrink-0 rounded-lg border border-surface-border bg-surface-raised overflow-hidden flex items-center justify-center text-zinc-300" title="Subir o cambiar la imagen" @click="dialogoImagen = true">
+              <img v-if="imagenActual" :src="imagenActual" class="w-full h-full object-cover" alt="" />
+              <svg v-else class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 3.5L4 5.8 2.5 10.2l3 1.3L6.3 10V20.5h11.4V10l.8 1.5 3-1.3L20 5.8l-4.5-2.3c-.6 1.6-1.9 2.5-3.5 2.5s-2.9-.9-3.5-2.5z"/></svg>
+            </button>
+            <div class="space-y-1">
+              <button type="button" class="p-btn-secondary h-8 text-[12.5px]" @click="dialogoImagen = true">{{ imagenActual ? "Cambiar imagen" : "Subir imagen" }}</button>
+              <button v-if="imagenActual" type="button" class="block text-[12px] text-ink-muted hover:text-red-600" @click="ponerImagen('')">Quitar</button>
+            </div>
+          </div>
+          <p class="text-[10.5px] text-ink-light mt-1">Se guarda en el artículo y en el producto del costeo.</p>
+        </div>
         <div class="mb-3">
           <label class="field-label flex items-center gap-1.5">Precio de venta <span class="text-[10px] font-normal text-ink-light bg-surface-raised border border-surface-border rounded px-1">sin IVA</span></label>
           <div class="flex items-center border border-surface-border rounded-lg bg-surface-raised/60 text-ink-light">
@@ -55,9 +69,19 @@
           <LinkInput v-model="form.stock_uom" doctype="UOM" placeholder="Unidad de medida…" :error="!!errors.stock_uom" />
         </div>
 
-        <div v-if="form.image" class="mb-3 flex items-center gap-2">
-          <img :src="form.image" class="w-12 h-12 rounded-lg object-cover border border-surface-border" alt="" />
-          <p class="text-[11px] text-ink-light">Imagen tomada del costeo — se usará para este artículo.</p>
+        <div class="mb-3">
+          <label class="field-label">Imagen del producto <span class="text-ink-light font-normal">(opcional)</span></label>
+          <div class="flex items-center gap-3">
+            <button type="button" class="w-16 h-16 flex-shrink-0 rounded-lg border border-surface-border bg-surface-raised overflow-hidden flex items-center justify-center text-zinc-300" title="Subir o cambiar la imagen" @click="dialogoImagen = true">
+              <img v-if="imagenActual" :src="imagenActual" class="w-full h-full object-cover" alt="" />
+              <svg v-else class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 3.5L4 5.8 2.5 10.2l3 1.3L6.3 10V20.5h11.4V10l.8 1.5 3-1.3L20 5.8l-4.5-2.3c-.6 1.6-1.9 2.5-3.5 2.5s-2.9-.9-3.5-2.5z"/></svg>
+            </button>
+            <div class="space-y-1">
+              <button type="button" class="p-btn-secondary h-8 text-[12.5px]" @click="dialogoImagen = true">{{ imagenActual ? "Cambiar imagen" : "Subir imagen" }}</button>
+              <button v-if="imagenActual" type="button" class="block text-[12px] text-ink-muted hover:text-red-600" @click="ponerImagen('')">Quitar</button>
+            </div>
+          </div>
+          <p class="text-[10.5px] text-ink-light mt-1">Se guarda en el artículo y en el producto del costeo.</p>
         </div>
 
         <div class="mb-3">
@@ -155,11 +179,17 @@
         </button>
       </div>
     </div>
+    <DialogoImagen
+      :abierto="dialogoImagen" :producto="mode === 'existing' ? (existingPreview?.item_name || '') : (form.item_name || finishedItemText)"
+      :actual="imagenActual" doctype="Costeo" :docname="costeo"
+      @cerrar="dialogoImagen = false" @elegida="ponerImagen"
+    />
   </div>
 </template>
 
 <script setup>
-import { reactive, ref, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
+import DialogoImagen from "@/components/DialogoImagen.vue";
 import LinkInput from "@/components/LinkInput.vue";
 import { call, searchLink, fuzzyQuery } from "@/utils/frappe.js";
 
@@ -178,6 +208,9 @@ const props = defineProps({
   // El producto base ya es artículo: el modal solo pide la escala de sus tallas extra.
   soloTallas: { type: Boolean, default: false },
   company: { type: String, default: "" },
+  // Costeo al que se liga la imagen mientras el artículo aún no existe (DialogoImagen);
+  // el servidor la liga después al artículo (costeo_api._imagen_del_producto).
+  costeo: { type: String, default: "" },
   saving: { type: Boolean, default: false },
 });
 const emit = defineEmits(["cancel", "confirm"]);
@@ -195,6 +228,17 @@ const form = reactive({
   precio_venta: 0, conPrecioVolumen: false, rangos: [],
 });
 const errors = reactive({ item_code: false, item_name: false, stock_uom: false, existing: false });
+
+// Imagen del producto: en "nuevo" la del formulario; en "existente" la del artículo
+// elegido (cambiarla actualiza la del artículo).
+const dialogoImagen = ref(false);
+const imagenExistente = ref("");
+const imagenActual = computed(() => (mode.value === "existing" ? imagenExistente.value : form.image));
+function ponerImagen(url) {
+  if (mode.value === "existing") imagenExistente.value = url || "";
+  else form.image = url || "";
+  dialogoImagen.value = false;
+}
 const tallasForm = reactive({});
 // Rangos del producto base cuando YA es artículo (modo solo tallas): se leen de sus
 // reglas de precio para proponer los mismos "desde/hasta" en cada talla.
@@ -245,6 +289,7 @@ async function onSelectExisting(code, { suggested = false } = {}) {
       fieldname: ["item_name", "stock_uom", "image"],
     });
     existingPreview.value = doc || null;
+    imagenExistente.value = doc?.image || "";
   } catch { /* ignore — el usuario puede reintentar la búsqueda */ }
 }
 
@@ -325,7 +370,7 @@ function onConfirm() {
       item_name: existingPreview.value?.item_name || existingItemCode.value,
       stock_uom: existingPreview.value?.stock_uom || "",
       description: null,
-      image: existingPreview.value?.image || null,
+      image: imagenExistente.value || null,
       precio_venta: form.precio_venta || 0,
       pricing_rules: [],
       tallas_precios: tallasPrecios(),

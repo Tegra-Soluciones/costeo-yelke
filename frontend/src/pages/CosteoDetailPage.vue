@@ -100,6 +100,7 @@
       :tallas-extra="materializeModal.tallasExtra"
       :solo-tallas="materializeModal.soloTallas"
       :company="form.compania"
+      :costeo="docName || ''"
       :saving="materializeModal.saving"
       @cancel="cancelMaterialize"
       @confirm="confirmMaterialize"

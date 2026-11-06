@@ -925,10 +925,37 @@ def materializar_producto_terminado(
                     "producto_terminado", item_code,
                 )
 
+    if image:
+        _imagen_del_producto(costeo, item_code, image)
+
     frappe.db.commit()
     # Al dar de alta el producto base, sus variantes de talla (aún en texto libre) se
     # dan de alta solas: no tiene caso pedir un modal por cada talla extra.
     return {"item_code": item_code, "variantes": _materializar_variantes(costeo, item_code, precios_variantes)}
+
+
+def _imagen_del_producto(costeo, item_code, url):
+    """La imagen elegida al dar de alta el producto (o al cambiarla en uno que ya
+    existía) queda en el artículo (Item.image) y en su renglón del costeo, ligada a los
+    dos: un archivo privado solo lo ve quien puede ver el documento al que está ligado."""
+    if not url or not frappe.db.exists("Item", item_code):
+        return
+    if frappe.db.get_value("Item", item_code, "image") != url:
+        frappe.db.set_value("Item", item_code, "image", url)
+    frappe.db.set_value("Costeo Producto", {"parent": costeo, "finished_item": item_code}, "image", url)
+    if url.startswith(("/private/files/", "/files/")) and not frappe.db.exists(
+            "File", {"file_url": url, "attached_to_doctype": "Item", "attached_to_name": item_code}):
+        origen = frappe.get_all("File", filters={"file_url": url}, fields=["file_name"], limit=1)
+        if origen:
+            try:
+                frappe.get_doc({"doctype": "File", "file_url": url, "file_name": origen[0].file_name,
+                                "is_private": int(url.startswith("/private/")), "attached_to_doctype": "Item",
+                                "attached_to_name": item_code, "attached_to_field": "image"}).insert(ignore_permissions=True)
+            except Exception:
+                frappe.log_error(title=f"Imagen de {item_code} sin ligar al artículo: {url}")
+    from costeo_yelke.costeo_yelke.doctype.costeo.costeo import ligar_imagenes_al_costeo
+
+    ligar_imagenes_al_costeo(frappe.get_doc("Costeo", costeo))
 
 
 def _materializar_variantes(costeo, producto_base, precios_variantes=None):
