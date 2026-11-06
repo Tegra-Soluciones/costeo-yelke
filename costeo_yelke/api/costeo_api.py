@@ -2704,7 +2704,7 @@ def crear_factura_venta(costeo: str, posting_date=None, payment_terms_template=N
     si.flags.ignore_permissions = True
     si.flags.ignore_mandatory = True
     si.insert()
-    frappe.db.set_value("Costeo", costeo, "costeo_status", "Completado")
+    # «Completado» llega al cobrarse todo (api/cierre_proyecto.py), no al facturar.
     return {"name": si.name, "docstatus": si.docstatus}
 
 
@@ -3560,6 +3560,9 @@ def validar_remision(name: str) -> dict:
         per_delivered = flt(frappe.db.get_value("Sales Order", so_name, "per_delivered")) if so_name else 100
         if per_delivered >= 99.99:
             frappe.db.set_value("Costeo", costeo, "costeo_status", "Entregado")
+            # Cobrado por adelantado: con la entrega ya queda completo.
+            from costeo_yelke.api.cierre_proyecto import revisar
+            revisar(costeo)
     return {"name": doc.name, "docstatus": doc.docstatus, "flete_journal_entry": je_name}
 
 

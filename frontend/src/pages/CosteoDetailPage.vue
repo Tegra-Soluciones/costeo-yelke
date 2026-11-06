@@ -9068,7 +9068,6 @@ async function generarFactura() {
       payment_terms_template: siForm.payment_terms_template, tc_name: siForm.tc_name || null,
       sales_order: activeSOName.value,
     });
-    docStatus.value = "Completado";
     await loadRelated();
     showToast("Factura de venta creada");
   } catch (e) { showToast(e.message || "No se pudo crear la factura", "error"); }

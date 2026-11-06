@@ -36,7 +36,7 @@
           <span v-for="(e, i) in ETAPAS" :key="e" class="h-1.5 flex-1 rounded-full" :class="colorEtapa(p, i + 1)"></span>
         </div>
         <p class="text-[11.5px] text-ink-muted mt-1.5">
-          <template v-if="p.etapa >= 6">Completado · entregado y facturado</template>
+          <template v-if="p.etapa >= 6">Completado · entregado y cobrado</template>
           <template v-else>Va en <b class="text-ink font-medium">{{ ETAPAS[p.etapa - 1] }}</b> · paso {{ p.etapa }} de 6</template>
         </p>
         <div class="flex items-center gap-2 mt-2.5">
@@ -65,7 +65,7 @@ import { dineroCorto, fecha } from "@/utils/formato.js";
 const props = defineProps({ grupoInicial: { type: String, default: "activos" } });
 const emit = defineEmits(["cuenta"]);
 
-const ETAPAS = ["Costeo", "Cotización", "OV", "Producción", "Entrega", "Factura"];
+const ETAPAS = ["Costeo", "Cotización", "OV", "Producción", "Entrega", "Cobro"];
 const GRUPOS = [["activos", "Activos"], ["atrasados", "Atrasados"], ["completados", "Completados"]];
 
 const proyectos = ref([]);

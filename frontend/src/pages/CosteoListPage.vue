@@ -97,7 +97,7 @@
                 </div>
                 <p class="text-[11.5px] text-ink-muted mt-1.5">
                   <template v-if="p.estado === 'Cancelado'">Cancelado</template>
-                  <template v-else-if="p.etapa >= 6">Completado · entregado y facturado</template>
+                  <template v-else-if="p.etapa >= 6">Completado · entregado y cobrado</template>
                   <template v-else>Va en <b class="text-ink font-medium">{{ ETAPAS[p.etapa - 1] }}</b> · paso {{ p.etapa }} de 6</template>
                 </p>
               </div>
@@ -205,7 +205,7 @@ const toast = reactive({ show: false, msg: "", type: "success" });
 const confirmDelete = reactive({ open: false, name: "", loading: false });
 
 // Las 6 etapas del ciclo, igual que el panel de Dirección (direccion._ETAPA).
-const ETAPAS = ["Costeo", "Cotización", "OV", "Producción", "Entrega", "Factura"];
+const ETAPAS = ["Costeo", "Cotización", "OV", "Producción", "Entrega", "Cobro"];
 const claveFiltro = (p) => (p.estado === "Cancelado" ? "cancelado" : p.etapa >= 6 ? "completado" : `e${p.etapa}`);
 const filtrosEtapa = computed(() => {
   const n = (k) => items.value.filter((p) => claveFiltro(p) === k).length;

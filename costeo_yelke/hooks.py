@@ -394,6 +394,13 @@ for _dt, _fn in (("Payment Entry", "al_mover_pago"), ("Journal Entry", "al_mover
 		_lista = [] if not _actual else ([_actual] if isinstance(_actual, str) else list(_actual))
 		doc_events[_dt][_evento] = [*_lista, f"costeo_yelke.api.cuentas_mx.{_fn}"]
 
+# Cierre del proyecto: «Completado» cuando ya se cobró todo (api/cierre_proyecto.py).
+for _dt in ("Sales Invoice", "Payment Entry", "Journal Entry", "Delivery Note"):
+	for _evento in ("on_submit", "on_cancel"):
+		_actual = doc_events.setdefault(_dt, {}).get(_evento)
+		_lista = [] if not _actual else ([_actual] if isinstance(_actual, str) else list(_actual))
+		doc_events[_dt][_evento] = [*_lista, "costeo_yelke.api.cierre_proyecto.al_mover_cobro"]
+
 # Encargos (api/encargos.py, docs/plan-encargos.md): cualquier movimiento de un documento
 # del proyecto revisa si ya se atendió algún encargo; un ToDo cerrado en el Escritorio
 # cuenta como "Listo".
@@ -414,6 +421,7 @@ scheduler_events = {
 		"costeo_yelke.api.aprobaciones.recordatorio_pendientes",
 		"costeo_yelke.api.delegacion.avisos_delegacion",
 		"costeo_yelke.api.encargos.avisos_vencimiento",
+		"costeo_yelke.api.cierre_proyecto.revisar_todos",
 	],
 	# Préstamo de permisos: aplica los que empiezan y retira los vencidos.
 	"hourly": [
