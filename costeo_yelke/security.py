@@ -71,7 +71,67 @@ def _is_our_override(method):
 	return bool(target) and target.startswith(APP_PREFIX)
 
 
+# ── Sin sesión: lista cerrada ─────────────────────────────────────────────────
+# El sitio es de uso interno: quien no ha iniciado sesión solo puede entrar, recuperar
+# su contraseña y lo técnico que eso necesita. Todo lo demás que Frappe y las otras
+# apps abren a invitados (formulario de contacto, solicitud de empleo, blog, búsquedas
+# públicas, pasarelas de pago, webhooks de telefonía, métodos de prueba...) se niega.
+METODOS_INVITADO = {
+	"login",
+	"logout",
+	"frappe.handler.logout",
+	"frappe.handler.web_logout",
+	"frappe.www.login.login_via_key",
+	"frappe.www.login.login_via_token",
+	"frappe.www.login.send_login_link",
+	"frappe.core.doctype.user.user.reset_password",
+	"frappe.core.doctype.user.user.update_password",
+	"frappe.core.doctype.user.user.test_password_strength",
+	"frappe.ping",
+	"frappe.client.get_time_zone",
+	"frappe.translate.get_all_languages",
+	"frappe.translate.get_app_translations",
+	# socket.io pregunta quién es el usuario (y responde «nadie» a un invitado)
+	"frappe.realtime.get_user_info",
+	"frappe.realtime.can_subscribe_doc",
+	"frappe.realtime.can_subscribe_doctype",
+	# acuse de lectura y baja de correos que manda el sistema
+	"frappe.core.doctype.communication.email.mark_email_as_seen",
+	"frappe.email.queue.unsubscribe",
+	"frappe.website.doctype.web_page_view.web_page_view.make_view_log",
+}
+
+# Páginas (primer segmento de la ruta) que un invitado puede abrir. El resto -- blog,
+# contacto, formularios web, portal, CRM, HR, Builder -- da 403.
+PAGINAS_INVITADO = {
+	"", "login", "update-password", "message", "website_script.js", "robots.txt",
+	"app", "desk", "costeo-yelke", "manual-costeo", "printview", "unsubscribe",
+	# lo que no es página de Frappe: API (filtrada arriba), archivos (con su propio
+	# permiso) y estáticos
+	"api", "private", "files", "assets", "socket.io", ".well-known", "favicon.ico",
+}
+
+
+def _es_invitado():
+	return (frappe.session.user or "Guest") == "Guest"
+
+
+def guard_guest():
+	if not _es_invitado():
+		return
+	# Sin el rastro del error (rutas y código del servidor) en las respuestas a invitados.
+	frappe.local.flags.disable_traceback = True
+	req = getattr(frappe.local, "request", None)
+	ruta = ((req.path if req is not None else "") or "").strip("/")
+	if ruta.split("/", 1)[0] not in PAGINAS_INVITADO:
+		raise frappe.PermissionError(_("Inicia sesión para continuar."))
+	method = _requested_method()
+	if method and method not in METODOS_INVITADO:
+		raise frappe.PermissionError(_("Inicia sesión para continuar."))
+
+
 def guard_internal():
+	guard_guest()
 	method = _requested_method()
 	if not (method.startswith(APP_PREFIX) or _is_our_override(method)):
 		return
