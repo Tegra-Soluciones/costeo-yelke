@@ -62,8 +62,8 @@
           >
             <!-- Foto del primer producto -->
             <div class="relative aspect-[16/9] bg-zinc-50 border-b border-surface-border">
-              <img v-if="p.imagen" :src="p.imagen" :alt="p.producto || p.titulo" loading="lazy" class="absolute inset-0 w-full h-full object-contain p-3" />
-              <!-- Sin foto: una prenda genérica. -->
+              <img v-if="p.imagen" :src="p.imagen" :alt="p.producto || p.titulo" loading="lazy" class="absolute inset-0 w-full h-full object-contain p-3" @error="p.imagen = null" />
+              <!-- Sin foto (o no cargó): una prenda genérica. -->
               <div v-else class="absolute inset-0 flex items-center justify-center text-zinc-300">
                 <svg class="w-14 h-14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" aria-hidden="true">
                   <path d="M8.5 3.5L4 5.8 2.5 10.2l3 1.3L6.3 10V20.5h11.4V10l.8 1.5 3-1.3L20 5.8l-4.5-2.3c-.6 1.6-1.9 2.5-3.5 2.5s-2.9-.9-3.5-2.5z"/>
@@ -194,7 +194,8 @@ const router = useRouter();
 const loading      = ref(true);
 const items        = ref([]);
 const search       = ref("");
-const filterStatus = ref("");
+// Por defecto solo lo que sigue en curso: completados y cancelados no hacen ruido.
+const filterStatus = ref("activos");
 const openMenu     = ref(null); // name of card whose menu is open
 const menuTarget   = ref(null); // sobre quién actúa el menú (ver toggleMenu)
 const menuPos      = ref({ top: 0, left: 0 });
@@ -208,7 +209,8 @@ const ETAPAS = ["Costeo", "Cotización", "OV", "Producción", "Entrega", "Factur
 const claveFiltro = (p) => (p.estado === "Cancelado" ? "cancelado" : p.etapa >= 6 ? "completado" : `e${p.etapa}`);
 const filtrosEtapa = computed(() => {
   const n = (k) => items.value.filter((p) => claveFiltro(p) === k).length;
-  const base = [{ k: "", l: "Todos", n: items.value.length },
+  const activos = items.value.filter((p) => !["completado", "cancelado"].includes(claveFiltro(p))).length;
+  const base = [{ k: "activos", l: "Activos", n: activos }, { k: "", l: "Todos", n: items.value.length },
     ...ETAPAS.slice(0, 5).map((e, i) => ({ k: `e${i + 1}`, l: e, n: n(`e${i + 1}`) })),
     { k: "completado", l: "Completados", n: n("completado") }];
   if (n("cancelado")) base.push({ k: "cancelado", l: "Cancelados", n: n("cancelado") });
@@ -239,7 +241,9 @@ const filteredItems = computed(() =>
       (i.titulo  || "").toLowerCase().includes(q) ||
       (i.name    || "").toLowerCase().includes(q) ||
       (i.documento || "").toLowerCase().includes(q);
-    return matchSearch && (!filterStatus.value || claveFiltro(i) === filterStatus.value);
+    const f = filterStatus.value;
+    const matchFiltro = !f || (f === "activos" ? !["completado", "cancelado"].includes(claveFiltro(i)) : claveFiltro(i) === f);
+    return matchSearch && matchFiltro;
   })
 );
 
