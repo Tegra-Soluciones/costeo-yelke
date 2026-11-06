@@ -23,7 +23,7 @@
           <p class="p-eyebrow">{{ soloRevisa ? "Revisión de documentos" : "Dirección" }}</p>
           <div class="flex items-center -mr-2">
           <!-- Levantamiento ya no es pestaña: es su propia pantalla (también para el celular). -->
-          <RouterLink v-if="permisos.ve_panel" to="/levantamiento" class="h-8 px-3 mr-1 rounded-full bg-brand-500 text-white text-[12px] font-semibold flex items-center active:bg-brand-600">+ Levantar</RouterLink>
+          <RouterLink v-if="permisos.ve_panel" to="/prospecto-comercial" class="h-8 px-3 mr-1 rounded-full bg-brand-500 text-white text-[12px] font-semibold flex items-center active:bg-brand-600">+ Prospecto</RouterLink>
           <!-- En el celular las demás pantallas son de computadora (router › esCelular). -->
           <RouterLink v-if="!celular" to="/inicio" class="h-10 px-2 flex items-center text-[12px] text-ink-light font-medium">App ›</RouterLink>
           <button type="button" class="relative w-10 h-10 flex items-center justify-center text-ink-muted" @click="abrirNotificaciones">
@@ -92,7 +92,7 @@
             {{ t.l }}<template v-if="t.k === 'aprobar'"> · {{ bandeja.items.length }}</template><template v-if="t.k === 'porasignar' && porAsignar"> · {{ porAsignar }}</template>
           </button>
         </div>
-        <RouterLink v-if="permisos.ve_panel" to="/levantamiento" class="p-btn-primary ml-auto h-8 text-[12.5px]">+ Levantamiento</RouterLink>
+        <RouterLink v-if="permisos.ve_panel" to="/prospecto-comercial" class="p-btn-primary ml-auto h-8 text-[12.5px]">+ Prospecto comercial</RouterLink>
         <button v-if="permisos.ve_panel && dlg && !dlg.activa && !dlg.programadas?.length" type="button" class="p-btn-secondary h-8 text-[12.5px]" @click="hojaDelegar = true">Delegar…</button>
       </div>
       <BannerDelegacion :propia="dlg?.activa" :recibida="permisos.delegacion" escritorio @terminar="terminarDelegacion" />

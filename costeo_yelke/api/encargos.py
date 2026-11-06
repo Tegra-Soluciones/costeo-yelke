@@ -662,7 +662,7 @@ def crear_proyecto(titulo: str, cliente: str, usuario: str, compania: str = None
 def get_candidatos_levantamiento() -> list:
     """Levantamiento: a quién se le puede asignar el Costear (lo tienen en Editar)."""
     if not (puede("levantamiento", "editar") or _puede_encargar("costear")):
-        frappe.throw(_("No tienes acceso a Levantamiento."), frappe.PermissionError)
+        frappe.throw(_("No tienes acceso a Prospecto Comercial."), frappe.PermissionError)
     return _candidatos("costear")
 
 

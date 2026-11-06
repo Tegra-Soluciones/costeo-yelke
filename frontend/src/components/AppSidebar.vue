@@ -94,7 +94,7 @@ const SECCIONES = () => [
   { titulo: "", items: [
     { to: "/inicio", icon: IconHome, label: "Inicio", rutas: ["Dashboard"] },
     { to: "/asignaciones", icon: IconEncargos, label: "Asignaciones", rutas: ["Asignaciones"], ve: true, cuenta: cuentaEncargos.value.para_mi },
-    { to: "/levantamiento", icon: IconLevantar, label: "Levantamiento", rutas: ["Levantamiento"], ve: puede("levantamiento", "editar") },
+    { to: "/prospecto-comercial", icon: IconLevantar, label: "Prospecto Comercial", rutas: ["Levantamiento"], ve: puede("levantamiento", "editar") },
     { to: "/direccion", icon: IconAprobar, label: etiquetaAprobaciones.value, rutas: ["Direccion"], ve: !!etiquetaAprobaciones.value, cuenta: cuentaBandeja.value },
   ] },
   { titulo: "Costeo", items: [

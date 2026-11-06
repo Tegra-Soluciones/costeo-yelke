@@ -22,7 +22,7 @@ const permisos = usePermisosAprobacion();
 const { puede } = useAccesos();
 
 const enlaces = computed(() => [
-  { to: "/levantamiento", texto: "+ Levantar", naranja: true, ve: puede("levantamiento", "editar") },
+  { to: "/prospecto-comercial", texto: "+ Prospecto", naranja: true, ve: puede("levantamiento", "editar") },
   { to: "/direccion", texto: "Dirección ›", ve: permisos.ve_panel || permisos.puede_aprobar || permisos.puede_revisar || permisos.puede_aprobar_precios },
   { to: "/asignaciones", texto: "Asignaciones ›", ve: true },
 ].filter((e) => e.ve && e.to !== props.actual));

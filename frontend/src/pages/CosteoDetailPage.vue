@@ -297,7 +297,7 @@
                 <button v-if="docState === 0 && !form.cliente" type="button" class="mt-1.5 text-[12px] text-brand-600 font-medium hover:underline" @click="clienteNuevoModo = true">¿Sin alta? Escribe su nombre</button>
               </template>
               <!-- Del levantamiento: con quién se habla del pedido. -->
-              <p v-if="form.contacto_nombre || form.contacto_correo || form.contacto_telefono" class="mt-1.5 flex items-start gap-1.5 text-[12px] text-ink-muted break-words" title="Contacto del levantamiento">
+              <p v-if="form.contacto_nombre || form.contacto_correo || form.contacto_telefono" class="mt-1.5 flex items-start gap-1.5 text-[12px] text-ink-muted break-words" title="Contacto del prospecto comercial">
                 <Icono nombre="persona" class="w-3.5 h-3.5 mt-px flex-shrink-0 text-ink-light" />
                 <span>{{ [form.contacto_nombre, form.contacto_correo, form.contacto_telefono].filter(Boolean).join(" · ") }}</span>
               </p>

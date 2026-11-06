@@ -12,14 +12,14 @@ const routes = [
       if ((await cargarPermisosAprobacion()).es_director) return "/direccion";
       await cargarAccesos();
       const vistas = Object.keys(useAccesos().estado.accesos || {});
-      if (vistas.length === 1 && vistas[0] === "levantamiento") return "/levantamiento";
+      if (vistas.length === 1 && vistas[0] === "levantamiento") return "/prospecto-comercial";
       // En el celular no hay Inicio (es de computadora): lo de celular que tenga.
-      if (esCelular()) return useAccesos().puede("levantamiento", "editar") ? "/levantamiento" : "/asignaciones";
+      if (esCelular()) return useAccesos().puede("levantamiento", "editar") ? "/prospecto-comercial" : "/asignaciones";
       return "/inicio";
     } },
   // `movil`: en celular se pinta sin el menú ni la barra de la app (App.vue).
   { path: "/direccion", name: "Direccion", component: () => import("@/pages/DireccionPage.vue"), meta: { movil: true } },
-  { path: "/levantamiento", name: "Levantamiento", component: () => import("@/pages/LevantamientoPage.vue"), meta: { movil: true } },
+  { path: "/prospecto-comercial", alias: "/levantamiento", name: "Levantamiento", component: () => import("@/pages/LevantamientoPage.vue"), meta: { movil: true } },
   { path: "/inicio", name: "Dashboard", component: () => import("@/pages/DashboardPage.vue") },
   { path: "/asignaciones", name: "Asignaciones", component: () => import("@/pages/AsignacionesPage.vue"), meta: { movil: true } },
   { path: "/solo-computadora", name: "SoloComputadora", component: () => import("@/pages/SoloComputadoraPage.vue"), meta: { movil: true } },

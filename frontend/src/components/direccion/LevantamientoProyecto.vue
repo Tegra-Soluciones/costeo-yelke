@@ -127,7 +127,7 @@ async function guardar() {
     limpiar();
     // La página se desplaza dentro de su contenedor, no la ventana.
     raiz.value?.scrollIntoView({ behavior: "smooth", block: "start" });
-  } catch (e) { error.value = e.message || "No se pudo guardar el levantamiento."; }
+  } catch (e) { error.value = e.message || "No se pudo guardar el prospecto comercial."; }
   finally { ocupado.value = false; }
 }
 

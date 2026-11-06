@@ -78,7 +78,7 @@ VISTAS = {
                   "paso": "vender", "rutas": ["SalesOrderList", "SalesOrderDetail", "SalesOrderNueva"],
                   "doctypes": {"Sales Order": "editar", "Customer": "editar", "Address": "editar", "Contact": "editar"},
                   "descripcion": "Convierte la cotización en orden de venta (OC del cliente, cancelación)."},
-    "levantamiento": {"etiqueta": "Levantamiento", "grupo": "Comercial", "rol": "Comercial Levantamiento Yelke",
+    "levantamiento": {"etiqueta": "Prospecto Comercial", "grupo": "Comercial", "rol": "Comercial Levantamiento Yelke",
                   "rutas": ["Levantamiento"], "doctypes": {"Costeo": "editar", "Customer": "editar"},
                   "descripcion": "Toma los datos de un pedido nuevo (cliente, fotos, detalles) y lo asigna a quien costea."},
     "precios":   {"etiqueta": "Precios", "grupo": "Comercial", "rol": "Comercial Precios Yelke",

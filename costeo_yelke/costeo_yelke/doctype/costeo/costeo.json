@@ -122,7 +122,7 @@
       "fieldname": "contacto_nombre",
       "fieldtype": "Data",
       "label": "Contacto del cliente",
-      "description": "Del levantamiento (Panel de Dirección): con quién se habla del pedido."
+      "description": "Del prospecto comercial: con quién se habla del pedido."
     },
     {
       "fieldname": "contacto_correo",
