@@ -1,7 +1,7 @@
 <!--
   Panel de Dirección (docs/plan-panel-direccion.md §4, mockup docs/mockups/direccion.html).
 
-    Director            → Por aprobar · Proyectos · Por asignar · Asignaciones · Indicadores · Permisos
+    Director            → Por aprobar · Proyectos · Por asignar · Asignaciones (y Permisos) · Indicadores
     Aprobador/delegado  → Por aprobar
     Revisor             → Por revisar
 
@@ -49,13 +49,16 @@
           <ListaBandeja />
         </template>
         <ProyectosDireccion v-else-if="tab === 'proyectos'" ref="proyectosRef" :grupo-inicial="grupoProyectos" />
-        <div v-else-if="tab === 'encargos'" class="px-4 pt-3"><VistaAsignaciones modo="equipo" movil /></div>
+        <template v-else-if="tab === 'encargos'">
+          <div class="px-4 pt-3"><SubAsignaciones /></div>
+          <PermisosDireccion v-if="subEncargos === 'permisos'" :dlg="dlg" @delegar="hojaDelegar = true" @delegacion="alCambiarDelegacion" />
+          <div v-else class="px-4 pt-3"><VistaAsignaciones modo="equipo" movil /></div>
+        </template>
         <PorAsignar v-else-if="tab === 'porasignar'" @cuenta="porAsignar = $event" />
-        <PermisosDireccion v-else-if="tab === 'permisos'" :dlg="dlg" @delegar="hojaDelegar = true" @delegacion="alCambiarDelegacion" />
         <ResumenDireccion v-else ref="resumenRef" :pendientes="bandeja.items.length" :bloqueadas="bloqueadas" @ir="irDesdeResumen" />
       </div>
 
-      <nav v-if="permisos.ve_panel" class="fixed bottom-0 inset-x-0 z-30 grid grid-cols-6 bg-white/95 backdrop-blur border-t border-surface-border" style="padding-bottom: env(safe-area-inset-bottom)">
+      <nav v-if="permisos.ve_panel" class="fixed bottom-0 inset-x-0 z-30 grid grid-cols-5 bg-white/95 backdrop-blur border-t border-surface-border" style="padding-bottom: env(safe-area-inset-bottom)">
         <button
           v-for="t in TABS" :key="t.k" type="button" class="relative h-[56px] flex flex-col items-center justify-center gap-0.5 text-[10.5px] font-medium"
           :class="tab === t.k ? 'text-brand-600' : 'text-ink-light'" @click="irTab(t.k)"
@@ -82,7 +85,7 @@
       <div class="h-14 bg-white border-b border-surface-border flex items-center px-6 gap-4 flex-shrink-0">
         <div>
           <p class="p-eyebrow">{{ soloRevisa ? "Revisión de documentos" : "Dirección" }}</p>
-          <p class="text-[16px] font-semibold leading-tight">{{ { aprobar: soloRevisa ? "Por revisar" : "Por aprobar", proyectos: "Proyectos", porasignar: "Por asignar", encargos: "Asignaciones", resumen: "Indicadores", permisos: "Permisos" }[tab] }}</p>
+          <p class="text-[16px] font-semibold leading-tight">{{ { aprobar: soloRevisa ? "Por revisar" : "Por aprobar", proyectos: "Proyectos", porasignar: "Por asignar", encargos: "Asignaciones", resumen: "Indicadores" }[tab] }}</p>
         </div>
         <div v-if="permisos.ve_panel" class="p-seg ml-6">
           <button v-for="t in TABS" :key="t.k" type="button" :class="tab === t.k ? 'on' : ''" @click="irTab(t.k)">
@@ -112,9 +115,12 @@
       </div>
       <div v-else class="flex-1 overflow-y-auto"><div class="max-w-[1100px] mx-auto px-6 py-5">
         <ProyectosDireccion v-if="tab === 'proyectos'" ref="proyectosRef" :grupo-inicial="grupoProyectos" />
-        <VistaAsignaciones v-else-if="tab === 'encargos'" modo="equipo" />
+        <template v-else-if="tab === 'encargos'">
+          <SubAsignaciones />
+          <PermisosDireccion v-if="subEncargos === 'permisos'" :dlg="dlg" @delegar="hojaDelegar = true" @delegacion="alCambiarDelegacion" />
+          <VistaAsignaciones v-else modo="equipo" class="mt-4" />
+        </template>
         <PorAsignar v-else-if="tab === 'porasignar'" @cuenta="porAsignar = $event" />
-        <PermisosDireccion v-else-if="tab === 'permisos'" :dlg="dlg" @delegar="hojaDelegar = true" @delegacion="alCambiarDelegacion" />
         <ResumenDireccion v-else ref="resumenRef" :pendientes="bandeja.items.length" :bloqueadas="bloqueadas" @ir="irDesdeResumen" />
       </div></div>
     </template>
@@ -184,7 +190,6 @@ const ICONOS = {
   proyectos: '<svg class="w-[22px] h-[22px]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 5h7v7H4zM13 5h7v4h-7zM13 11h7v8h-7zM4 14h7v5H4z"/></svg>',
   encargos: '<svg class="w-[22px] h-[22px]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M16 8a4 4 0 11-8 0 4 4 0 018 0zM4 20a8 8 0 0116 0"/></svg>',
   porasignar: '<svg class="w-[22px] h-[22px]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M15 8a3 3 0 11-6 0 3 3 0 016 0zM4 20a8 8 0 0111-7.4M19 15v6M16 18h6"/></svg>',
-  permisos: '<svg class="w-[22px] h-[22px]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z"/><path d="M9.5 12l1.8 1.8L15 10"/></svg>',
   resumen: '<svg class="w-[22px] h-[22px]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>',
 };
 const TABS = [
@@ -193,7 +198,6 @@ const TABS = [
   { k: "porasignar", l: "Por asignar", icono: ICONOS.porasignar },
   { k: "encargos", l: "Asignaciones", icono: ICONOS.encargos },
   { k: "resumen", l: "Indicadores", icono: ICONOS.resumen },
-  { k: "permisos", l: "Permisos", icono: ICONOS.permisos },
 ];
 const FILTROS = [["todos", "Todos"], ["compras", "Compras"], ["ventas", "Ventas"], ["costeo", "Costeos y precios"]];
 const GRUPO = { "oc-mp": "compras", "oc-maq": "compras", fc: "compras", cot: "ventas", ov: "ventas", costeo: "costeo", precio: "costeo" };
@@ -223,7 +227,19 @@ const resumenRef = ref(null);
 
 const accede = computed(() => permisos.ve_panel || permisos.puede_aprobar || permisos.puede_revisar || permisos.puede_aprobar_precios);
 const soloRevisa = computed(() => permisos.puede_revisar && !permisos.puede_aprobar && !permisos.ve_panel);
-const tab = computed(() => (permisos.ve_panel && ["proyectos", "porasignar", "encargos", "resumen", "permisos"].includes(route.query.tab) ? route.query.tab : "aprobar"));
+// Permisos (delegar y prestar) vive dentro de Asignaciones; ?tab=permisos sigue sirviendo.
+const tab = computed(() => {
+  const t = route.query.tab === "permisos" ? "encargos" : route.query.tab;
+  return permisos.ve_panel && ["proyectos", "porasignar", "encargos", "resumen"].includes(t) ? t : "aprobar";
+});
+const subEncargos = computed(() => (route.query.tab === "permisos" || route.query.ver === "permisos" ? "permisos" : "asignaciones"));
+const SubAsignaciones = defineComponent({
+  setup() {
+    return () => h("div", { class: "p-seg" }, [["asignaciones", "Asignaciones"], ["permisos", "Permisos"]].map(([k, l]) =>
+      h("button", { type: "button", class: subEncargos.value === k ? "on" : "",
+        onClick: () => router.replace({ query: { tab: "encargos", ver: k === "permisos" ? "permisos" : undefined } }) }, l)));
+  },
+});
 const lista = computed(() => bandeja.items.filter((f) => filtro.value === "todos" || GRUPO[f.tipo] === filtro.value));
 const viejos = computed(() => bandeja.items.filter((f) => f.horas > 48).length);
 const bloqueadas = computed(() => bandeja.items.filter((f) => f.bloqueo).length);
@@ -231,9 +247,9 @@ const cuentaFiltro = (k) => (k === "todos" ? bandeja.items.length : bandeja.item
 const clave = (f) => `${f.tipo === "precio" ? "precio" : f.doctype}/${f.name}`;
 
 const saludo = () => { const hr = new Date().getHours(); return hr < 12 ? "Buenos días" : hr < 19 ? "Buenas tardes" : "Buenas noches"; };
-const tituloMovil = computed(() => (tab.value === "proyectos" ? "Proyectos" : tab.value === "porasignar" ? "Por asignar" : tab.value === "encargos" ? "Asignaciones" : tab.value === "resumen" ? "Indicadores" : tab.value === "permisos" ? "Permisos" : soloRevisa.value ? "Por revisar" : saludo()));
+const tituloMovil = computed(() => (tab.value === "proyectos" ? "Proyectos" : tab.value === "porasignar" ? "Por asignar" : tab.value === "encargos" ? "Asignaciones" : tab.value === "resumen" ? "Indicadores" : soloRevisa.value ? "Por revisar" : saludo()));
 const subtitulo = computed(() => {
-  if (tab.value !== "aprobar") return { resumen: "Ventas, compras y lo que requiere atención", permisos: "Delegar aprobaciones y prestar permisos", encargos: "Qué tiene asignado cada persona", porasignar: "Lo que ya puede empezarse y quién lo tiene" }[tab.value] || "Avance y alertas de cada costeo";
+  if (tab.value !== "aprobar") return { resumen: "Ventas, compras y lo que requiere atención", encargos: subEncargos.value === "permisos" ? "Delegar aprobaciones y prestar permisos" : "Qué tiene asignado cada persona", porasignar: "Lo que ya puede empezarse y quién lo tiene" }[tab.value] || "Avance y alertas de cada costeo";
   if (soloRevisa.value) return "Revisas antes de que llegue a Dirección.";
   const n = bandeja.items.length;
   if (!n) return "Nada por aprobar";
