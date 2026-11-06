@@ -105,6 +105,7 @@ METODOS_INVITADO = {
 # contacto, formularios web, portal, CRM, HR, Builder -- da 403.
 PAGINAS_INVITADO = {
 	"", "login", "update-password", "message", "website_script.js", "robots.txt",
+	"qrcode",  # verificación en dos pasos: el QR que llega por correo al primer inicio
 	"app", "desk", "costeo-yelke", "manual-costeo", "printview", "unsubscribe",
 	# lo que no es página de Frappe: API (filtrada arriba), archivos (con su propio
 	# permiso) y estáticos
