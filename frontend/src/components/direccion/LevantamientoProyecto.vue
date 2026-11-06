@@ -38,7 +38,6 @@
         <span class="p-field-label">Nombre de la empresa</span>
         <input v-model="form.cliente_nuevo" v-mayus class="p-field" placeholder="Razón social o nombre comercial" />
       </label>
-      <p class="p-meta -mt-1">Si no es empresa, el cliente queda a nombre del contacto. Quien costea lo confirma: lo elige si ya está dado de alta o lo da de alta.</p>
     </section>
 
     <section class="p-panel p-4 space-y-3">
