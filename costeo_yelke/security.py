@@ -12,6 +12,11 @@ import re
 import frappe
 from frappe import _
 
+from costeo_yelke import dos_pasos
+
+# Alta de la verificación en dos pasos en la misma pantalla de login (dos_pasos.py).
+dos_pasos.instalar()
+
 APP_PREFIX = "costeo_yelke."
 
 
