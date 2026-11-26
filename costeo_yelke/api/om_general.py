@@ -209,6 +209,79 @@ def telas_de_producto(doc, base, om=None):
     return filas
 
 
+PIEZAS_TEJIDO = {"Cuellos y puños": ["Cuellos", "Puños"], "Cuellos": ["Cuellos"], "Puños": ["Puños"]}
+BLOQUES = [("base", "Tallas base"), ("extra", "Tallas extra")]
+
+
+def piezas_de_tejido(t):
+    """Las piezas que lleva un tejido: cuellos, puños o lo que se escriba en «Otro»."""
+    if t.get("corresponde") == "Otro":
+        return [(t.get("otro") or "Otro").strip() or "Otro"]
+    return PIEZAS_TEJIDO.get(t.get("corresponde") or "Cuellos y puños", ["Cuellos", "Puños"])
+
+
+def desglose_tejido(t, tallas, base):
+    """El desglose de un tejido como lo maneja Yelke (hoja «Cuellos y puños»): por género,
+    dos bloques -- tallas base (las del producto base) y tallas extra (las de sus
+    variantes) --, cada uno con su medida por pieza; y la solicitud al taller: piezas
+    por medida y color. Cantidades: las tallas de la orden de venta (tallas_de_producto).
+
+    ``t`` trae ``medidas`` = {pieza: {"Caballero|base": "40*8.5 cm", ...}}."""
+    medidas = t.get("medidas") or {}
+    if isinstance(medidas, str):
+        medidas = json.loads(medidas or "{}")
+    piezas = piezas_de_tejido(t)
+    generos = []
+    for f in tallas or []:
+        g = f.get("genero") or "Sin género"
+        if g not in generos:
+            generos.append(g)
+    out = []
+    for g in generos:
+        bloques = []
+        for clave, titulo in BLOQUES:
+            filas = [f for f in tallas if (f.get("genero") or "Sin género") == g
+                     and ((f.get("producto") or base) == base) == (clave == "base")]
+            tallas_b, vistos = [], {}
+            for f in filas:
+                if f["talla"] in vistos:
+                    vistos[f["talla"]]["cantidad"] += flt(f.get("cantidad"))
+                else:
+                    vistos[f["talla"]] = {"talla": f["talla"], "cantidad": flt(f.get("cantidad"))}
+                    tallas_b.append(vistos[f["talla"]])
+            bloques.append({"clave": clave, "titulo": titulo, "tallas": tallas_b,
+                            "subtotal": sum(x["cantidad"] for x in tallas_b),
+                            "medidas": {pz: ((medidas.get(pz) or {}).get(f"{g}|{clave}") or "") for pz in piezas}})
+        if not any(b["tallas"] for b in bloques):
+            continue
+        # Solicitud: una línea por pieza y medida (si los dos bloques llevan la misma
+        # medida, se juntan); los puños se piden en pares.
+        lineas = []
+        for pz in piezas:
+            por_medida = {}
+            for b in bloques:
+                if not b["tallas"] and not b["medidas"][pz]:
+                    continue
+                m = b["medidas"][pz]
+                por_medida.setdefault(m, 0)
+                por_medida[m] += b["subtotal"]
+            for m, n in por_medida.items():
+                nombre = f"Pares de puños {g.lower()}" if pz == "Puños" else f"{pz} {g.lower()}"
+                lineas.append({"texto": f"{nombre}{(' medida ' + m) if m else ''}", "cantidad": n})
+        out.append({"genero": g, "bloques": bloques, "total": sum(b["subtotal"] for b in bloques),
+                    "titulo": " · ".join(x for x in [g, t.get("tipo_tejido"), (f"{t.get('hebras')} hebras" if t.get("hebras") else ""),
+                                                      (f"color {t.get('color')}" if t.get("color") else "")] if x),
+                    "solicitud": lineas})
+    return out
+
+
+def _tejidos(om):
+    return [{"hebras": r.hebras, "tipo_tejido": r.tipo_tejido, "color": r.color,
+             "corresponde": r.corresponde or "Cuellos y puños", "otro": r.otro,
+             "medidas": json.loads(r.medidas or "{}"), "proveedor": r.proveedor, "imagen": r.imagen}
+            for r in (om.get("om_tejidos") or [])]
+
+
 def _om_doc(costeo, producto):
     name = frappe.db.get_value("Orden Manufactura", {"costeo": costeo, "producto": producto}, "name")
     return frappe.get_doc("Orden Manufactura", name) if name else None
@@ -228,6 +301,7 @@ def _serializar(om, doc=None):
                       for r in (om.get("om_aberturas_detalle") or [])],
         "bolsas": [{"numero": r.numero, "ubicacion": r.ubicacion, "descripcion": r.descripcion}
                    for r in (om.get("om_bolsas") or [])],
+        "tejidos": _tejidos(om),
         "procesos": [{"nombre_proceso": r.nombre_proceso, "ubicacion": r.ubicacion, "colores": r.colores,
                       "descripcion": r.get("descripcion"), "medida": r.get("medida"),
                       "proveedores": _lista(r.proveedores)} for r in om.om_procesos],
@@ -318,6 +392,13 @@ def guardar_om_general(costeo: str, producto: str, datos) -> dict:
         {"numero": int(flt(r.get("numero"))), "ubicacion": r.get("ubicacion"), "descripcion": r.get("descripcion")}
         for r in (datos.get("aberturas") or [])
         if (flt(r.get("numero")) or (r.get("ubicacion") or "").strip() or (r.get("descripcion") or "").strip())])
+    om.set("om_tejidos", [
+        {"hebras": r.get("hebras"), "tipo_tejido": r.get("tipo_tejido"), "color": r.get("color"),
+         "corresponde": r.get("corresponde") or "Cuellos y puños", "otro": r.get("otro"),
+         "medidas": json.dumps(r.get("medidas") or {}, ensure_ascii=False),
+         "proveedor": r.get("proveedor") or None, "imagen": r.get("imagen")}
+        for r in (datos.get("tejidos") or [])
+        if any((str(r.get(k) or "")).strip() for k in ("hebras", "tipo_tejido", "color", "proveedor", "imagen"))])
     om.set("om_bolsas", [
         {"numero": int(flt(r.get("numero"))), "ubicacion": r.get("ubicacion"), "descripcion": r.get("descripcion")}
         for r in (datos.get("bolsas") or [])
@@ -397,14 +478,17 @@ def om_de_oc(po: str) -> list:
             if not om:
                 continue
             sup = po_doc.supplier
+            tallas_r = tallas_de_producto(doc, base, qty_ov, desglose)
             registros.append({
+                "tejidos": [dict(t, desglose=desglose_tejido(t, tallas_r, base))
+                            for t in om["tejidos"] if t.get("proveedor") == sup],
                 "producto": base,
                 "item_name": frappe.db.get_value("Item", base, "item_name") or base,
                 "general": om["general"],
                 "telas": om["telas"],
                 "aberturas": om["aberturas"],
                 "bolsas": om["bolsas"],
-                "tallas": tallas_de_producto(doc, base, qty_ov, desglose),
+                "tallas": tallas_r,
                 "tallas_lotes": tallas_por_lote_de_producto(doc, base, qty_ov),
                 "procesos": [r for r in om["procesos"] if _para(r["proveedores"], sup)],
                 "observaciones": [r for r in om["observaciones"] if _para(r["proveedores"], sup)],

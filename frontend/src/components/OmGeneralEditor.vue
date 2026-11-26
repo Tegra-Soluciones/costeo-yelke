@@ -97,6 +97,83 @@
           <p class="text-[11px] text-ink-light mt-1">El desglose por talla se edita en la orden de venta (tallas regulares y tallas extra).</p>
         </div>
 
+        <!-- Tejidos (cuellos, puños u otra pieza tejida): cada uno va a UN taller. Las
+             medidas se dan por bloque (tallas base / tallas extra, por género) y el
+             desglose por talla y la solicitud salen solos de las tallas de la OV. -->
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <p class="text-[11px] font-semibold text-ink-muted uppercase tracking-wider">Tejidos <span class="normal-case font-normal text-ink-light">· cuellos, puños…</span></p>
+            <button v-if="!disabled" type="button" class="add-link" @click="form.tejidos.push(tejidoVacio())">+ Tejido</button>
+          </div>
+          <p v-if="!form.tejidos.length" class="prod-empty">Sin tejidos.</p>
+          <div v-for="(t, ti) in form.tejidos" :key="'tj' + ti" class="rounded-lg ring-1 ring-surface-border p-2.5 mb-2">
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
+              <div><label class="field-label">Número de hebras</label><input v-model="t.hebras" :disabled="disabled" class="field-input" placeholder="3" /></div>
+              <div><label class="field-label">Tipo de tejido</label><input v-model="t.tipo_tejido" :disabled="disabled" class="field-input" placeholder="Tejido liso" /></div>
+              <div><label class="field-label">Color</label><input v-model="t.color" :disabled="disabled" class="field-input" placeholder="Rojo" /></div>
+              <div>
+                <label class="field-label">Corresponde a</label>
+                <select v-model="t.corresponde" :disabled="disabled" class="field-input">
+                  <option>Cuellos y puños</option><option>Cuellos</option><option>Puños</option><option>Otro</option>
+                </select>
+              </div>
+              <div v-if="t.corresponde === 'Otro'"><label class="field-label">¿Qué pieza?</label><input v-model="t.otro" :disabled="disabled" class="field-input" /></div>
+              <div>
+                <label class="field-label">Taller</label>
+                <select v-model="t.proveedor" :disabled="disabled" class="field-input">
+                  <option value="">— Elige el taller —</option>
+                  <option v-for="w in p.talleres" :key="w" :value="w">{{ w }}</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Medidas por bloque -->
+            <div class="overflow-x-auto mt-2">
+              <table class="text-[12px] w-full">
+                <thead><tr class="text-[10.5px] text-ink-light text-left">
+                  <th class="pr-2 font-medium">Medida</th>
+                  <th v-for="b in bloquesMedida(p)" :key="b.k" class="pr-2 font-medium">{{ b.label }}</th>
+                </tr></thead>
+                <tbody>
+                  <tr v-for="pz in piezasTejido(t)" :key="pz">
+                    <td class="pr-2 py-0.5 text-ink whitespace-nowrap">{{ pz }}</td>
+                    <td v-for="b in bloquesMedida(p)" :key="b.k" class="pr-2 py-0.5">
+                      <input :value="medida(t, pz, b.k)" @input="setMedida(t, pz, b.k, $event.target.value)" :disabled="disabled" class="field-input" placeholder="40*8.5 cm" />
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Imagen de referencia -->
+            <div class="flex items-center gap-2 mt-2">
+              <a v-if="t.imagen" :href="t.imagen" target="_blank"><img :src="t.imagen" class="w-14 h-14 object-cover rounded border border-surface-border" alt="" /></a>
+              <label v-if="!disabled" class="add-link cursor-pointer">
+                {{ t.imagen ? 'Cambiar imagen' : '+ Imagen de referencia' }}
+                <input type="file" accept="image/*" class="hidden" @change="subirImagenTejido($event, t)" />
+              </label>
+              <button v-if="!disabled && t.imagen" type="button" class="del-btn" @click="t.imagen = ''">Quitar</button>
+              <span class="flex-1"></span>
+              <button v-if="!disabled" type="button" class="del-btn" @click="form.tejidos.splice(ti, 1)">✕ Quitar tejido</button>
+            </div>
+
+            <!-- Vista previa: desglose y solicitud (igual que en la orden impresa) -->
+            <div v-for="g in desgloseTejido(t, p)" :key="g.genero" class="mt-2 rounded-md bg-surface-raised/50 p-2">
+              <p class="text-[11px] font-semibold text-ink-muted uppercase tracking-wider">{{ g.genero }}</p>
+              <div class="flex flex-wrap gap-3 mt-1">
+                <div v-for="b in g.bloques.filter(b => b.tallas.length)" :key="b.clave" class="text-[11.5px]">
+                  <span class="text-ink-light">{{ b.titulo }}:</span>
+                  <span v-for="x in b.tallas" :key="x.talla" class="ml-1.5 tabular-nums">{{ x.talla }} {{ fmtN(x.cantidad) }}</span>
+                  <span class="ml-1.5 font-semibold tabular-nums">= {{ fmtN(b.subtotal) }}</span>
+                </div>
+              </div>
+              <ul class="mt-1 text-[11.5px]">
+                <li v-for="l in g.solicitud" :key="l.texto" class="flex justify-between max-w-md"><span>{{ l.texto }}</span><b class="tabular-nums">{{ fmtN(l.cantidad) }}</b></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
         <!-- Procesos -->
         <div>
           <div class="flex items-center justify-between mb-1">
@@ -315,6 +392,7 @@ function toggle(p) {
     telas: JSON.parse(JSON.stringify(om?.telas || p.telas || [])),
     aberturas: om?.aberturas || [],
     bolsas: om?.bolsas || [],
+    tejidos: (om?.tejidos || []).map((t) => ({ ...t, medidas: t.medidas || {}, proveedor: t.proveedor || "" })),
     procesos: om?.procesos || [], observaciones: om?.observaciones || [],
     tablas: (om?.tablas || []).map((t) => ({ ...t, proveedores: t.proveedores || [] })), archivos: om?.archivos || [],
     name: om?.name || null,
@@ -402,6 +480,75 @@ async function pegar(ev) {
 }
 onMounted(() => document.addEventListener("paste", pegar));
 onBeforeUnmount(() => document.removeEventListener("paste", pegar));
+// ── Tejidos ───────────────────────────────────────────────────────────────────
+// Mismo cálculo que om_general.desglose_tejido (el que usa el impreso): tallas del
+// producto base = bloque «base», las de sus variantes = bloque «extra», por género.
+const fmtN = (n) => Number(n || 0).toLocaleString("es-MX");
+function tejidoVacio() { return { hebras: "", tipo_tejido: "", color: "", corresponde: "Cuellos y puños", otro: "", medidas: {}, proveedor: "", imagen: "" }; }
+function piezasTejido(t) {
+  if (t.corresponde === "Otro") return [(t.otro || "Otro").trim() || "Otro"];
+  return { "Cuellos": ["Cuellos"], "Puños": ["Puños"] }[t.corresponde] || ["Cuellos", "Puños"];
+}
+function generosDe(p) {
+  const gs = [];
+  for (const f of p.tallas || []) { const g = f.genero || "Sin género"; if (!gs.includes(g)) gs.push(g); }
+  return gs;
+}
+function bloquesMedida(p) {
+  const out = [];
+  for (const g of generosDe(p)) {
+    for (const [k, l] of [["base", "tallas base"], ["extra", "tallas extra"]]) {
+      if ((p.tallas || []).some((f) => (f.genero || "Sin género") === g && ((f.producto || p.producto) === p.producto) === (k === "base"))) {
+        out.push({ k: `${g}|${k}`, label: `${g} · ${l}` });
+      }
+    }
+  }
+  // Sin tallas todavía (sin orden de venta): los cuatro bloques de siempre.
+  if (!out.length) for (const g of ["Caballero", "Dama"]) for (const [k, l] of [["base", "tallas base"], ["extra", "tallas extra"]]) out.push({ k: `${g}|${k}`, label: `${g} · ${l}` });
+  return out;
+}
+const medida = (t, pz, k) => (t.medidas?.[pz] || {})[k] || "";
+function setMedida(t, pz, k, v) { t.medidas = { ...(t.medidas || {}), [pz]: { ...((t.medidas || {})[pz] || {}), [k]: v } }; }
+function desgloseTejido(t, p) {
+  const out = [];
+  for (const g of generosDe(p)) {
+    const bloques = [["base", "Tallas base"], ["extra", "Tallas extra"]].map(([clave, titulo]) => {
+      const tallas = [];
+      for (const f of p.tallas || []) {
+        if ((f.genero || "Sin género") !== g || ((f.producto || p.producto) === p.producto) !== (clave === "base")) continue;
+        const x = tallas.find((y) => y.talla === f.talla);
+        if (x) x.cantidad += Number(f.cantidad) || 0; else tallas.push({ talla: f.talla, cantidad: Number(f.cantidad) || 0 });
+      }
+      return { clave, titulo, tallas, subtotal: tallas.reduce((a, x) => a + x.cantidad, 0) };
+    });
+    if (!bloques.some((b) => b.tallas.length)) continue;
+    const solicitud = [];
+    for (const pz of piezasTejido(t)) {
+      const porMedida = new Map();
+      for (const b of bloques) {
+        const m = medida(t, pz, `${g}|${b.clave}`);
+        if (!b.tallas.length && !m) continue;
+        porMedida.set(m, (porMedida.get(m) || 0) + b.subtotal);
+      }
+      for (const [m, n] of porMedida) {
+        const nombre = pz === "Puños" ? `Pares de puños ${g.toLowerCase()}` : `${pz} ${g.toLowerCase()}`;
+        solicitud.push({ texto: `${nombre}${m ? " medida " + m : ""}`, cantidad: n });
+      }
+    }
+    out.push({ genero: g, bloques, solicitud });
+  }
+  return out;
+}
+async function subirImagenTejido(ev, t) {
+  const f = ev.target.files?.[0];
+  ev.target.value = "";
+  if (!f) return;
+  subiendo.value = true;
+  try { const url = await subirUno(conNombre(f)); if (url) { t.imagen = url; props.showToast("Imagen agregada. Recuerda guardar."); } }
+  catch (e) { props.showToast(e.message || "No se pudo subir la imagen", "error"); }
+  finally { subiendo.value = false; }
+}
+
 async function guardar(p) {
   guardando.value = true;
   try {

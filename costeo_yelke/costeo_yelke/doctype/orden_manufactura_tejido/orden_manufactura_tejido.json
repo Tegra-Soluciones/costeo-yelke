@@ -1,0 +1,78 @@
+{
+ "actions": [],
+ "creation": "2026-11-26 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "hebras",
+  "tipo_tejido",
+  "color",
+  "corresponde",
+  "otro",
+  "medidas",
+  "proveedor",
+  "imagen"
+ ],
+ "fields": [
+  {
+   "fieldname": "hebras",
+   "fieldtype": "Data",
+   "label": "Número de hebras",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "tipo_tejido",
+   "fieldtype": "Data",
+   "label": "Tipo de tejido",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "color",
+   "fieldtype": "Data",
+   "label": "Color",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "corresponde",
+   "fieldtype": "Select",
+   "label": "Corresponde a",
+   "options": "Cuellos y puños\nCuellos\nPuños\nOtro",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "otro",
+   "fieldtype": "Data",
+   "label": "Otro (qué pieza)"
+  },
+  {
+   "fieldname": "medidas",
+   "fieldtype": "Long Text",
+   "label": "Medidas por bloque (JSON)",
+   "description": "{pieza: {'Caballero|base': '40*8.5 cm', 'Caballero|extra': …, 'Dama|base': …, 'Dama|extra': …}}"
+  },
+  {
+   "fieldname": "proveedor",
+   "fieldtype": "Link",
+   "options": "Supplier",
+   "label": "Taller"
+  },
+  {
+   "fieldname": "imagen",
+   "fieldtype": "Attach Image",
+   "label": "Imagen de referencia"
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-11-26 14:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Costeo Yelke",
+ "name": "Orden Manufactura Tejido",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

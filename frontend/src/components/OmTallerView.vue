@@ -74,6 +74,37 @@
           </div>
         </section>
 
+        <!-- Tejidos de ESTE taller: desglose por bloque y solicitud (om_general.desglose_tejido) -->
+        <section v-for="(t, ti) in (r.tejidos || [])" :key="'tj' + ti">
+          <p class="om-titulo">Tejido · {{ t.corresponde === 'Otro' ? (t.otro || 'Otro') : t.corresponde }}</p>
+          <p class="text-[12.5px] text-ink">
+            <span v-if="t.hebras">{{ t.hebras }} hebras</span><span v-if="t.tipo_tejido"> · {{ t.tipo_tejido }}</span><span v-if="t.color"> · color {{ t.color }}</span>
+          </p>
+          <div class="flex gap-3 mt-1.5 flex-wrap">
+            <div class="flex-1 min-w-[260px] space-y-2">
+              <div v-for="g in t.desglose" :key="g.genero" class="rounded-lg border border-surface-border overflow-x-auto">
+                <p class="px-2.5 py-1 bg-yellow-100 text-[11.5px] font-semibold text-center">{{ g.genero }}</p>
+                <table class="w-full text-[11.5px]">
+                  <tr class="text-ink-muted">
+                    <td class="px-2 py-1">Tallas</td>
+                    <template v-for="b in g.bloques" :key="b.clave"><td v-for="x in b.tallas" :key="b.clave + x.talla" class="px-1.5 py-1 text-center" :class="b.clave === 'extra' ? 'bg-sky-50' : ''">{{ x.talla }}</td></template>
+                    <td class="px-2 py-1 text-right font-medium">Total</td>
+                  </tr>
+                  <tr>
+                    <td class="px-2 py-1 text-ink-light">{{ t.color }}</td>
+                    <template v-for="b in g.bloques" :key="b.clave"><td v-for="x in b.tallas" :key="b.clave + x.talla" class="px-1.5 py-1 text-center tabular-nums" :class="b.clave === 'extra' ? 'bg-sky-50' : ''">{{ fmt(x.cantidad) }}</td></template>
+                    <td class="px-2 py-1 text-right tabular-nums font-semibold">{{ fmt(g.total) }}</td>
+                  </tr>
+                </table>
+                <ul class="border-t border-surface-border px-2.5 py-1.5 text-[12px]">
+                  <li v-for="l in g.solicitud" :key="l.texto" class="flex justify-between gap-3"><span>{{ l.texto }}</span><b class="tabular-nums">{{ fmt(l.cantidad) }}</b></li>
+                </ul>
+              </div>
+            </div>
+            <a v-if="t.imagen" :href="t.imagen" target="_blank" class="shrink-0"><img :src="t.imagen" class="w-32 h-32 object-contain rounded border border-surface-border" alt="" /></a>
+          </div>
+        </section>
+
         <!-- Procesos -->
         <section v-if="r.procesos.length">
           <p class="om-titulo">Procesos</p>
