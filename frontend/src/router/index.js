@@ -5,16 +5,23 @@ import { cargarAccesos, rutaPermitida, vistasDeRuta, etiquetaVista, useAccesos }
 import { esCelular } from "@/utils/celular.js";
 
 const routes = [
-  // El Director aterriza en su panel; quien solo levanta pedidos, en Levantamiento; los
-  // demás, en Inicio.
+  // A dónde se entra (ERPNext › Apps › Costeo Yelke abre «/»):
+  //  - el Director, a su panel;
+  //  - quien solo levanta prospectos, a Prospecto Comercial;
+  //  - en el celular, a su inicio de celular: Dirección (con sus pestañas abajo) si la ve,
+  //    revisa o aprueba; si no, Asignaciones. Inicio es de computadora. Prospecto
+  //    Comercial no es inicio: se abre con el botón «+ Prospecto».
+  //  - en la computadora, a Inicio.
   { path: "/", component: { render: () => null },
     beforeEnter: async () => {
-      if ((await cargarPermisosAprobacion()).es_director) return "/direccion";
+      const p = await cargarPermisosAprobacion();
+      if (p.es_director) return "/direccion";
       await cargarAccesos();
       const vistas = Object.keys(useAccesos().estado.accesos || {});
       if (vistas.length === 1 && vistas[0] === "levantamiento") return "/prospecto-comercial";
-      // En el celular no hay Inicio (es de computadora): lo de celular que tenga.
-      if (esCelular()) return useAccesos().puede("levantamiento", "editar") ? "/prospecto-comercial" : "/asignaciones";
+      if (esCelular()) {
+        return (p.ve_panel || p.puede_aprobar || p.puede_revisar || p.puede_aprobar_precios) ? "/direccion" : "/asignaciones";
+      }
       return "/inicio";
     } },
   // `movil`: en celular se pinta sin el menú ni la barra de la app (App.vue).
