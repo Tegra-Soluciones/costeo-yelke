@@ -32,7 +32,6 @@ BENCH=/home/frappe/frappe-bench
 DEST="${DEST:-/respaldos}"
 ALERTA="${ALERTA:-daniel@tegra.mx}"
 DB_HOST="${DB_HOST:-mariadb}"
-BINLOG_DIR="${BINLOG_DIR:-/mariadb}"
 DIAS_DIARIO=14; SEMANAS=8; MESES=12; DIAS_BD=3; DIAS_BINLOG=15; DIAS_PREVIO=30
 
 ESTADO="$DEST/estado"
@@ -150,18 +149,21 @@ podar() {  # podar <carpeta> <cuántos conservar>  (carpetas con nombre AAAA-MM-
 }
 
 copiar_binlogs() {
-	# Solo los binlogs ya cerrados (todos menos el último del índice).
-	[ -r "$BINLOG_DIR/mysql-bin.index" ] || return 0
-	local activos actual
-	mapfile -t activos < <(sed 's#^\./##' "$BINLOG_DIR/mysql-bin.index")
-	actual="${activos[-1]:-}"
-	for b in "${activos[@]}"; do
+	# Se bajan por la red con mariadb-binlog (no hace falta acceso a los archivos de la
+	# base). Solo los ya cerrados: todos menos el último de SHOW BINARY LOGS.
+	local logs actual b
+	logs=$(mysql -h "$DB_HOST" -uroot -p"$MYSQL_ROOT_PASSWORD" -N -e "SHOW BINARY LOGS" 2>/dev/null | cut -f1) || return 0
+	[ -n "$logs" ] || return 0   # binlog apagado
+	actual=$(echo "$logs" | tail -1)
+	for b in $logs; do
 		[ "$b" = "$actual" ] && continue
 		[ -f "$DEST/binlog/$b" ] && continue
-		if cp -p "$BINLOG_DIR/$b" "$DEST/binlog/$b.tmp"; then
-			mv "$DEST/binlog/$b.tmp" "$DEST/binlog/$b"
+		if (cd "$DEST/tmp" && rm -f "$b" && mariadb-binlog -h "$DB_HOST" -uroot -p"$MYSQL_ROOT_PASSWORD" \
+				--read-from-remote-server --raw "$b" 2>"$ESTADO/binlog.err") && [ -s "$DEST/tmp/$b" ]; then
+			mv "$DEST/tmp/$b" "$DEST/binlog/$b"
+			resuelto binlog
 		else
-			rm -f "$DEST/binlog/$b.tmp"; falla binlog "no pude copiar el binlog $b"
+			rm -f "$DEST/tmp/$b"; falla binlog "no pude copiar el binlog $b: $(tail -2 "$ESTADO/binlog.err")"; return 1
 		fi
 	done
 	find "$DEST/binlog" -name 'mysql-bin.*' -mtime +$DIAS_BINLOG -delete
