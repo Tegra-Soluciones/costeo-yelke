@@ -5,16 +5,28 @@ const BASE = "";
 // clase, ej. "ValidationError") -- viaja en `_server_messages`, una lista de objetos
 // codificados en JSON dos veces. Sin esto, cualquier error de validación del backend le
 // mostraba al usuario literalmente "ValidationError" en vez de la explicación.
+// Los mensajes de Frappe traen HTML (<strong>, <br>, enlaces…): los avisos de la app los
+// muestran como texto, así que se pasan a texto plano para que no salgan las etiquetas.
+function textoPlano(m) {
+  const s = String(m ?? "");
+  if (!/[<&]/.test(s)) return s;
+  try {
+    const doc = new DOMParser().parseFromString(s.replace(/<br\s*\/?>/gi, " "), "text/html");
+    return (doc.body.textContent || "").replace(/\s+/g, " ").trim();
+  } catch { return s.replace(/<[^>]*>/g, ""); }
+}
+
 function extractErrorMessage(err, fallback) {
   if (err?._server_messages) {
     try {
       const msgs = JSON.parse(err._server_messages)
         .map((m) => { try { return JSON.parse(m).message; } catch { return m; } })
-        .filter(Boolean);
+        .filter(Boolean)
+        .map(textoPlano);
       if (msgs.length) return msgs.join(" ");
     } catch { /* ignore, cae al resto de los campos */ }
   }
-  return err?.message || err?.exc_type || fallback;
+  return textoPlano(err?.message || err?.exc_type || fallback);
 }
 
 async function request(method, url, body) {

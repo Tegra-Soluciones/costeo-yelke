@@ -248,7 +248,7 @@
   }
  ],
  "links": [],
- "modified": "2026-11-26 14:00:00.000000",
+ "modified": "2026-11-26 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "Costeo Yelke",
  "name": "Orden Manufactura",
@@ -266,6 +266,18 @@
    "report": 1,
    "role": "System Manager",
    "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 0,
+   "email": 1,
+   "export": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Producción Orden de Manufactura Yelke",
+   "share": 0,
    "write": 1
   }
  ],
