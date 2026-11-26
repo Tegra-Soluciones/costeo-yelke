@@ -736,8 +736,9 @@
                   <!-- Variante de talla: para una talla que necesita MÁS/DISTINTO material
                        (no solo un ajuste de precio) -- se costea como su propio producto,
                        independiente, con sus propios materiales/etapas/precio. -->
+                  <!-- Solo en el producto base: una talla extra no lleva sus propias tallas extra. -->
                   <button
-                    v-if="!prod.finished_item || varianteWizard.finished_item !== prod.finished_item"
+                    v-if="!prod.variante_talla_de && (!prod.finished_item || varianteWizard.finished_item !== prod.finished_item)"
                     type="button" class="add-link -ml-2.5 disabled:opacity-40" :disabled="!prod.finished_item"
                     :title="prod.finished_item ? '' : 'Elige primero el producto terminado'"
                     @click="abrirVarianteWizard(prod)"

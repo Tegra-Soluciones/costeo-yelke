@@ -502,6 +502,16 @@ def crear_variante_talla(costeo: str, producto_base: str, genero: str = None, ta
     base = next((p for p in doc.costeo_producto if p.name == producto_base or p.finished_item == producto_base), None)
     if not base or not base.finished_item:
         frappe.throw(_("No se encontró ese producto en este costeo."))
+    # Una talla extra siempre cuelga del producto base, nunca de otra talla extra: si se
+    # pide desde una variante, se sube a su base (antes salía «…-CABALLERO-XXL-3XL-DAMA-…»
+    # y la variante quedaba colgada de la otra).
+    vistos = set()
+    while base.get("variante_talla_de") and base.finished_item not in vistos:
+        vistos.add(base.finished_item)
+        padre = next((p for p in doc.costeo_producto if p.finished_item == base.variante_talla_de), None)
+        if not padre:
+            break
+        base = padre
 
     pendiente = frappe.parse_json(pendiente) if isinstance(pendiente, str) else bool(pendiente)
     qty_final = 0 if pendiente else flt(qty)
