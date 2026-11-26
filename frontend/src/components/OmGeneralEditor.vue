@@ -65,6 +65,19 @@
             <input v-model="a.descripcion" placeholder="Descripción" :disabled="disabled" class="field-input" />
             <button v-if="!disabled" type="button" class="del-btn" @click="form.aberturas.splice(i, 1)">✕</button>
           </div>
+
+          <!-- Bolsas: igual que las aberturas -->
+          <div class="flex items-center justify-between mt-3 mb-1">
+            <p class="field-label mb-0">Bolsas</p>
+            <button v-if="!disabled" type="button" class="add-link" @click="form.bolsas.push({ numero: 1, ubicacion: '', descripcion: '' })">+ Bolsa</button>
+          </div>
+          <p v-if="!form.bolsas.length" class="prod-empty">Sin bolsas.</p>
+          <div v-for="(a, i) in form.bolsas" :key="'bo' + i" class="grid grid-cols-[90px_1fr_1fr_auto] gap-2 items-center mb-1.5">
+            <input v-model.number="a.numero" type="number" min="0" placeholder="Número" :disabled="disabled" class="field-input tabular-nums" />
+            <input v-model="a.ubicacion" placeholder="Ubicación" :disabled="disabled" class="field-input" />
+            <input v-model="a.descripcion" placeholder="Descripción" :disabled="disabled" class="field-input" />
+            <button v-if="!disabled" type="button" class="del-btn" @click="form.bolsas.splice(i, 1)">✕</button>
+          </div>
         </div>
 
         <!-- Tallas heredadas del costeo -->
@@ -301,6 +314,7 @@ function toggle(p) {
     // Las telas salen siempre del costeo (con lo ya capturado de cada una).
     telas: JSON.parse(JSON.stringify(om?.telas || p.telas || [])),
     aberturas: om?.aberturas || [],
+    bolsas: om?.bolsas || [],
     procesos: om?.procesos || [], observaciones: om?.observaciones || [],
     tablas: (om?.tablas || []).map((t) => ({ ...t, proveedores: t.proveedores || [] })), archivos: om?.archivos || [],
     name: om?.name || null,

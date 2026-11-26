@@ -11,7 +11,7 @@
 
       <div class="p-4 space-y-4">
         <!-- Información general: modelo, telas (la principal resaltada), qué lleva y aberturas -->
-        <section v-if="r.general.om_modelo || (r.telas || []).length || marcas(r.general).length || (r.aberturas || []).length">
+        <section v-if="r.general.om_modelo || (r.telas || []).length || marcas(r.general).length || (r.aberturas || []).length || (r.bolsas || []).length">
           <p class="om-titulo">Información general</p>
           <p v-if="r.general.om_modelo" class="text-[12.5px] text-ink"><span class="text-[10.5px] text-ink-light mr-1.5">Modelo de prenda</span>{{ r.general.om_modelo }}</p>
           <div v-if="(r.telas || []).length" class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
@@ -31,6 +31,16 @@
             <p class="text-[10.5px] text-ink-light mb-1">Aberturas</p>
             <ul class="divide-y divide-surface-border rounded-lg border border-surface-border">
               <li v-for="(a, i) in r.aberturas" :key="i" class="px-3 py-1.5 text-[12.5px]">
+                <span class="text-ink font-medium tabular-nums">{{ a.numero }}</span>
+                <span v-if="a.ubicacion" class="text-ink-muted"> · {{ a.ubicacion }}</span>
+                <span v-if="a.descripcion" class="text-ink-muted"> · {{ a.descripcion }}</span>
+              </li>
+            </ul>
+          </div>
+          <div v-if="(r.bolsas || []).length" class="mt-2.5">
+            <p class="text-[10.5px] text-ink-light mb-1">Bolsas</p>
+            <ul class="divide-y divide-surface-border rounded-lg border border-surface-border">
+              <li v-for="(a, i) in r.bolsas" :key="i" class="px-3 py-1.5 text-[12.5px]">
                 <span class="text-ink font-medium tabular-nums">{{ a.numero }}</span>
                 <span v-if="a.ubicacion" class="text-ink-muted"> · {{ a.ubicacion }}</span>
                 <span v-if="a.descripcion" class="text-ink-muted"> · {{ a.descripcion }}</span>

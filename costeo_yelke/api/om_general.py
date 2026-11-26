@@ -226,6 +226,8 @@ def _serializar(om, doc=None):
         "telas": telas_de_producto(doc or frappe.get_doc("Costeo", om.costeo), om.producto, om),
         "aberturas": [{"numero": r.numero, "ubicacion": r.ubicacion, "descripcion": r.descripcion}
                       for r in (om.get("om_aberturas_detalle") or [])],
+        "bolsas": [{"numero": r.numero, "ubicacion": r.ubicacion, "descripcion": r.descripcion}
+                   for r in (om.get("om_bolsas") or [])],
         "procesos": [{"nombre_proceso": r.nombre_proceso, "ubicacion": r.ubicacion, "colores": r.colores,
                       "descripcion": r.get("descripcion"), "medida": r.get("medida"),
                       "proveedores": _lista(r.proveedores)} for r in om.om_procesos],
@@ -316,6 +318,10 @@ def guardar_om_general(costeo: str, producto: str, datos) -> dict:
         {"numero": int(flt(r.get("numero"))), "ubicacion": r.get("ubicacion"), "descripcion": r.get("descripcion")}
         for r in (datos.get("aberturas") or [])
         if (flt(r.get("numero")) or (r.get("ubicacion") or "").strip() or (r.get("descripcion") or "").strip())])
+    om.set("om_bolsas", [
+        {"numero": int(flt(r.get("numero"))), "ubicacion": r.get("ubicacion"), "descripcion": r.get("descripcion")}
+        for r in (datos.get("bolsas") or [])
+        if (flt(r.get("numero")) or (r.get("ubicacion") or "").strip() or (r.get("descripcion") or "").strip())])
     # La tabla guardada lleva el corte por lote cuando ya se repartió (columna
     # "Lote"); si no, el desglose completo de siempre, con la columna vacía.
     por_lote = tallas_por_lote_de_producto(doc, base)
@@ -397,6 +403,7 @@ def om_de_oc(po: str) -> list:
                 "general": om["general"],
                 "telas": om["telas"],
                 "aberturas": om["aberturas"],
+                "bolsas": om["bolsas"],
                 "tallas": tallas_de_producto(doc, base, qty_ov, desglose),
                 "tallas_lotes": tallas_por_lote_de_producto(doc, base, qty_ov),
                 "procesos": [r for r in om["procesos"] if _para(r["proveedores"], sup)],

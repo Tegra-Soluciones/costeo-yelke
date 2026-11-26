@@ -27,6 +27,8 @@
   "om_telas",
   "sec_aberturas",
   "om_aberturas_detalle",
+  "sec_bolsas",
+  "om_bolsas",
   "sec_tallas",
   "om_tallas",
   "sec_procesos",
@@ -165,6 +167,17 @@
    "label": "Aberturas"
   },
   {
+   "fieldname": "sec_bolsas",
+   "fieldtype": "Section Break",
+   "label": "Bolsas"
+  },
+  {
+   "fieldname": "om_bolsas",
+   "fieldtype": "Table",
+   "options": "Orden Manufactura Bolsa",
+   "label": "Bolsas"
+  },
+  {
    "fieldname": "sec_tallas",
    "fieldtype": "Section Break",
    "label": "Tallas (del costeo)"
@@ -222,7 +235,7 @@
   }
  ],
  "links": [],
- "modified": "2026-11-26 00:00:00.000000",
+ "modified": "2026-11-26 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Costeo Yelke",
  "name": "Orden Manufactura",
