@@ -21,6 +21,12 @@
   "om_estampado",
   "om_sublimado",
   "om_reflejante",
+  "om_dtf",
+  "om_vinil",
+  "sec_telas",
+  "om_telas",
+  "sec_aberturas",
+  "om_aberturas_detalle",
   "sec_tallas",
   "om_tallas",
   "sec_procesos",
@@ -58,27 +64,31 @@
   {
    "fieldname": "om_modelo",
    "fieldtype": "Data",
-   "label": "Modelo"
+   "label": "Modelo de prenda"
   },
   {
    "fieldname": "om_tela",
    "fieldtype": "Data",
-   "label": "Tela"
+   "label": "Tela (anterior)",
+   "hidden": 1
   },
   {
    "fieldname": "om_color",
    "fieldtype": "Data",
-   "label": "Color"
+   "label": "Color (anterior)",
+   "hidden": 1
   },
   {
    "fieldname": "om_color_principal",
    "fieldtype": "Data",
-   "label": "Color principal"
+   "label": "Color principal (anterior)",
+   "hidden": 1
   },
   {
    "fieldname": "om_forro",
    "fieldtype": "Data",
-   "label": "Forro"
+   "label": "Forro (anterior)",
+   "hidden": 1
   },
   {
    "fieldname": "col_general",
@@ -87,17 +97,20 @@
   {
    "fieldname": "om_combinacion",
    "fieldtype": "Small Text",
-   "label": "Combinación"
+   "label": "Combinación (anterior)",
+   "hidden": 1
   },
   {
    "fieldname": "om_ubicacion",
    "fieldtype": "Small Text",
-   "label": "Ubicación"
+   "label": "Ubicación (anterior)",
+   "hidden": 1
   },
   {
    "fieldname": "om_aberturas",
    "fieldtype": "Int",
-   "label": "Aberturas"
+   "label": "Aberturas (anterior)",
+   "hidden": 1
   },
   {
    "fieldname": "om_bordado",
@@ -118,6 +131,38 @@
    "fieldname": "om_reflejante",
    "fieldtype": "Check",
    "label": "Reflejante"
+  },
+  {
+   "fieldname": "om_dtf",
+   "fieldtype": "Check",
+   "label": "DTF"
+  },
+  {
+   "fieldname": "om_vinil",
+   "fieldtype": "Check",
+   "label": "Vinil"
+  },
+  {
+   "fieldname": "sec_telas",
+   "fieldtype": "Section Break",
+   "label": "Telas"
+  },
+  {
+   "fieldname": "om_telas",
+   "fieldtype": "Table",
+   "options": "Orden Manufactura Tela",
+   "label": "Telas"
+  },
+  {
+   "fieldname": "sec_aberturas",
+   "fieldtype": "Section Break",
+   "label": "Aberturas"
+  },
+  {
+   "fieldname": "om_aberturas_detalle",
+   "fieldtype": "Table",
+   "options": "Orden Manufactura Abertura",
+   "label": "Aberturas"
   },
   {
    "fieldname": "sec_tallas",
@@ -177,7 +222,7 @@
   }
  ],
  "links": [],
- "modified": "2026-10-12 00:00:00.000000",
+ "modified": "2026-11-26 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Costeo Yelke",
  "name": "Orden Manufactura",

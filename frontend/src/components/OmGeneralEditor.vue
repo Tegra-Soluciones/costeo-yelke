@@ -23,21 +23,47 @@
       </div>
 
       <div v-if="abierto === p.producto && form" class="mt-3 space-y-4">
-        <!-- Info general (para todos) -->
+        <!-- Información general (para todos): modelo, telas, qué lleva y aberturas -->
         <div>
-          <p class="text-[11px] font-semibold text-ink-muted uppercase tracking-wider mb-2">Info general <span class="normal-case font-normal text-ink-light">· para todos los talleres</span></p>
-          <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <div><label class="field-label">Modelo</label><input v-model="form.general.om_modelo" :disabled="disabled" class="field-input" /></div>
-            <div><label class="field-label">Tela</label><input v-model="form.general.om_tela" :disabled="disabled" class="field-input" /></div>
-            <div><label class="field-label">Color</label><input v-model="form.general.om_color" :disabled="disabled" class="field-input" /></div>
-            <div><label class="field-label">Color principal</label><input v-model="form.general.om_color_principal" :disabled="disabled" class="field-input" /></div>
-            <div><label class="field-label">Forro</label><input v-model="form.general.om_forro" :disabled="disabled" class="field-input" /></div>
-            <div><label class="field-label">Combinación</label><input v-model="form.general.om_combinacion" :disabled="disabled" class="field-input" /></div>
-            <div><label class="field-label">Ubicación</label><input v-model="form.general.om_ubicacion" :disabled="disabled" class="field-input" /></div>
-            <div><label class="field-label">Aberturas</label><input v-model.number="form.general.om_aberturas" type="number" min="0" :disabled="disabled" class="field-input" /></div>
+          <p class="text-[11px] font-semibold text-ink-muted uppercase tracking-wider mb-2">Información general <span class="normal-case font-normal text-ink-light">· para todos los talleres</span></p>
+          <div class="max-w-xl"><label class="field-label">Modelo de prenda</label><input v-model="form.general.om_modelo" :disabled="disabled" class="field-input" /></div>
+
+          <!-- Telas: las del costeo (materiales marcados como «Tela»). La principal es la
+               de mayor consumo y va resaltada; las demás son secundarias. -->
+          <p class="field-label mt-3">Telas <span class="text-ink-light font-normal">· del costeo</span></p>
+          <p v-if="!form.telas.length" class="prod-empty">El costeo de este producto no tiene materiales marcados como «Tela».</p>
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-2">
+            <div v-for="t in form.telas" :key="t.tela" class="rounded-lg p-2.5 ring-1" :class="t.principal ? 'ring-green-300 bg-green-50/60' : 'ring-surface-border bg-white'">
+              <div class="flex items-center justify-between gap-2 mb-1.5">
+                <span class="text-[10.5px] font-semibold uppercase tracking-wider" :class="t.principal ? 'text-green-700' : 'text-ink-light'">{{ t.principal ? 'Tela principal' : 'Tela secundaria' }}</span>
+                <span class="text-[10.5px] text-ink-light tabular-nums">{{ t.consumo }} {{ t.uom }} por prenda</span>
+              </div>
+              <div class="space-y-1.5">
+                <div><label class="field-label">Nombre de la tela</label><input v-model="t.nombre" :disabled="disabled" class="field-input" /></div>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                  <div><label class="field-label">Composición</label><input v-model="t.composicion" :disabled="disabled" class="field-input" /></div>
+                  <div><label class="field-label">Color</label><input v-model="t.color" :disabled="disabled" class="field-input" /></div>
+                  <div><label class="field-label">Ubicación</label><input v-model="t.ubicacion" :disabled="disabled" class="field-input" /></div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="flex items-center gap-4 mt-2 text-[13px]">
+
+          <div class="flex items-center gap-4 flex-wrap mt-3 text-[13px]">
             <label v-for="c in checks" :key="c.f" class="flex items-center gap-1.5"><input type="checkbox" v-model="form.general[c.f]" :true-value="1" :false-value="0" :disabled="disabled" class="accent-brand-500" />{{ c.label }}</label>
+          </div>
+
+          <!-- Aberturas: tantas como haga falta -->
+          <div class="flex items-center justify-between mt-3 mb-1">
+            <p class="field-label mb-0">Aberturas</p>
+            <button v-if="!disabled" type="button" class="add-link" @click="form.aberturas.push({ numero: 1, ubicacion: '', descripcion: '' })">+ Abertura</button>
+          </div>
+          <p v-if="!form.aberturas.length" class="prod-empty">Sin aberturas.</p>
+          <div v-for="(a, i) in form.aberturas" :key="'ab' + i" class="grid grid-cols-[90px_1fr_1fr_auto] gap-2 items-center mb-1.5">
+            <input v-model.number="a.numero" type="number" min="0" placeholder="Número" :disabled="disabled" class="field-input tabular-nums" />
+            <input v-model="a.ubicacion" placeholder="Ubicación" :disabled="disabled" class="field-input" />
+            <input v-model="a.descripcion" placeholder="Descripción" :disabled="disabled" class="field-input" />
+            <button v-if="!disabled" type="button" class="del-btn" @click="form.aberturas.splice(i, 1)">✕</button>
           </div>
         </div>
 
@@ -62,7 +88,7 @@
         <div>
           <div class="flex items-center justify-between mb-1">
             <p class="text-[11px] font-semibold text-ink-muted uppercase tracking-wider">Procesos</p>
-            <button v-if="!disabled" type="button" class="add-link" @click="form.procesos.push({ nombre_proceso: '', ubicacion: '', colores: '', proveedores: [] })">+ Proceso</button>
+            <button v-if="!disabled" type="button" class="add-link" @click="form.procesos.push({ nombre_proceso: '', ubicacion: '', colores: '', descripcion: '', medida: '', proveedores: [] })">+ Proceso</button>
           </div>
           <p v-if="!form.procesos.length" class="prod-empty">Sin procesos.</p>
           <div v-for="(r, i) in form.procesos" :key="'p' + i" class="rounded-lg ring-1 ring-surface-border p-2 mb-1.5">
@@ -70,6 +96,10 @@
               <input v-model="r.nombre_proceso" placeholder="Nombre del proceso" :disabled="disabled" class="field-input" />
               <input v-model="r.ubicacion" placeholder="Ubicación" :disabled="disabled" class="field-input" />
               <input v-model="r.colores" placeholder="Colores" :disabled="disabled" class="field-input" />
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-[1fr_160px] gap-2 mb-1.5">
+              <textarea v-model="r.descripcion" rows="1" placeholder="Descripción del proceso" :disabled="disabled" class="field-input"></textarea>
+              <input v-model="r.medida" placeholder="Medida" :disabled="disabled" class="field-input" />
             </div>
             <div class="flex items-center justify-between gap-2">
               <ParaTalleres v-model="r.proveedores" :talleres="p.talleres" :disabled="disabled" />
@@ -228,6 +258,7 @@ const subiendo = ref(false);
 const checks = [
   { f: "om_bordado", label: "Bordado" }, { f: "om_estampado", label: "Estampado" },
   { f: "om_sublimado", label: "Sublimado" }, { f: "om_reflejante", label: "Reflejante" },
+  { f: "om_dtf", label: "DTF" }, { f: "om_vinil", label: "Vinil" },
 ];
 
 async function cargar() {
@@ -266,7 +297,10 @@ function toggle(p) {
   if (abierto.value === p.producto) { abierto.value = null; form.value = null; return; }
   const om = p.om ? JSON.parse(JSON.stringify(p.om)) : null;
   form.value = {
-    general: om?.general || { om_bordado: 0, om_estampado: 0, om_sublimado: 0, om_reflejante: 0, om_aberturas: 0 },
+    general: om?.general || { om_modelo: p.modelo || p.item_name, om_bordado: 0, om_estampado: 0, om_sublimado: 0, om_reflejante: 0, om_dtf: 0, om_vinil: 0 },
+    // Las telas salen siempre del costeo (con lo ya capturado de cada una).
+    telas: JSON.parse(JSON.stringify(om?.telas || p.telas || [])),
+    aberturas: om?.aberturas || [],
     procesos: om?.procesos || [], observaciones: om?.observaciones || [],
     tablas: (om?.tablas || []).map((t) => ({ ...t, proveedores: t.proveedores || [] })), archivos: om?.archivos || [],
     name: om?.name || null,

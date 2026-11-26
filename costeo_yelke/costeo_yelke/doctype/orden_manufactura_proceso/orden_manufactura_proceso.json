@@ -10,6 +10,8 @@
   "nombre_proceso",
   "ubicacion",
   "colores",
+  "descripcion",
+  "medida",
   "proveedores"
  ],
  "fields": [
@@ -38,6 +40,16 @@
    "label": "Colores"
   },
   {
+   "fieldname": "descripcion",
+   "fieldtype": "Small Text",
+   "label": "Descripción del proceso"
+  },
+  {
+   "fieldname": "medida",
+   "fieldtype": "Data",
+   "label": "Medida"
+  },
+  {
    "fieldname": "proveedores",
    "fieldtype": "Small Text",
    "label": "Para (talleres)",
@@ -49,7 +61,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-10-05 00:00:00.000000",
+ "modified": "2026-11-26 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Costeo Yelke",
  "name": "Orden Manufactura Proceso",

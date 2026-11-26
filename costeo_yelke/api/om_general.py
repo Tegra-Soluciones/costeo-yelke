@@ -25,9 +25,11 @@ from costeo_yelke.roles import requiere_vista
 # La fecha requerida NO va aquí: la ficha de manufactura es una sola para todo el
 # costeo y la fecha de entrega es de cada encargo (Subcontracting Order.schedule_date,
 # capturada al abrir el lote), así que en la ficha solo podía estar mal o repetida.
-GENERAL = ["om_modelo", "om_tela", "om_color", "om_color_principal", "om_forro", "om_combinacion",
-           "om_ubicacion", "om_aberturas", "om_bordado", "om_estampado",
-           "om_sublimado", "om_reflejante"]
+# Info general (rediseño 2026-11-26): modelo de prenda, telas (tabla), qué lleva
+# (checks) y aberturas (tabla). Los campos viejos (tela, color, forro, combinación,
+# ubicación, número de aberturas) siguen en el DocType, ocultos, y ya no se capturan.
+GENERAL = ["om_modelo", "om_bordado", "om_estampado", "om_sublimado", "om_reflejante", "om_dtf", "om_vinil"]
+CHECKS = ["om_bordado", "om_estampado", "om_sublimado", "om_reflejante", "om_dtf", "om_vinil"]
 
 
 def _lista(v):
@@ -180,19 +182,52 @@ def talleres_de_producto(doc, base):
     return vistos
 
 
+def telas_de_producto(doc, base, om=None):
+    """Las telas del producto base según su costeo (materiales con «Tela»), con lo que
+    se capturó de cada una en la ficha (composición, color, ubicación).
+
+    La principal es la de mayor consumo por prenda; las demás son secundarias. Se arma
+    siempre desde el costeo: si cambia una tela allá, la ficha la sigue (lo capturado
+    se conserva por artículo)."""
+    guardadas = {t.tela: t for t in ((om.get("om_telas") if om else None) or [])}
+    filas, vistos = [], set()
+    for d in doc.get("costeo_producto_detalle") or []:
+        if d.finished_item != base or d.get("tipo_material") != "Tela" or not d.item or d.item in vistos:
+            continue
+        vistos.add(d.item)
+        g = guardadas.get(d.item)
+        filas.append({
+            "tela": d.item,
+            "nombre": (g.nombre if g and g.nombre else None) or frappe.db.get_value("Item", d.item, "item_name") or d.item,
+            "composicion": g.composicion if g else "", "color": g.color if g else "",
+            "ubicacion": g.ubicacion if g else "",
+            "consumo": flt(d.internal_qty), "uom": d.internal_uom or "", "principal": 0,
+        })
+    if filas:
+        max(filas, key=lambda f: f["consumo"])["principal"] = 1
+        filas.sort(key=lambda f: -f["principal"])  # la principal primero, las demás en el orden del costeo
+    return filas
+
+
 def _om_doc(costeo, producto):
     name = frappe.db.get_value("Orden Manufactura", {"costeo": costeo, "producto": producto}, "name")
     return frappe.get_doc("Orden Manufactura", name) if name else None
 
 
-def _serializar(om):
+def _serializar(om, doc=None):
     if not om:
         return None
     general = {f: om.get(f) for f in GENERAL}
+    if not general.get("om_modelo"):
+        general["om_modelo"] = frappe.db.get_value("Item", om.producto, "item_name") or om.producto
     return {
         "name": om.name,
         "general": general,
+        "telas": telas_de_producto(doc or frappe.get_doc("Costeo", om.costeo), om.producto, om),
+        "aberturas": [{"numero": r.numero, "ubicacion": r.ubicacion, "descripcion": r.descripcion}
+                      for r in (om.get("om_aberturas_detalle") or [])],
         "procesos": [{"nombre_proceso": r.nombre_proceso, "ubicacion": r.ubicacion, "colores": r.colores,
+                      "descripcion": r.get("descripcion"), "medida": r.get("medida"),
                       "proveedores": _lista(r.proveedores)} for r in om.om_procesos],
         "observaciones": [{"texto": r.texto, "proveedores": _lista(r.proveedores)} for r in om.om_observaciones],
         "tablas": _om_decode_tables(om),
@@ -239,14 +274,18 @@ def get_oms_generales(costeo: str, sales_order: str = None) -> dict:
         tallas = tallas_de_producto(doc, base, qty_ov, desglose)
         if qty_ov is not None and not tallas:
             continue  # ningún producto de esta ficha va en la OV activa
+        item_name = frappe.db.get_value("Item", base, "item_name") or base
         out.append({
             "producto": base,
-            "item_name": frappe.db.get_value("Item", base, "item_name") or base,
+            "item_name": item_name,
+            # Para una ficha sin capturar: el modelo y las telas ya salen del costeo.
+            "modelo": item_name,
+            "telas": telas_de_producto(doc, base),
             "variantes": [p for p in productos if p != base],
             "talleres": talleres_de_producto(doc, base),
             "tallas": tallas,
             "tallas_lotes": tallas_por_lote_de_producto(doc, base, qty_ov),
-            "om": _serializar(_om_doc(costeo, base)),
+            "om": _serializar(_om_doc(costeo, base), doc),
         })
     return {"productos": out, "sales_order": sales_order or None}
 
@@ -261,7 +300,22 @@ def guardar_om_general(costeo: str, producto: str, datos) -> dict:
     om.costeo, om.producto = costeo, base
     for f, v in (datos.get("general") or {}).items():
         if f in GENERAL:
-            om.set(f, v or (0 if f in ("om_aberturas", "om_bordado", "om_estampado", "om_sublimado", "om_reflejante") else None))
+            om.set(f, v or (0 if f in CHECKS else None))
+    if not om.get("om_modelo"):
+        om.om_modelo = frappe.db.get_value("Item", base, "item_name") or base
+    # Telas: solo las del costeo (el artículo no se cambia aquí); se guarda lo capturado.
+    capturadas = {t.get("tela"): t for t in (datos.get("telas") or []) if t.get("tela")}
+    om.set("om_telas", [
+        {"tela": t["tela"], "nombre": (capturadas.get(t["tela"]) or {}).get("nombre") or t["nombre"],
+         "composicion": (capturadas.get(t["tela"]) or {}).get("composicion") or "",
+         "color": (capturadas.get(t["tela"]) or {}).get("color") or "",
+         "ubicacion": (capturadas.get(t["tela"]) or {}).get("ubicacion") or "",
+         "principal": t["principal"]}
+        for t in telas_de_producto(doc, base)])
+    om.set("om_aberturas_detalle", [
+        {"numero": int(flt(r.get("numero"))), "ubicacion": r.get("ubicacion"), "descripcion": r.get("descripcion")}
+        for r in (datos.get("aberturas") or [])
+        if (flt(r.get("numero")) or (r.get("ubicacion") or "").strip() or (r.get("descripcion") or "").strip())])
     # La tabla guardada lleva el corte por lote cuando ya se repartió (columna
     # "Lote"); si no, el desglose completo de siempre, con la columna vacía.
     por_lote = tallas_por_lote_de_producto(doc, base)
@@ -269,9 +323,10 @@ def guardar_om_general(costeo: str, producto: str, datos) -> dict:
            if por_lote else tallas_de_producto(doc, base))
     om.set("om_procesos", [
         {"proceso": f"Proceso {i}", "nombre_proceso": r.get("nombre_proceso"), "ubicacion": r.get("ubicacion"),
-         "colores": r.get("colores"), "proveedores": ", ".join(_lista(r.get("proveedores")))}
+         "colores": r.get("colores"), "descripcion": r.get("descripcion"), "medida": r.get("medida"),
+         "proveedores": ", ".join(_lista(r.get("proveedores")))}
         for i, r in enumerate(datos.get("procesos") or [], 1)
-        if (r.get("nombre_proceso") or r.get("ubicacion") or r.get("colores"))])
+        if (r.get("nombre_proceso") or r.get("ubicacion") or r.get("colores") or r.get("descripcion") or r.get("medida"))])
     om.set("om_observaciones", [
         {"texto": r.get("texto"), "proveedores": ", ".join(_lista(r.get("proveedores")))}
         for r in (datos.get("observaciones") or []) if (r.get("texto") or "").strip()])
@@ -287,7 +342,7 @@ def guardar_om_general(costeo: str, producto: str, datos) -> dict:
         for r in (datos.get("archivos") or []) if r.get("archivo")])
     om.flags.ignore_permissions = True
     om.save()
-    return {"ok": True, "name": om.name, "om": _serializar(om)}
+    return {"ok": True, "name": om.name, "om": _serializar(om, doc)}
 
 
 def _ov_de_oc(po_doc):
@@ -332,7 +387,7 @@ def om_de_oc(po: str) -> list:
             if base and base not in bases:
                 bases.append(base)
         for base in bases:
-            om = _serializar(_om_doc(costeo, base))
+            om = _serializar(_om_doc(costeo, base), doc)
             if not om:
                 continue
             sup = po_doc.supplier
@@ -340,6 +395,8 @@ def om_de_oc(po: str) -> list:
                 "producto": base,
                 "item_name": frappe.db.get_value("Item", base, "item_name") or base,
                 "general": om["general"],
+                "telas": om["telas"],
+                "aberturas": om["aberturas"],
                 "tallas": tallas_de_producto(doc, base, qty_ov, desglose),
                 "tallas_lotes": tallas_por_lote_de_producto(doc, base, qty_ov),
                 "procesos": [r for r in om["procesos"] if _para(r["proveedores"], sup)],
@@ -351,7 +408,7 @@ def om_de_oc(po: str) -> list:
     if not registros:
         legacy = get_om(po)
         g = legacy.get("general") or {}
-        if any(g.get(f) for f in GENERAL) or legacy.get("procesos") or legacy.get("tablas") or legacy.get("archivos") or g.get("om_observaciones"):
+        if any(v for k, v in g.items() if k.startswith("om_")) or legacy.get("procesos") or legacy.get("tablas") or legacy.get("archivos") or g.get("om_observaciones"):
             registros.append({
                 "producto": "", "item_name": "", "general": g, "tallas": [], "tallas_lotes": [],
                 "procesos": legacy.get("procesos") or [],

@@ -10,18 +10,32 @@
       </div>
 
       <div class="p-4 space-y-4">
-        <!-- Información general -->
-        <section v-if="generales(r.general).length || marcas(r.general).length">
+        <!-- Información general: modelo, telas (la principal resaltada), qué lleva y aberturas -->
+        <section v-if="r.general.om_modelo || (r.telas || []).length || marcas(r.general).length || (r.aberturas || []).length">
           <p class="om-titulo">Información general</p>
-          <dl v-if="generales(r.general).length" class="grid grid-cols-2 gap-x-4 gap-y-1.5">
-            <div v-for="c in generales(r.general)" :key="c.f" class="min-w-0">
-              <dt class="text-[10.5px] text-ink-light">{{ c.label }}</dt>
-              <dd class="text-[12.5px] text-ink truncate">{{ r.general[c.f] }}</dd>
+          <p v-if="r.general.om_modelo" class="text-[12.5px] text-ink"><span class="text-[10.5px] text-ink-light mr-1.5">Modelo de prenda</span>{{ r.general.om_modelo }}</p>
+          <div v-if="(r.telas || []).length" class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+            <div v-for="t in r.telas" :key="t.tela" class="rounded-lg px-3 py-2 ring-1" :class="t.principal ? 'ring-green-300 bg-green-50/60' : 'ring-surface-border'">
+              <p class="text-[10px] font-semibold uppercase tracking-wider" :class="t.principal ? 'text-green-700' : 'text-ink-light'">{{ t.principal ? 'Tela principal' : 'Tela secundaria' }}</p>
+              <p class="text-[12.5px] text-ink font-medium">{{ t.nombre }}</p>
+              <p v-if="t.composicion" class="text-[11.5px] text-ink-muted">Composición: {{ t.composicion }}</p>
+              <p v-if="t.color" class="text-[11.5px] text-ink-muted">Color: {{ t.color }}</p>
+              <p v-if="t.ubicacion" class="text-[11.5px] text-ink-muted">Ubicación: {{ t.ubicacion }}</p>
             </div>
-          </dl>
-          <div v-if="marcas(r.general).length" class="flex flex-wrap items-center gap-1.5" :class="generales(r.general).length ? 'mt-2.5' : ''">
+          </div>
+          <div v-if="marcas(r.general).length" class="flex flex-wrap items-center gap-1.5 mt-2.5">
             <span class="text-[10.5px] text-ink-light mr-0.5">Lleva</span>
             <span v-for="m in marcas(r.general)" :key="m" class="text-[11.5px] px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 font-medium">{{ m }}</span>
+          </div>
+          <div v-if="(r.aberturas || []).length" class="mt-2.5">
+            <p class="text-[10.5px] text-ink-light mb-1">Aberturas</p>
+            <ul class="divide-y divide-surface-border rounded-lg border border-surface-border">
+              <li v-for="(a, i) in r.aberturas" :key="i" class="px-3 py-1.5 text-[12.5px]">
+                <span class="text-ink font-medium tabular-nums">{{ a.numero }}</span>
+                <span v-if="a.ubicacion" class="text-ink-muted"> · {{ a.ubicacion }}</span>
+                <span v-if="a.descripcion" class="text-ink-muted"> · {{ a.descripcion }}</span>
+              </li>
+            </ul>
           </div>
         </section>
 
@@ -58,6 +72,8 @@
               <span class="text-ink font-medium">{{ p.nombre_proceso }}</span>
               <span v-if="p.ubicacion" class="text-ink-muted"> · {{ p.ubicacion }}</span>
               <span v-if="p.colores" class="text-ink-muted"> · {{ p.colores }}</span>
+              <span v-if="p.medida" class="text-ink-muted"> · Medida: {{ p.medida }}</span>
+              <p v-if="p.descripcion" class="text-[11.5px] text-ink-muted whitespace-pre-line mt-0.5">{{ p.descripcion }}</p>
             </li>
           </ul>
         </section>
@@ -106,15 +122,10 @@
 import Icono from "@/components/Icono.vue";
 
 defineProps({ registros: { type: Array, default: () => [] } });
-const campos = [
-  { f: "om_modelo", label: "Modelo" }, { f: "om_tela", label: "Tela" }, { f: "om_color", label: "Color" },
-  { f: "om_color_principal", label: "Color principal" }, { f: "om_forro", label: "Forro" },
-  { f: "om_combinacion", label: "Combinación" }, { f: "om_ubicacion", label: "Ubicación" },
-  { f: "om_aberturas", label: "Aberturas" },
-];
-// La fecha requerida ya no vive en la ficha: es de cada encargo al taller.
-const generales = (g) => campos.filter((c) => g[c.f]);
-const marcas = (g) => [["om_bordado", "Bordado"], ["om_estampado", "Estampado"], ["om_sublimado", "Sublimado"], ["om_reflejante", "Reflejante"]]
+// Info general (2026-11-26): modelo, telas, checks y aberturas. Una OM legacy (de la
+// orden de compra) no trae telas ni aberturas: solo se ve lo que tenga.
+const marcas = (g) => [["om_bordado", "Bordado"], ["om_estampado", "Estampado"], ["om_sublimado", "Sublimado"],
+  ["om_reflejante", "Reflejante"], ["om_dtf", "DTF"], ["om_vinil", "Vinil"]]
   .filter(([f]) => Number(g[f])).map(([, l]) => l);
 const esImagen = (u) => /\.(png|jpe?g|gif|webp|svg|bmp)(\?.*)?$/i.test(u || "");
 const fmt = (n) => Number(n || 0).toLocaleString("es-MX");

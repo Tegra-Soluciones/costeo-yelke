@@ -1,0 +1,66 @@
+{
+ "actions": [],
+ "creation": "2026-11-26 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "tela",
+  "nombre",
+  "composicion",
+  "color",
+  "ubicacion",
+  "principal"
+ ],
+ "fields": [
+  {
+   "fieldname": "tela",
+   "fieldtype": "Data",
+   "label": "Artículo (del costeo)",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "nombre",
+   "fieldtype": "Data",
+   "label": "Nombre de la tela",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "composicion",
+   "fieldtype": "Small Text",
+   "label": "Composición",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "color",
+   "fieldtype": "Small Text",
+   "label": "Color",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "ubicacion",
+   "fieldtype": "Small Text",
+   "label": "Ubicación"
+  },
+  {
+   "fieldname": "principal",
+   "fieldtype": "Check",
+   "label": "Tela principal",
+   "read_only": 1,
+   "description": "La de mayor consumo en el costeo."
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-11-26 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Costeo Yelke",
+ "name": "Orden Manufactura Tela",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
