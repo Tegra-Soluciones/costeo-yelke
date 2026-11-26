@@ -1,0 +1,239 @@
+{#- Ficha de manufactura (cuerpo), compartida por el formato de cada taller («Orden de
+    Manufactura», de la orden de compra) y el general («Orden de Manufactura General»,
+    con todo lo de todos los talleres). `r` es un registro de om_general (om_de_oc o
+    om_general_registro). -#}
+{% import "costeo_yelke/templates/print/oc_yelke.html" as oc %}
+
+{%- macro estilos() -%}
+<style>
+/* Fila que encabeza cada lote dentro de la tabla de tallas. */
+.pdf-container .items-table tr.yk-lote td { background: #fff3ec; border-top: 0.4mm solid #ff6b15; padding-top: 1.6mm !important; }
+.pdf-container .items-table tr.yk-lote b { color: #e65a0b; letter-spacing: 0.3px; }
+.yk-lote-fecha { color: #777; font-size: 7pt; margin-left: 3mm; }
+/* Enunciado de los PDF que se unen al final del documento. */
+.yk-anexos { margin-top: 2mm; font-size: 7.3pt; color: #444; }
+/* Imagen pegada dentro de una celda de tabla de medidas. */
+.pdf-container .items-table td .yk-celda-img { max-height: 20mm; max-width: 100%; display: block; margin: 0 auto; }
+/* Tela principal (la de mayor consumo en el costeo): resaltada en verde. */
+.pdf-container .items-table tr.yk-principal td { background: #dcfce7 !important; }
+.pdf-container .items-table tr.yk-principal td.muted { color: #15803d; font-weight: 600; }
+/* Tejidos: bloque de tallas extra en azul claro, como la hoja de Yelke. */
+.pdf-container .items-table.yk-tejido td { font-size: 7.2pt; padding: 1.2mm 1.4mm !important; }
+.pdf-container .items-table.yk-tejido th.yk-tj-gen { background: #fde047 !important; color: #111 !important; text-align: center; }
+.pdf-container .items-table.yk-tejido tr.yk-tj-med td { font-size: 6.8pt; color: #333; text-align: center; }
+.pdf-container .items-table.yk-tejido tr.yk-tj-head td { font-weight: 600; background: #f4f4f4; }
+.pdf-container .items-table.yk-tejido td.yk-tj-b { background: #e0f2fe !important; }
+.pdf-container .items-table.yk-solicitud { margin-bottom: 2mm; }
+.pdf-container .yk-anexos .k { color: #e65a0b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; font-size: 6.5pt; margin-right: 1.5mm; }
+</style>
+{%- endmacro -%}
+
+{%- macro ficha(r) -%}
+    {{ oc.seccion("Ficha de manufactura · " ~ (r.item_name or r.producto)) }}
+    {#- Información general (2026-11-26): modelo de prenda, telas (la principal, la de
+        mayor consumo en el costeo, resaltada), qué lleva y aberturas. -#}
+    {%- if r.general.get("om_modelo") %}
+    <table class="yk-ficha"><tr><td class="k">Modelo de prenda</td><td class="v" colspan="3">{{ r.general.get("om_modelo") }}</td></tr></table>
+    {%- endif %}
+    {%- if r.telas %}
+    <table class="items-table yk-telas">
+        <thead><tr><th style="width:22mm"></th><th>Tela</th><th style="width:34mm">Composición</th><th style="width:30mm">Color</th><th style="width:40mm">Ubicación</th></tr></thead>
+        <tbody>
+        {%- for t in r.telas %}
+            <tr{% if t.principal %} class="yk-principal"{% endif %}><td class="muted">{{ "Principal" if t.principal else "Secundaria" }}</td><td><b>{{ t.nombre or t.tela }}</b></td><td>{{ t.composicion or "" }}</td><td>{{ t.color or "" }}</td><td>{{ t.ubicacion or "" }}</td></tr>
+        {%- endfor %}
+        </tbody>
+    </table>
+    {%- endif %}
+    {%- set marcas = [] -%}
+    {%- for f, l in [("om_bordado", "Bordado"), ("om_estampado", "Estampado"), ("om_sublimado", "Sublimado"), ("om_reflejante", "Reflejante"), ("om_dtf", "DTF"), ("om_vinil", "Vinil")] -%}
+        {%- if r.general.get(f) -%}{%- set _ = marcas.append(l) -%}{%- endif -%}
+    {%- endfor %}
+    {%- if marcas %}
+    <div class="yk-lleva"><span class="k">Lleva</span>{% for m in marcas %}<span class="yk-tag">{{ m }}</span>{% endfor %}</div>
+    {%- endif %}
+    {%- if r.aberturas %}
+    {{ oc.seccion("Aberturas") }}
+    <table class="items-table">
+        <thead><tr><th style="width:24mm" class="text-right">Número</th><th style="width:60mm">Ubicación</th><th>Descripción</th></tr></thead>
+        <tbody>
+        {%- for a in r.aberturas %}
+            <tr><td class="num"><b>{{ a.numero or "" }}</b></td><td>{{ a.ubicacion or "" }}</td><td>{{ a.descripcion or "" }}</td></tr>
+        {%- endfor %}
+        </tbody>
+    </table>
+    {%- endif %}
+    {%- if r.bolsas %}
+    {{ oc.seccion("Bolsas") }}
+    <table class="items-table">
+        <thead><tr><th style="width:24mm" class="text-right">Número</th><th style="width:60mm">Ubicación</th><th>Descripción</th></tr></thead>
+        <tbody>
+        {%- for a in r.bolsas %}
+            <tr><td class="num"><b>{{ a.numero or "" }}</b></td><td>{{ a.ubicacion or "" }}</td><td>{{ a.descripcion or "" }}</td></tr>
+        {%- endfor %}
+        </tbody>
+    </table>
+    {%- endif %}
+
+    {#- Con reparto por lote (api/tallas_lote.py) las tallas se agrupan por lote de
+        entrega, con su fecha y su subtotal, para que el taller vea en qué tanda le
+        toca cada talla. Sin reparto -- producto sin tallas en la OV, o costeo de
+        antes -- sale el desglose completo de siempre. -#}
+    {%- if r.tallas_lotes %}
+    {{ oc.seccion("Tallas por lote") }}
+    <table class="items-table">
+        <thead><tr><th>Producto</th><th style="width:30mm">Género</th><th style="width:24mm">Talla</th><th class="text-right" style="width:26mm">Cantidad</th></tr></thead>
+        <tbody>
+        {%- for l in r.tallas_lotes %}
+            <tr class="yk-lote"><td colspan="4"><b>{{ l.lote_ref }}</b>{% if l.schedule_date %}<span class="yk-lote-fecha">entrega {{ fecha_corta(l.schedule_date) }}</span>{% endif %}</td></tr>
+            {%- for t in l.tallas %}
+            <tr><td class="muted">{{ t.producto or r.producto }}</td><td>{{ t.genero or "—" }}</td><td><b>{{ t.talla }}</b></td><td class="num">{{ "{:,.0f}".format(t.cantidad or 0) }}</td></tr>
+            {%- endfor %}
+            <tr><td colspan="3" class="text-right muted">Total {{ l.lote_ref }}</td><td class="num"><b>{{ "{:,.0f}".format(l.total or 0) }}</b></td></tr>
+        {%- endfor %}
+            <tr><td colspan="3" class="text-right"><b>Total de prendas</b></td><td class="num"><b>{{ "{:,.0f}".format(r.tallas_lotes | sum(attribute="total")) }}</b></td></tr>
+        </tbody>
+    </table>
+    {%- elif r.tallas %}
+    {{ oc.seccion("Tallas") }}
+    <table class="items-table">
+        <thead><tr><th>Producto</th><th style="width:30mm">Género</th><th style="width:24mm">Talla</th><th class="text-right" style="width:26mm">Cantidad</th></tr></thead>
+        <tbody>
+        {%- for t in r.tallas %}
+            <tr><td class="muted">{{ t.producto or r.producto }}</td><td>{{ t.genero or "—" }}</td><td><b>{{ t.talla }}</b></td><td class="num">{{ "{:,.0f}".format(t.cantidad or 0) }}</td></tr>
+        {%- endfor %}
+            <tr><td colspan="3" class="text-right"><b>Total</b></td><td class="num"><b>{{ "{:,.0f}".format(r.tallas | sum(attribute="cantidad")) }}</b></td></tr>
+        </tbody>
+    </table>
+    {%- endif %}
+
+    {#- Tejidos (cuellos, puños…) de ESTE taller: encabezado, desglose por género en dos
+        bloques -- tallas base y tallas extra, cada uno con su medida -- y la solicitud
+        por medida y color (om_general.desglose_tejido). -#}
+    {%- for t in (r.tejidos or []) %}
+    {{ oc.seccion("Tejido · " ~ (t.corresponde if t.corresponde != "Otro" else (t.otro or "Otro"))) }}
+    <table class="yk-ficha">
+        <tr><td class="k">Hebras</td><td class="v">{{ t.hebras or "" }}</td><td class="k">Tipo de tejido</td><td class="v">{{ t.tipo_tejido or "" }}</td></tr>
+        <tr><td class="k">Color</td><td class="v">{{ t.color or "" }}</td><td class="k">Corresponde a</td><td class="v">{{ t.corresponde if t.corresponde != "Otro" else (t.otro or "Otro") }}</td></tr>
+    </table>
+    {%- for g in t.desglose %}
+    {%- set bb = g.bloques[0] -%}{%- set be = g.bloques[1] -%}
+    <table class="items-table yk-tejido">
+        <thead>
+            <tr><th colspan="{{ 4 + (bb.tallas | length) + (be.tallas | length) }}" class="yk-tj-gen">{{ g.genero }}</th></tr>
+        </thead>
+        <tbody>
+            <tr class="yk-tj-med">
+                <td></td>
+                {%- if bb.tallas %}<td colspan="{{ bb.tallas | length }}">{% for pz, m in bb.medidas.items() %}{{ pz }} {{ g.genero | lower }}{% if m %} medida {{ m }}{% endif %}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>{% endif %}
+                {%- if be.tallas %}<td colspan="{{ be.tallas | length }}" class="yk-tj-b">{% for pz, m in be.medidas.items() %}{{ pz }} {{ g.genero | lower }}{% if m %} medida {{ m }}{% endif %}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>{% endif %}
+                <td colspan="3"></td>
+            </tr>
+            <tr class="yk-tj-head">
+                <td>Tallas</td>
+                {%- for x in bb.tallas %}<td class="text-center">{{ x.talla }}</td>{% endfor %}
+                {%- for x in be.tallas %}<td class="text-center yk-tj-b">{{ x.talla }}</td>{% endfor %}
+                <td class="text-center">Subtotal A</td><td class="text-center yk-tj-b">Subtotal B</td><td class="text-center">Total</td>
+            </tr>
+            <tr>
+                <td>{{ t.color or "" }}</td>
+                {%- for x in bb.tallas %}<td class="text-center">{{ "{:,.0f}".format(x.cantidad) }}</td>{% endfor %}
+                {%- for x in be.tallas %}<td class="text-center yk-tj-b">{{ "{:,.0f}".format(x.cantidad) }}</td>{% endfor %}
+                <td class="text-center">{{ "{:,.0f}".format(bb.subtotal) }}</td><td class="text-center yk-tj-b">{{ "{:,.0f}".format(be.subtotal) }}</td><td class="text-center"><b>{{ "{:,.0f}".format(g.total) }}</b></td>
+            </tr>
+        </tbody>
+    </table>
+    {%- endfor %}
+    <table style="width:100%; border-collapse:collapse; margin-top:2mm;"><tr>
+        <td style="vertical-align:top; padding:0 2mm 0 0; border:0 !important;">
+        {%- for g in t.desglose %}
+        <table class="items-table yk-solicitud">
+            <thead><tr><th>Solicitud para {{ g.genero | lower }} · hilo base color {{ t.color or "" }}</th><th class="text-right" style="width:26mm">Piezas</th></tr></thead>
+            <tbody>
+            {%- for l in g.solicitud %}
+                <tr><td>{{ l.texto }}</td><td class="num"><b>{{ "{:,.0f}".format(l.cantidad) }}</b></td></tr>
+            {%- endfor %}
+            </tbody>
+        </table>
+        {%- endfor %}
+        </td>
+        {%- if t.imagen %}
+        <td style="vertical-align:top; width:62mm; border:0 !important; text-align:center;"><img src="{{ t.imagen }}" style="max-width:60mm; max-height:70mm;" alt=""></td>
+        {%- endif %}
+    </tr></table>
+    {%- endfor %}
+
+    {%- if r.procesos %}
+    {{ oc.seccion("Procesos") }}
+    <table class="items-table">
+        <thead><tr><th style="width:6mm">#</th><th style="width:34mm">Proceso</th><th style="width:36mm">Ubicación</th><th style="width:28mm">Colores</th><th>Descripción</th><th style="width:20mm">Medida</th></tr></thead>
+        <tbody>
+        {%- for p in r.procesos %}
+            <tr><td class="muted">{{ loop.index }}</td><td><b>{{ p.nombre_proceso or "" }}</b></td><td>{{ p.ubicacion or "" }}</td><td class="muted">{{ p.colores or "" }}</td><td>{{ p.descripcion or "" }}</td><td>{{ p.medida or "" }}</td></tr>
+        {%- endfor %}
+        </tbody>
+    </table>
+    {%- endif %}
+
+    {%- for t in r.tablas %}
+    {{ oc.seccion(t.name ~ ((" (" ~ t.unit ~ ")") if t.unit else "")) }}
+    {#- La primera fila de la tabla se toma como encabezado. -#}
+    <table class="items-table yk-flex">
+        {%- if t.rows %}
+        <thead><tr>{% for c in t.columns %}<th{% if not loop.first %} class="text-center"{% endif %}>{{ t.rows[0].cells.get(c, "") }}</th>{% endfor %}</tr></thead>
+        {%- endif %}
+        <tbody>
+        {#- Una celda puede llevar texto o la URL de una imagen pegada en el editor
+            (un diagrama por renglón): si es imagen se dibuja, si no va el texto. -#}
+        {%- for row in t.rows[1:] %}
+            <tr>{% for c in t.columns %}
+                {%- set v = row.cells.get(c, "") -%}
+                <td{% if loop.first %} class="k"{% else %} class="text-center"{% endif %}>
+                {%- if v and (v.split("?")[0].split(".")[-1] | lower) in ["png", "jpg", "jpeg", "gif", "webp", "bmp"] -%}
+                    <img class="yk-celda-img" src="{{ v }}" alt="">
+                {%- else -%}{{ v }}{%- endif -%}
+                </td>{% endfor %}</tr>
+        {%- endfor %}
+        </tbody>
+    </table>
+    {%- endfor %}
+
+    {%- if r.observaciones %}
+    <div class="yk-notas">
+        <span class="yk-lbl">Observaciones</span>
+        <ol class="terms-content" style="margin:0; padding-left:4.5mm;">
+        {%- for o in r.observaciones %}<li style="white-space: pre-line;">{{ o.texto }}</li>{%- endfor %}
+        </ol>
+    </div>
+    {%- endif %}
+
+    {#- Las imágenes se dibujan aquí, en la galería. Los PDF no se pueden dibujar:
+        se unen al final del documento como hojas aparte al descargarlo o mandarlo
+        por correo (impresion.pdf_om_con_anexos), así que aquí solo se enuncian. -#}
+    {%- set imagenes = [] -%}{%- set anexos = [] -%}{%- set otros = [] -%}
+    {%- for a in r.archivos -%}
+        {%- set ext = (a.archivo or "").split("?")[0].split(".")[-1] | lower -%}
+        {%- if ext in ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"] %}{% set _ = imagenes.append(a) %}
+        {%- elif ext == "pdf" %}{% set _ = anexos.append(a) %}
+        {%- else %}{% set _ = otros.append(a) %}{% endif -%}
+    {%- endfor %}
+    {%- if imagenes %}
+    {{ oc.seccion("Diagramas y referencias") }}
+    <table class="yk-galeria">
+        {%- for par in imagenes | batch(2) %}
+        <tr>
+            {%- for a in par %}
+            <td><div class="img"><img src="{{ a.archivo }}" alt=""></div>{% if a.descripcion %}<div class="pie">{{ a.descripcion }}</div>{% endif %}</td>
+            {%- endfor %}
+            {%- if par | length == 1 %}<td></td>{% endif %}
+        </tr>
+        {%- endfor %}
+    </table>
+    {%- endif %}
+    {%- if anexos %}
+    <div class="yk-anexos"><span class="k">Anexos</span> — hojas aparte al final de este PDF:
+        {% for a in anexos %}{{ a.descripcion or (a.archivo or "").split("/")[-1] }}{% if not loop.last %} · {% endif %}{% endfor %}
+    </div>
+    {%- endif %}
+    {%- for a in otros %}<div class="item-code">Archivo adjunto: {{ a.descripcion or a.archivo }}</div>{%- endfor %}
+{%- endmacro -%}

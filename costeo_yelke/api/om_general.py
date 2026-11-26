@@ -509,3 +509,42 @@ def om_de_oc(po: str) -> list:
                 "origen": "orden_compra",
             })
     return registros
+
+
+def om_general_registro(om_name: str) -> dict:
+    """La ficha GENERAL de un producto, completa (sin filtrar por taller), para el
+    formato «Orden de Manufactura General». Las tallas son las de la orden de venta que
+    se pidió en la vista previa (frappe.flags.om_sales_order) o, sin ella, las del costeo."""
+    om = frappe.get_doc("Orden Manufactura", om_name)
+    doc = frappe.get_doc("Costeo", om.costeo)
+    ov = frappe.flags.get("om_sales_order") or None
+    qty_ov = qty_por_producto_de_ov(ov)
+    tallas = tallas_de_producto(doc, om.producto, qty_ov, _desglose_ov(doc, ov))
+    s = _serializar(om, doc)
+    registro = dict(s, producto=om.producto, item_name=frappe.db.get_value("Item", om.producto, "item_name") or om.producto,
+                    tallas=tallas, tallas_lotes=tallas_por_lote_de_producto(doc, om.producto, qty_ov),
+                    tejidos=[dict(t, desglose=desglose_tejido(t, tallas, om.producto)) for t in s["tejidos"]],
+                    origen="general")
+    return {"registro": registro, "encabezado": {
+        "name": om.name, "compañia": doc.get("compañia"), "creation": om.modified, "docstatus": 1,
+        "costeo": doc.name, "cliente": doc.get("cliente") or doc.get("cliente_nuevo"), "sales_order": ov,
+        "talleres": ", ".join(talleres_de_producto(doc, om.producto))}}
+
+
+@frappe.whitelist()
+def ver_om_general(costeo: str, producto: str, sales_order: str = None):
+    """PDF de la ficha general de un producto (vista previa: todo lo de todos los
+    talleres), con los PDF adjuntos unidos al final. Se abre en el navegador."""
+    from costeo_yelke.api.impresion import _contenido_de_archivo, es_pdf, unir_pdfs
+
+    frappe.has_permission("Costeo", "read", doc=costeo, throw=True)
+    doc = frappe.get_doc("Costeo", costeo)
+    om = _om_doc(costeo, _base_de(doc, producto))
+    if not om:
+        frappe.throw(_("Guarda primero la orden de manufactura de este producto."))
+    frappe.flags.om_sales_order = sales_order or None
+    principal = frappe.get_print("Orden Manufactura", om.name, print_format="Orden de Manufactura General", as_pdf=True)
+    anexos = [c for c in (_contenido_de_archivo(r.archivo) for r in om.om_archivos if es_pdf(r.archivo)) if c]
+    frappe.local.response.filename = f"Orden de manufactura general - {om.producto}.pdf"
+    frappe.local.response.filecontent = unir_pdfs(principal, anexos)
+    frappe.local.response.type = "pdf"

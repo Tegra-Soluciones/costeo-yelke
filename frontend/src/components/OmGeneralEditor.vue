@@ -106,8 +106,13 @@
             <button v-if="!disabled" type="button" class="add-link" @click="form.tejidos.push(tejidoVacio())">+ Tejido</button>
           </div>
           <p v-if="!form.tejidos.length" class="prod-empty">Sin tejidos.</p>
-          <div v-for="(t, ti) in form.tejidos" :key="'tj' + ti" class="rounded-lg ring-1 ring-surface-border p-2.5 mb-2">
-            <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
+          <div v-for="(t, ti) in form.tejidos" :key="'tj' + ti" class="relative rounded-lg ring-1 ring-surface-border p-2.5 pt-3 mb-2">
+            <button
+              v-if="!disabled" type="button" title="Quitar este tejido"
+              class="absolute top-1.5 right-1.5 w-6 h-6 rounded-full flex items-center justify-center text-[12px] text-ink-light hover:text-red-600 hover:bg-red-50"
+              @click="form.tejidos.splice(ti, 1)"
+            >✕</button>
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 pr-7">
               <div><label class="field-label">Número de hebras</label><input v-model="t.hebras" :disabled="disabled" class="field-input" placeholder="3" /></div>
               <div><label class="field-label">Tipo de tejido</label><input v-model="t.tipo_tejido" :disabled="disabled" class="field-input" placeholder="Tejido liso" /></div>
               <div><label class="field-label">Color</label><input v-model="t.color" :disabled="disabled" class="field-input" placeholder="Rojo" /></div>
@@ -152,9 +157,7 @@
                 {{ t.imagen ? 'Cambiar imagen' : '+ Imagen de referencia' }}
                 <input type="file" accept="image/*" class="hidden" @change="subirImagenTejido($event, t)" />
               </label>
-              <button v-if="!disabled && t.imagen" type="button" class="del-btn" @click="t.imagen = ''">Quitar</button>
-              <span class="flex-1"></span>
-              <button v-if="!disabled" type="button" class="del-btn" @click="form.tejidos.splice(ti, 1)">✕ Quitar tejido</button>
+              <button v-if="!disabled && t.imagen" type="button" class="del-btn" @click="t.imagen = ''">Quitar imagen</button>
             </div>
 
             <!-- Vista previa: desglose y solicitud (igual que en la orden impresa) -->
@@ -311,7 +314,9 @@
           </div>
         </div>
 
-        <div class="flex justify-end">
+        <div class="flex justify-end items-center gap-2">
+          <!-- Vista previa de la ficha GENERAL (todo lo de todos los talleres), en PDF. -->
+          <button type="button" class="doc-action" :disabled="guardando || (disabled && !form.name)" title="Guarda y abre la ficha general (todos los talleres) en PDF" @click="verPdf(p)">Vista previa PDF</button>
           <button type="button" :disabled="disabled || guardando" class="h-9 px-4 text-[13px] font-semibold text-white bg-brand-500 rounded-lg hover:bg-brand-600 disabled:opacity-50" @click="guardar(p)">
             {{ guardando ? 'Guardando…' : 'Guardar orden de manufactura' }}
           </button>
@@ -549,6 +554,19 @@ async function subirImagenTejido(ev, t) {
   finally { subiendo.value = false; }
 }
 
+// Guarda lo capturado y abre el PDF: la vista previa siempre es lo que hay en pantalla.
+// La pestaña se abre ANTES de guardar (después el navegador la bloquearía).
+async function verPdf(p) {
+  const q = new URLSearchParams({ costeo: props.costeo, producto: p.producto });
+  if (props.salesOrder) q.set("sales_order", props.salesOrder);
+  const url = `/api/method/costeo_yelke.api.om_general.ver_om_general?${q}`;
+  if (props.disabled) { window.open(url, "_blank"); return; }
+  const w = window.open("", "_blank");
+  const ok = await guardar(p);
+  if (ok && w) w.location.href = url;
+  else if (w) w.close();
+}
+
 async function guardar(p) {
   guardando.value = true;
   try {
@@ -559,7 +577,8 @@ async function guardar(p) {
     await cargar();
     props.showToast("Orden de manufactura guardada — ya aparece en la orden de maquila de cada taller");
     emit("saved");
-  } catch (e) { props.showToast(e.message || "No se pudo guardar", "error"); }
+    return true;
+  } catch (e) { props.showToast(e.message || "No se pudo guardar", "error"); return false; }
   finally { guardando.value = false; }
 }
 </script>
