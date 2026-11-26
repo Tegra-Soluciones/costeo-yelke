@@ -131,6 +131,7 @@ class Costeo(Document):
         # (borrador incluido) y un Costeo a medio capturar debe poderse guardar tal
         # cual. Lo obligatorio se exige solo al validar (enviar), ver before_submit.
         self.cleanup_orphan_children()
+        self.colgar_tallas_extra_del_base()
         self.repartir_total_con_tallas_extra()
         self.derivar_precio_unitario()
 
@@ -139,6 +140,23 @@ class Costeo(Document):
         # pieza llegaba tal cual lo mandó la pantalla (con más decimales que los que
         # guarda el campo) y Frappe lo rechazaba como "cambio después del envío".
         self.derivar_precio_unitario()
+
+    def colgar_tallas_extra_del_base(self):
+        """Una talla extra cuelga siempre del producto base. Si alguna quedó colgada de
+        otra talla extra (se creó desde la variante, como la Dama XXL/3XL de la playera
+        polo, colgada de la Caballero XXL/3XL), se pasa a su base: si no, la resta del
+        total no la contaba y el base quedaba con piezas de más."""
+        if self.docstatus != 0:
+            return
+        productos = self.get("costeo_producto") or []
+        padre = {p.finished_item: p.get("variante_talla_de") for p in productos if p.finished_item}
+        for v in productos:
+            raiz, vistos = v.get("variante_talla_de"), set()
+            while raiz and padre.get(raiz) and raiz not in vistos:
+                vistos.add(raiz)
+                raiz = padre[raiz]
+            if raiz and raiz != v.get("variante_talla_de"):
+                v.variante_talla_de = raiz
 
     def repartir_total_con_tallas_extra(self):
         """Las tallas extra salen del total, no se suman a él (pedido de Yelke).
