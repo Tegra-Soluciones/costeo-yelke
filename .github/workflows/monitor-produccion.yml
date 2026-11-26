@@ -1,0 +1,116 @@
+# Monitor externo de producción (erp.yelke.com.mx).
+#
+# Corre en GitHub, fuera del NAS: si el NAS, el internet de la oficina o el sitio se
+# caen, esto sigue revisando. Cada 10 minutos comprueba:
+#   1. que el sitio responda (/api/method/frappe.ping, 3 intentos);
+#   2. el estado de los respaldos que publica el contenedor «respaldo» (secreto
+#      SALUD_URL): que el último completo tenga menos de 30 h, la última base menos de
+#      8 h, que no haya fallas abiertas y que el servicio siga vivo.
+#
+# Aviso: cuando detecta una falla nueva, la corrida falla y GitHub manda el correo
+# «Run failed» a quien hizo el último cambio a este archivo. Mientras la falla sigue
+# no vuelve a avisar (salvo un recordatorio cada 6 h), para no llenar el buzón.
+# Para probarlo: Actions › «Monitor de producción» › Run workflow, con «simular».
+
+name: Monitor de producción
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      simular:
+        description: "Simular una falla (para probar que llega el correo)"
+        type: boolean
+        default: false
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: monitor-produccion
+  cancel-in-progress: false
+
+jobs:
+  revisar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Revisar sitio y respaldos
+        id: revisar
+        env:
+          SITIO: https://erp.yelke.com.mx
+          SALUD_URL: ${{ secrets.SALUD_URL }}
+          SIMULAR: ${{ inputs.simular || false }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -u
+          problemas=""
+          agregar() { problemas="${problemas}- $1"$'\n'; }
+
+          codigo=000
+          for intento in 1 2 3; do
+            codigo=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$SITIO/api/method/frappe.ping" || true)
+            [ "$codigo" = 200 ] && break
+            sleep 30
+          done
+          [ "$codigo" = 200 ] || agregar "El sitio $SITIO no responde bien (HTTP $codigo)."
+
+          if [ "$codigo" = 200 ] && [ -n "$SALUD_URL" ]; then
+            salud=$(curl -sf --max-time 30 "$SALUD_URL" || true)
+            if [ -z "$salud" ]; then
+              agregar "No se pudo leer el estado de los respaldos (¿se detuvo el contenedor cimix-yelke-respaldo-1?)."
+            else
+              msg=$(printf '%s' "$salud" | python3 -c '
+          import json, sys, datetime as dt
+          d = json.load(sys.stdin)
+          m = []
+          c, b, f = d["completo_h"], d["bd_h"], d["fallas"]
+          if c >= 30: m.append(f"El último respaldo completo tiene {c} horas.")
+          if b >= 8: m.append(f"El último respaldo de la base tiene {b} horas.")
+          if f > 0: m.append(f"Hay {f} falla(s) de respaldo abiertas (revisa el correo de alertas).")
+          edad = (dt.datetime.now(dt.timezone.utc) - dt.datetime.fromisoformat(d["generado"])).total_seconds() / 60
+          if edad > 45: m.append(f"El servicio de respaldos no se ha reportado en {int(edad)} minutos (¿contenedor detenido?).")
+          print("\n".join(m))')
+              while IFS= read -r linea; do [ -n "$linea" ] && agregar "$linea"; done <<< "$msg"
+            fi
+          fi
+
+          [ "$SIMULAR" = "true" ] && agregar "Falla simulada a mano para probar el aviso."
+
+          if [ -z "$problemas" ]; then
+            echo "Todo bien: sitio HTTP $codigo." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          printf '%s' "$problemas" > caido.txt
+          { echo "### Falla en producción de Yelke"; echo; echo "$problemas"; } >> "$GITHUB_STEP_SUMMARY"
+          echo "caido=1" >> "$GITHUB_OUTPUT"
+
+          # ¿La corrida anterior ya estaba en falla? Entonces ya se avisó.
+          avisar=1
+          previa=$(gh run list -R "$GITHUB_REPOSITORY" -w "$GITHUB_WORKFLOW" -s completed -L 1 --json databaseId -q '.[0].databaseId' || true)
+          if [ -n "$previa" ] && [ "$SIMULAR" != "true" ]; then
+            if gh api "repos/$GITHUB_REPOSITORY/actions/runs/$previa/artifacts" -q '.artifacts[].name' | grep -qx caido; then
+              avisar=0
+              # recordatorio cada 6 horas mientras siga la falla
+              [ $(( 10#$(date -u +%H) % 6 )) -eq 0 ] && [ $(( 10#$(date -u +%M) )) -lt 10 ] && avisar=1
+            fi
+          fi
+          echo "avisar=$avisar" >> "$GITHUB_OUTPUT"
+          echo "$problemas"
+
+      - name: Recordar que hay falla
+        if: steps.revisar.outputs.caido == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: caido
+          path: caido.txt
+          retention-days: 1
+
+      - name: Avisar
+        if: steps.revisar.outputs.avisar == '1'
+        run: |
+          while IFS= read -r linea; do echo "::error title=Producción Yelke::${linea#- }"; done < caido.txt
+          exit 1
