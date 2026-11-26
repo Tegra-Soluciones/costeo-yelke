@@ -3,7 +3,8 @@
 // autenticación del celular y la clave en texto, y ahí mismo pide el primer código.
 // Reemplaza continue_otp_app de frappe/templates/includes/login/login.js.
 (function () {
-	if (location.pathname.replace(/\/+$/, "") !== "/login") return;
+	// Sin filtrar por ruta: el login también se pinta en «/» (erp.yelke.com.mx a secas).
+	// Solo actúa donde existe continue_otp_app, o sea, en la pantalla de login.
 
 	var celular = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 	var ESTILO = {

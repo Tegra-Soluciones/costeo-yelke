@@ -45,7 +45,7 @@ add_to_apps_screen = [
 # web_include_js = "/assets/costeo_yelke/js/costeo_yelke.js"
 # Alta de la verificación en dos pasos en la pantalla de login (dos_pasos.py); la
 # versión en la liga evita que el proxy sirva una copia vieja.
-web_include_js = ["/assets/costeo_yelke/js/dos_pasos.js?v=1"]
+web_include_js = ["/assets/costeo_yelke/js/dos_pasos.js?v=2"]
 
 # include custom scss in every website theme (without file extension ".scss")
 # website_theme_scss = "costeo_yelke/public/scss/website"
